@@ -1,0 +1,56 @@
+[package]
+name = "grpc"
+version = "1.0.0"
+description = "GRPC - Gestion des Restaurants de la Protection Civile"
+authors = ["1bxm"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.70"
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.10.3", features = [] }
+tauri-plugin-fs = "2.5.0"
+tauri-plugin-dialog = "2.7.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+rusqlite = { version = "0.39.0", features = ["bundled", "backup", "chrono", "uuid", "serialize"] }
+argon2 = { version = "0.5.3", features = ["password-hash"] }
+rand = { version = "0.8", features = ["std_rng", "std"] }
+chrono = { version = "0.4.44", features = ["serde"] }
+uuid = { version = "1.23.1", features = ["v4", "serde"] }
+rust_xlsxwriter = "0.94.0"
+thiserror = "2.0.18"
+dirs = "6.0.0"
+regex = "1.12.3"
+lazy_static = "1.5.0"
+log = "0.4.29"
+fern = "0.6.2"
+sha2 = "0.10.9"
+hmac = "0.12.1"
+subtle = "2.6.1"
+tempfile = "3.27.0"
+age = "0.11.3"
+hex = "0.4.3"
+tauri-plugin-single-instance = "2.0.0"
+
+[dev-dependencies]
+
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+command-registry = []  # Reserved for future compile-time command registration
+
+[lib]
+name = "grpc_lib"
+path = "src/lib.rs"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "grpc"
+path = "src/main.rs"
+

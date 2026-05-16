@@ -1,0 +1,140 @@
+//! Common Test Utilities
+//!
+//! Shared helpers and fixtures for all tests
+
+use grpc_lib::commands::AppState;
+use grpc_lib::db::ConnectionFactory;
+use std::sync::{Arc, Mutex};
+use tempfile::TempDir;
+
+/// Create a test AppState with isolated database
+pub fn create_test_state() -> (AppState, TempDir) {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("test.db");
+
+    // Initialize test database
+    let db = ConnectionFactory::new_with_path(&db_path).expect("Failed to create test database");
+
+    let state = AppState {
+        db: Arc::new(Mutex::new(Some(db))),
+        rate_limiter: Arc::new(Mutex::new(
+            grpc_lib::domain::rate_limiter::RateLimiter::new(),
+        )),
+        operation_guard: Arc::new(grpc_lib::application::services::OperationExecutionGuard::new()),
+        maintenance: grpc_lib::application::services::SystemMaintenanceHandle::new(
+            grpc_lib::application::services::SystemMaintenanceState::Normal,
+        ),
+        current_session: Arc::new(Mutex::new(None)),
+        crypto_port:
+            grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider::new(),
+        password_port: Arc::new(grpc_lib::infrastructure::security::Argon2PasswordHashProvider),
+        process_start_time: std::time::Instant::now(),
+    };
+
+    (state, temp_dir)
+}
+
+/// Create a test user session
+#[allow(dead_code)]
+pub fn create_test_session(
+    user_id: &str,
+    username: &str,
+    role: &str,
+) -> grpc_lib::domain::session::CurrentSession {
+    let role = grpc_lib::models::UserRole::from(role.to_string());
+    grpc_lib::domain::session::CurrentSession {
+        user_id: user_id.to_string(),
+        username: username.to_string(),
+        user_role: role,
+        session_id: uuid::Uuid::new_v4().to_string(),
+        created_at: chrono::Utc::now(),
+        last_activity: chrono::Utc::now(),
+        timeout_minutes: 30,
+    }
+}
+
+/// Test assertion helpers
+#[allow(dead_code)]
+pub fn assert_success<T>(result: Result<T, String>) -> T {
+    result.expect("Expected success but got error")
+}
+
+#[allow(dead_code)]
+pub fn assert_error<T: std::fmt::Debug>(result: Result<T, String>, expected_msg: &str) {
+    let err = result.expect_err("Expected error but got success");
+    assert!(
+        err.contains(expected_msg),
+        "Error '{}' should contain '{}'",
+        err,
+        expected_msg
+    );
+}
+
+/// Insert a test product and its inventory_stocks row.
+/// Returns the product_id.
+#[allow(dead_code)]
+pub fn create_test_product(
+    state: &grpc_lib::commands::AppState,
+    name: &str,
+    base_price: f64,
+    fiscal_year: i32,
+) -> String {
+    use rusqlite::params;
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().unwrap();
+    let product_id = format!("test-prod-{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339();
+    db.get_connection()
+        .execute(
+            "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at)              VALUES (?1, ?2, ?3, 0.0, NULL, ?4, ?5, ?5)",
+            params![product_id, name, base_price, fiscal_year, now],
+        )
+        .expect("insert product");
+    db.get_connection()
+        .execute(
+            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)              VALUES (?1, ?2, 0.0, 'unit', ?3, ?3)",
+            params![format!("stock-{}", product_id), product_id, now],
+        )
+        .expect("insert inventory_stocks");
+    product_id
+}
+
+/// Set the quantity in inventory_stocks for a test product.
+#[allow(dead_code)]
+pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, quantity: f64) {
+    use rusqlite::params;
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+    db.get_connection()
+        .execute(
+            "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2 WHERE product_id = ?3",
+            params![quantity, now, product_id],
+        )
+        .expect("update inventory_stocks quantity");
+}
+
+/// Seed a fiscal year row as 'open'.
+#[allow(dead_code)]
+pub fn seed_fiscal_year_open(state: &grpc_lib::commands::AppState, year: i32) {
+    use rusqlite::params;
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+    db.get_connection()
+        .execute(
+            "INSERT OR REPLACE INTO fiscal_year_status (year, status, opened_at) VALUES (?1, 'open', ?2)",
+            params![year, now],
+        )
+        .expect("seed fiscal_year_status open");
+}
+
+/// Clear all fiscal year status rows.
+#[allow(dead_code)]
+pub fn clear_fiscal_status(state: &grpc_lib::commands::AppState) {
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().unwrap();
+    db.get_connection()
+        .execute("DELETE FROM fiscal_year_status", [])
+        .expect("clear fiscal_year_status");
+}

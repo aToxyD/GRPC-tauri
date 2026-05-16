@@ -1,0 +1,76 @@
+# Cargo Deny Configuration
+# Strict security and license checking for production builds
+
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-pc-windows-msvc" },
+]
+
+# Advisory Database Checks
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "deny"
+yanked = "deny"
+notice = "warn"
+severity-threshold = "low"
+
+# License Compliance
+[licenses]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+]
+deny = [
+    "GPL-1.0",
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+]
+copyleft = "deny"
+allow-osi-fsf-free = "either"
+default = "deny"
+
+# Explicit license exceptions for specific crates
+[[licenses.exceptions]]
+name = "ring"
+version = "*"
+allow = ["OpenSSL"]
+
+# Bans - Crates we don't allow
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+# Skip certain duplicate versions (known safe)
+skip = [
+    # Common web ecosystem duplicates that are safe
+    { name = "syn", version = "1.0" },
+    { name = "windows-sys", version = "0.48" },
+]
+
+# Skip specific crate graphs that are safe
+skip-tree = [
+    { name = "windows", version = "0.48" },
+    { name = "winit", version = "*" },
+]
+
+# Sources - Where we allow crates from
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []
+
+# Allowed registries
+[sources.allow-org]
+github = ["tauri-apps", "rust-lang"]

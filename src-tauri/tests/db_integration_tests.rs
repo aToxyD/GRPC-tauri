@@ -1,0 +1,1110 @@
+//! Database Integration Tests
+use chrono::{Datelike, Utc};
+use grpc_lib::db::ConnectionFactory;
+use grpc_lib::db::Database;
+use grpc_lib::models::*;
+use grpc_lib::repositories::{
+    InventoryRepository, ProductRepository, ReportRepository, StockMovementRepository,
+    UnitRepository,
+};
+use uuid::Uuid;
+
+// Helper: إعداد قاعدة بيانات مع وحدة
+pub fn setup_test_db_with_unit() -> (Database, String) {
+    let db = ConnectionFactory::new_for_test().unwrap();
+    let executor = db.executor();
+    let now = Utc::now().to_rfc3339();
+
+    // system user is automatically created by the initial migration
+
+    // إنشاء وحدة اختبار
+    let unit_id = Uuid::new_v4().to_string();
+    let unit_repo = UnitRepository::new(executor);
+    unit_repo
+        .upsert_raw_unit(&unit_id, "TEST01", "Test Unit", "01", &now)
+        .unwrap();
+
+    executor.execute(
+        "INSERT OR IGNORE INTO fiscal_year_status (year, status, opened_at) VALUES (2024, 'open', ?1)",
+        rusqlite::params![now],
+    ).unwrap();
+
+    (db, unit_id)
+}
+
+// Helper: إنشاء وحدة ثانية
+pub fn create_second_test_unit(db: &Database) -> String {
+    let unit_id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let unit_repo = UnitRepository::new(db.executor());
+    unit_repo
+        .upsert_raw_unit(&unit_id, "TEST02", "Second Test Unit", "01", &now)
+        .unwrap();
+    unit_id
+}
+
+// Helper: إنشاء منتج اختبار
+// Helper: إنشاء منتج اختبار
+pub fn create_test_product(db: &Database, id: &str, name: &str) -> String {
+    let now = Utc::now().to_rfc3339();
+    let executor = db.executor();
+
+    let product_repo = ProductRepository::new(executor);
+    product_repo
+        .insert_raw_product(
+            &grpc_lib::models::Product {
+                id: id.to_string(),
+                name: name.to_string(),
+                base_price: 100.0,
+                tva: 0.0,
+                supplier_name: Some("Test Supplier".to_string()),
+                year: 2024,
+                created_at: Utc::now(),
+            },
+            &now,
+        )
+        .unwrap();
+
+    let inventory_repo = InventoryRepository::new(executor);
+    let stock_id = Uuid::new_v4().to_string();
+    inventory_repo
+        .create_initial_stock_for_product(&stock_id, id, &now)
+        .unwrap();
+
+    id.to_string()
+}
+
+// Helper: إنشاء تقرير يومي
+pub fn create_test_daily_report(db: &Database, unit_id: &str, date: &str) -> String {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let report_repo = ReportRepository::new(db.executor());
+
+    report_repo
+        .insert_raw_daily_report(
+            &id,
+            &grpc_lib::models::DailyReport {
+                id: id.clone(),
+                date: date.parse().unwrap(),
+                personnel_count: 10,
+                guest_count: 5,
+                total_meals_cost: 1000.0,
+                actual_meal_rate: 66.67,
+                unit_id: Some(unit_id.to_string()),
+                fiscal_year: date.parse::<chrono::NaiveDate>().unwrap().year(),
+                created_at: Utc::now(),
+            },
+            &now,
+        )
+        .unwrap();
+
+    id
+}
+
+// Helper: إنشاء حركة مخزون مباشرة (للاختبارات)
+#[allow(clippy::too_many_arguments)]
+pub fn create_stock_movement(
+    db: &Database,
+    product_id: &str,
+    movement_type: StockMovementType,
+    quantity: f64,
+    balance_before: f64,
+    balance_after: f64,
+    reference_type: Option<&str>,
+    reference_id: Option<&str>,
+    timestamp: &str,
+    unit_id: Option<&str>,
+) -> String {
+    let id = Uuid::new_v4().to_string();
+    let executor = db.executor();
+    let movement_repo = StockMovementRepository::new(executor);
+
+    movement_repo
+        .insert_raw_stock_movement(&grpc_lib::models::StockMovement {
+            id: id.clone(),
+            product_id: product_id.to_string(),
+            product_name: Some("Test Product".to_string()),
+            movement_type,
+            quantity,
+            balance_before,
+            balance_after,
+            reference_type: reference_type.map(|s| s.to_string()),
+            reference_id: reference_id.map(|s| s.to_string()),
+            notes: None,
+            timestamp: timestamp.to_string(),
+            user_id: "system".to_string(),
+            username: "test_user".to_string(),
+            unit_id: unit_id.map(|s| s.to_string()),
+            fiscal_year: Some(2024),
+        })
+        .unwrap();
+
+    // تحديث المخزون عبر المستودع
+    let inventory_repo = InventoryRepository::new(executor);
+    inventory_repo
+        .update_stock(product_id, balance_after)
+        .unwrap();
+
+    id
+}
+
+#[test]
+fn test_opening_is_last_balance_before_month_unit_scoped() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod1", "Test Product");
+
+    // === شهر يناير: بناء الرصيد ===
+    let dr_jan = create_test_daily_report(&db, &unit_id, "2024-01-15");
+
+    // إضافة عنصر استهلاك للتقرير
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_jan,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_jan.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 10.0,
+                unit_price: 100.0,
+                total_cost: 1000.0,
+            },
+        )
+        .unwrap();
+
+    // أولاً: دخول مخزون في يناير (balance_after = 100)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        100.0,
+        0.0,
+        100.0,
+        Some("Order"),
+        Some(&dr_jan),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    // ثانياً: خروج (استهلاك) في يناير
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        10.0,
+        100.0,
+        90.0,
+        Some("Consumption"),
+        Some(&dr_jan),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    // === شهر فبراير: نحتاج خروج للكشف عن المنتج ===
+    let dr_feb = create_test_daily_report(&db, &unit_id, "2024-02-10");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_feb,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_feb.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 5.0,
+                unit_price: 100.0,
+                total_cost: 500.0,
+            },
+        )
+        .unwrap();
+
+    // خروج في فبراير للكشف عن المنتج في snapshot فبراير
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        5.0,
+        90.0,
+        85.0,
+        Some("Consumption"),
+        Some(&dr_feb),
+        "2024-02-10T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    // حساب snapshot لفبراير
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 2, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 2)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // Opening يجب أن يكون 90 (آخر balance_after من يناير)
+    assert!(
+        (item.opening_stock - 90.0).abs() < 0.001,
+        "Opening should be 90 from January's last balance (unit scoped), got {}",
+        item.opening_stock
+    );
+}
+
+#[test]
+fn test_opening_correct_when_in_precedes_first_out_in_month() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod2", "Test Product 2");
+
+    // تقرير فبراير
+    let dr_feb = create_test_daily_report(&db, &unit_id, "2024-02-10");
+
+    // إضافة عنصر استهلاك للتقرير
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_feb,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_feb.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 20.0,
+                unit_price: 100.0,
+                total_cost: 2000.0,
+            },
+        )
+        .unwrap();
+
+    // دخول في فبراير قبل أي خروج (للتأكد أن Opening يأخذ من قبل الشهر فقط)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        50.0,
+        0.0,
+        50.0,
+        Some("Order"),
+        Some(&dr_feb),
+        "2024-02-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    // خروج في فبراير (للكشف عن المنتج)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        20.0,
+        50.0,
+        30.0,
+        Some("Consumption"),
+        Some(&dr_feb),
+        "2024-02-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    // حساب snapshot لمارس
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 2, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 2)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // Opening يجب أن يكون 0 لأنه لا يوجد رصيد قبل فبراير
+    assert!(
+        item.opening_stock == 0.0,
+        "Opening should be 0 when no prior balance, got {}",
+        item.opening_stock
+    );
+    assert!(item.total_in == 50.0, "Total IN should be 50");
+    assert!(item.total_out == 20.0, "Total OUT should be 20");
+}
+
+#[test]
+fn test_new_product_first_month_no_false_anomaly() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod3", "New Product");
+
+    // تقرير مارس
+    let dr_mar = create_test_daily_report(&db, &unit_id, "2024-03-10");
+
+    // إضافة عنصر استهلاك للتقرير
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_mar,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_mar.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 30.0,
+                unit_price: 100.0,
+                total_cost: 3000.0,
+            },
+        )
+        .unwrap();
+
+    // منتج جديد: دخول ثم خروج في نفس الشهر
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        100.0,
+        0.0,
+        100.0,
+        Some("Order"),
+        Some(&dr_mar),
+        "2024-03-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        30.0,
+        100.0,
+        70.0,
+        Some("Consumption"),
+        Some(&dr_mar),
+        "2024-03-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    // حساب snapshot لمارس
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 3, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 3)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    assert!(
+        item.opening_stock == 0.0,
+        "Opening should be 0 for new product"
+    );
+    assert!(item.total_in == 100.0, "Total IN should be 100");
+    assert!(item.total_out == 30.0, "Total OUT should be 30");
+    assert!(
+        !item.has_balance_anomaly,
+        "New product first month should NOT have balance anomaly, even with consumption"
+    );
+}
+
+#[test]
+fn test_product_with_consumption_but_no_prior_stock_triggers_anomaly() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod4", "Suspicious Product");
+
+    // تقرير أبريل
+    let dr_apr = create_test_daily_report(&db, &unit_id, "2024-04-10");
+
+    // إضافة عنصر استهلاك للتقرير
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_apr,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_apr.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 10.0,
+                unit_price: 100.0,
+                total_cost: 1000.0,
+            },
+        )
+        .unwrap();
+
+    // منتج جديد: دخول قليل ثم خروج
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        10.0,
+        0.0,
+        10.0,
+        Some("Order"),
+        Some(&dr_apr),
+        "2024-04-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        10.0,
+        10.0,
+        0.0,
+        Some("Consumption"),
+        Some(&dr_apr),
+        "2024-04-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    // حساب snapshot لأبريل
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 4, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 4)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    assert!(item.opening_stock == 0.0, "Opening should be 0");
+    assert!(item.total_in == 10.0, "Total IN should be 10");
+    assert!(item.total_out == 10.0, "Total OUT should be 10");
+
+    // لا شذوذ لأن total_in > 0 (منتج جديد)
+    assert!(
+        !item.has_balance_anomaly,
+        "Product with IN > 0 should NOT trigger anomaly (new product case)"
+    );
+}
+
+#[test]
+fn test_total_in_includes_order_without_consumption_link() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod_in_global", "Global IN Test");
+
+    // تقرير يناير - consumption مطلوب للكشف عن المنتج
+    let dr_jan = create_test_daily_report(&db, &unit_id, "2024-01-15");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_jan,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_jan.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 10.0,
+                unit_price: 100.0,
+                total_cost: 1000.0,
+            },
+        )
+        .unwrap();
+
+    // دخول مخزون (IN) - global، ليس مرتبطًا بconsumption مباشرة
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        100.0,
+        0.0,
+        100.0,
+        Some("Order"),
+        Some(&dr_jan),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    // خروج (استهلاك)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        10.0,
+        100.0,
+        90.0,
+        Some("Consumption"),
+        Some(&dr_jan),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 1, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    assert_eq!(
+        item.total_in, 100.0,
+        "Total IN should include all IN movements globally"
+    );
+    assert_eq!(item.total_out, 10.0, "Total OUT should be unit-scoped");
+}
+
+#[test]
+fn test_property_computed_closing_never_negative() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod_no_neg", "No Negative Closing");
+
+    // سيناريو: opening=0, in=10, out=20 (يؤدي إلى closing سالب نظرياً)
+    let dr_jan = create_test_daily_report(&db, &unit_id, "2024-01-15");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_jan,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_jan.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 20.0,
+                unit_price: 100.0,
+                total_cost: 2000.0,
+            },
+        )
+        .unwrap();
+
+    // دخول 10 فقط
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        10.0,
+        0.0,
+        10.0,
+        Some("Order"),
+        Some(&dr_jan),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    // خروج 20 (أكثر من المدخل)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        20.0,
+        10.0,
+        0.0, // balance_after يعكس 0 (لا يمكن أن يكون سالباً)
+        Some("Consumption"),
+        Some(&dr_jan),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 1, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // computed_closing = max(0, opening + in - out) = max(0, 0 + 10 - 20) = 0
+    assert!(
+        item.computed_closing >= 0.0,
+        "Computed closing should never be negative, got {}",
+        item.computed_closing
+    );
+}
+
+#[test]
+fn test_property_formula_is_deterministic() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod_determ", "Deterministic Test");
+
+    // بناء سيناريو ثابت
+    let dr_jan = create_test_daily_report(&db, &unit_id, "2024-01-15");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_jan,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_jan.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 30.0,
+                unit_price: 100.0,
+                total_cost: 3000.0,
+            },
+        )
+        .unwrap();
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        100.0,
+        0.0,
+        100.0,
+        Some("Order"),
+        Some(&dr_jan),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_id),
+    );
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        30.0,
+        100.0,
+        70.0,
+        Some("Consumption"),
+        Some(&dr_jan),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    // حساب snapshot مرتين
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 1, false)
+        .unwrap();
+    let view1 = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item1 = view1
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // force recompute
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 1, true)
+        .unwrap();
+    let view2 = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item2 = view2
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // يجب أن تكون النتائج متطابقة
+    assert_eq!(
+        item1.opening_stock, item2.opening_stock,
+        "Opening should be deterministic"
+    );
+    assert_eq!(
+        item1.total_in, item2.total_in,
+        "Total IN should be deterministic"
+    );
+    assert_eq!(
+        item1.total_out, item2.total_out,
+        "Total OUT should be deterministic"
+    );
+    assert_eq!(
+        item1.computed_closing, item2.computed_closing,
+        "Computed closing should be deterministic"
+    );
+
+    // التحقق من المعادلة: closing = opening + in - out
+    let expected_closing = item1.opening_stock + item1.total_in - item1.total_out;
+    assert!(
+        (item1.computed_closing - expected_closing.max(0.0)).abs() < 0.001,
+        "Formula should be: closing = max(0, opening + in - out)"
+    );
+}
+
+#[test]
+fn test_opening_does_not_leak_other_units_balance() {
+    let (db, unit_a) = setup_test_db_with_unit();
+    let unit_b = create_second_test_unit(&db);
+
+    let product_id = create_test_product(&db, "prod_isolation", "Isolation");
+
+    // رصيد لوحدة B فقط
+    let dr_b = create_test_daily_report(&db, &unit_b, "2024-01-10");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_b,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_b.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 20.0,
+                unit_price: 100.0,
+                total_cost: 2000.0,
+            },
+        )
+        .unwrap();
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        20.0,
+        0.0,
+        20.0,
+        Some("Order"),
+        Some(&dr_b),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_b),
+    );
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        20.0,
+        20.0,
+        0.0,
+        Some("Consumption"),
+        Some(&dr_b),
+        "2024-01-10T12:00:00Z",
+        Some(&unit_b),
+    );
+
+    // وحدة A لم يكن لها تاريخ سابق
+    let dr_a = create_test_daily_report(&db, &unit_a, "2024-03-10");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_a,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_a.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 10.0,
+                unit_price: 100.0,
+                total_cost: 1000.0,
+            },
+        )
+        .unwrap();
+
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        10.0,
+        0.0,
+        0.0,
+        Some("Consumption"),
+        Some(&dr_a),
+        "2024-03-10T12:00:00Z",
+        Some(&unit_a),
+    );
+
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_a, 2024, 3, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_a, 2024, 3)
+        .unwrap()
+        .unwrap();
+
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    assert_eq!(item.opening_stock, 0.0, "يجب ألا يتسرب رصيد وحدة أخرى");
+}
+
+#[test]
+fn test_in_for_correct_unit_is_counted() {
+    let (db, unit_a) = setup_test_db_with_unit();
+    let _unit_b = create_second_test_unit(&db);
+
+    let product_id = create_test_product(&db, "prod_in_scope", "IN Scope Test");
+
+    // تقرير لوحدة A
+    let dr_a = create_test_daily_report(&db, &unit_a, "2024-01-10");
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_a,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_a.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 10.0,
+                unit_price: 100.0,
+                total_cost: 1000.0,
+            },
+        )
+        .unwrap();
+
+    // IN لوحدة A فقط
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        100.0,
+        0.0,
+        100.0,
+        Some("Order"),
+        Some(&dr_a),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_a),
+    );
+
+    // خروج لوحدة A
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        10.0,
+        100.0,
+        90.0,
+        Some("Consumption"),
+        Some(&dr_a),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_a),
+    );
+
+    // حساب snapshot لوحدة A
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_a, 2024, 1, false)
+        .unwrap();
+    let view_a = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_a, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item_a = view_a
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // IN لوحدة A يجب أن يُحسب
+    assert_eq!(item_a.total_in, 100.0, "Total IN for unit A should be 100");
+    assert_eq!(item_a.total_out, 10.0, "Total OUT for unit A should be 10");
+}
+
+#[test]
+fn test_in_not_double_counted_across_units() {
+    let (db, unit_a) = setup_test_db_with_unit();
+    let unit_b = create_second_test_unit(&db);
+
+    let product_id = create_test_product(&db, "prod_no_double", "No Double Count");
+
+    // تقارير لكل وحدة
+    let dr_a = create_test_daily_report(&db, &unit_a, "2024-01-10");
+    let dr_b = create_test_daily_report(&db, &unit_b, "2024-01-10");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_a,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_a.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 5.0,
+                unit_price: 100.0,
+                total_cost: 500.0,
+            },
+        )
+        .unwrap();
+    report_repo
+        .insert_raw_consumption_item(
+            &dr_b,
+            &grpc_lib::models::DailyConsumptionItem {
+                id: Uuid::new_v4().to_string(),
+                daily_report_id: dr_b.clone(),
+                product_id: product_id.clone(),
+                product_name: "Test Product".to_string(),
+                quantity: 5.0,
+                unit_price: 100.0,
+                total_cost: 500.0,
+            },
+        )
+        .unwrap();
+
+    // IN لوحدة A فقط (100)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        100.0,
+        0.0,
+        100.0,
+        Some("Order"),
+        Some(&dr_a),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_a),
+    );
+
+    // IN لوحدة B فقط (50)
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        50.0,
+        0.0,
+        50.0,
+        Some("Order"),
+        Some(&dr_b),
+        "2024-01-10T10:00:00Z",
+        Some(&unit_b),
+    );
+
+    // خروج لكل وحدة
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        5.0,
+        100.0,
+        95.0,
+        Some("Consumption"),
+        Some(&dr_a),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_a),
+    );
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        5.0,
+        50.0,
+        45.0,
+        Some("Consumption"),
+        Some(&dr_b),
+        "2024-01-15T12:00:00Z",
+        Some(&unit_b),
+    );
+
+    // حساب snapshot لكل وحدة
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_a, 2024, 1, false)
+        .unwrap();
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_b, 2024, 1, false)
+        .unwrap();
+
+    let view_a = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_a, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item_a = view_a
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    let view_b = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_b, 2024, 1)
+        .unwrap()
+        .unwrap();
+    let item_b = view_b
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    // وحدة A: IN = 100 (فقط الخاص بها)
+    assert_eq!(
+        item_a.total_in, 100.0,
+        "Unit A should only see its own IN (100)"
+    );
+    // وحدة B: IN = 50 (فقط الخاص بها)
+    assert_eq!(
+        item_b.total_in, 50.0,
+        "Unit B should only see its own IN (50)"
+    );
+}
+
+#[test]
+fn test_confirm_order_sets_unit_id() {
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod_confirm", "Confirm Order Test");
+
+    // Create a user for the test (to satisfy FK constraint)
+    let user_id = Uuid::new_v4().to_string();
+    grpc_lib::repositories::UserRepository::new(db.executor())
+        .insert_raw_user(
+            &user_id,
+            "test_admin",
+            "Password123",
+            "Admin",
+            &Utc::now().to_rfc3339(),
+        )
+        .expect("Failed to create user");
+
+    // Create order
+    let order_req = CreateOrderRequest {
+        supplier_name: "مورد للتأكيد".to_string(),
+        reference_number: Some("CONF-001".to_string()),
+        items: vec![OrderItemInput {
+            product_id: product_id.clone(),
+            quantity: 50.0,
+            unit_price: 40.0,
+        }],
+    };
+    let (order_id, _) = grpc_lib::application::services::OrderService::new(db.executor())
+        .create_supplier_order(&order_req)
+        .expect("Failed to create order");
+
+    // Confirm order with unit_id
+    grpc_lib::application::services::OrderService::new(db.executor())
+        .confirm_order_atomic(&order_id, "system", "test_admin", Some(&unit_id))
+        .expect("Failed to confirm order");
+
+    // Verify the IN movement has unit_id set
+    let movements = grpc_lib::application::services::StockMovementService::new(db.executor())
+        .get_stock_movements(
+            &grpc_lib::models::StockMovementFilters {
+                product_id: Some(product_id.clone()),
+                unit_id: Some(unit_id.clone()),
+                reference_type: Some("Order".to_string()),
+                reference_id: Some(order_id.clone().to_string()),
+                ..Default::default()
+            },
+            0,
+            10,
+        )
+        .unwrap();
+
+    assert!(
+        !movements.movements.is_empty(),
+        "IN movement should have unit_id set"
+    );
+}

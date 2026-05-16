@@ -1,0 +1,142 @@
+# Supply Chain Security Configuration for GRPC
+# 
+# This file configures cargo-deny to audit dependencies for:
+# - Security vulnerabilities
+# - Unmaintained crates
+# - License compliance
+# - Duplicate dependencies (bloat)
+#
+# Usage: cargo deny check
+
+[graph]
+# The graph target to check
+# We check all targets by default
+targets = [
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-apple-darwin" },
+]
+
+# Deny duplicate versions of crates
+[output]
+format = "terminal"
+feature-depth = 1
+
+# Advisory Database checks
+[advisories]
+# The path to the advisory database
+# If not set, uses the default from https://github.com/rustsec/advisory-db
+db-path = "~/.cargo/advisory-db"
+
+# The url to fetch the advisory database
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# The lint level for crates with security vulnerabilities
+vulnerability = "deny"
+
+# The lint level for crates with unmaintained status
+unmaintained = "warn"
+
+# The lint level for crates with yanked versions
+yanked = "deny"
+
+# The lint level for crates with deprecated versions
+deprecated = "warn"
+
+# The lint level for crates with an invalid or unrecognizable license
+notice = "warn"
+
+# Ignore specific advisories (use sparingly with justification)
+ignore = [
+    # Example:
+    # "RUSTSEC-2021-0123", # Justification: we don't use the affected feature
+]
+
+# License compliance
+[licenses]
+# The lint level for unlicensed crates
+unlicensed = "deny"
+
+# The list of allowed licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+    "Unlicense",
+]
+
+# The list of explicitly denied licenses
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+]
+
+# The list of allowed licenses that are copyleft
+copyleft = "deny"
+
+# The list of crates whose license we explicitly trust
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
+# Ban specific crates with security/quality issues
+[[bans.deny]]
+name = "rust-crypto"
+reason = "Unmaintained - use RustCrypto crates instead"
+
+[[bans.deny]]
+name = "openssl"
+version = "<0.10"
+reason = "Old versions have security vulnerabilities"
+
+# Deny specific wildcard versions (security risk)
+[[bans.deny]]
+name = "*"
+version = "*"
+# Wildcards are allowed only in dev-dependencies
+wrappers = ["tempfile", "criterion"]
+
+# Skip duplicate version checks for specific crates
+# (use when unavoidable transitive dependencies cause duplicates)
+[[bans.skip]]
+name = "windows-sys"
+# Multiple versions are common due to ecosystem transition
+
+[[bans.skip]]
+name = "libc"
+# Multiple versions are common in large projects
+
+# Sources configuration
+[sources]
+# Allow crates.io only (default registry)
+[sources.allow-registry]
+registry = "https://github.com/rust-lang/crates.io-index"
+
+# Deny all git sources (enforce crates.io only for supply chain security)
+[sources.allow-git]
+github = []
+gitlab = []
+bitbucket = []
+
+# Exceptions for specific git dependencies (requires justification)
+[[sources.allow-git.github]]
+# None currently - all deps must come from crates.io
+# owner = "trusted-owner"
+# repo = "trusted-repo"
+# justification = "Required for feature X"
+
+# CI/CD integration hints
+[ci]
+# Fail on warnings in CI
+fail-on-warnings = true

@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "schema_version": 2,
+    "created_at": "2026-03-09T12:00:07Z",
+    "source_node_id": "unit-alpha",
+    "package_id": "fixture-pkg-id-001"
+  },
+  "payload": {
+    "summary": {
+      "month": 3,
+      "year": 2024,
+      "total_personnel": 100,
+      "total_guests": 20,
+      "total_meals": 120,
+      "total_consumption_value": 1500.25,
+      "average_meal_rate": 12.5,
+      "report_count": 2
+    },
+    "daily_detail_rows": [
+      {
+        "date": "2024-03-01",
+        "personnel_count": 50,
+        "guest_count": 10,
+        "total_meals_cost": 750.125,
+        "actual_meal_rate": 12.5
+      },
+      {
+        "date": "2024-03-02",
+        "personnel_count": 50,
+        "guest_count": 10,
+        "total_meals_cost": 750.125,
+        "actual_meal_rate": 12.5
+      }
+    ]
+  }
+}

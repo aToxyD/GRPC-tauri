@@ -1,0 +1,27 @@
+{
+  "metadata": {
+    "schema_version": 2,
+    "created_at": "2026-02-10T12:00:00Z",
+    "source_node_id": "unit-alpha",
+    "package_id": "pkg-daily-rt-1"
+  },
+  "payload": {
+    "snapshot": {
+      "report_id": "rep-1",
+      "date": "2026-02-10",
+      "personnel_count": 10,
+      "guest_count": 2,
+      "total_meals_cost": 120.0,
+      "actual_meal_rate": 10.0,
+      "items": [
+        {
+          "product_id": "prod-1",
+          "product_name": "Item A",
+          "quantity": 1.0,
+          "unit_price": 10.0,
+          "total_cost": 10.0
+        }
+      ]
+    }
+  }
+}

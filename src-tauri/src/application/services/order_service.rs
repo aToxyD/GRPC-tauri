@@ -1,0 +1,121 @@
+//! Order Service Module
+//!
+//! Business logic for supplier orders and order confirmation.
+//! SQL is delegated exclusively to OrderRepository (inventory movements via StockMovementService).
+
+use crate::errors::{AppError, BusinessLogicError};
+use crate::models::{CreateOrderRequest, NewStockMovement, StockMovementType};
+use crate::repositories::{DbExecutor, RepositoryProvider};
+
+/// Service for supplier order business logic
+pub struct OrderService<'a> {
+    executor: DbExecutor<'a>,
+}
+
+impl<'a> OrderService<'a> {
+    /// Create a new OrderService with the given executor
+    pub fn new(executor: DbExecutor<'a>) -> Self {
+        Self { executor }
+    }
+
+    pub fn create_supplier_order(
+        &self,
+        req: &CreateOrderRequest,
+    ) -> Result<(String, f64), AppError> {
+        let total_amount: f64 = req.items.iter().map(|i| i.quantity * i.unit_price).sum();
+        let repo = self.executor.orders();
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let order_date = chrono::Utc::now().date_naive().to_string();
+
+        repo.create_supplier_order_header(&id, req, total_amount, &order_date, &now)?;
+
+        for item in &req.items {
+            let item_cost = item.quantity * item.unit_price;
+            let item_id = uuid::Uuid::new_v4().to_string();
+            repo.insert_order_item(&item_id, &id, item, item_cost)?;
+        }
+
+        Ok((id, total_amount))
+    }
+
+    /// Confirm an order atomically:
+    /// - validate order is not already confirmed
+    /// - record an IN stock movement for every item
+    /// - update order status to Confirmed
+    ///
+    /// The caller is responsible for wrapping this in a transaction via
+    /// `db.with_transaction(|tx| OrderService::new(tx).confirm_order_atomic(...))`
+    pub fn confirm_order_atomic(
+        &self,
+        order_id: &str,
+        user_id: &str,
+        username: &str,
+        unit_id: Option<&str>,
+    ) -> Result<(), AppError> {
+        let repo = self.executor.orders();
+        let stock_repo = crate::application::services::StockMovementService::new(self.executor);
+
+        // 1. Guard: check order status
+        let order = repo
+            .get_supplier_order(order_id)?
+            .ok_or_else(|| AppError::Internal(format!("Order not found: {}", order_id)))?;
+
+        if order.status == crate::models::OrderStatus::Confirmed {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OrderAlreadyConfirmed {
+                    order_id: order_id.to_string(),
+                },
+            ));
+        }
+
+        // 2. Fetch items (product_id, quantity, product_name)
+        let items = repo.get_order_items_for_confirmation(order_id)?;
+
+        // 3. Record IN movement for each item
+        for (product_id, quantity, product_name) in &items {
+            let movement = NewStockMovement {
+                product_id: product_id.clone(),
+                movement_type: StockMovementType::In,
+                quantity: *quantity,
+                reference_type: Some("Order".to_string()),
+                reference_id: Some(order_id.to_string()),
+                notes: Some(format!(
+                    "طلبية من: {} - {}",
+                    order.supplier_name, product_name
+                )),
+                user_id: user_id.to_string(),
+                username: username.to_string(),
+                unit_id: unit_id.map(|u| u.to_string()),
+            };
+            stock_repo.record_stock_movement(&movement)?;
+        }
+
+        // 4. Mark order confirmed
+        repo.set_order_confirmed(order_id)?;
+
+        Ok(())
+    }
+
+    pub fn get_supplier_order(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<crate::models::SupplierOrder>, AppError> {
+        self.executor.orders().get_supplier_order(order_id)
+    }
+
+    pub fn get_supplier_order_items(
+        &self,
+        order_id: &str,
+    ) -> Result<Vec<crate::models::SupplierOrderItem>, AppError> {
+        self.executor.orders().get_supplier_order_items(order_id)
+    }
+
+    pub fn list_supplier_orders(
+        &self,
+        fiscal_year: Option<i32>,
+    ) -> Result<Vec<crate::models::SupplierOrder>, AppError> {
+        self.executor.orders().list_supplier_orders(fiscal_year)
+    }
+}
