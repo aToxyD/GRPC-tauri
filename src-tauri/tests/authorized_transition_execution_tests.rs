@@ -50,7 +50,7 @@ fn test_transition_window_expiration() {
 
     // Run pre-flight
     let issues = service.pre_flight_checks(&pkg).unwrap();
-    assert!(issues.iter().any(|i: &String| i.contains("expired")));
+    assert!(issues.iter().any(|i: &String| i.contains("انتهت صلاحية")));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn test_transition_window_not_yet_started() {
     let issues = service.pre_flight_checks(&pkg).unwrap();
     assert!(issues
         .iter()
-        .any(|i: &String| i.contains("not yet started")));
+        .any(|i: &String| i.contains("لم تبدأ بعد")));
 }
 
 #[test]
@@ -110,5 +110,5 @@ fn test_transition_replay_protection() {
     let issues = service.pre_flight_checks(&pkg).unwrap();
     assert!(issues
         .iter()
-        .any(|i: &String| i.contains("already been applied")));
+        .any(|i: &String| i.contains("تم تطبيق")));
 }
