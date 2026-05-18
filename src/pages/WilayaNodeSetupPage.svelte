@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { configureAsWilaya, getSettings } from "../lib/tauri";
   import { push } from "svelte-spa-router";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { LogicalSize } from "@tauri-apps/api/dpi";
 
   let wilayaCode = "";
   let wilayaName = "";
@@ -14,14 +16,50 @@
     try {
       const settings = await getSettings();
       if (settings.configured) {
+        try {
+          const window = getCurrentWindow();
+          await window.setResizable(true);
+          await window.setMaximizable(true);
+          await window.maximize();
+          await window.setResizable(false);
+          await window.setMaximizable(false);
+        } catch (err) {
+          console.error("Failed to maximize window for dashboard:", err);
+        }
+
         if (settings.node_type === "WILAYA") {
           push("/wilaya");
         } else {
           push("/unit");
         }
+        return;
       }
     } catch (e) {
       // Not configured yet, continue
+    }
+
+    // Ensure the setup page runs in the compact, locked 450x650 frame
+    try {
+      const window = getCurrentWindow();
+      if (await window.isMaximized()) {
+        await window.setResizable(true);
+        await window.setMaximizable(true);
+        await window.unmaximize();
+        await window.setSize(new LogicalSize(450, 650));
+        await window.setResizable(false);
+        await window.setMaximizable(false);
+        await window.center();
+      } else {
+        // Even if not maximized, ensure size is exact and locked
+        await window.setResizable(true);
+        await window.setMaximizable(true);
+        await window.setSize(new LogicalSize(450, 650));
+        await window.setResizable(false);
+        await window.setMaximizable(false);
+        await window.center();
+      }
+    } catch (err) {
+      console.error("Failed to configure setup window size:", err);
     }
   });
 
@@ -38,6 +76,19 @@
     try {
       await configureAsWilaya(wilayaCode, wilayaName);
       success = "تم تكوين الولاية بنجاح. جاري إعادة التوجيه...";
+      
+      // Maximize the window for the main dashboard on successful configuration
+      try {
+        const window = getCurrentWindow();
+        await window.setResizable(true);
+        await window.setMaximizable(true);
+        await window.maximize();
+        await window.setResizable(false);
+        await window.setMaximizable(false);
+      } catch (err) {
+        console.error("Failed to maximize window after configuration:", err);
+      }
+
       setTimeout(() => push("/wilaya"), 1500);
     } catch (e) {
       error = "خطأ في التكوين: " + String(e);

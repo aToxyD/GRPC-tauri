@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { open } from '@tauri-apps/plugin-dialog';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { LogicalSize } from '@tauri-apps/api/dpi';
   import { login, getSettings, isConfigured, importUnitNodePackage } from '../lib/tauri';
   import type { LoginRequest, LoginResponse, User } from '../lib/types';
   import { push } from 'svelte-spa-router';
@@ -25,6 +26,22 @@
       isAppConfigured = await isConfigured();
     } catch (e) {
       isAppConfigured = false;
+    }
+
+    try {
+      const window = getCurrentWindow();
+      // Only restore, resize, and lock if the window is currently maximized (e.g., after logging out)
+      if (await window.isMaximized()) {
+        await window.setResizable(true);
+        await window.setMaximizable(true);
+        await window.unmaximize();
+        await window.setSize(new LogicalSize(450, 650));
+        await window.setResizable(false);
+        await window.setMaximizable(false);
+        await window.center();
+      }
+    } catch (err) {
+      console.error('Failed to configure login window size:', err);
     }
   });
 
@@ -80,14 +97,22 @@
         // Store user in session
         setCurrentUser(response.user);
         
-        // Maximize window for main interface
-        const window = getCurrentWindow();
-        await window.maximize();
-        
         if (response.requires_configuration) {
-          // Skip node selection and go directly to wilaya configuration for admin
+          // Skip node selection and go directly to wilaya configuration in compact frame
           push('/configure?nodeType=WILAYA');
         } else {
+          // Maximize window for main interface and lock it
+          try {
+            const window = getCurrentWindow();
+            await window.setResizable(true);
+            await window.setMaximizable(true);
+            await window.maximize();
+            await window.setResizable(false);
+            await window.setMaximizable(false);
+          } catch (err) {
+            console.error('Failed to maximize window:', err);
+          }
+          
           // Get settings to determine where to redirect
           try {
             const settings = await getSettings();
