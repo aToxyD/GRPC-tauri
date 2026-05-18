@@ -1,0 +1,178 @@
+# GitLab CI/CD Pipeline - GRPC-Tauri Architectural and Security Governance Firewall
+# This pipeline enforces fail-closed architectural boundaries, deterministic builds, and secret-leak prevention.
+# It acts as a reproducible quality gate and structural compliance engine.
+
+stages:
+  - validate
+  - frontend
+  - backend
+  - architecture
+  - security
+  - documentation
+  - e2e
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/src-tauri/.cargo"
+  BUN_CACHE_DIR: "$CI_PROJECT_DIR/.bun-cache"
+
+default:
+  interruptible: true
+
+cache:
+  key:
+    files:
+      - bun.lock
+      - src-tauri/Cargo.lock
+  paths:
+    - node_modules/
+    - src-tauri/target/
+    - src-tauri/.cargo/
+    - .bun-cache/
+
+# ==========================================
+# STAGE: validate
+# ==========================================
+
+secrets_scanning:
+  stage: validate
+  image: oven/bun:1.1-alpine
+  script:
+    - bun run scripts/check_secrets.ts
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH
+
+# ==========================================
+# STAGE: frontend
+# ==========================================
+
+frontend_governance:
+  stage: frontend
+  image: oven/bun:1.1
+  before_script:
+    - bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+  script:
+    - bun run check
+    - bun x vitest run
+  artifacts:
+    name: "frontend-validation-report"
+    expose_as: "Frontend Quality Report"
+    when: always
+    expire_in: 3 days
+    paths:
+      - tsconfig.json
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+# ==========================================
+# STAGE: backend
+# ==========================================
+
+backend_governance:
+  stage: backend
+  image: rust:1.75
+  before_script:
+    - rustup component add rustfmt clippy
+  script:
+    - cd src-tauri
+    - cargo fmt --check
+    - cargo clippy -- -D warnings
+    - cargo check
+    - cargo test --verbose
+  artifacts:
+    name: "backend-cargo-test-report"
+    expose_as: "Backend Rust Tests"
+    when: always
+    expire_in: 3 days
+    paths:
+      - src-tauri/target/
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+# ==========================================
+# STAGE: architecture
+# ==========================================
+
+architectural_governance:
+  stage: architecture
+  image: oven/bun:1.1-alpine
+  script:
+    - bun run check:arch
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+# ==========================================
+# STAGE: security
+# ==========================================
+
+bun_dependency_audit:
+  stage: security
+  image: oven/bun:1.1-alpine
+  script:
+    - bun audit
+  allow_failure: true # Audit warning policy is documented in DEPENDENCY_GOVERNANCE.md
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+cargo_dependency_audit:
+  stage: security
+  image: rust:1.75
+  before_script:
+    - cargo install cargo-audit
+  script:
+    - cd src-tauri
+    # Ignore accepted-risk unmaintained crates listed in DEPENDENCY_GOVERNANCE.md
+    - cargo audit --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+# ==========================================
+# STAGE: documentation
+# ==========================================
+
+documentation_governance:
+  stage: documentation
+  image: oven/bun:1.1-alpine
+  script:
+    - bun run scripts/check_docs_governance.ts
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+release_integrity:
+  stage: documentation
+  image: oven/bun:1.1-alpine
+  script:
+    - bun run scripts/check_release_integrity.ts
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+# ==========================================
+# STAGE: e2e
+# ==========================================
+
+runtime_e2e_governance:
+  stage: e2e
+  image: mcr.microsoft.com/playwright:v1.45.0-jammy
+  before_script:
+    - npm install -g bun
+    - bun install --frozen-lockfile
+  script:
+    # Use deterministic Isolated Temp Directory for CI/CD runtimes
+    - export TEST_SECURE_TEMP_DIR="$(mktemp -d)"
+    - bun run test:e2e
+    # Cleanup post-run to maintain zero trace policy
+    - rm -rf "$TEST_SECURE_TEMP_DIR"
+  artifacts:
+    name: "playwright-e2e-report"
+    expose_as: "Playwright E2E Log Reports"
+    when: always
+    expire_in: 3 days
+    paths:
+      - playwright-report/
+      - test-results/
+  rules:
+    # E2E is mandatory for protected branch MRs and main, but skipped for casual dev branch commits to save pipeline time
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main")
