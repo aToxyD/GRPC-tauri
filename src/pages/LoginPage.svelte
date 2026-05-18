@@ -30,16 +30,15 @@
 
     try {
       const window = getCurrentWindow();
-      // Only restore, resize, and lock if the window is currently maximized (e.g., after logging out)
+      await window.setResizable(true);
+      await window.setMaximizable(true);
       if (await window.isMaximized()) {
-        await window.setResizable(true);
-        await window.setMaximizable(true);
         await window.unmaximize();
-        await window.setSize(new LogicalSize(450, 650));
-        await window.setResizable(false);
-        await window.setMaximizable(false);
-        await window.center();
       }
+      await window.setSize(new LogicalSize(450, 650));
+      await window.setResizable(false);
+      await window.setMaximizable(false);
+      await window.center();
     } catch (err) {
       console.error('Failed to configure login window size:', err);
     }
@@ -101,14 +100,12 @@
           // Skip node selection and go directly to wilaya configuration in compact frame
           push('/configure?nodeType=WILAYA');
         } else {
-          // Maximize window for main interface and lock it
+          // Maximize window for main interface
           try {
             const window = getCurrentWindow();
             await window.setResizable(true);
             await window.setMaximizable(true);
             await window.maximize();
-            await window.setResizable(false);
-            await window.setMaximizable(false);
           } catch (err) {
             console.error('Failed to maximize window:', err);
           }

@@ -21,8 +21,6 @@
           await window.setResizable(true);
           await window.setMaximizable(true);
           await window.maximize();
-          await window.setResizable(false);
-          await window.setMaximizable(false);
         } catch (err) {
           console.error("Failed to maximize window for dashboard:", err);
         }
@@ -41,23 +39,15 @@
     // Ensure the setup page runs in the compact, locked 450x650 frame
     try {
       const window = getCurrentWindow();
+      await window.setResizable(true);
+      await window.setMaximizable(true);
       if (await window.isMaximized()) {
-        await window.setResizable(true);
-        await window.setMaximizable(true);
         await window.unmaximize();
-        await window.setSize(new LogicalSize(450, 650));
-        await window.setResizable(false);
-        await window.setMaximizable(false);
-        await window.center();
-      } else {
-        // Even if not maximized, ensure size is exact and locked
-        await window.setResizable(true);
-        await window.setMaximizable(true);
-        await window.setSize(new LogicalSize(450, 650));
-        await window.setResizable(false);
-        await window.setMaximizable(false);
-        await window.center();
       }
+      await window.setSize(new LogicalSize(450, 650));
+      await window.setResizable(false);
+      await window.setMaximizable(false);
+      await window.center();
     } catch (err) {
       console.error("Failed to configure setup window size:", err);
     }
@@ -83,8 +73,6 @@
         await window.setResizable(true);
         await window.setMaximizable(true);
         await window.maximize();
-        await window.setResizable(false);
-        await window.setMaximizable(false);
       } catch (err) {
         console.error("Failed to maximize window after configuration:", err);
       }
