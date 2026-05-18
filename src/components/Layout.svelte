@@ -5,9 +5,8 @@
   export let title: string = '';
   export let subtitle: string = '';
 
-  // Fallback to localStorage to prevent flicker/disappearance during loading
   // Display fallback to prevent flicker
-  $: displayNodeType = nodeType || (typeof localStorage !== 'undefined' ? localStorage.getItem('grpc_node_type') as 'WILAYA' | 'UNIT' : null) || 'WILAYA';
+  $: displayNodeType = nodeType || 'WILAYA';
 </script>
 
 <div class="flex min-h-screen bg-gray-50">

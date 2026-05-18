@@ -15,27 +15,24 @@ import { showError, showWarning, showInfo } from './notifications';
 import type { SessionStatus, User } from './types';
 
 // Auth State
-function initUserState(): User | null {
-    const userStr = localStorage.getItem('grpc_user');
-    if (userStr) {
-        try {
-            return JSON.parse(userStr);
-        } catch (e) {
-            return null;
-        }
-    }
-    return null;
-}
-
-export const currentUser = writable<User | null>(initUserState());
+export const currentUser = writable<User | null>(null);
 
 export function setCurrentUser(user: User | null) {
-    if (user) {
-        localStorage.setItem('grpc_user', JSON.stringify(user));
-    } else {
-        localStorage.removeItem('grpc_user');
-    }
     currentUser.set(user);
+}
+
+export async function bootstrapSession(): Promise<User | null> {
+    try {
+        const user = await invoke<User | null>('get_current_user');
+        setCurrentUser(user);
+        if (user) {
+            startSessionMonitoring();
+        }
+        return user;
+    } catch (error) {
+        console.error('Failed to bootstrap session', error);
+        return null;
+    }
 }
 
 

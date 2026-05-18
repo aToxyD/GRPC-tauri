@@ -2,7 +2,7 @@
   import Router from 'svelte-spa-router';
   import { link } from 'svelte-spa-router';
   import { onMount, onDestroy } from 'svelte';
-  import { initSessionManagement, cleanupSessionManagement } from './lib/session';
+  import { bootstrapSession, cleanupSessionManagement } from './lib/session';
   
   // Import page components
   import LoginPage from './pages/LoginPage.svelte';
@@ -34,8 +34,8 @@
   import Notifications from './components/Notifications.svelte';
 
   // Initialize session management on mount
-  onMount(() => {
-    initSessionManagement();
+  onMount(async () => {
+    await bootstrapSession();
   });
 
   // Cleanup session management on destroy

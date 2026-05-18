@@ -91,9 +91,6 @@
           // Get settings to determine where to redirect
           try {
             const settings = await getSettings();
-            if (settings) {
-              localStorage.setItem('grpc_node_type', settings.node_type);
-            }
             if (settings && settings.node_type === 'WILAYA') {
               push('/wilaya');
             } else if (settings && settings.node_type === 'UNIT') {
