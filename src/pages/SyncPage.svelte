@@ -141,7 +141,7 @@
     {/if}
 
     {#if importProgress}
-      <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm flex items-center">
+      <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 rounded-lg text-blue-700 text-sm flex items-center">
         <svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -155,7 +155,7 @@
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
       </div>
     {:else if units.length === 0}
-      <div class="card text-center py-12 text-gray-500">
+      <div class="card text-center py-12 text-gray-500 dark:text-gray-400">
         <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
         </svg>
@@ -166,8 +166,8 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Unit Selection -->
         <div class="card md:col-span-2">
-          <h2 class="text-lg font-semibold text-gray-800 mb-4">اختيار الوحدة</h2>
-          <p class="text-sm text-gray-600 mb-4">اختر الوحدة التي تستورد تقريرها</p>
+          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">اختيار الوحدة</h2>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">اختر الوحدة التي تستورد تقريرها</p>
           <select class="input-field" bind:value={selectedUnit}>
             {#each units as unit}
               <option value={unit.id}>{unit.code} - {unit.name}</option>
@@ -178,14 +178,14 @@
         <!-- Import Daily Report -->
         <div class="card">
           <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
+            <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
               <svg class="w-6 h-6 text-civil-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
               </svg>
             </div>
             <div>
-              <h3 class="font-semibold text-gray-800">تقرير يومي</h3>
-              <p class="text-sm text-gray-500">حزمة المزامنة (.sync) هي المسار الحالي للمزامنة</p>
+              <h3 class="font-semibold text-gray-800 dark:text-gray-100">تقرير يومي</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">حزمة المزامنة (.sync) هي المسار الحالي للمزامنة</p>
             </div>
           </div>
           <div class="space-y-2">
@@ -209,8 +209,8 @@
               </svg>
             </div>
             <div>
-              <h3 class="font-semibold text-gray-800">تقرير شهر</h3>
-              <p class="text-sm text-gray-500">حزمة المزامنة (.sync) هي المسار الحالي للمزامنة</p>
+              <h3 class="font-semibold text-gray-800 dark:text-gray-100">تقرير شهر</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">حزمة المزامنة (.sync) هي المسار الحالي للمزامنة</p>
             </div>
           </div>
           <div class="space-y-2">
@@ -234,8 +234,8 @@
               </svg>
             </div>
             <div>
-              <h3 class="font-semibold text-gray-800">حركات المخزون</h3>
-              <p class="text-sm text-gray-500">استورد حركات المخزون من الوحدة</p>
+              <h3 class="font-semibold text-gray-800 dark:text-gray-100">حركات المخزون</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">استورد حركات المخزون من الوحدة</p>
             </div>
           </div>
           <div class="space-y-2">
@@ -251,8 +251,8 @@
         </div>
       </div>
 
-      <div class="mt-8 card bg-blue-50 border-blue-200">
-        <h3 class="font-semibold text-blue-800 mb-2">كيفية استيراد تقارير الوحدة</h3>
+      <div class="mt-8 card bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+        <h3 class="font-semibold text-blue-800 dark:text-blue-300 mb-2">كيفية استيراد تقارير الوحدة</h3>
         <ol class="text-sm text-blue-700 list-decimal list-inside space-y-1">
           <li><strong>من عقدة الوحدة:</strong> صدّر الملفات المطلوبة:
             <ul class="mr-4 mt-1 text-xs">

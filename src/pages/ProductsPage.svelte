@@ -217,21 +217,21 @@
             </button>
             
             {#if showExportDropdown}
-              <div class="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+              <div class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10">
                 <button
                   on:click={() => handleExport('package')}
-                  class="w-full text-right px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                  class="w-full text-right px-4 py-2 hover:bg-gray-50 dark:bg-gray-900 flex items-center justify-between"
                   title="هذا هو مسار المزامنة الرسمي بين العقد"
                 >
                   <span>حزمة المزامنة</span>
-                  <span class="text-xs text-gray-500">.sync</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">.sync</span>
                 </button>
                 <button
                   on:click={() => handleExport('excel')}
-                  class="w-full text-right px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                  class="w-full text-right px-4 py-2 hover:bg-gray-50 dark:bg-gray-900 flex items-center justify-between"
                 >
                   <span>Excel</span>
-                  <span class="text-xs text-gray-500">.xlsx</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">.xlsx</span>
                 </button>
               </div>
             {/if}
@@ -267,7 +267,7 @@
           <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
         </div>
       {:else if products.length === 0}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
           <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
           </svg>
@@ -290,7 +290,7 @@
             </thead>
             <tbody>
               {#each products as product}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900">
                   <td class="table-cell font-medium">{product.name}</td>
                   <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
                   <td class="table-cell">{product.tva}%</td>
@@ -326,9 +326,9 @@
 <!-- Modal -->
 {#if showModal}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-      <div class="p-6 border-b border-gray-100">
-        <h2 class="text-xl font-semibold text-gray-800">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+      <div class="p-6 border-b border-gray-100 dark:border-gray-700">
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">
           {editingProduct ? 'تعديل المنتج' : 'منتج جديد'}
         </h2>
       </div>
@@ -341,7 +341,7 @@
         {/if}
 
         <div>
-          <label for="productName" class="block text-sm font-medium text-gray-700 mb-1">الاسم *</label>
+          <label for="productName" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الاسم *</label>
           <input
             id="productName"
             type="text"
@@ -353,7 +353,7 @@
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label for="basePrice" class="block text-sm font-medium text-gray-700 mb-1">السعر الأساسي (دج) *</label>
+            <label for="basePrice" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">السعر الأساسي (دج) *</label>
             <input
               id="basePrice"
               type="number"
@@ -364,7 +364,7 @@
             />
           </div>
           <div>
-            <label for="tva" class="block text-sm font-medium text-gray-700 mb-1">الضريبة (%)</label>
+            <label for="tva" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الضريبة (%)</label>
             <input
               id="tva"
               type="number"
@@ -377,7 +377,7 @@
         </div>
 
         <div>
-          <label for="supplierName" class="block text-sm font-medium text-gray-700 mb-1">المورد</label>
+          <label for="supplierName" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">المورد</label>
           <input
             id="supplierName"
             type="text"
@@ -388,7 +388,7 @@
         </div>
       </div>
 
-      <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+      <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
         <button
           on:click={closeModal}
           class="btn-secondary"

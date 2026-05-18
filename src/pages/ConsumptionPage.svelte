@@ -154,10 +154,10 @@
         <!-- Main Form -->
         <div class="lg:col-span-2 space-y-6">
           <div class="card">
-            <h2 class="text-lg font-semibold text-gray-800 mb-4">المعلومات العامة</h2>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">المعلومات العامة</h2>
             <div class="grid grid-cols-3 gap-4">
               <div>
-                <label for="date" class="block text-sm font-medium text-gray-700 mb-1">التاريخ *</label>
+                <label for="date" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">التاريخ *</label>
                 <input
                   id="date"
                   type="date"
@@ -166,7 +166,7 @@
                 />
               </div>
               <div>
-                <label for="personnelCount" class="block text-sm font-medium text-gray-700 mb-1">الموظفون *</label>
+                <label for="personnelCount" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الموظفون *</label>
                 <input
                   id="personnelCount"
                   type="number"
@@ -176,7 +176,7 @@
                 />
               </div>
               <div>
-                <label for="guestCount" class="block text-sm font-medium text-gray-700 mb-1">الضيوف</label>
+                <label for="guestCount" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الضيوف</label>
                 <input
                   id="guestCount"
                   type="number"
@@ -189,19 +189,19 @@
           </div>
 
           <div class="card">
-            <h2 class="text-lg font-semibold text-gray-800 mb-4">المنتجات المستهلكة</h2>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">المنتجات المستهلكة</h2>
             
             {#if products.length === 0}
-              <div class="text-center py-8 text-gray-500">
+              <div class="text-center py-8 text-gray-500 dark:text-gray-400">
                 <p>لا يوجد منتجات متاحة. استورد قائمة الولاية أولاً.</p>
               </div>
             {:else}
               <div class="space-y-2 max-h-[400px] overflow-y-auto">
                 {#each consumptionItems as item}
-                  <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
                     <div class="flex-1">
                       <span class="font-medium block">{item.product.name}</span>
-                      <span class="text-xs text-gray-500">
+                      <span class="text-xs text-gray-500 dark:text-gray-400">
                         السعر: {item.product.base_price.toFixed(2)} دج | 
                         المخزون: <span class={item.stock < 10 ? 'text-red-600 font-semibold' : 'text-green-600'}>{item.stock.toFixed(2)}</span>
                       </span>
@@ -242,32 +242,32 @@
         <!-- Summary Panel -->
         <div class="lg:col-span-1">
           <div class="card sticky top-6">
-            <h2 class="text-lg font-semibold text-gray-800 mb-4">الملخص</h2>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">الملخص</h2>
             
             <div class="space-y-4">
-              <div class="flex justify-between items-center py-2 border-b border-gray-100">
-                <span class="text-gray-600">الموظفون:</span>
+              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-gray-600 dark:text-gray-400">الموظفون:</span>
                 <span class="font-medium">{personnelCount || 0}</span>
               </div>
-              <div class="flex justify-between items-center py-2 border-b border-gray-100">
-                <span class="text-gray-600">الضيوف:</span>
+              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-gray-600 dark:text-gray-400">الضيوف:</span>
                 <span class="font-medium">{guestCount || 0}</span>
               </div>
-              <div class="flex justify-between items-center py-2 border-b border-gray-100">
-                <span class="text-gray-600">إجمالي الوجبات:</span>
+              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-gray-600 dark:text-gray-400">إجمالي الوجبات:</span>
                 <span class="font-medium">{(parseInt(personnelCount) || 0) + (parseInt(guestCount) || 0)}</span>
               </div>
-              <div class="flex justify-between items-center py-2 border-b border-gray-100">
-                <span class="text-gray-600">القيمة المستهلكة:</span>
+              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-gray-600 dark:text-gray-400">القيمة المستهلكة:</span>
                 <span class="font-bold text-civil-blue">{calculatedTotal.toFixed(2)} دج</span>
               </div>
               <div class="flex justify-between items-center py-2">
-                <span class="text-gray-600">المعدل لكل وجبة:</span>
+                <span class="text-gray-600 dark:text-gray-400">المعدل لكل وجبة:</span>
                 <span class="font-bold text-civil-blue">{calculatedRate.toFixed(2)} دج</span>
               </div>
             </div>
 
-            <div class="mt-6 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+            <div class="mt-6 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-700">
               <p class="font-medium mb-1">ملاحظة:</p>
               <p>يتم إجراء جميع الحسابات من قبل النظام الخلفي. البيانات المعروضة تأتي مباشرة من أوامر Tauri.</p>
             </div>

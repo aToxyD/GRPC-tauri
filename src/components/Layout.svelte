@@ -35,15 +35,15 @@
   });
 </script>
 
-<div class="flex min-h-screen bg-gray-50">
+<div class="flex min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
   <Sidebar {nodeType} displayType={displayNodeType} />
 
   <main class="flex-1 p-8">
     {#if title}
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-800">{title}</h1>
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-100">{title}</h1>
         {#if subtitle}
-          <p class="text-gray-600 mt-1">{subtitle}</p>
+          <p class="text-gray-600 dark:text-gray-400 mt-1">{subtitle}</p>
         {/if}
       </div>
     {/if}

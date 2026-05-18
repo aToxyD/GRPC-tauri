@@ -131,7 +131,7 @@
 
 {#if settings}
   <Layout {nodeType} title="إدارة النسخ الاحتياطية">
-    <div class="container mx-auto p-6">
+    <div class="mx-auto max-w-[1200px] p-6">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-gray-800 dark:text-white">
           إدارة النسخ الاحتياطية
@@ -139,7 +139,7 @@
         <button
           on:click={handleCreateBackup}
           disabled={loading}
-          class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
         >
           {#if loading}
             <div
@@ -150,7 +150,7 @@
         </button>
       </div>
 
-      <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6 text-sm text-blue-800">
+      <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-xl mb-6 text-sm text-blue-800 dark:text-blue-300">
         <h3 class="font-bold mb-1">دليل المشغل (Operator Guide):</h3>
         <ul class="list-disc pr-5 space-y-1">
           <li><strong>قيود الاستعادة:</strong> لا يمكن استعادة نسخة احتياطية لسنة مالية تمت أرشفتها. النظام يحمي السجلات التاريخية من أي تلاعب أو تراجع.</li>
@@ -160,7 +160,7 @@
 
       {#if error}
         <div
-          class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"
+          class="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-4"
         >
           {error}
         </div>
@@ -171,10 +171,10 @@
           <div
             class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"
           ></div>
-          <p class="text-gray-600">جاري تحميل النسخ الاحتياطية...</p>
+          <p class="text-gray-600 dark:text-gray-400">جاري تحميل النسخ الاحتياطية...</p>
         </div>
       {:else if backups.length === 0}
-        <div class="text-center py-12 bg-gray-50 rounded-lg">
+        <div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
           <svg
             class="w-16 h-16 mx-auto mb-4 text-gray-400"
             fill="none"
@@ -188,15 +188,15 @@
               d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
             ></path>
           </svg>
-          <h3 class="text-lg font-medium text-gray-900 mb-2">
+          <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
             لا توجد نسخ احتياطية
           </h3>
-          <p class="text-gray-600 mb-4">
+          <p class="text-gray-600 dark:text-gray-400 mb-4">
             ابدأ بإنشاء نسخة احتياطية لحماية بياناتك
           </p>
           <button
             on:click={handleCreateBackup}
-            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors cursor-pointer"
           >
             إنشاء أول نسخة احتياطية
           </button>
@@ -217,13 +217,13 @@
           <div class="divide-y divide-gray-200 dark:divide-gray-700">
             {#each backups as backup (backup.filename)}
               <div
-                class="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                class="px-6 py-4 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition-colors"
               >
                 <div class="flex items-center justify-between">
                   <div class="flex-1">
                     <div class="flex items-center gap-3">
                       <svg
-                        class="w-5 h-5 text-green-600"
+                        class="w-5 h-5 text-green-600 dark:text-green-400"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -253,7 +253,7 @@
                       <button
                         on:click={() => handleRestoreBackup(backup.path)}
                         disabled={restoring}
-                        class="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white px-3 py-1 rounded text-sm"
+                        class="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white px-3 py-1 rounded text-sm transition-colors cursor-pointer"
                       >
                         {#if restoring}
                           <div
@@ -264,7 +264,7 @@
                         {/if}
                       </button>
                     {:else}
-                      <div class="text-gray-500 text-sm px-3 py-1">
+                      <div class="text-gray-500 dark:text-gray-400 text-sm px-3 py-1">
                         <svg
                           class="w-4 h-4 inline-block ml-1"
                           fill="none"
@@ -289,8 +289,8 @@
         </div>
       {/if}
 
-      <div class="mt-8 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-        <h3 class="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+      <div class="mt-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <h3 class="font-semibold text-blue-900 dark:text-blue-300 mb-2">
           معلومات هامة:
         </h3>
         <ul class="text-sm text-blue-800 dark:text-blue-200 space-y-1">
@@ -299,7 +299,7 @@
           <li>• استعادة النسخة الاحتياطية تستبدل البيانات الحالية</li>
           <li>• يوصى بإنشاء نسخة احتياطية قبل أي تحديثات مهمة</li>
           {#if !isAdmin}
-            <li class="text-orange-600 font-medium">
+            <li class="text-orange-600 dark:text-orange-400 font-medium">
               • استعادة النسخ الاحتياطية متاحة فقط للمسؤولين
             </li>
           {/if}
@@ -314,9 +314,3 @@
     ></div>
   </div>
 {/if}
-
-<style>
-  .container {
-    max-width: 1200px;
-  }
-</style>

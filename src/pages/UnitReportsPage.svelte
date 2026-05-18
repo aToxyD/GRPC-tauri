@@ -139,22 +139,22 @@
     <!-- Monthly Summary Card -->
     {#if monthlySummary}
       <div class="card mb-6 bg-gradient-to-r from-civil-blue/5 to-civil-blue/10">
-        <h2 class="text-lg font-semibold text-gray-800 mb-4">ملخص الشهر ({currentMonth}/{currentYear})</h2>
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">ملخص الشهر ({currentMonth}/{currentYear})</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="text-center p-3 bg-white rounded-lg">
-            <p class="text-sm text-gray-500">الموظفون</p>
+          <div class="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">الموظفون</p>
             <p class="text-xl font-bold text-civil-blue">{monthlySummary.total_personnel}</p>
           </div>
-          <div class="text-center p-3 bg-white rounded-lg">
-            <p class="text-sm text-gray-500">الضيوف</p>
+          <div class="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">الضيوف</p>
             <p class="text-xl font-bold text-civil-blue">{monthlySummary.total_guests}</p>
           </div>
-          <div class="text-center p-3 bg-white rounded-lg">
-            <p class="text-sm text-gray-500">القيمة الإجمالية</p>
+          <div class="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">القيمة الإجمالية</p>
             <p class="text-xl font-bold text-civil-blue">{monthlySummary.total_consumption_value.toFixed(2)} دج</p>
           </div>
-          <div class="text-center p-3 bg-white rounded-lg">
-            <p class="text-sm text-gray-500">المعدل المتوسط</p>
+          <div class="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">المعدل المتوسط</p>
             <p class="text-xl font-bold text-civil-blue">{monthlySummary.average_meal_rate.toFixed(2)} دج</p>
           </div>
         </div>
@@ -163,10 +163,10 @@
 
     <!-- Reports List -->
     <div class="card">
-      <h2 class="text-lg font-semibold text-gray-800 mb-4">التقارير اليومية</h2>
+      <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">التقارير اليومية</h2>
 
       {#if reports.length === 0}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
           <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
@@ -188,7 +188,7 @@
             </thead>
             <tbody>
               {#each reports as report}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900">
                   <td class="table-cell font-medium">{formatDate(report.date)}</td>
                   <td class="table-cell">{report.personnel_count}</td>
                   <td class="table-cell">{report.guest_count}</td>
@@ -223,8 +223,8 @@
       {/if}
     </div>
 
-    <div class="mt-6 card bg-blue-50 border-blue-200">
-      <h3 class="font-semibold text-blue-800 mb-2">التصدير للولاية</h3>
+    <div class="mt-6 card bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+      <h3 class="font-semibold text-blue-800 dark:text-blue-300 mb-2">التصدير للولاية</h3>
       <p class="text-sm text-blue-700">
         التصدير اليومي والشهري عبر حزمة المزامنة (.sync) المؤمنة.
         انقل الملفات عبر USB أو البريد الإلكتروني.
@@ -236,13 +236,13 @@
 <!-- Report Details Modal -->
 {#if viewingDetails && selectedReport}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden">
-      <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden">
+      <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
         <div>
-          <h2 class="text-xl font-semibold text-gray-800">تفاصيل التقرير</h2>
-          <p class="text-sm text-gray-500">{formatDate(selectedReport.report.date)}</p>
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">تفاصيل التقرير</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{formatDate(selectedReport.report.date)}</p>
         </div>
-        <button on:click={closeDetails} class="text-gray-400 hover:text-gray-600" aria-label="إغلاق">
+        <button on:click={closeDetails} class="text-gray-400 hover:text-gray-600 dark:text-gray-400" aria-label="إغلاق">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
@@ -250,24 +250,24 @@
       </div>
       <div class="p-6 overflow-y-auto max-h-[60vh]">
         <div class="grid grid-cols-4 gap-4 mb-6">
-          <div class="text-center p-3 bg-gray-50 rounded-lg">
-            <p class="text-sm text-gray-500">الموظفون</p>
+          <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">الموظفون</p>
             <p class="text-lg font-bold">{selectedReport.report.personnel_count}</p>
           </div>
-          <div class="text-center p-3 bg-gray-50 rounded-lg">
-            <p class="text-sm text-gray-500">الضيوف</p>
+          <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">الضيوف</p>
             <p class="text-lg font-bold">{selectedReport.report.guest_count}</p>
           </div>
-          <div class="text-center p-3 bg-gray-50 rounded-lg">
-            <p class="text-sm text-gray-500">التكلفة الإجمالية</p>
+          <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">التكلفة الإجمالية</p>
             <p class="text-lg font-bold text-civil-blue">{selectedReport.report.total_meals_cost.toFixed(2)} دج</p>
           </div>
-          <div class="text-center p-3 bg-gray-50 rounded-lg">
-            <p class="text-sm text-gray-500">المعدل/وجبة</p>
+          <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <p class="text-sm text-gray-500 dark:text-gray-400">المعدل/وجبة</p>
             <p class="text-lg font-bold text-civil-blue">{selectedReport.report.actual_meal_rate.toFixed(2)} دج</p>
           </div>
         </div>
-        <h3 class="font-semibold text-gray-800 mb-3">المنتجات المستهلكة</h3>
+        <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3">المنتجات المستهلكة</h3>
         <table class="w-full">
           <thead>
             <tr>

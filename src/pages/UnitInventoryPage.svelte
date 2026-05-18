@@ -140,12 +140,12 @@
 
       <!-- الوحدة -->
       <div>
-        <label for="unit-select" class="block text-sm font-medium text-gray-700 mb-1">الوحدة *</label>
+        <label for="unit-select" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الوحدة *</label>
         {#if loadingUnits}
           <div class="animate-pulse h-10 bg-gray-200 rounded-lg"></div>
         {:else}
           <select id="unit-select" bind:value={selectedUnitId} onchange={onUnitChange}
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm">
             <option value="">-- اختر وحدة --</option>
             {#each units as u}
               <option value={u.id}>{u.name} ({u.code})</option>
@@ -156,11 +156,11 @@
 
       <!-- الشهر -->
       <div>
-        <label for="month-select" class="block text-sm font-medium text-gray-700 mb-1">الشهر</label>
+        <label for="month-select" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الشهر</label>
         {#if loadingMonths}
           <div class="animate-pulse h-10 bg-gray-200 rounded-lg"></div>
         {:else if availableMonths.length > 0}
-          <select id="month-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          <select id="month-select" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                   onchange={(e) => {
                     const [y,m] = (e.target as HTMLSelectElement).value.split('-');
                     selectedYear = +y; selectedMonth = +m;
@@ -171,7 +171,7 @@
             {/each}
           </select>
         {:else}
-          <div class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-400">
+          <div class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-400">
             {selectedUnitId ? 'لا توجد تقارير مستوردة' : 'اختر وحدة أولاً'}
           </div>
         {/if}
@@ -225,13 +225,13 @@
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
 
       <div class="card p-4 border-l-4 border-blue-500">
-        <p class="text-xs text-gray-500">إجمالي المنتجات</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">إجمالي المنتجات</p>
         <p class="text-2xl font-bold text-blue-600">{inventoryView.total_products}</p>
       </div>
 
       <div class="card p-4 border-l-4
                   {inventoryView.balance_anomaly_count > 0 ? 'border-red-500' : 'border-green-500'}">
-        <p class="text-xs text-gray-500">شذوذات الرصيد</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">شذوذات الرصيد</p>
         <p class="text-2xl font-bold
                   {inventoryView.balance_anomaly_count > 0 ? 'text-red-600' : 'text-green-600'}">
           {inventoryView.balance_anomaly_count}
@@ -241,7 +241,7 @@
       <!-- شذوذات الاستهلاك -->
       <div class="card p-4 border-l-4
                   {inventoryView.consumption_anomaly_count > 0 ? 'border-orange-500' : 'border-green-500'}">
-        <p class="text-xs text-gray-500">استهلاك شاذ</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">استهلاك شاذ</p>
         <p class="text-2xl font-bold
                   {inventoryView.consumption_anomaly_count > 0 ? 'text-orange-600' : 'text-green-600'}">
           {inventoryView.consumption_anomaly_count}
@@ -249,9 +249,9 @@
         <p class="text-xs text-gray-400 mt-1">> 1.5× المتوسط</p>
       </div>
 
-      <div class="card p-4 border-l-4 border-gray-300">
-        <p class="text-xs text-gray-500">آخر حساب</p>
-        <p class="text-xs font-medium text-gray-600 mt-1">
+      <div class="card p-4 border-l-4 border-gray-300 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">آخر حساب</p>
+        <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mt-1">
           {new Date(inventoryView.computed_at).toLocaleString('ar-DZ')}
         </p>
       </div>
@@ -291,7 +291,7 @@
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr class="bg-gray-50 dark:bg-gray-900 text-xs text-gray-500 dark:text-gray-400 uppercase">
               <th class="table-header">المنتج</th>
               <th class="table-header text-center">المخزون الأولي</th>
               <th class="table-header text-center text-green-700">دخول (+)</th>
@@ -304,7 +304,7 @@
           </thead>
           <tbody>
             {#each filteredItems as item}
-              <tr class="hover:bg-gray-50 border-b
+              <tr class="hover:bg-gray-50 dark:bg-gray-900 border-b
                 {item.has_balance_anomaly ? 'bg-red-50 border-r-4 border-red-400' :
                  item.has_consumption_anomaly ? 'bg-orange-50 border-r-4 border-orange-400' : ''}">
 
@@ -349,12 +349,12 @@
                   {item.total_out > 0 ? item.total_out.toFixed(2) : '—'}
                 </td>
 
-                <td class="table-cell text-center text-gray-500">
+                <td class="table-cell text-center text-gray-500 dark:text-gray-400">
                   {item.computed_closing.toFixed(2)}
                 </td>
 
                 <td class="table-cell text-center font-medium
-                  {item.reported_closing < 10 ? 'text-red-700' : 'text-gray-800'}">
+                  {item.reported_closing < 10 ? 'text-red-700' : 'text-gray-800 dark:text-gray-100'}">
                   {item.reported_closing.toFixed(2)}
                 </td>
 
@@ -398,7 +398,7 @@
       </div>
 
       {#if filteredItems.length > 0}
-        <div class="p-3 border-t text-xs text-gray-500 flex justify-between">
+        <div class="p-3 border-t text-xs text-gray-500 dark:text-gray-400 flex justify-between">
           <span>{filteredItems.length} منتج</span>
           <span>
             المعادلة: المتبقي = الأولي + الدخول − الخروج

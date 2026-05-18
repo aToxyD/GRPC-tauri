@@ -241,7 +241,7 @@
         ></div>
       </div>
     {:else if units.length === 0}
-      <div class="text-center py-12 text-gray-500">
+      <div class="text-center py-12 text-gray-500 dark:text-gray-400">
         <svg
           class="w-16 h-16 mx-auto mb-4 text-gray-300"
           fill="none"
@@ -276,7 +276,7 @@
           </thead>
           <tbody>
             {#each units as unit}
-              <tr class="hover:bg-gray-50">
+              <tr class="hover:bg-gray-50 dark:bg-gray-900">
                 <td class="table-cell font-medium">{unit.code}</td>
                 <td class="table-cell">{unit.name}</td>
                 <td class="table-cell"
@@ -286,7 +286,7 @@
                   <div class="flex items-center gap-2 justify-end">
                     <button
                       on:click={() => openEditModal(unit)}
-                      class="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      class="text-blue-600 hover:text-blue-800 dark:text-blue-300 flex items-center gap-1"
                       title="تعديل الوحدة"
                     >
                       <svg
@@ -361,9 +361,9 @@
     <div
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     >
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="p-6 border-b border-gray-100">
-          <h2 class="text-xl font-semibold text-gray-800">وحدة جديدة</h2>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">وحدة جديدة</h2>
         </div>
 
         <div class="p-6 space-y-4">
@@ -378,7 +378,7 @@
           <div>
             <label
               for="unitCode"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >رمز الوحدة *</label
             >
             <input
@@ -393,7 +393,7 @@
           <div>
             <label
               for="unitName"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >اسم الوحدة *</label
             >
             <input
@@ -405,18 +405,18 @@
             />
           </div>
 
-          <div class="border-t border-gray-200 pt-4">
-            <h3 class="font-semibold text-gray-800 mb-3">
+          <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3">
               بيانات تسجيل الدخول
             </h3>
-            <p class="text-sm text-gray-600 mb-4">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               ستستخدم هذه البيانات من قبل الوحدة للاتصال بالنظام.
             </p>
 
             <div>
               <label
                 for="username"
-                class="block text-sm font-medium text-gray-700 mb-1"
+                class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
                 >اسم المستخدم *</label
               >
               <input
@@ -432,7 +432,7 @@
               <div>
                 <label
                   for="password"
-                  class="block text-sm font-medium text-gray-700 mb-1"
+                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
                   >كلمة المرور *</label
                 >
                 <input
@@ -446,7 +446,7 @@
               <div>
                 <label
                   for="confirmPassword"
-                  class="block text-sm font-medium text-gray-700 mb-1"
+                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
                   >تأكيد *</label
                 >
                 <input
@@ -461,7 +461,7 @@
           </div>
         </div>
 
-        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+        <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
           <button on:click={closeModal} class="btn-secondary"> إلغاء </button>
           <button on:click={saveUnit} class="btn-primary"> إنشاء </button>
         </div>
@@ -474,9 +474,9 @@
     <div
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     >
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="p-6 border-b border-gray-100">
-          <h2 class="text-xl font-semibold text-gray-800">تعديل الوحدة</h2>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">تعديل الوحدة</h2>
         </div>
 
         <div class="p-6 space-y-4">
@@ -491,7 +491,7 @@
           <div>
             <label
               for="editUnitCode"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >رمز الوحدة *</label
             >
             <input
@@ -506,7 +506,7 @@
           <div>
             <label
               for="editUnitName"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >اسم الوحدة *</label
             >
             <input
@@ -518,18 +518,18 @@
             />
           </div>
 
-          <div class="border-t border-gray-200 pt-4">
-            <h3 class="font-semibold text-gray-800 mb-3">
+          <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3">
               بيانات تسجيل الدخول (اختياري)
             </h3>
-            <p class="text-sm text-gray-600 mb-4">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               اترك الحقول فارغة إذا لم تريد تغيير بيانات تسجيل الدخول.
             </p>
 
             <div>
               <label
                 for="editUsername"
-                class="block text-sm font-medium text-gray-700 mb-1"
+                class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
                 >اسم المستخدم</label
               >
               <input
@@ -545,7 +545,7 @@
               <div>
                 <label
                   for="editPassword"
-                  class="block text-sm font-medium text-gray-700 mb-1"
+                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
                   >كلمة المرور</label
                 >
                 <input
@@ -559,7 +559,7 @@
               <div>
                 <label
                   for="editConfirmPassword"
-                  class="block text-sm font-medium text-gray-700 mb-1"
+                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
                   >تأكيد</label
                 >
                 <input
@@ -574,7 +574,7 @@
           </div>
         </div>
 
-        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+        <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
           <button on:click={closeModal} class="btn-secondary"> إلغاء </button>
           <button on:click={updateUnitData} class="btn-primary"> تحديث </button>
         </div>
@@ -587,9 +587,9 @@
     <div
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     >
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="p-6 border-b border-gray-100">
-          <h2 class="text-xl font-semibold text-gray-800">حذف الوحدة</h2>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">حذف الوحدة</h2>
         </div>
 
         <div class="p-6">
@@ -615,10 +615,10 @@
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
               />
             </svg>
-            <h3 class="text-lg font-semibold text-gray-800 mb-2">
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
               تأكيد الحذف
             </h3>
-            <p class="text-gray-600 mb-6">
+            <p class="text-gray-600 dark:text-gray-400 mb-6">
               هل أنت متأكد من حذف الوحدة <span class="font-semibold"
                 >{deletingUnit?.code}</span
               >؟
@@ -628,7 +628,7 @@
           </div>
         </div>
 
-        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+        <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
           <button on:click={closeModal} class="btn-secondary"> إلغاء </button>
           <button
             on:click={deleteUnitData}

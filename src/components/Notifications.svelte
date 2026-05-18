@@ -18,13 +18,13 @@
   function getColorClasses(type: Notification['type']) {
     switch (type) {
       case 'success':
-        return 'bg-green-50 border-green-200 text-green-800';
+        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300';
       case 'error':
-        return 'bg-red-50 border-red-200 text-red-800';
+        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300';
       case 'warning':
-        return 'bg-yellow-50 border-yellow-200 text-yellow-800';
+        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300';
       case 'info':
-        return 'bg-blue-50 border-blue-200 text-blue-800';
+        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300';
     }
   }
 
@@ -55,15 +55,7 @@
 <div class="fixed top-4 left-4 z-50 space-y-2 max-w-sm">
   {#each notificationList as notification (notification.id)}
     <div 
-      class="notification-slide border rounded-lg p-4 shadow-lg animate-slide-in"
-      class:bg-green-50={notification.type === 'success'}
-      class:bg-red-50={notification.type === 'error'}
-      class:bg-yellow-50={notification.type === 'warning'}
-      class:bg-blue-50={notification.type === 'info'}
-      class:border-green-200={notification.type === 'success'}
-      class:border-red-200={notification.type === 'error'}
-      class:border-yellow-200={notification.type === 'warning'}
-      class:border-blue-200={notification.type === 'info'}
+      class="notification-slide border rounded-lg p-4 shadow-lg animate-slide-in {getColorClasses(notification.type)}"
     >
       <div class="flex items-start gap-3">
         <!-- Icon -->
@@ -94,7 +86,7 @@
         <!-- Close button -->
         <button
           on:click={() => removeNotification(notification.id)}
-          class="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          class="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
           aria-label="إغلاق الإشعار"
           title="إغلاق"
         >

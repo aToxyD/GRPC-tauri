@@ -101,35 +101,35 @@
   function severityClass(sev: string): string {
     switch (sev) {
       case 'CRITICAL':
-        return 'bg-red-50 border-red-300 text-red-900';
+        return 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800 text-red-900 dark:text-red-300';
       case 'WARNING':
-        return 'bg-yellow-50 border-yellow-300 text-yellow-900';
+        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-800 text-yellow-900 dark:text-yellow-300';
       default:
-        return 'bg-blue-50 border-blue-300 text-blue-900';
+        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-300';
     }
   }
 
   function priorityClass(p: string): string {
     switch (p) {
       case 'HIGH':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400';
       case 'MEDIUM':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300';
     }
   }
 
   function integrityClass(state: string): string {
     switch (state) {
       case 'OK':
-        return 'text-green-700';
+        return 'text-green-700 dark:text-green-400';
       case 'WARNINGS':
-        return 'text-yellow-700';
+        return 'text-yellow-700 dark:text-yellow-400';
       case 'CRITICAL':
-        return 'text-red-700';
+        return 'text-red-700 dark:text-red-400';
       default:
-        return 'text-gray-600';
+        return 'text-gray-600 dark:text-gray-400';
     }
   }
 
@@ -208,22 +208,22 @@
 </script>
 
 <Layout {nodeType} title="تشخيصات النظام المتقدمة" subtitle="رؤية تشغيلية موجَّهة">
-  <div class="p-6 space-y-6 max-w-7xl mx-auto" dir="rtl">
+  <div class="p-6 space-y-6 max-w-7xl mx-auto text-gray-900 dark:text-white" dir="rtl">
   <!-- ─── Header ──────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between border-b pb-4">
+  <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4">
     <div>
       <h1 class="text-2xl font-bold">تشخيصات النظام المتقدمة</h1>
-      <p class="text-sm text-gray-600 mt-1">
+      <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
         رؤية تشغيلية موجَّهة — يدوية بالكامل، لا تحديثات تلقائية.
       </p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 flex-wrap justify-end">
       <label class="text-sm">
         السنة:
         <input
           type="number"
           bind:value={selectedYear}
-          class="border rounded px-2 py-1 w-24 mx-2"
+          class="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded px-2 py-1 w-24 mx-2 focus:ring focus:ring-blue-500 focus:outline-none"
           min="2020"
           max="2100"
         />
@@ -231,14 +231,14 @@
       <button
         on:click={refresh}
         disabled={loading}
-        class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded"
+        class="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white px-4 py-2 rounded transition-colors"
       >
         {loading ? '...جاري التحديث' : 'تحديث يدوي'}
       </button>
       <button
         on:click={takeSnapshot}
         disabled={loading || selectedYear === null}
-        class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded"
+        class="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white px-4 py-2 rounded transition-colors"
         title="إنشاء لقطة تشغيلية يدوية"
       >
         لقطة جديدة
@@ -247,11 +247,11 @@
   </div>
 
   {#if lastRefreshedAt}
-    <div class="text-xs text-gray-500">آخر تحديث: {lastRefreshedAt}</div>
+    <div class="text-xs text-gray-500 dark:text-gray-400">آخر تحديث: {lastRefreshedAt}</div>
   {/if}
 
   {#if error}
-    <div class="border border-red-300 bg-red-50 text-red-800 p-3 rounded">
+    <div class="border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 p-3 rounded">
       <div class="font-semibold">خطأ:</div>
       <div class="text-sm">{error}</div>
     </div>
@@ -262,18 +262,18 @@
     <section>
       <h2 class="text-xl font-semibold mb-3">
         🔍 الاكتشافات التشغيلية
-        <span class="text-sm font-normal text-gray-500">
+        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
           ({bundle.anomalyReport.findings.length})
         </span>
       </h2>
       {#if bundle.anomalyReport.findings.length === 0}
-        <div class="text-sm text-green-700 bg-green-50 border border-green-200 rounded p-3">
+        <div class="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-3">
           لم يتم رصد أي شذوذ تشغيلي.
         </div>
       {:else}
         <div class="space-y-2">
           {#each bundle.anomalyReport.findings as f}
-            <div class="border-r-4 rounded p-3 {severityClass(f.severity)}">
+            <div class="border-r-4 rounded p-3 {severityClass(f.severity)} bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
               <div class="flex items-center justify-between mb-1">
                 <span class="font-mono text-xs">{translateCode(f.code)}</span>
                 <span class="text-xs font-semibold">{translateSeverity(f.severity)}</span>
@@ -293,24 +293,24 @@
     <section>
       <h2 class="text-xl font-semibold mb-3">
         💡 توصيات تشغيلية
-        <span class="text-sm font-normal text-gray-500">
+        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
           ({bundle.recommendations.length})
         </span>
       </h2>
       {#if bundle.recommendations.length === 0}
-        <div class="text-sm text-gray-600">لا توجد توصيات نشطة حالياً.</div>
+        <div class="text-sm text-gray-600 dark:text-gray-400">لا توجد توصيات نشطة حالياً.</div>
       {:else}
         <div class="space-y-2">
           {#each bundle.recommendations as r}
-            <div class="border rounded p-3 bg-white">
+            <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
               <div class="flex items-center justify-between">
-                <div class="font-medium">{r.title}</div>
+                <div class="font-medium text-gray-900 dark:text-white">{r.title}</div>
                 <span class="text-xs px-2 py-1 rounded {priorityClass(r.priority)}">
                   {translatePriority(r.priority)}
                 </span>
               </div>
-              <div class="text-sm text-gray-700 mt-1">{r.message}</div>
-              <div class="font-mono text-[10px] text-gray-400 mt-1">{translateCode(r.code)}</div>
+              <div class="text-sm text-gray-700 dark:text-gray-300 mt-1">{r.message}</div>
+              <div class="font-mono text-[10px] text-gray-400 dark:text-gray-500 dark:text-gray-400 mt-1">{translateCode(r.code)}</div>
             </div>
           {/each}
         </div>
@@ -320,15 +320,15 @@
     <!-- ─── Fiscal Integrity Summary ──────────────────────────────────────── -->
     <section>
       <h2 class="text-xl font-semibold mb-3">⚖️ سلامة المالية</h2>
-      <div class="border rounded p-3 bg-white">
-        <div class="font-medium">
+      <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
+        <div class="font-medium text-gray-900 dark:text-white">
           الحالة:
-          <span class={bundle.fiscalIntegrity.ok ? 'text-green-700' : 'text-yellow-700'}>
+          <span class={bundle.fiscalIntegrity.ok ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}>
             {bundle.fiscalIntegrity.ok ? 'سليمة' : 'تحذيرات'}
           </span>
         </div>
         {#if bundle.fiscalIntegrity.warnings.length > 0}
-          <ul class="text-sm mt-2 list-disc pr-5 space-y-1">
+          <ul class="text-sm mt-2 list-disc pr-5 space-y-1 text-gray-700 dark:text-gray-300">
             {#each bundle.fiscalIntegrity.warnings as w}
               <li><span class="font-mono text-xs">{w.code}</span> — {w.details}</li>
             {/each}
@@ -342,32 +342,32 @@
       <section>
         <h2 class="text-xl font-semibold mb-3">
           📦 تطابق المخزون
-          <span class="text-sm font-normal text-gray-500">
+          <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
             (فحص {inventory.checked_products} منتج، {inventory.mismatch_count} اختلاف)
           </span>
         </h2>
         {#if inventory.mismatch_count === 0}
-          <div class="text-sm text-green-700 bg-green-50 border border-green-200 rounded p-3">
+          <div class="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-3">
             لا توجد اختلافات في المخزون.
           </div>
         {:else}
-          <div class="overflow-auto border rounded">
+          <div class="overflow-auto border border-gray-200 dark:border-gray-700 rounded shadow-sm">
             <table class="min-w-full text-sm">
-              <thead class="bg-gray-100">
+              <thead class="bg-gray-100 dark:bg-gray-900/50">
                 <tr>
-                  <th class="px-3 py-2 text-right">المنتج</th>
-                  <th class="px-3 py-2 text-right">المتوقع</th>
-                  <th class="px-3 py-2 text-right">الفعلي</th>
-                  <th class="px-3 py-2 text-right">الفرق</th>
+                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">المنتج</th>
+                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">المتوقع</th>
+                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">الفعلي</th>
+                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">الفرق</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
                 {#each inventory.issues as it}
-                  <tr class="border-t">
-                    <td class="px-3 py-1 font-mono text-xs">{it.product_id}</td>
-                    <td class="px-3 py-1">{it.expected_quantity}</td>
-                    <td class="px-3 py-1">{it.actual_quantity}</td>
-                    <td class="px-3 py-1 text-red-700">{it.delta.toFixed(2)}</td>
+                  <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50">
+                    <td class="px-3 py-2 font-mono text-xs">{it.product_id}</td>
+                    <td class="px-3 py-2">{it.expected_quantity}</td>
+                    <td class="px-3 py-2">{it.actual_quantity}</td>
+                    <td class="px-3 py-2 text-red-700 dark:text-red-400 font-medium">{it.delta.toFixed(2)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -381,42 +381,42 @@
     <section>
       <h2 class="text-xl font-semibold mb-3">
         📈 اللقطات التشغيلية
-        <span class="text-sm font-normal text-gray-500">
+        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
           ({bundle.recentSnapshots.length})
         </span>
       </h2>
       {#if bundle.recentSnapshots.length === 0}
-        <div class="text-sm text-gray-600">
+        <div class="text-sm text-gray-600 dark:text-gray-400">
           لا توجد لقطات بعد. اضغط «لقطة جديدة» لإنشاء الأولى.
         </div>
       {:else}
-        <div class="overflow-auto border rounded">
+        <div class="overflow-auto border border-gray-200 dark:border-gray-700 rounded shadow-sm">
           <table class="min-w-full text-sm">
-            <thead class="bg-gray-100">
+            <thead class="bg-gray-100 dark:bg-gray-900/50">
               <tr>
-                <th class="px-3 py-2 text-right">التاريخ</th>
-                <th class="px-3 py-2 text-right">السنة</th>
-                <th class="px-3 py-2 text-right">قيمة المخزون</th>
-                <th class="px-3 py-2 text-right">المنتجات</th>
-                <th class="px-3 py-2 text-right">الحركات</th>
-                <th class="px-3 py-2 text-right">التقارير</th>
-                <th class="px-3 py-2 text-right">السلامة</th>
-                <th class="px-3 py-2 text-right">بواسطة</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">التاريخ</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">السنة</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">قيمة المخزون</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">المنتجات</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">الحركات</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">التقارير</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">السلامة</th>
+                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">بواسطة</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
               {#each bundle.recentSnapshots as s}
-                <tr class="border-t">
-                  <td class="px-3 py-1">{s.snapshotDate}</td>
-                  <td class="px-3 py-1">{s.fiscalYear}</td>
-                  <td class="px-3 py-1">{s.totalInventoryValue.toFixed(2)}</td>
-                  <td class="px-3 py-1">{s.productCount}</td>
-                  <td class="px-3 py-1">{s.movementCount}</td>
-                  <td class="px-3 py-1">{s.reportCount}</td>
-                  <td class="px-3 py-1 font-semibold {integrityClass(s.integrityState)}">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50">
+                  <td class="px-3 py-2 whitespace-nowrap">{s.snapshotDate}</td>
+                  <td class="px-3 py-2">{s.fiscalYear}</td>
+                  <td class="px-3 py-2 font-mono">{s.totalInventoryValue.toFixed(2)}</td>
+                  <td class="px-3 py-2">{s.productCount}</td>
+                  <td class="px-3 py-2">{s.movementCount}</td>
+                  <td class="px-3 py-2">{s.reportCount}</td>
+                  <td class="px-3 py-2 font-semibold {integrityClass(s.integrityState)}">
                     {s.integrityState}
                   </td>
-                  <td class="px-3 py-1 text-xs">{s.createdBy}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">{s.createdBy}</td>
                 </tr>
               {/each}
             </tbody>
@@ -429,25 +429,25 @@
     <section>
       <h2 class="text-xl font-semibold mb-3">
         🕒 الخط الزمني الموحَّد
-        <span class="text-sm font-normal text-gray-500">
+        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
           ({bundle.timeline.length})
         </span>
       </h2>
       {#if bundle.timeline.length === 0}
-        <div class="text-sm text-gray-600">لا توجد أحداث مسجّلة في النطاق المحدّد.</div>
+        <div class="text-sm text-gray-600 dark:text-gray-400">لا توجد أحداث مسجّلة في النطاق المحدّد.</div>
       {:else}
-        <div class="border rounded">
-          <ul class="divide-y">
+        <div class="border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 shadow-sm">
+          <ul class="divide-y divide-gray-200 dark:divide-gray-700">
             {#each bundle.timeline as ev}
-              <li class="p-3 hover:bg-gray-50">
+              <li class="p-3 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50 transition-colors">
                 <div class="flex items-center justify-between">
-                  <span class="font-mono text-xs text-gray-500">{formatTs(ev.timestamp)}</span>
-                  <span class="text-xs px-2 py-0.5 rounded bg-gray-100">
+                  <span class="font-mono text-xs text-gray-500 dark:text-gray-400">{formatTs(ev.timestamp)}</span>
+                  <span class="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">
                     {kindLabel(ev.kind)}
                   </span>
                 </div>
-                <div class="text-sm mt-1">{ev.summary}</div>
-                <div class="text-xs text-gray-500 mt-1">
+                <div class="text-sm mt-1 font-medium">{ev.summary}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   {#if ev.actor}بواسطة {ev.actor} — {/if}
                   مصدر: {ev.source}
                   {#if ev.fiscalYear !== null} — سنة {ev.fiscalYear}{/if}
@@ -464,22 +464,22 @@
       <section>
         <h2 class="text-xl font-semibold mb-3">💾 صحة النسخ الاحتياطية والقاعدة</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div class="border rounded p-3 bg-white">
-            <div class="text-xs uppercase text-gray-500">قاعدة البيانات</div>
+          <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">قاعدة البيانات</div>
             <div class="font-medium mt-1">
               {translateStatus(systemHealth.databaseStatus.status)} — {systemHealth.databaseStatus.message}
             </div>
-            <div class="text-xs text-gray-500 mt-1">
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
               الحجم: {bytesToMb(systemHealth.storageUsageBytes)} MB
             </div>
           </div>
-          <div class="border rounded p-3 bg-white">
-            <div class="text-xs uppercase text-gray-500">النسخ الاحتياطية</div>
+          <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
+            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">النسخ الاحتياطية</div>
             <div class="font-medium mt-1">
               {translateStatus(systemHealth.backupStatus.status)} — {systemHealth.backupStatus.message}
             </div>
             {#if systemHealth.backupStatus.lastBackup}
-              <div class="text-xs text-gray-500 mt-1">
+              <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 آخر نسخة: {formatTs(systemHealth.backupStatus.lastBackup)}
               </div>
             {/if}

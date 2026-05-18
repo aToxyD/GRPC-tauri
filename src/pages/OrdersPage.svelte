@@ -148,7 +148,7 @@
           <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
         </div>
       {:else if orders.length === 0}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
           <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
           </svg>
@@ -172,7 +172,7 @@
             </thead>
             <tbody>
               {#each orders as order}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900">
                   <td class="table-cell font-medium">{order.supplier_name}</td>
                   <td class="table-cell">{order.reference_number || '-'}</td>
                   <td class="table-cell">{new Date(order.order_date).toLocaleDateString('fr-FR')}</td>
@@ -180,9 +180,9 @@
                   <td class="table-cell">
                     <span class="px-2 py-1 rounded-full text-xs font-medium
                       {order.status === 'Confirmed' ? 'bg-green-100 text-green-800' : 
-                       order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
+                       order.status === 'Received' ? 'bg-blue-100 text-blue-800 dark:text-blue-300' :
                        order.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                       'bg-gray-100 text-gray-800'}">
+                       'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100'}">
                       {order.status === 'Draft' ? 'مسودة' :
                        order.status === 'Confirmed' ? 'مؤكدة' :
                        order.status === 'Received' ? 'مستلمة' : 'ملغاة'}
@@ -223,10 +223,10 @@
 <!-- Create Order Modal -->
 {#if showModal}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
-      <div class="p-6 border-b border-gray-100 flex items-center justify-between">
-        <h2 class="text-xl font-semibold text-gray-800">طلبية مورد جديدة</h2>
-        <button on:click={closeModal} class="text-gray-400 hover:text-gray-600" aria-label="إغلاق">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
+      <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">طلبية مورد جديدة</h2>
+        <button on:click={closeModal} class="text-gray-400 hover:text-gray-600 dark:text-gray-400" aria-label="إغلاق">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
@@ -242,7 +242,7 @@
 
         <div class="grid grid-cols-2 gap-4 mb-6">
           <div>
-            <label for="supplierName" class="block text-sm font-medium text-gray-700 mb-1">المورد *</label>
+            <label for="supplierName" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">المورد *</label>
             <input
               id="supplierName"
               type="text"
@@ -252,7 +252,7 @@
             />
           </div>
           <div>
-            <label for="referenceNumber" class="block text-sm font-medium text-gray-700 mb-1">المرجع</label>
+            <label for="referenceNumber" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">المرجع</label>
             <input
               id="referenceNumber"
               type="text"
@@ -263,12 +263,12 @@
           </div>
         </div>
 
-        <h3 class="font-semibold text-gray-800 mb-4">المنتجات</h3>
+        <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-4">المنتجات</h3>
         <div class="space-y-2">
           {#each orderProducts as op}
-            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
               <span class="flex-1 font-medium">{op.product.name}</span>
-              <span class="text-sm text-gray-500">السعر: {op.product.base_price.toFixed(2)} دج</span>
+              <span class="text-sm text-gray-500 dark:text-gray-400">السعر: {op.product.base_price.toFixed(2)} دج</span>
               <input
                 type="number"
                 step="0.01"
@@ -288,7 +288,7 @@
         </div>
       </div>
 
-      <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+      <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
         <button on:click={closeModal} class="btn-secondary">إلغاء</button>
         <button on:click={saveOrder} class="btn-primary">إنشاء الطلبية</button>
       </div>
@@ -299,13 +299,13 @@
 <!-- Order Details Modal -->
 {#if selectedOrder}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4">
-      <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4">
+      <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
         <div>
-          <h2 class="text-xl font-semibold text-gray-800">تفاصيل الطلبية</h2>
-          <p class="text-sm text-gray-500">{selectedOrder.supplier_name} - {new Date(selectedOrder.order_date).toLocaleDateString('fr-FR')}</p>
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">تفاصيل الطلبية</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{selectedOrder.supplier_name} - {new Date(selectedOrder.order_date).toLocaleDateString('fr-FR')}</p>
         </div>
-        <button on:click={closeDetails} class="text-gray-400 hover:text-gray-600" aria-label="إغلاق">
+        <button on:click={closeDetails} class="text-gray-400 hover:text-gray-600 dark:text-gray-400" aria-label="إغلاق">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
@@ -314,7 +314,7 @@
 
       <div class="p-6">
         {#if orderItems.length === 0}
-          <p class="text-gray-500">لا يوجد تفاصيل متاحة</p>
+          <p class="text-gray-500 dark:text-gray-400">لا يوجد تفاصيل متاحة</p>
         {:else}
           <table class="w-full">
             <thead>
@@ -337,9 +337,9 @@
             </tbody>
           </table>
 
-          <div class="mt-4 pt-4 border-t border-gray-200">
+          <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div class="flex justify-between items-center">
-              <span class="font-semibold text-gray-800">الإجمالي:</span>
+              <span class="font-semibold text-gray-800 dark:text-gray-100">الإجمالي:</span>
               <span class="text-xl font-bold text-civil-blue">
                 {orderItems.reduce((sum, item) => sum + item.total_cost, 0).toFixed(2)} دج
               </span>

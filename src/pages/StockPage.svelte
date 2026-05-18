@@ -223,7 +223,7 @@
 
   function getStatusBadge(quantity: number) {
     if (quantity === 0) {
-      return { text: "نفد", class: "bg-gray-100 text-gray-600" };
+      return { text: "نفد", class: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400" };
     } else if (quantity < 10) {
       return { text: "منخفض", class: "bg-red-100 text-red-600" };
     } else if (quantity < 50) {
@@ -240,9 +240,9 @@
       case "OUT":
         return { text: "↓ خروج", class: "bg-red-100 text-red-600" };
       case "OPENING":
-        return { text: "◉ افتتاحي", class: "bg-gray-100 text-gray-600" };
+        return { text: "◉ افتتاحي", class: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400" };
       default:
-        return { text: type, class: "bg-gray-100 text-gray-600" };
+        return { text: type, class: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400" };
     }
   }
 
@@ -292,7 +292,7 @@
 
       <button
         onclick={handleExportMovementsPackage}
-        class="btn-secondary flex items-center gap-2 bg-blue-50 border-blue-200 hover:bg-blue-100"
+        class="btn-secondary flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border-blue-200 hover:bg-blue-100"
         title="تصدير حركات المخزون كحزمة مشفرة وآمنة للمزامنة مع الولاية"
       >
         <svg
@@ -358,7 +358,7 @@
     <div class="card p-4 border-l-4 border-blue-500">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm text-gray-500">إجمالي المنتجات</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي المنتجات</p>
           <p class="text-2xl font-bold text-blue-600">
             {totalProducts.toLocaleString("ar-DZ")}
           </p>
@@ -387,7 +387,7 @@
     <div class="card p-4 border-l-4 border-green-500">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm text-gray-500">إجمالي الدخول</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي الدخول</p>
           <p class="text-2xl font-bold text-green-600">
             {totalIn.toLocaleString("ar-DZ")}
           </p>
@@ -416,7 +416,7 @@
     <div class="card p-4 border-l-4 border-red-500">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm text-gray-500">إجمالي الخروج</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي الخروج</p>
           <p class="text-2xl font-bold text-red-600">
             {totalOut.toLocaleString("ar-DZ")}
           </p>
@@ -445,7 +445,7 @@
     <div class="card p-4 border-l-4 border-orange-500">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm text-gray-500">منتجات منخفضة</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">منتجات منخفضة</p>
           <p class="text-2xl font-bold text-orange-600">
             {lowStockCount.toLocaleString("ar-DZ")}
           </p>
@@ -473,7 +473,7 @@
 
   <!-- SECTION 3: Stock Table -->
   <div class="card mb-8">
-    <div class="p-4 border-b border-gray-200">
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
       <h3 class="font-semibold text-lg">المخزون الحالي</h3>
     </div>
 
@@ -484,7 +484,7 @@
         ></div>
       </div>
     {:else if summary.length === 0 && stocks.length === 0}
-      <div class="text-center py-12 text-gray-500">
+      <div class="text-center py-12 text-gray-500 dark:text-gray-400">
         <svg
           class="w-16 h-16 mx-auto mb-4 text-gray-300"
           fill="none"
@@ -521,7 +521,7 @@
               {@const status = getStatusBadge(product.current_quantity)}
               {@const isHighlighted =
                 highlightedProductId === product.product_id}
-              <tr class="hover:bg-gray-50 {isHighlighted ? 'bg-blue-50' : ''}">
+              <tr class="hover:bg-gray-50 dark:bg-gray-900 {isHighlighted ? 'bg-blue-50 dark:bg-blue-900/20' : ''}">
                 <td class="table-cell font-medium">{product.product_name}</td>
                 <td
                   class="table-cell {product.current_quantity < 10
@@ -537,7 +537,7 @@
                   >{product.total_out.toFixed(2)}</td
                 >
                 <td class="table-cell">{product.movement_count}</td>
-                <td class="table-cell text-sm text-gray-500">
+                <td class="table-cell text-sm text-gray-500 dark:text-gray-400">
                   {product.last_movement
                     ? formatDate(product.last_movement)
                     : "-"}
@@ -554,7 +554,7 @@
                     <button
                       onclick={() =>
                         showMovementsForProduct(product.product_id)}
-                      class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                      class="text-blue-600 hover:text-blue-800 dark:text-blue-300 text-sm font-medium"
                     >
                       الحركات
                     </button>
@@ -571,23 +571,23 @@
   <!-- SECTION 4: Movements Table -->
   {#if movementsVisible}
     <div id="movements-section" class="card mb-8">
-      <div class="p-4 border-b border-gray-200">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 class="font-semibold text-lg">سجل حركات المخزون</h3>
       </div>
 
       <!-- Filters -->
-      <div class="p-4 bg-gray-50 border-b border-gray-200">
+      <div class="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <!-- Filter 1: Product -->
           <div>
             <label
               for="filter-product"
-              class="block text-sm font-medium text-gray-700 mb-1">المنتج</label
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">المنتج</label
             >
             <select
               id="filter-product"
               bind:value={filterProductId}
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
             >
               <option value="">كل المنتجات</option>
               {#each summary as product}
@@ -602,13 +602,13 @@
           <div>
             <label
               for="filter-type"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >نوع الحركة</label
             >
             <select
               id="filter-type"
               bind:value={filterMovementType}
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
             >
               <option value="">كل الأنواع</option>
               <option value="IN">دخول مخزون</option>
@@ -621,14 +621,14 @@
           <div>
             <label
               for="filter-start"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >من تاريخ</label
             >
             <input
               id="filter-start"
               type="date"
               bind:value={filterStartDate}
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
             />
           </div>
 
@@ -636,14 +636,14 @@
           <div>
             <label
               for="filter-end"
-              class="block text-sm font-medium text-gray-700 mb-1"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
               >إلى تاريخ</label
             >
             <input
               id="filter-end"
               type="date"
               bind:value={filterEndDate}
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
             />
           </div>
         </div>
@@ -663,7 +663,7 @@
             ></div>
           </div>
         {:else if movements.length === 0}
-          <div class="text-center py-8 text-gray-500">
+          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
             <p>لا توجد حركات تطابق الفلاتر المحددة</p>
           </div>
         {:else}
@@ -691,7 +691,7 @@
                 {@const refShort = movement.reference_id
                   ? movement.reference_id.slice(0, 8)
                   : "-"}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900">
                   <td class="table-cell text-sm"
                     >{formatDate(movement.timestamp)}</td
                   >
@@ -710,15 +710,15 @@
                       ? "-"
                       : "+"}{movement.quantity.toFixed(2)}
                   </td>
-                  <td class="table-cell text-gray-500"
+                  <td class="table-cell text-gray-500 dark:text-gray-400"
                     >{movement.balance_before.toFixed(2)}</td
                   >
-                  <td class="table-cell text-gray-500"
+                  <td class="table-cell text-gray-500 dark:text-gray-400"
                     >{movement.balance_after.toFixed(2)}</td
                   >
                   <td class="table-cell text-sm">
                     {#if movement.reference_type}
-                      <span class="text-gray-600"
+                      <span class="text-gray-600 dark:text-gray-400"
                         >{movement.reference_type}:</span
                       >
                       <span class="font-mono text-xs">{refShort}</span>
@@ -737,9 +737,9 @@
       <!-- Pagination -->
       {#if !movementsLoading && movements.length > 0}
         <div
-          class="p-4 border-t border-gray-200 flex items-center justify-between"
+          class="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between"
         >
-          <p class="text-sm text-gray-600">
+          <p class="text-sm text-gray-600 dark:text-gray-400">
             الصفحة {currentPage + 1} من {totalPages || 1} | إجمالي: {totalMovements.toLocaleString(
               "ar-DZ",
             )} حركة
@@ -766,8 +766,8 @@
   {/if}
 
   <!-- Info Card -->
-  <div class="mt-6 card bg-blue-50 border-blue-200">
-    <h3 class="font-semibold text-blue-800 mb-2">معلومات</h3>
+  <div class="mt-6 card bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+    <h3 class="font-semibold text-blue-800 dark:text-blue-300 mb-2">معلومات</h3>
     <p class="text-sm text-blue-700">
       يتم تحديث المخزون تلقائياً عند تأكيد طلبيات الموردين وتسجيل الاستهلاك
       اليومي. كل حركة مخزون يتم تسجيلها في سجل الحركات مع التفاصيل الكاملة.

@@ -185,7 +185,7 @@
 
 <Layout nodeType="WILAYA" title="التقارير" subtitle="عرض تقارير الوحدات">
   
-  <div class="card bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 mb-8">
+  <div class="card bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-100 dark:border-blue-800/50 mb-8">
     <div class="flex flex-col md:flex-row items-center justify-between gap-4">
       <div class="flex items-center gap-4">
         <div class="w-12 h-12 bg-civil-blue text-white rounded-full flex items-center justify-center shrink-0 shadow-sm">
@@ -194,19 +194,19 @@
           </svg>
         </div>
         <div>
-          <h3 class="text-lg font-bold text-gray-800">الحالة الشهرية الشاملة لجميع الوحدات</h3>
-          <p class="text-sm text-gray-600">تصدير تقرير مجمع (Excel) يضم حالة إستهلاكات وتقارير كل الوحدات التابعة.</p>
+          <h3 class="text-lg font-bold text-gray-800 dark:text-white">الحالة الشهرية الشاملة لجميع الوحدات</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-300">تصدير تقرير مجمع (Excel) يضم حالة إستهلاكات وتقارير كل الوحدات التابعة.</p>
         </div>
       </div>
 
       <div class="flex items-center gap-3 w-full md:w-auto">
-        <select bind:value={currentMonth} on:change={onReportTypeChange} class="input flex-1 md:w-32 py-2" disabled={isExporting}>
+        <select bind:value={currentMonth} on:change={onReportTypeChange} class="input flex-1 md:w-32 py-2 dark:bg-gray-800 dark:text-white dark:border-gray-600" disabled={isExporting}>
           {#each months as m}
             <option value={m.value}>{m.label}</option>
           {/each}
         </select>
         
-        <input type="number" bind:value={currentYear} on:change={onReportTypeChange} class="input flex-1 md:w-24 py-2" disabled={isExporting} />
+        <input type="number" bind:value={currentYear} on:change={onReportTypeChange} class="input flex-1 md:w-24 py-2 dark:bg-gray-800 dark:text-white dark:border-gray-600" disabled={isExporting} />
         
         <button 
           class="btn-primary flex items-center gap-2 whitespace-nowrap"
@@ -231,14 +231,14 @@
   </div>
 
   <!-- Filters -->
-  <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+  <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
       <label class="block">
-        <span class="block text-sm font-medium text-gray-700 mb-1">الوحدة</span>
+        <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوحدة</span>
         <select
           bind:value={selectedUnitId}
           on:change={onUnitChange}
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-civil-blue focus:border-civil-blue"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg focus:ring-civil-blue focus:border-civil-blue"
         >
           <option value="">جميع الوحدات</option>
           {#each units as unit}
@@ -248,11 +248,11 @@
       </label>
 
       <label class="block">
-        <span class="block text-sm font-medium text-gray-700 mb-1">نوع التقرير</span>
+        <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نوع التقرير</span>
         <select
           bind:value={selectedReportType}
           on:change={onReportTypeChange}
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-civil-blue focus:border-civil-blue"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg focus:ring-civil-blue focus:border-civil-blue"
         >
           <option value="daily">التقارير اليومية</option>
           <option value="monthly">التقارير الشهرية</option>
@@ -261,11 +261,11 @@
       </label>
 
       <label class="block">
-        <span class="block text-sm font-medium text-gray-700 mb-1">السنة</span>
+        <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">السنة</span>
         <select
           bind:value={currentYear}
           on:change={onReportTypeChange}
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-civil-blue focus:border-civil-blue"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg focus:ring-civil-blue focus:border-civil-blue"
         >
           {#each Array(5) as _, i}
             <option value={new Date().getFullYear() - i}>{new Date().getFullYear() - i}</option>
@@ -275,11 +275,11 @@
 
       {#if selectedReportType === 'daily' || selectedReportType === 'stock'}
         <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">الشهر</span>
+          <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الشهر</span>
           <select
             bind:value={currentMonth}
             on:change={onReportTypeChange}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-civil-blue focus:border-civil-blue"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg focus:ring-civil-blue focus:border-civil-blue"
           >
             {#each Array(12) as _, i}
               <option value={i + 1}>{i + 1}</option>
@@ -291,7 +291,7 @@
   </div>
 
   {#if error}
-    <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+    <div class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 text-sm">
       {error}
     </div>
   {/if}
@@ -301,8 +301,8 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
     </div>
   {:else}
-    <div class="card">
-      <h2 class="text-lg font-semibold text-gray-800 mb-4">
+    <div class="card bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700">
+      <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">
         {#if selectedReportType === 'daily'}التقارير اليومية
         {:else if selectedReportType === 'monthly'}الملخصات الشهرية
         {:else if selectedReportType === 'stock'}حركات المخزون
@@ -310,15 +310,15 @@
       </h2>
 
       {#if selectedReportType === 'daily' && reports.length === 0}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
           <p class="text-lg">لا يوجد تقارير يومية</p>
         </div>
       {:else if selectedReportType === 'monthly' && monthlySummaries.length === 0}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
           <p class="text-lg">لا يوجد تقارير شهرية</p>
         </div>
       {:else if selectedReportType === 'stock' && stockMovements.length === 0}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
           <p class="text-lg">لا يوجد حركات مخزون</p>
         </div>
       {:else}
@@ -338,7 +338,7 @@
               </thead>
               <tbody>
                 {#each monthlySummaries as summary}
-                  <tr class="hover:bg-gray-50">
+                  <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50 transition-colors">
                     <td class="table-cell font-medium">{summary.month}/{summary.year}</td>
                     <td class="table-cell">{summary.report_count}</td>
                     <td class="table-cell">{summary.total_personnel}</td>
@@ -371,17 +371,14 @@
               </thead>
               <tbody>
                 {#each stockMovements as movement}
-                  <tr class="hover:bg-gray-50">
+                  <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50 transition-colors">
                     <td class="table-cell font-medium">{formatDate(movement.timestamp)}</td>
                     <td class="table-cell">{movement.product_name || movement.product_id}</td>
                     <td class="table-cell">
-                      <span class="px-2 py-1 rounded text-xs font-medium"
-                        class:bg-green-100={movement.movement_type === 'IN'}
-                        class:text-green-800={movement.movement_type === 'IN'}
-                        class:bg-red-100={movement.movement_type === 'OUT'}
-                        class:text-red-800={movement.movement_type === 'OUT'}
-                        class:bg-blue-100={movement.movement_type === 'OPENING'}
-                        class:text-blue-800={movement.movement_type === 'OPENING'}
+                      <span class="px-2 py-1 rounded text-xs font-medium
+                        {movement.movement_type === 'IN' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
+                         movement.movement_type === 'OUT' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' :
+                         movement.movement_type === 'OPENING' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400' : ''}"
                       >
                         {#if movement.movement_type === 'IN'}دخول
                         {:else if movement.movement_type === 'OUT'}خروج
@@ -418,7 +415,7 @@
               </thead>
               <tbody>
                 {#each reports as report}
-                  <tr class="hover:bg-gray-50">
+                  <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50 transition-colors">
                     <td class="table-cell font-medium">{formatDate(report.date)}</td>
                     <td class="table-cell">{report.unit_id || '-'}</td>
                     <td class="table-cell">{report.personnel_count}</td>

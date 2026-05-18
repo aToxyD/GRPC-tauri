@@ -42,7 +42,7 @@
 
   function fmt(ts: string|null) { return ts ? new Date(ts).toLocaleString('ar-DZ') : '—'; }
   function sevCls(s: string) {
-    return s==='CRITICAL'?'sev-crit':s==='ERROR'?'sev-err':s==='WARNING'?'sev-warn':'sev-info';
+    return s==='CRITICAL'?'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800':s==='ERROR'?'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-800':s==='WARNING'?'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-300 dark:border-yellow-800':'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800';
   }
   function sevIcon(s: string) {
     return s==='CRITICAL'?'🔴':s==='ERROR'?'🟠':s==='WARNING'?'🟡':'🔵';
@@ -63,34 +63,34 @@
 </script>
 
 <Layout {nodeType} title="مركز التعارضات" subtitle="كشف وإدارة تعارضات المزامنة">
-<div class="p" dir="rtl">
-  <div class="hdr">
+<div class="p-6 max-w-6xl mx-auto" dir="rtl">
+  <div class="flex justify-between items-start mb-6">
     <div>
-      <h1 class="t1">⚡ مركز التعارضات</h1>
-      <p class="t2">كشف وتحليل وحل تعارضات المزامنة</p>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">⚡ مركز التعارضات</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">كشف وتحليل وحل تعارضات المزامنة</p>
     </div>
-    <button class="btn" on:click={load} disabled={loading}>⟳ تحديث</button>
+    <button class="bg-blue-50 dark:bg-blue-900/200 hover:bg-blue-600 disabled:opacity-60 text-white px-5 py-2 rounded-lg transition-colors" on:click={load} disabled={loading}>⟳ تحديث</button>
   </div>
 
-  {#if error}<div class="err">{error}</div>{/if}
+  {#if error}<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg mb-4">{error}</div>{/if}
 
   <!-- Summary -->
   {#if summary}
-  <div class="grid4">
-    <div class="card c-blue"><div class="ci">📊</div><div class="cv">{summary.total}</div><div class="cl">إجمالي التعارضات</div></div>
-    <div class="card {summary.unresolved>0?'c-red':'c-green'}"><div class="ci">{summary.unresolved>0?'🔴':'✅'}</div><div class="cv">{summary.unresolved}</div><div class="cl">غير محلول</div></div>
-    <div class="card c-green"><div class="ci">✅</div><div class="cv">{summary.total-summary.unresolved}</div><div class="cl">محلول</div></div>
-    <div class="card c-amber"><div class="ci">⚡</div><div class="cv">{summary.recentConflicts.length}</div><div class="cl">أحدث التعارضات</div></div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-blue-500"><div class="text-2xl mb-2">📊</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.total}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">إجمالي التعارضات</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 {summary.unresolved>0?'border-red-500':'border-green-500'}"><div class="text-2xl mb-2">{summary.unresolved>0?'🔴':'✅'}</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.unresolved}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">غير محلول</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-green-500"><div class="text-2xl mb-2">✅</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.total-summary.unresolved}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">محلول</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-amber-500"><div class="text-2xl mb-2">⚡</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.recentConflicts.length}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">أحدث التعارضات</div></div>
   </div>
   {/if}
 
   <!-- Filters -->
-  <div class="filters">
-    <label class="chk-wrap">
+  <div class="flex items-center gap-4 flex-wrap bg-white dark:bg-gray-800 rounded-lg p-3 px-4 shadow mb-4">
+    <label class="flex items-center gap-2 text-sm cursor-pointer text-gray-800 dark:text-gray-200">
       <input type="checkbox" bind:checked={showUnresolvedOnly} on:change={load}/>
       عرض غير المحلولة فقط
     </label>
-    <select bind:value={filterType} class="sel">
+    <select bind:value={filterType} class="px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-900">
       <option value="">كل الأنواع</option>
       <option value="STALE_IMPORT">استيراد قديم</option>
       <option value="DUPLICATE_PACKAGE">حزمة مكررة</option>
@@ -98,50 +98,55 @@
       <option value="DIVERGENT_STOCK_STATE">تباين المخزون</option>
       <option value="REPLAY_ATTEMPT">إعادة تشغيل</option>
     </select>
-    <select bind:value={filterSeverity} class="sel">
+    <select bind:value={filterSeverity} class="px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-900">
       <option value="">كل الشدد</option>
       <option value="CRITICAL">حرج</option>
       <option value="ERROR">خطأ</option>
       <option value="WARNING">تحذير</option>
       <option value="INFO">معلومة</option>
     </select>
-    <span class="filter-cnt">{filtered.length} نتيجة</span>
+    <span class="mr-auto text-sm text-gray-500 dark:text-gray-400">{filtered.length} نتيجة</span>
   </div>
 
   <!-- Conflicts Table -->
   {#if loading && !conflicts.length}
-    <div class="ldg">جارٍ تحميل التعارضات...</div>
+    <div class="text-center p-12 bg-white dark:bg-gray-800 rounded-xl shadow">جارٍ تحميل التعارضات...</div>
   {:else if filtered.length === 0}
-    <div class="empty">✅ لا توجد تعارضات تطابق الفلاتر المحددة</div>
+    <div class="text-center p-8 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-800 rounded-xl text-green-600 dark:text-green-400 font-semibold">✅ لا توجد تعارضات تطابق الفلاتر المحددة</div>
   {:else}
-    <div class="tbl-wrap">
-      <table class="tbl">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden mb-6">
+      <table class="w-full border-collapse">
         <thead><tr>
-          <th>الشدة</th><th>النوع</th><th>معرف الحزمة</th>
-          <th>العقدة المصدر</th><th>الوقت</th><th>الحالة</th><th>إجراء</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">الشدة</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">النوع</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">معرف الحزمة</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">العقدة المصدر</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">الوقت</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">الحالة</th>
+          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">إجراء</th>
         </tr></thead>
         <tbody>
           {#each filtered as c}
-          <tr class="{c.resolved?'resolved':''}">
-            <td><span class="badge {sevCls(c.severity)}">{sevIcon(c.severity)} {c.severity}</span></td>
-            <td><span class="type-tag">{c.conflictTypeDisplay}</span></td>
-            <td><code class="pkg-id" title={c.packageId}>{c.packageId.slice(0,12)}...</code></td>
-            <td><code>{c.sourceNodeId}</code></td>
-            <td class="ts">{fmt(c.createdAt)}</td>
-            <td>
+          <tr class="{c.resolved?'opacity-65':''}">
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle"><span class="px-2 py-1 rounded-md text-xs font-bold border {sevCls(c.severity)}">{sevIcon(c.severity)} {c.severity}</span></td>
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle"><span class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded text-xs">{c.conflictTypeDisplay}</span></td>
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle"><code class="font-mono text-xs text-gray-500 dark:text-gray-400" title={c.packageId}>{c.packageId.slice(0,12)}...</code></td>
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle"><code class="dark:text-gray-300">{c.sourceNodeId}</code></td>
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle text-xs text-gray-500 dark:text-gray-400">{fmt(c.createdAt)}</td>
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle">
               {#if c.resolved}
-                <span class="resolved-badge">✅ محلول</span>
+                <span class="text-green-600 dark:text-green-400 text-sm font-semibold">✅ محلول</span>
               {:else}
-                <span class="unresolved-badge">⏳ معلق</span>
+                <span class="text-amber-600 dark:text-amber-400 text-sm font-semibold">⏳ معلق</span>
               {/if}
             </td>
-            <td>
+            <td class="px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 align-middle">
               {#if !c.resolved}
-                <button class="btn-sm" on:click={() => { selectedConflict = c; resolveNote = ''; }}>
+                <button class="bg-blue-50 dark:bg-blue-900/200 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs cursor-pointer" on:click={() => { selectedConflict = c; resolveNote = ''; }}>
                   حل
                 </button>
               {:else}
-                <button class="btn-sm btn-view" on:click={() => selectedConflict = c}>
+                <button class="bg-gray-50 dark:bg-gray-9000 hover:bg-gray-600 text-white px-3 py-1.5 rounded-md text-xs cursor-pointer" on:click={() => selectedConflict = c}>
                   عرض
                 </button>
               {/if}
@@ -157,7 +162,7 @@
 <!-- Resolve Modal -->
 {#if selectedConflict}
 <div
-  class="overlay"
+  class="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50"
   role="dialog"
   aria-modal="true"
   aria-label="تفاصيل التعارض"
@@ -165,36 +170,36 @@
   on:click|self={() => selectedConflict = null}
   on:keydown={(e) => e.key === 'Escape' && (selectedConflict = null)}
 >
-  <div class="modal" dir="rtl">
-    <div class="modal-hdr">
-      <h2>تفاصيل التعارض</h2>
-      <button class="close" on:click={() => selectedConflict = null}>✕</button>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl w-11/12 max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl" dir="rtl">
+    <div class="flex justify-between items-center p-4 px-6 border-b border-gray-200 dark:border-gray-700">
+      <h2 class="text-lg font-bold text-gray-800 dark:text-white m-0">تفاصيل التعارض</h2>
+      <button class="bg-transparent border-none text-xl cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:text-gray-100 dark:hover:text-white" on:click={() => selectedConflict = null}>✕</button>
     </div>
-    <div class="modal-body">
-      <div class="detail-row"><span>المعرف</span><code>{selectedConflict.id}</code></div>
-      <div class="detail-row"><span>النوع</span><strong>{selectedConflict.conflictTypeDisplay}</strong></div>
-      <div class="detail-row"><span>الشدة</span><span class="badge {sevCls(selectedConflict.severity)}">{selectedConflict.severity}</span></div>
-      <div class="detail-row"><span>معرف الحزمة</span><code>{selectedConflict.packageId}</code></div>
-      <div class="detail-row"><span>العقدة المصدر</span><code>{selectedConflict.sourceNodeId}</code></div>
-      <div class="detail-row"><span>الوصف</span><p class="desc">{selectedConflict.description}</p></div>
+    <div class="p-6 flex flex-col gap-3">
+      <div class="flex items-baseline gap-2 text-sm"><span class="min-w-[100px] text-gray-500 dark:text-gray-400 font-medium">المعرف</span><code class="dark:text-gray-300">{selectedConflict.id}</code></div>
+      <div class="flex items-baseline gap-2 text-sm"><span class="min-w-[100px] text-gray-500 dark:text-gray-400 font-medium">النوع</span><strong class="dark:text-white">{selectedConflict.conflictTypeDisplay}</strong></div>
+      <div class="flex items-baseline gap-2 text-sm"><span class="min-w-[100px] text-gray-500 dark:text-gray-400 font-medium">الشدة</span><span class="px-2 py-1 rounded-md text-xs font-bold border {sevCls(selectedConflict.severity)}">{selectedConflict.severity}</span></div>
+      <div class="flex items-baseline gap-2 text-sm"><span class="min-w-[100px] text-gray-500 dark:text-gray-400 font-medium">معرف الحزمة</span><code class="dark:text-gray-300">{selectedConflict.packageId}</code></div>
+      <div class="flex items-baseline gap-2 text-sm"><span class="min-w-[100px] text-gray-500 dark:text-gray-400 font-medium">العقدة المصدر</span><code class="dark:text-gray-300">{selectedConflict.sourceNodeId}</code></div>
+      <div class="flex items-baseline gap-2 text-sm"><span class="min-w-[100px] text-gray-500 dark:text-gray-400 font-medium">الوصف</span><p class="my-1 text-gray-800 dark:text-gray-200">{selectedConflict.description}</p></div>
       {#if selectedConflict.suggestedResolution}
-        <div class="suggestion">
-          <div class="sug-title">💡 الاقتراح المقترح</div>
-          <p>{selectedConflict.suggestedResolution.description}</p>
-          <div class="sug-action">الإجراء: <strong>{selectedConflict.suggestedResolution.action}</strong></div>
+        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
+          <div class="font-bold text-blue-700 dark:text-blue-400 mb-1">💡 الاقتراح المقترح</div>
+          <p class="text-sm dark:text-blue-100">{selectedConflict.suggestedResolution.description}</p>
+          <div class="text-xs text-blue-600 dark:text-blue-300 mt-2">الإجراء: <strong>{selectedConflict.suggestedResolution.action}</strong></div>
         </div>
       {/if}
       {#if selectedConflict.resolved}
-        <div class="resolved-info">
-          <div class="res-title">✅ تم الحل بواسطة: {selectedConflict.resolvedBy}</div>
-          <p>{selectedConflict.resolutionNote}</p>
-          <div class="res-time">في {fmt(selectedConflict.resolvedAt)}</div>
+        <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mt-2">
+          <div class="font-bold text-green-600 dark:text-green-400 mb-1">✅ تم الحل بواسطة: {selectedConflict.resolvedBy}</div>
+          <p class="text-sm dark:text-green-100">{selectedConflict.resolutionNote}</p>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-2">في {fmt(selectedConflict.resolvedAt)}</div>
         </div>
       {:else}
-        <div class="resolve-form">
-          <label class="form-lbl" for="resolve-note">ملاحظة الحل <span class="req">*</span></label>
-          <textarea id="resolve-note" bind:value={resolveNote} class="textarea" rows="3" placeholder="اذكر سبب الحل وما تم اتخاذه..."></textarea>
-          <button class="btn-resolve" on:click={doResolve} disabled={resolving || !resolveNote.trim()}>
+        <div class="flex flex-col gap-2 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+          <label class="text-sm font-semibold text-gray-700 dark:text-gray-300" for="resolve-note">ملاحظة الحل <span class="text-red-600">*</span></label>
+          <textarea id="resolve-note" bind:value={resolveNote} class="w-full p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg text-sm resize-y box-border bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100" rows="3" placeholder="اذكر سبب الحل وما تم اتخاذه..."></textarea>
+          <button class="bg-green-500 hover:bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed text-white border-none py-2 px-5 rounded-lg cursor-pointer font-semibold transition-colors mt-2" on:click={doResolve} disabled={resolving || !resolveNote.trim()}>
             {resolving ? 'جارٍ الحفظ...' : '✅ تأكيد الحل'}
           </button>
         </div>
@@ -204,65 +209,3 @@
 </div>
 {/if}
 </Layout>
-
-<style>
-  .p{padding:1.5rem;max-width:1200px;margin:0 auto}
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem}
-  .t1{font-size:1.6rem;font-weight:700;color:#1e293b}
-  .t2{color:#64748b;font-size:.85rem;margin-top:.2rem}
-  .btn{background:#3b82f6;color:#fff;border:none;padding:.6rem 1.2rem;border-radius:.5rem;cursor:pointer}
-  .btn:hover:not(:disabled){background:#2563eb}.btn:disabled{opacity:.6}
-  .err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;padding:.75rem;border-radius:.5rem;margin-bottom:1rem}
-  .grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem}
-  .card{background:#fff;border-radius:.75rem;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center;border-top:4px solid #e2e8f0}
-  .c-blue{border-top-color:#3b82f6}.c-red{border-top-color:#ef4444}.c-green{border-top-color:#10b981}.c-amber{border-top-color:#f59e0b}
-  .ci{font-size:1.5rem;margin-bottom:.4rem}.cv{font-size:1.4rem;font-weight:700;color:#1e293b}.cl{font-size:.78rem;color:#64748b;margin-top:.2rem}
-  .filters{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;background:#fff;border-radius:.5rem;padding:.75rem 1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:1rem}
-  .chk-wrap{display:flex;align-items:center;gap:.5rem;font-size:.88rem;cursor:pointer;color:#1e293b}
-  .sel{padding:.4rem .75rem;border:1px solid #e2e8f0;border-radius:.4rem;font-size:.85rem;color:#1e293b;background:#fff}
-  .filter-cnt{margin-right:auto;font-size:.85rem;color:#64748b}
-  .ldg{text-align:center;padding:3rem;background:#fff;border-radius:.75rem}
-  .empty{text-align:center;padding:2rem;background:#f0fdf4;border:1px solid #86efac;border-radius:.75rem;color:#16a34a;font-weight:600}
-  .tbl-wrap{background:#fff;border-radius:.75rem;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;margin-bottom:1.5rem}
-  .tbl{width:100%;border-collapse:collapse}
-  .tbl th{background:#f8fafc;padding:.75rem 1rem;text-align:right;font-size:.78rem;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0}
-  .tbl td{padding:.65rem 1rem;font-size:.85rem;border-bottom:1px solid #f1f5f9;vertical-align:middle}
-  .resolved td{opacity:.65}
-  .badge{padding:.2rem .5rem;border-radius:.25rem;font-size:.75rem;font-weight:700}
-  .sev-crit{background:#fef2f2;color:#dc2626;border:1px solid #fca5a5}
-  .sev-err{background:#fff7ed;color:#ea580c;border:1px solid #fdba74}
-  .sev-warn{background:#fefce8;color:#ca8a04;border:1px solid #fde047}
-  .sev-info{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
-  .type-tag{background:#f1f5f9;color:#475569;padding:.15rem .5rem;border-radius:.25rem;font-size:.78rem}
-  .pkg-id{font-family:monospace;font-size:.78rem;color:#64748b}
-  .ts{font-size:.78rem;color:#64748b}
-  .resolved-badge{color:#16a34a;font-size:.8rem;font-weight:600}
-  .unresolved-badge{color:#d97706;font-size:.8rem;font-weight:600}
-  .btn-sm{background:#3b82f6;color:#fff;border:none;padding:.3rem .75rem;border-radius:.35rem;cursor:pointer;font-size:.8rem}
-  .btn-sm:hover{background:#2563eb}
-  .btn-view{background:#64748b}
-  .btn-view:hover{background:#475569}
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100}
-  .modal{background:#fff;border-radius:1rem;max-width:580px;width:90%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 40px rgba(0,0,0,.15)}
-  .modal-hdr{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.5rem;border-bottom:1px solid #e2e8f0}
-  .modal-hdr h2{font-size:1.1rem;font-weight:700;color:#1e293b;margin:0}
-  .close{background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b}
-  .close:hover{color:#1e293b}
-  .modal-body{padding:1.5rem;display:flex;flex-direction:column;gap:.75rem}
-  .detail-row{display:flex;align-items:baseline;gap:.5rem;font-size:.88rem}
-  .detail-row span:first-child{min-width:100px;color:#64748b;font-weight:500}
-  .desc{margin:.25rem 0;color:#1e293b}
-  .suggestion{background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;padding:.75rem}
-  .sug-title{font-weight:700;color:#1d4ed8;margin-bottom:.4rem}
-  .sug-action{font-size:.8rem;color:#2563eb;margin-top:.4rem}
-  .resolved-info{background:#f0fdf4;border:1px solid #86efac;border-radius:.5rem;padding:.75rem}
-  .res-title{font-weight:700;color:#16a34a;margin-bottom:.4rem}
-  .res-time{font-size:.78rem;color:#64748b;margin-top:.4rem}
-  .resolve-form{display:flex;flex-direction:column;gap:.5rem;border-top:1px solid #e2e8f0;padding-top:.75rem;margin-top:.25rem}
-  .form-lbl{font-size:.85rem;font-weight:600;color:#374151}
-  .req{color:#dc2626}
-  .textarea{width:100%;padding:.6rem .8rem;border:1px solid #e2e8f0;border-radius:.5rem;font-size:.85rem;resize:vertical;box-sizing:border-box}
-  .btn-resolve{background:#10b981;color:#fff;border:none;padding:.65rem 1.2rem;border-radius:.5rem;cursor:pointer;font-weight:600;transition:background .2s}
-  .btn-resolve:hover:not(:disabled){background:#059669}
-  .btn-resolve:disabled{opacity:.6;cursor:not-allowed}
-</style>

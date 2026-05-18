@@ -79,7 +79,7 @@
   {:else}
     <div class="card mb-8">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-semibold text-gray-800">
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">
           إحصائيات النظام العامة
         </h2>
       </div>
@@ -97,11 +97,11 @@
       {:else}
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div
-            class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100"
+            class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700"
           >
             <div>
-              <p class="text-sm text-gray-500 mb-1">إجمالي المنتجات</p>
-              <p class="text-2xl font-bold text-gray-800">{metrics?.total_products || 0}</p>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">إجمالي المنتجات</p>
+              <p class="text-2xl font-bold text-gray-800 dark:text-gray-100">{metrics?.total_products || 0}</p>
             </div>
             <div
               class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"
@@ -123,11 +123,11 @@
           </div>
 
           <div
-            class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100"
+            class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700"
           >
             <div>
-              <p class="text-sm text-gray-500 mb-1">إجمالي التقارير</p>
-              <p class="text-2xl font-bold text-gray-800">{metrics?.daily_reports || 0}</p>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">إجمالي التقارير</p>
+              <p class="text-2xl font-bold text-gray-800 dark:text-gray-100">{metrics?.daily_reports || 0}</p>
             </div>
             <div
               class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"
@@ -149,11 +149,11 @@
           </div>
 
           <div
-            class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100"
+            class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700"
           >
             <div>
-              <p class="text-sm text-gray-500 mb-1">المستخدمين النشطين</p>
-              <p class="text-2xl font-bold text-gray-800">{metrics?.active_users || 0}</p>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">المستخدمين النشطين</p>
+              <p class="text-2xl font-bold text-gray-800 dark:text-gray-100">{metrics?.active_users || 0}</p>
             </div>
             <div
               class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center"
@@ -180,7 +180,7 @@
     {#if preflight}
       <div class="card mb-8">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-semibold text-gray-800">جاهزية أمان المزامنة</h2>
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">جاهزية أمان المزامنة</h2>
           <span
             class="px-3 py-1 rounded-full text-sm font-medium
             {preflight.status === 'ok' ? 'bg-green-100 text-green-800' : ''}
@@ -192,7 +192,7 @@
         </div>
         <div class="space-y-2">
           {#each preflight.reason_messages_ar as message}
-            <div class="text-sm text-gray-700">- {message}</div>
+            <div class="text-sm text-gray-700 dark:text-gray-100">- {message}</div>
           {/each}
         </div>
       </div>
@@ -203,11 +203,11 @@
       <div class="card">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 mb-1">التقارير هذا الشهر</p>
-            <p class="text-3xl font-bold text-gray-800">{reportsThisMonth}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">التقارير هذا الشهر</p>
+            <p class="text-3xl font-bold text-gray-800 dark:text-gray-100">{reportsThisMonth}</p>
           </div>
           <div
-            class="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center"
+            class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center"
           >
             <svg
               class="w-6 h-6 text-civil-blue"
@@ -229,8 +229,8 @@
       <div class="card">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 mb-1">المنتجات المسجلة</p>
-            <p class="text-3xl font-bold text-gray-800">
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">المنتجات المسجلة</p>
+            <p class="text-3xl font-bold text-gray-800 dark:text-gray-100">
               {currentYearProducts.length}
             </p>
           </div>
@@ -257,8 +257,8 @@
       <div class="card">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 mb-1">السنة الحالية</p>
-            <p class="text-3xl font-bold text-gray-800">{currentYear}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">السنة الحالية</p>
+            <p class="text-3xl font-bold text-gray-800 dark:text-gray-100">{currentYear}</p>
           </div>
           <div
             class="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center"
@@ -284,14 +284,14 @@
     <!-- Recent Units -->
     <div class="card mb-8">
       <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-semibold text-gray-800">قائمة الوحدات</h2>
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">قائمة الوحدات</h2>
         <a href="/wilaya/units" class="text-civil-blue hover:underline text-sm"
           >إدارة الوحدات</a
         >
       </div>
 
       {#if units.length === 0}
-        <div class="text-center py-8 text-gray-500">
+        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
           <svg
             class="w-12 h-12 mx-auto mb-3 text-gray-300"
             fill="none"
@@ -324,7 +324,7 @@
             </thead>
             <tbody>
               {#each units.slice(0, 5) as unit}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900">
                   <td class="table-cell font-medium">{unit.code}</td>
                   <td class="table-cell">{unit.name}</td>
                   <td class="table-cell"
@@ -341,7 +341,7 @@
     <!-- Recent Products -->
     <div class="card">
       <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-semibold text-gray-800">المنتجات المتاحة</h2>
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">المنتجات المتاحة</h2>
         <a
           href="/wilaya/products"
           class="text-civil-blue hover:underline text-sm">إدارة المنتجات</a
@@ -349,7 +349,7 @@
       </div>
 
       {#if currentYearProducts.length === 0}
-        <div class="text-center py-8 text-gray-500">
+        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
           <svg
             class="w-12 h-12 mx-auto mb-3 text-gray-300"
             fill="none"
@@ -383,7 +383,7 @@
             </thead>
             <tbody>
               {#each currentYearProducts.slice(0, 5) as product}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:bg-gray-900">
                   <td class="table-cell font-medium">{product.name}</td>
                   <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
                   <td class="table-cell">{product.tva}%</td>

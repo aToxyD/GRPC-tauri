@@ -19,22 +19,135 @@
   --color-civil-blue-dark: #1e3a8a;
 }
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ═══════════════════════════════════════════════════════════════
+   رموز التصميم الدلالية (Semantic Design Tokens)
+   تدعم كلا المظهرَين: الفاتح والداكن
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* الخلفيات */
+  --bg-primary:       #f9fafb; /* gray-50 */
+  --bg-secondary:     #f3f4f6; /* gray-100 */
+  --surface-primary:  #ffffff;
+  --surface-elevated: #ffffff;
+
+  /* النصوص */
+  --text-primary:   #111827; /* gray-900 */
+  --text-secondary: #6b7280; /* gray-500 */
+  --text-muted:     #9ca3af; /* gray-400 */
+
+  /* الحدود */
+  --border-primary:   #e5e7eb; /* gray-200 */
+  --border-secondary: #d1d5db; /* gray-300 */
+
+  /* الألوان الدلالية */
+  --color-danger:  #dc2626;
+  --color-success: #16a34a;
+  --color-warning: #ca8a04;
+  --color-info:    #2563eb;
+
+  /* انتقالات */
+  --transition-theme: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+.dark {
+  /* الخلفيات */
+  --bg-primary:       #111827; /* gray-900 */
+  --bg-secondary:     #1f2937; /* gray-800 */
+  --surface-primary:  #1f2937; /* gray-800 */
+  --surface-elevated: #374151; /* gray-700 */
+
+  /* النصوص */
+  --text-primary:   #f9fafb; /* gray-50 */
+  --text-secondary: #9ca3af; /* gray-400 */
+  --text-muted:     #6b7280; /* gray-500 */
+
+  /* الحدود */
+  --border-primary:   #374151; /* gray-700 */
+  --border-secondary: #4b5563; /* gray-600 */
+
+  /* الألوان الدلالية (محسّنة للتباين في الوضع الداكن) */
+  --color-danger:  #f87171; /* red-400 */
+  --color-success: #4ade80; /* green-400 */
+  --color-warning: #facc15; /* yellow-400 */
+  --color-info:    #60a5fa; /* blue-400 */
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   انتقالات المظهر (Theme Transitions)
+   - سلسة وخفيفة فقط
+   - تحترم prefers-reduced-motion
+   ═══════════════════════════════════════════════════════════════ */
 @layer base {
   html {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
+
+  /* تطبيق الانتقال على العناصر الرئيسية فقط — لا على كل عنصر */
+  body,
+  .card,
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .input-field,
+  aside,
+  main,
+  nav {
+    transition: var(--transition-theme);
+  }
+
+  /* إلغاء الانتقالات عند تفضيل الحركة المخفضة */
+  @media (prefers-reduced-motion: reduce) {
+    body,
+    .card,
+    .btn-primary,
+    .btn-secondary,
+    .btn-danger,
+    .input-field,
+    aside,
+    main,
+    nav {
+      transition: none !important;
+    }
+  }
+
+  /* حلقات التركيز (Focus Rings) — إمكانية الوصول */
+  :focus-visible {
+    outline: 2px solid var(--color-civil-blue);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .dark :focus-visible {
+    outline-color: #60a5fa; /* blue-400 */
+  }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   مكوّنات CSS المركزية (Centralized Components)
+   ═══════════════════════════════════════════════════════════════ */
 @layer components {
+  /* ─── الأزرار ─────────────────────────────────────────────── */
   .btn-primary {
     padding: 0.5rem 1rem;
     background-color: var(--color-civil-blue);
     color: white;
     border-radius: 0.5rem;
-    transition: background-color 150ms;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 150ms ease;
   }
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     background-color: var(--color-civil-blue-dark);
+  }
+  .btn-primary:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn-secondary {
@@ -42,10 +155,16 @@
     background-color: #e5e7eb;
     color: #1f2937;
     border-radius: 0.5rem;
-    transition: background-color 150ms;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 150ms ease;
   }
-  .btn-secondary:hover {
+  .btn-secondary:hover:not(:disabled) {
     background-color: #d1d5db;
+  }
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn-danger {
@@ -53,12 +172,19 @@
     background-color: var(--color-civil-red);
     color: white;
     border-radius: 0.5rem;
-    transition: background-color 150ms;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 150ms ease;
   }
-  .btn-danger:hover {
+  .btn-danger:hover:not(:disabled) {
     background-color: var(--color-civil-red-dark);
   }
+  .btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
+  /* ─── البطاقات ────────────────────────────────────────────── */
   .card {
     background-color: white;
     border-radius: 0.5rem;
@@ -67,18 +193,30 @@
     padding: 1rem;
   }
 
+  /* ─── حقول الإدخال ────────────────────────────────────────── */
   .input-field {
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 1px solid #d1d5db;
     border-radius: 0.5rem;
+    background-color: white;
+    color: #111827;
+  }
+  .input-field::placeholder {
+    color: #9ca3af;
   }
   .input-field:focus {
     outline: none;
     box-shadow: 0 0 0 2px var(--color-civil-blue);
     border-color: transparent;
   }
+  .input-field:disabled {
+    background-color: #f3f4f6;
+    color: #9ca3af;
+    cursor: not-allowed;
+  }
 
+  /* ─── رؤوس الجداول وخلاياها ──────────────────────────────── */
   .table-header {
     padding: 0.75rem 1rem;
     text-align: right;
@@ -97,4 +235,43 @@
     color: #374151;
     border-bottom: 1px solid #f3f4f6;
   }
+
+  /* ─── الوضع الداكن للمكوّنات ──────────────────────────────── */
+  .dark .btn-secondary {
+    background-color: #374151;
+    color: #f3f4f6;
+  }
+  .dark .btn-secondary:hover:not(:disabled) {
+    background-color: #4b5563;
+  }
+
+  .dark .card {
+    background-color: #1f2937;
+    border-color: #374151;
+  }
+
+  .dark .input-field {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #f9fafb;
+  }
+  .dark .input-field::placeholder {
+    color: #6b7280;
+  }
+  .dark .input-field:disabled {
+    background-color: #1f2937;
+    color: #4b5563;
+  }
+
+  .dark .table-header {
+    background-color: #111827;
+    color: #9ca3af;
+    border-bottom-color: #374151;
+  }
+
+  .dark .table-cell {
+    color: #d1d5db;
+    border-bottom-color: #374151;
+  }
 }
+

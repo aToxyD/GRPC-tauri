@@ -5,6 +5,8 @@
   import type { User, Settings } from "../lib/types";
   import { currentUser as userStore, logout } from "../lib/session";
   import { get } from "svelte/store";
+  import { theme, toggleTheme } from "../lib/theme";
+  import { Sun, Moon } from "lucide-svelte";
 
   export let nodeType: "WILAYA" | "UNIT" | null = null;
   export let displayType: "WILAYA" | "UNIT" | null = null;
@@ -177,11 +179,12 @@
 
 {#if !loading && user && settings}
   <aside
-    class="w-64 bg-white shadow-lg min-h-screen flex flex-col flex-shrink-0"
+    class="w-64 bg-white dark:bg-gray-900 shadow-lg min-h-screen flex flex-col flex-shrink-0 transition-colors duration-200"
   >
-    <!-- Logo -->
-    <div class="p-6 border-b border-gray-100">
-      <div class="flex items-center gap-3">
+    <!-- Logo & Theme Toggle -->
+    <div class="p-6 border-b border-gray-100 dark:border-gray-800">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
         <div
           class="w-10 h-10 bg-civil-blue rounded-lg flex items-center justify-center"
         >
@@ -200,13 +203,26 @@
           </svg>
         </div>
         <div>
-          <h1 class="font-bold text-gray-800">GRPC</h1>
-          <p class="text-xs text-gray-500">
+          <h1 class="font-bold text-gray-800 dark:text-gray-100">GRPC</h1>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
             {nodeType === "WILAYA"
               ? settings.wilaya_name || "الولاية"
               : settings.unit_name || "الوحدة"}
           </p>
         </div>
+        </div>
+        <button
+          on:click={toggleTheme}
+          class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-civil-blue"
+          title={$theme === "dark" ? "التبديل للمظهر الفاتح" : "التبديل للمظهر الداكن"}
+          aria-label="Toggle Theme"
+        >
+          {#if $theme === "dark"}
+            <Moon size={20} />
+          {:else}
+            <Sun size={20} />
+          {/if}
+        </button>
       </div>
     </div>
 
@@ -217,7 +233,7 @@
           {#if item.kind === "header"}
             <li class="pt-4 pb-1 first:pt-0">
               <span
-                class="px-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 select-none"
+                class="px-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500 dark:text-gray-400 select-none"
               >
                 {item.label}
               </span>
@@ -231,7 +247,7 @@
                   item.path,
                 )
                   ? 'bg-civil-blue text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}"
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}"
               >
                 <svg
                   class="w-4.5 h-4.5 flex-shrink-0"
@@ -255,14 +271,14 @@
     </nav>
 
     <!-- User & Logout -->
-    <div class="p-4 border-t border-gray-100">
+    <div class="p-4 border-t border-gray-100 dark:border-gray-800">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div
-            class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center"
+            class="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center"
           >
             <svg
-              class="w-4 h-4 text-gray-500"
+              class="w-4 h-4 text-gray-500 dark:text-gray-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -275,11 +291,11 @@
               />
             </svg>
           </div>
-          <span class="text-sm font-medium text-gray-700">{user.username}</span>
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-200">{user.username}</span>
         </div>
         <button
           on:click={handleLogout}
-          class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+          class="p-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
           title="تسجيل الخروج"
         >
           <svg

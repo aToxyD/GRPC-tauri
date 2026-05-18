@@ -183,7 +183,7 @@
 <div class="max-w-7xl mx-auto" dir="rtl">
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold text-gray-800">سجل التدقيق</h1>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">سجل التدقيق</h1>
       <div class="flex gap-2">
         <button
           on:click={exportToExcel}
@@ -209,47 +209,47 @@
     <!-- Statistics Cards -->
     {#if stats}
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white rounded-lg shadow p-4">
-          <div class="text-sm text-gray-500">إجمالي العمليات (30 يوم)</div>
-          <div class="text-2xl font-bold text-gray-800">{stats.total_operations.toLocaleString()}</div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="text-sm text-gray-500 dark:text-gray-400">إجمالي العمليات (30 يوم)</div>
+          <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{stats.total_operations.toLocaleString()}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-          <div class="text-sm text-gray-500">العمليات الناجحة</div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="text-sm text-gray-500 dark:text-gray-400">العمليات الناجحة</div>
           <div class="text-2xl font-bold text-green-600">
             {(stats.total_operations - stats.failed_operations).toLocaleString()}
           </div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-          <div class="text-sm text-gray-500">العمليات الفاشلة</div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="text-sm text-gray-500 dark:text-gray-400">العمليات الفاشلة</div>
           <div class="text-2xl font-bold text-red-600">{stats.failed_operations.toLocaleString()}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
-          <div class="text-sm text-gray-500">نسبة النجاح</div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="text-sm text-gray-500 dark:text-gray-400">نسبة النجاح</div>
           <div class="text-2xl font-bold text-blue-600">{stats.success_rate.toFixed(1)}%</div>
         </div>
       </div>
     {/if}
 
     <!-- Filters -->
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
       <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="search-user">المستخدم</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="search-user">المستخدم</label>
           <input
             id="search-user"
             type="text"
             bind:value={filters.search}
             placeholder="بحث في اسم المستخدم..."
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="filter-action">نوع العملية</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-action">نوع العملية</label>
           <select
             id="filter-action"
             bind:value={filters.action}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value={undefined}>الكل</option>
             <option value="Login">تسجيل دخول</option>
@@ -266,11 +266,11 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="filter-status">الحالة</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-status">الحالة</label>
           <select
             id="filter-status"
             bind:value={filters.status}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value={undefined}>الكل</option>
             <option value="Success">ناجح</option>
@@ -279,22 +279,22 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="filter-start-date">من تاريخ</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-start-date">من تاريخ</label>
           <input
             id="filter-start-date"
             type="date"
             bind:value={filters.start_date}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="filter-end-date">إلى تاريخ</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-end-date">إلى تاريخ</label>
           <input
             id="filter-end-date"
             type="date"
             bind:value={filters.end_date}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         
@@ -307,7 +307,7 @@
           </button>
           <button
             on:click={clearFilters}
-            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            class="px-4 py-2 bg-gray-200 text-gray-700 dark:text-gray-100 rounded-lg hover:bg-gray-300 transition-colors"
           >
             مسح
           </button>
@@ -323,36 +323,36 @@
     {/if}
 
     <!-- Table -->
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
       <div class="overflow-x-auto">
         <table class="min-w-full">
-          <thead class="bg-gray-50">
+          <thead class="bg-gray-50 dark:bg-gray-900">
             <tr>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الوقت</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">المستخدم</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">العملية</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">نوع الكيان</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الكيان</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الحالة</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">تفاصيل</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الوقت</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">المستخدم</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">العملية</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">نوع الكيان</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الكيان</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الحالة</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">تفاصيل</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-200">
             {#each entries as entry}
-              <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+              <tr class="hover:bg-gray-50 dark:bg-gray-900">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                   {formatTimestamp(entry.timestamp)}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                   {entry.username}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                   {entry.action_display}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                   {entry.entity_type_display}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                   {entry.entity_name || '-'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
@@ -371,7 +371,7 @@
               </tr>
             {:else}
               <tr>
-                <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                <td colspan="7" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                   {#if loading}
                     <div class="flex justify-center items-center">
                       <svg class="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
@@ -390,8 +390,8 @@
       </div>
 
       <!-- Pagination -->
-      <div class="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200">
-        <div class="text-sm text-gray-700">
+      <div class="bg-gray-50 dark:bg-gray-900 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
+        <div class="text-sm text-gray-700 dark:text-gray-100">
           الصفحة {page + 1} من {Math.ceil(totalCount / pageSize) || 1}
           <span class="mx-2">|</span>
           إجمالي: {totalCount} نتيجة
@@ -400,14 +400,14 @@
           <button
             on:click={prevPage}
             disabled={page === 0 || loading}
-            class="px-3 py-1 bg-white border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            class="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:bg-gray-900"
           >
             السابق
           </button>
           <button
             on:click={nextPage}
             disabled={!hasMore || loading}
-            class="px-3 py-1 bg-white border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            class="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:bg-gray-900"
           >
             التالي
           </button>
@@ -420,13 +420,13 @@
 <!-- Detail Modal -->
 {#if showModal && selectedEntry}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" dir="rtl">
-    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
       <div class="p-6">
         <div class="flex justify-between items-center mb-4">
-          <h2 class="text-xl font-bold text-gray-800">تفاصيل العملية</h2>
+          <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">تفاصيل العملية</h2>
           <button
             on:click={closeModal}
-            class="text-gray-400 hover:text-gray-600"
+            class="text-gray-400 hover:text-gray-600 dark:text-gray-400"
             aria-label="إغلاق"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -438,19 +438,19 @@
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <span class="text-gray-500 text-sm">المعرف:</span>
-              <span class="text-gray-900 font-mono text-sm block">{selectedEntry.id}</span>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">المعرف:</span>
+              <span class="text-gray-900 dark:text-gray-100 font-mono text-sm block">{selectedEntry.id}</span>
             </div>
             <div>
-              <span class="text-gray-500 text-sm">الوقت:</span>
-              <span class="text-gray-900 block">{formatTimestamp(selectedEntry.timestamp)}</span>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">الوقت:</span>
+              <span class="text-gray-900 dark:text-gray-100 block">{formatTimestamp(selectedEntry.timestamp)}</span>
             </div>
             <div>
-              <span class="text-gray-500 text-sm">المستخدم:</span>
-              <span class="text-gray-900 block">{selectedEntry.username}</span>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">المستخدم:</span>
+              <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.username}</span>
             </div>
             <div>
-              <span class="text-gray-500 text-sm">الحالة:</span>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">الحالة:</span>
               <span class="{selectedEntry.status === 'Success' ? 'text-green-600' : 'text-red-600'} font-medium block">
                 {selectedEntry.status === 'Success' ? 'ناجح' : 'فاشل'}
               </span>
@@ -458,47 +458,47 @@
           </div>
 
           <div>
-            <span class="text-gray-500 text-sm">العملية:</span>
-            <span class="text-gray-900 block">{selectedEntry.action_display}</span>
+            <span class="text-gray-500 dark:text-gray-400 text-sm">العملية:</span>
+            <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.action_display}</span>
           </div>
 
           <div>
-            <span class="text-gray-500 text-sm">نوع الكيان:</span>
-            <span class="text-gray-900 block">{selectedEntry.entity_type_display}</span>
+            <span class="text-gray-500 dark:text-gray-400 text-sm">نوع الكيان:</span>
+            <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.entity_type_display}</span>
           </div>
 
           {#if selectedEntry.entity_name}
             <div>
-              <span class="text-gray-500 text-sm">اسم الكيان:</span>
-              <span class="text-gray-900 block">{selectedEntry.entity_name}</span>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">اسم الكيان:</span>
+              <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.entity_name}</span>
             </div>
           {/if}
 
           {#if selectedEntry.old_value}
             <div>
-              <span class="text-gray-500 text-sm">القيمة القديمة:</span>
-              <pre class="mt-1 bg-gray-50 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.old_value, null, 2)}</pre>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">القيمة القديمة:</span>
+              <pre class="mt-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.old_value, null, 2)}</pre>
             </div>
           {/if}
 
           {#if selectedEntry.new_value}
             <div>
-              <span class="text-gray-500 text-sm">القيمة الجديدة:</span>
-              <pre class="mt-1 bg-gray-50 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.new_value, null, 2)}</pre>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">القيمة الجديدة:</span>
+              <pre class="mt-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.new_value, null, 2)}</pre>
             </div>
           {/if}
 
           {#if selectedEntry.error_message}
             <div>
-              <span class="text-gray-500 text-sm">رسالة الخطأ:</span>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">رسالة الخطأ:</span>
               <div class="mt-1 bg-red-50 text-red-700 p-3 rounded-lg text-sm">{selectedEntry.error_message}</div>
             </div>
           {/if}
 
           {#if selectedEntry.metadata}
             <div>
-              <span class="text-gray-500 text-sm">البيانات الإضافية:</span>
-              <pre class="mt-1 bg-gray-50 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.metadata, null, 2)}</pre>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">البيانات الإضافية:</span>
+              <pre class="mt-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.metadata, null, 2)}</pre>
             </div>
           {/if}
         </div>
@@ -506,7 +506,7 @@
         <div class="mt-6 flex justify-end">
           <button
             on:click={closeModal}
-            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            class="px-4 py-2 bg-gray-200 text-gray-700 dark:text-gray-100 rounded-lg hover:bg-gray-300 transition-colors"
           >
             إغلاق
           </button>

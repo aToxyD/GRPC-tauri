@@ -108,8 +108,8 @@
           />
         </svg>
       </div>
-      <h1 class="text-2xl font-bold text-gray-800">تكوين الولاية</h1>
-      <p class="text-gray-600 mt-1">قم بإعداد مديرية الولاية</p>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">تكوين الولاية</h1>
+      <p class="text-gray-600 dark:text-gray-400 mt-1">قم بإعداد مديرية الولاية</p>
     </div>
 
     {#if error}
@@ -132,7 +132,7 @@
       <div>
         <label
           for="wilayaCode"
-          class="block text-sm font-medium text-gray-700 mb-1"
+          class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
           >رمز الولاية</label
         >
         <input
@@ -147,7 +147,7 @@
       <div>
         <label
           for="wilayaName"
-          class="block text-sm font-medium text-gray-700 mb-1"
+          class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
           >اسم الولاية</label
         >
         <input

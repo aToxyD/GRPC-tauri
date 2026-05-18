@@ -112,7 +112,7 @@
   {#if loading && !systemMetrics}
     <div class="text-center py-12">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-      <p class="text-gray-600">جاري تحميل الإحصائيات...</p>
+      <p class="text-gray-600 dark:text-gray-400">جاري تحميل الإحصائيات...</p>
     </div>
   {:else if error}
     <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
