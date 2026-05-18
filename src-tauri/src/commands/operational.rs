@@ -49,6 +49,8 @@ pub fn run_operational_analysis(
         })
         .map_err(into_command_error)?;
 
+    drop(guard);
+
     if !report.findings.is_empty() {
         state.increment_session_counter(SessionCounterKind::AnomalySurfaced);
     }
@@ -325,6 +327,8 @@ pub fn close_fiscal_year_confirmed(
         }
     };
 
+    drop(guard);
+
     let _ = state.maintenance.set(SystemMaintenanceState::Normal);
     state.operation_guard.record_execution(close_op);
     state.increment_session_counter(SessionCounterKind::CriticalOperation);
@@ -428,6 +432,8 @@ pub fn archive_fiscal_year_confirmed(
         let _ = state.maintenance.set(SystemMaintenanceState::Normal);
         return Err(into_command_error(e));
     }
+
+    drop(guard);
 
     let _ = state.maintenance.set(SystemMaintenanceState::Normal);
     state.operation_guard.record_execution(archive_op);
