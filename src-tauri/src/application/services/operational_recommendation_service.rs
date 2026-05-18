@@ -179,9 +179,8 @@ impl<'a> OperationalRecommendationService<'a> {
                             priority: RecommendationPriority::Medium,
                             code: "REC_BACKUP_STALE".to_string(),
                             title: format!("آخر نسخة احتياطية عمرها {} يومًا", days),
-                            message:
-                                "يوصى بـ: إنشاء نسخة احتياطية جديدة في فترة الخمول التالية."
-                                    .to_string(),
+                            message: "يوصى بـ: إنشاء نسخة احتياطية جديدة في فترة الخمول التالية."
+                                .to_string(),
                         });
                     }
                 }
@@ -203,18 +202,15 @@ impl<'a> OperationalRecommendationService<'a> {
                 priority: RecommendationPriority::High,
                 code: "REC_CONFLICTS_HIGH".to_string(),
                 title: format!("{} تعارضات مزامنة غير محلولة", unresolved),
-                message:
-                    "يوصى بـ: مراجعة مركز التعارضات وحلها يدويًا قبل دورة الاستيراد التالية."
-                        .to_string(),
+                message: "يوصى بـ: مراجعة مركز التعارضات وحلها يدويًا قبل دورة الاستيراد التالية."
+                    .to_string(),
             });
         } else if unresolved >= UNRESOLVED_CONFLICTS_WARN {
             recs.push(OperationalRecommendation {
                 priority: RecommendationPriority::Medium,
                 code: "REC_CONFLICTS".to_string(),
                 title: format!("{} تعارضات مزامنة غير محلولة", unresolved),
-                message:
-                    "يوصى بـ: مراجعة إدخالات مركز التعارضات وحلها يدويًا."
-                        .to_string(),
+                message: "يوصى بـ: مراجعة إدخالات مركز التعارضات وحلها يدويًا.".to_string(),
             });
         }
         Ok(())

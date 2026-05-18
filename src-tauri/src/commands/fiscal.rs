@@ -284,8 +284,7 @@ pub fn apply_fiscal_closure_package(
     if confirmation != "APPLY-FISCAL-TRANSITION" {
         return Err(into_command_error(crate::errors::AppError::BusinessLogic(
             crate::errors::BusinessLogicError::OperationNotPermitted {
-                message: "رمز تأكيد غير صالح. اكتب 'APPLY-FISCAL-TRANSITION' للمتابعة."
-                    .to_string(),
+                message: "رمز تأكيد غير صالح. اكتب 'APPLY-FISCAL-TRANSITION' للمتابعة.".to_string(),
             },
         )));
     }
@@ -378,10 +377,7 @@ pub fn update_fiscal_package_retention_status(
     // Typed confirmation requirement
     let expected = format!("{}-PACKAGE", status.to_uppercase());
     if confirmation != expected {
-        return Err(format!(
-            "تأكيد غير صالح. اكتب '{}' للمتابعة.",
-            expected
-        ));
+        return Err(format!("تأكيد غير صالح. اكتب '{}' للمتابعة.", expected));
     }
 
     let mut guard = state.get_db().map_err(into_command_error)?;

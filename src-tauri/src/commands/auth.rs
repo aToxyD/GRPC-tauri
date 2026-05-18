@@ -14,7 +14,7 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::domain::session::CurrentSession;
 use crate::errors::{into_command_error, AppError, ValidationError};
-use crate::models::{LoginRequest, LoginResponse, SessionStatus};
+use crate::models::{LoginRequest, LoginResponse, SessionStatus, User};
 use tauri::State;
 
 /// User login with rate limiting and audit logging
@@ -250,6 +250,32 @@ pub fn logout(state: State<AppState>) -> Result<bool, String> {
     }
 
     Ok(true)
+}
+
+/// Get current authenticated user
+#[tauri::command]
+pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> {
+    let session = state.current_session.lock().map_err(|e| {
+        into_command_error(AppError::Internal(format!("Failed to lock session: {}", e)))
+    })?;
+
+    let session = match session.as_ref() {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    if session.is_expired() {
+        return Ok(None);
+    }
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let user = UserService::new(db.executor(), state.password_port.as_ref())
+        .get_user_by_username(&session.username)
+        .map_err(into_command_error)?;
+
+    Ok(user)
 }
 
 /// Check session status

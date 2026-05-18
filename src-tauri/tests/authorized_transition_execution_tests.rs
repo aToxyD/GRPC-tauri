@@ -77,9 +77,7 @@ fn test_transition_window_not_yet_started() {
 
     // Run pre-flight
     let issues = service.pre_flight_checks(&pkg).unwrap();
-    assert!(issues
-        .iter()
-        .any(|i: &String| i.contains("لم تبدأ بعد")));
+    assert!(issues.iter().any(|i: &String| i.contains("لم تبدأ بعد")));
 }
 
 #[test]
@@ -108,7 +106,5 @@ fn test_transition_replay_protection() {
 
     // Run pre-flight
     let issues = service.pre_flight_checks(&pkg).unwrap();
-    assert!(issues
-        .iter()
-        .any(|i: &String| i.contains("تم تطبيق")));
+    assert!(issues.iter().any(|i: &String| i.contains("تم تطبيق")));
 }

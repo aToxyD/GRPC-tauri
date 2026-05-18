@@ -33,9 +33,18 @@ pub fn validate_production_security_environment() -> Result<(), String> {
         "Production startup aborted: GRPC_PACKAGE_SIGNING_KEY is required when GRPC_ENV=production"
             .to_string()
     })?;
-    if sign.len() < 32 {
+
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+
+    let decoded = STANDARD.decode(sign.trim()).map_err(|_| {
+        "Production startup aborted: GRPC_PACKAGE_SIGNING_KEY must be a valid Base64 string."
+            .to_string()
+    })?;
+
+    if decoded.len() != 32 {
         return Err(
-            "Production startup aborted: GRPC_PACKAGE_SIGNING_KEY must be at least 32 bytes."
+            "Production startup aborted: GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes."
                 .to_string(),
         );
     }
@@ -74,14 +83,21 @@ pub fn resolve_app_encryption_key() -> AppResult<String> {
 }
 
 pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+
     let env = std::env::var("GRPC_PACKAGE_SIGNING_KEY")
         .map_err(|_| AppError::Internal("GRPC_PACKAGE_SIGNING_KEY is missing".to_string()));
     if let Ok(raw) = env {
-        // Transitional policy: first 32 bytes are used until base64/exact-length hardening.
-        let bytes = raw.as_bytes();
-        if bytes.len() < 32 {
+        let bytes = STANDARD.decode(raw.trim()).map_err(|e| {
+            log::error!(target: "grpc::security", "Failed to decode Base64 GRPC_PACKAGE_SIGNING_KEY: {}", e);
+            AppError::Internal("GRPC_PACKAGE_SIGNING_KEY must be a valid Base64 string".to_string())
+        })?;
+
+        if bytes.len() != 32 {
+            log::error!(target: "grpc::security", "GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes (got {})", bytes.len());
             return Err(AppError::Internal(
-                "GRPC_PACKAGE_SIGNING_KEY must be at least 32 bytes".to_string(),
+                "GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes".to_string(),
             ));
         }
         let mut key = [0u8; 32];
@@ -201,7 +217,14 @@ pub fn get_sync_security_diagnostics() -> AppResult<crate::models::SyncSecurityD
     };
 
     let has_package_signing_key_env = match std::env::var("GRPC_PACKAGE_SIGNING_KEY") {
-        Ok(s) => s.len() >= 32,
+        Ok(s) => {
+            use base64::engine::general_purpose::STANDARD;
+            use base64::Engine;
+            STANDARD
+                .decode(s.trim())
+                .map(|b| b.len() == 32)
+                .unwrap_or(false)
+        }
         Err(_) => false,
     };
 

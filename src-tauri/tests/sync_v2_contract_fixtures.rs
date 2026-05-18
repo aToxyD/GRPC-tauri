@@ -58,7 +58,9 @@ fn monthly_fixture_package() -> SyncPackage<MonthlySummaryExportDataset> {
 
 #[test]
 fn v2_builder_is_deterministic_for_fixed_key_and_payload() {
-    let key = "q".repeat(32);
+    use base64::{engine::general_purpose, Engine as _};
+    let key_bytes = [0u8; 32];
+    let key = general_purpose::STANDARD.encode(&key_bytes);
     std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", &key);
     std::env::remove_var("GRPC_ENV");
 

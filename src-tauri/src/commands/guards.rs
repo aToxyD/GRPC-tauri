@@ -12,7 +12,7 @@
 
 use crate::app::state::AppState;
 use crate::application::authz::{authorize, Action, Principal, ResourceContext};
-use crate::application::services::{MaintenanceBlockedOperation, SettingsService};
+use crate::application::services::MaintenanceBlockedOperation;
 use crate::domain::session::CurrentSession;
 use crate::errors::{AppError, AuthenticationError};
 use crate::models::Settings;
@@ -97,13 +97,7 @@ pub fn authorize_command(
                         unit_id: uid.to_string(),
                     }
                 } else {
-                    let db_guard = state.get_db()?;
-                    let db = db_guard
-                        .as_ref()
-                        .ok_or_else(|| AppError::Internal("Database not available".into()))?;
-                    let current_unit = SettingsService::new(db.executor())
-                        .get_current_unit_id()
-                        .unwrap_or(None);
+                    let current_unit = settings.unit_name.clone();
 
                     if let Some(current_uid) = current_unit {
                         ResourceContext::UnitNode {

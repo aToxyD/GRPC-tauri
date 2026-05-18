@@ -15,6 +15,7 @@ pub mod observability;
 pub mod operational;
 pub mod orders;
 pub mod products;
+pub mod registry;
 pub mod reports;
 pub mod settings;
 pub mod system;
