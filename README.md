@@ -87,7 +87,31 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -
 
 ---
 
+## 🔍 التحقق من سلامة وجودة الوثائق (Documentation Integrity Verification)
+
+يلتزم مشروع **GRPC-Tauri** بمعايير صارمة للغاية فيما يتعلق بصحة وسلامة الوثائق التقنية واستدامتها:
+
+1. **فلسفة التوثيق التقني (Documentation Philosophy):**
+   تُعامل وثائق المشروع كجزء لا يتجزأ من الكود البرمجي (Documentation-as-Code). لا تُعتبر أي ميزة برمجيّة مكتملة ومستعدة للإنتاج ما لم يصاحبها توثيق رسمي دقيق يعكس الواقع الهندسي الفعلي للمشروع.
+
+2. **سياسة الادعاءات المستندة لأدلة مادية (Evidence-Based Claims Policy):**
+   يُحظر تماماً إطلاق أي وعود أمنية أو تشغيلية فضفاضة. يجب إقران كل ادعاء تقني (مثل الذرية، أو الحتمية، أو التكرارية الآمنة) بدليل مادي من الكود المصدري الفعلي والاختبارات الآلية المرافقة له، وذلك وفق مصفوفة التحقق الرسمية [CLAIM_VERIFICATION_MATRIX.md](docs/technical/CLAIM_VERIFICATION_MATRIX.md).
+
+3. **مرجعيات الحوكمة المعمارية (Architectural Governance References):**
+   تخضع البنية البرمجية للتطبيق لرقابة صارمة بواسطة ميثاق الثوابت المعمارية [ARCHITECTURAL_INVARIANTS.md](docs/architecture/ARCHITECTURAL_INVARIANTS.md) وأداة التحقق التلقائي (`check_arch.ts`) لمنع أي انجراف أو استثناءات هيكلية غير معتمدة.
+
+4. **سياسة الكشف الصريح عن القيود (Documentation Limitations Policy):**
+   نلتزم بالأمانة والوضوح الهندسي المطلق. يتم الكشف الفوري والمباشر عن كافة القيود التشغيلية وحدود الأمان والاعتمادات الأساسية للنظام ضمن مستند [OPERATIONAL_LIMITATIONS.md](docs/technical/OPERATIONAL_LIMITATIONS.md) لضمان عدم وجود أي افتراضات مخفية أو توقعات خاطئة.
+
+---
+
 ## 📚 روابط هامة
+*   [ميثاق الحوكمة المعمارية (ARCHITECTURAL_INVARIANTS.md)](docs/architecture/ARCHITECTURAL_INVARIANTS.md)
+*   [نموذج التهديدات الأمنية (THREAT_MODEL.md)](docs/security/THREAT_MODEL.md)
+*   [مصفوفة التحقق من الادعاءات (CLAIM_VERIFICATION_MATRIX.md)](docs/technical/CLAIM_VERIFICATION_MATRIX.md)
+*   [الحدود والموانع التشغيلية (OPERATIONAL_LIMITATIONS.md)](docs/technical/OPERATIONAL_LIMITATIONS.md)
+*   [دليل حوكمة وإدارة الوثائق التقنية (DOCUMENTATION_GOVERNANCE.md)](docs/technical/DOCUMENTATION_GOVERNANCE.md)
+*   [قاموس المصطلحات التقنية (GLOSSARY.md)](docs/technical/GLOSSARY.md)
 *   [التوثيق التقني (TECHNICAL_DOCUMENTATION.md)](docs/technical/TECHNICAL_DOCUMENTATION.md)
 *   [سجل القرارات المعمارية (ADRs)](docs/architecture/README.md)
 *   [دليل العمليات (Operator Docs)](docs/README.md)
