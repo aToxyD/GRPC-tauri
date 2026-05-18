@@ -202,7 +202,7 @@ mod tests {
 
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("app.db");
-        
+
         // 1. Manually initialize to version 0 (empty schema_version)
         {
             let conn = Connection::open(&db_path).unwrap();
@@ -225,8 +225,9 @@ mod tests {
         fs::write(&backups_path, "blocking-file").unwrap();
 
         let conn = Connection::open(&db_path).unwrap();
-        let err = run_migrations(&conn).expect_err("Migration should fail because backup cannot be created");
-        
+        let err = run_migrations(&conn)
+            .expect_err("Migration should fail because backup cannot be created");
+
         assert!(
             err.contains("backup failed") || err.contains("backup"),
             "Expected backup failure error, got: {}",
@@ -241,6 +242,9 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(v, 0, "Migration must not advance when pre-migration backup fails");
+        assert_eq!(
+            v, 0,
+            "Migration must not advance when pre-migration backup fails"
+        );
     }
 }

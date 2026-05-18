@@ -528,14 +528,4 @@ INSERT OR IGNORE INTO settings (id, node_type, current_year, configured) VALUES 
 INSERT OR IGNORE INTO users (id, username, password_hash, role, created_at, node_id) VALUES ('system', 'system', 'disabled', 'System', datetime('now'), 'system');
 INSERT OR IGNORE INTO fiscal_year_status (year, status, opened_at) VALUES (CAST(strftime('%Y', 'now') AS INTEGER), 'open', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
 
--- =============================================================================
--- 11. TEST INFRASTRUCTURE
--- =============================================================================
 
-CREATE TABLE IF NOT EXISTS test_entities (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    value INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    created_by TEXT NOT NULL DEFAULT 'test'
-);
