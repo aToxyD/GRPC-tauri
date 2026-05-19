@@ -1,5 +1,6 @@
 import { writable, type Writable } from 'svelte/store';
 import { formatErrorMessage } from './errors';
+import { telemetry } from './telemetry';
 
 export interface OperationGuard {
   loading: Writable<boolean>;
@@ -25,8 +26,14 @@ export function createOperationGuard(): OperationGuard {
       return;
     }
 
+    const startTime = performance.now();
     try {
       await fn();
+      telemetry.trackOperation('guarded_operation', performance.now() - startTime);
+    } catch (err) {
+      telemetry.trackError(err, 'OperationGuard.guard');
+      telemetry.trackAsyncFailure('guarded_operation', formatErrorMessage(err));
+      throw err;
     } finally {
       loading.set(false);
     }
@@ -65,11 +72,16 @@ export function createOperation(): OrchestratedOperation {
     }
 
     error.set(null);
+    const startTime = performance.now();
     try {
-      return await fn();
+      const result = await fn();
+      telemetry.trackOperation('orchestrated_operation', performance.now() - startTime);
+      return result;
     } catch (err) {
       const msg = formatErrorMessage(err);
       error.set(msg);
+      telemetry.trackError(err, 'OperationGuard.run');
+      telemetry.trackAsyncFailure('orchestrated_operation', msg);
       return null;
     } finally {
       loading.set(false);

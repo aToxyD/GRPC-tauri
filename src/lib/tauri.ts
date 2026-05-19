@@ -3,6 +3,7 @@ import { open as tauriOpen, save as tauriSave, ask as tauriAsk } from '@tauri-ap
 import { getCurrentWindow as tauriGetCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize as tauriLogicalSize } from '@tauri-apps/api/dpi';
 import { normalizeError } from './errors';
+import { telemetry } from './telemetry';
 import type {
   LoginRequest, LoginResponse, Settings, NodeConfiguration,
   User, Product, CreateProductRequest, UpdateProductRequest,
@@ -24,10 +25,19 @@ import type {
 } from './types';
 
 async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const startTime = performance.now();
   try {
-    return await tauriInvoke<T>(cmd, args);
+    const result = await tauriInvoke<T>(cmd, args);
+    const duration = performance.now() - startTime;
+    telemetry.trackLatency(cmd, duration);
+    telemetry.trackOperation(cmd, duration);
+    return result;
   } catch (error) {
+    const duration = performance.now() - startTime;
     const normalized = normalizeError(error);
+    telemetry.trackLatency(cmd, duration);
+    telemetry.trackError(error, `IPC Command: ${cmd}`);
+    telemetry.trackAsyncFailure(cmd, normalized.message);
     console.error(`[IPC Error] Command "${cmd}" failed:`, normalized.originalError);
     throw new Error(normalized.message);
   }
