@@ -13,6 +13,12 @@
   import { showSuccess } from "../lib/notifications";
   import { currentUser as userStore } from "../lib/session";
   import Layout from "../components/Layout.svelte";
+  import AppButton from "../lib/components/ui/AppButton.svelte";
+  import AppAlert from "../lib/components/ui/AppAlert.svelte";
+  import AppCard from "../lib/components/ui/AppCard.svelte";
+  import AppLoadingState from "../lib/components/ui/AppLoadingState.svelte";
+  import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
+  import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
 
   let backups: BackupInfo[] = [];
   let loading = false;
@@ -131,80 +137,52 @@
 
 {#if settings}
   <Layout {nodeType} title="إدارة النسخ الاحتياطية">
-    <div class="mx-auto max-w-[1200px] p-6">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">
-          إدارة النسخ الاحتياطية
-        </h1>
-        <button
-          on:click={handleCreateBackup}
-          disabled={loading}
-          class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
-        >
-          {#if loading}
-            <div
-              class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"
-            ></div>
-          {/if}
-          إنشاء نسخة احتياطية
-        </button>
-      </div>
+    <div class="mx-auto max-w-[1200px] p-6" dir="rtl">
+      <AppPageHeader title="إدارة النسخ الاحتياطية">
+        <svelte:fragment slot="actions">
+          <AppButton
+            variant="primary"
+            loading={loading}
+            on:click={handleCreateBackup}
+          >
+            إنشاء نسخة احتياطية
+          </AppButton>
+        </svelte:fragment>
+      </AppPageHeader>
 
-      <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-xl mb-6 text-sm text-blue-800 dark:text-blue-300">
-        <h3 class="font-bold mb-1">دليل المشغل (Operator Guide):</h3>
-        <ul class="list-disc pr-5 space-y-1">
-          <li><strong>قيود الاستعادة:</strong> لا يمكن استعادة نسخة احتياطية لسنة مالية تمت أرشفتها. النظام يحمي السجلات التاريخية من أي تلاعب أو تراجع.</li>
-          <li><strong>التوكيد النصي:</strong> يُطلب منك كتابة "RESTORE" لتأكيد الاستعادة لأنها ستؤدي إلى إعادة تشغيل النظام وإلغاء أي تغييرات لم يتم حفظها في النسخة الاحتياطية.</li>
-        </ul>
+      <div class="mb-6">
+        <AppAlert intent="info" title="دليل المشغل (Operator Guide):">
+          <ul class="list-disc pr-5 space-y-1">
+            <li><strong>قيود الاستعادة:</strong> لا يمكن استعادة نسخة احتياطية لسنة مالية تمت أرشفتها. النظام يحمي السجلات التاريخية من أي تلاعب أو تراجع.</li>
+            <li><strong>التوكيد النصي:</strong> يُطلب منك كتابة "RESTORE" لتأكيد الاستعادة لأنها ستؤدي إلى إعادة تشغيل النظام وإلغاء أي تغييرات لم يتم حفظها في النسخة الاحتياطية.</li>
+          </ul>
+        </AppAlert>
       </div>
 
       {#if error}
-        <div
-          class="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-4"
-        >
-          {error}
+        <div class="mb-4">
+          <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>
+            {error}
+          </AppAlert>
         </div>
       {/if}
 
       {#if loading && backups.length === 0}
-        <div class="text-center py-12">
-          <div
-            class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"
-          ></div>
-          <p class="text-gray-600 dark:text-gray-400">جاري تحميل النسخ الاحتياطية...</p>
-        </div>
+        <AppLoadingState message="جاري تحميل النسخ الاحتياطية..." />
       {:else if backups.length === 0}
-        <div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-          <svg
-            class="w-16 h-16 mx-auto mb-4 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            ></path>
-          </svg>
-          <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            لا توجد نسخ احتياطية
-          </h3>
-          <p class="text-gray-600 dark:text-gray-400 mb-4">
-            ابدأ بإنشاء نسخة احتياطية لحماية بياناتك
-          </p>
-          <button
-            on:click={handleCreateBackup}
-            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors cursor-pointer"
-          >
-            إنشاء أول نسخة احتياطية
-          </button>
-        </div>
-      {:else}
-        <div
-          class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden"
+        <AppEmptyState
+          title="لا توجد نسخ احتياطية"
+          description="ابدأ بإنشاء نسخة احتياطية لحماية بياناتك"
+          icon="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
         >
+          <svelte:fragment slot="action">
+            <AppButton variant="primary" on:click={handleCreateBackup}>
+              إنشاء أول نسخة احتياطية
+            </AppButton>
+          </svelte:fragment>
+        </AppEmptyState>
+      {:else}
+        <AppCard padding="none" class="mb-6">
           <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-800 dark:text-white">
               النسخ الاحتياطية المتاحة
@@ -217,7 +195,7 @@
           <div class="divide-y divide-gray-200 dark:divide-gray-700">
             {#each backups as backup (backup.filename)}
               <div
-                class="px-6 py-4 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition-colors"
+                class="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
               >
                 <div class="flex items-center justify-between">
                   <div class="flex-1">
@@ -250,23 +228,19 @@
 
                   <div class="flex items-center gap-2">
                     {#if isAdmin}
-                      <button
-                        on:click={() => handleRestoreBackup(backup.path)}
+                      <AppButton
+                        variant="danger"
+                        size="sm"
                         disabled={restoring}
-                        class="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white px-3 py-1 rounded text-sm transition-colors cursor-pointer"
+                        loading={restoring}
+                        on:click={() => handleRestoreBackup(backup.path)}
                       >
-                        {#if restoring}
-                          <div
-                            class="animate-spin rounded-full h-3 w-3 border-b-2 border-white inline-block"
-                          ></div>
-                        {:else}
-                          استعادة
-                        {/if}
-                      </button>
+                        استعادة
+                      </AppButton>
                     {:else}
-                      <div class="text-gray-500 dark:text-gray-400 text-sm px-3 py-1">
+                      <div class="text-gray-500 dark:text-gray-400 text-sm px-3 py-1 flex items-center">
                         <svg
-                          class="w-4 h-4 inline-block ml-1"
+                          class="w-4 h-4 ml-1"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -286,31 +260,26 @@
               </div>
             {/each}
           </div>
-        </div>
+        </AppCard>
       {/if}
 
-      <div class="mt-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <h3 class="font-semibold text-blue-900 dark:text-blue-300 mb-2">
-          معلومات هامة:
-        </h3>
-        <ul class="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-          <li>• يتم الاحتفاظ بآخر 7 نسخ احتياطية فقط</li>
-          <li>• يتم إنشاء نسخة احتياطية تلقائيا كل 24 ساعة</li>
-          <li>• استعادة النسخة الاحتياطية تستبدل البيانات الحالية</li>
-          <li>• يوصى بإنشاء نسخة احتياطية قبل أي تحديثات مهمة</li>
-          {#if !isAdmin}
-            <li class="text-orange-600 dark:text-orange-400 font-medium">
-              • استعادة النسخ الاحتياطية متاحة فقط للمسؤولين
-            </li>
-          {/if}
-        </ul>
+      <div class="mt-8">
+        <AppAlert intent="info" title="معلومات هامة:">
+          <ul class="text-sm space-y-1">
+            <li>• يتم الاحتفاظ بآخر 7 نسخ احتياطية فقط</li>
+            <li>• يتم إنشاء نسخة احتياطية تلقائيا كل 24 ساعة</li>
+            <li>• استعادة النسخة الاحتياطية تستبدل البيانات الحالية</li>
+            <li>• يوصى بإنشاء نسخة احتياطية قبل أي تحديثات مهمة</li>
+            {#if !isAdmin}
+              <li class="font-medium">
+                • استعادة النسخ الاحتياطية متاحة فقط للمسؤولين
+              </li>
+            {/if}
+          </ul>
+        </AppAlert>
       </div>
     </div>
   </Layout>
 {:else}
-  <div class="flex items-center justify-center h-screen">
-    <div
-      class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"
-    ></div>
-  </div>
+  <AppLoadingState />
 {/if}

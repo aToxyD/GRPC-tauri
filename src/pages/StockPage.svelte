@@ -23,6 +23,16 @@
   } from "../lib/types";
   import Layout from "../components/Layout.svelte";
 
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppTable from '../lib/components/ui/AppTable.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppBadge from '../lib/components/ui/AppBadge.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+
   // Section 2 & 3: Summary
   let summary: StockSummary[] = $state([]);
   let summaryLoading = $state(true);
@@ -221,35 +231,35 @@
     await loadMovements();
   }
 
-  function getStatusBadge(quantity: number) {
+  function getStatusBadge(quantity: number): { text: string; intent: 'success' | 'warning' | 'danger' | 'neutral' } {
     if (quantity === 0) {
-      return { text: "نفد", class: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400" };
+      return { text: "نفد", intent: "neutral" };
     } else if (quantity < 10) {
-      return { text: "منخفض", class: "bg-red-100 text-red-600" };
+      return { text: "منخفض", intent: "danger" };
     } else if (quantity < 50) {
-      return { text: "متوسط", class: "bg-orange-100 text-orange-600" };
+      return { text: "متوسط", intent: "warning" };
     } else {
-      return { text: "جيد", class: "bg-green-100 text-green-600" };
+      return { text: "جيد", intent: "success" };
     }
   }
 
-  function getMovementTypeBadge(type: StockMovementType) {
+  function getMovementTypeBadge(type: StockMovementType): { text: string; intent: 'success' | 'warning' | 'danger' | 'neutral' | 'info' } {
     switch (type) {
       case "IN":
-        return { text: "↑ دخول", class: "bg-green-100 text-green-600" };
+        return { text: "↑ دخول", intent: "success" };
       case "OUT":
-        return { text: "↓ خروج", class: "bg-red-100 text-red-600" };
+        return { text: "↓ خروج", intent: "danger" };
       case "OPENING":
-        return { text: "◉ افتتاحي", class: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400" };
+        return { text: "◉ افتتاحي", intent: "neutral" };
       default:
-        return { text: type, class: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400" };
+        return { text: type, intent: "neutral" };
     }
   }
 
   function getMovementQuantityColor(type: StockMovementType) {
     return type === "IN" || type === "OPENING"
-      ? "text-green-600"
-      : "text-red-600";
+      ? "text-green-600 dark:text-green-400"
+      : "text-red-600 dark:text-red-400";
   }
 
   function formatDate(dateStr: string) {
@@ -264,513 +274,303 @@
   title="حالة المخزون"
   subtitle="ملخص المخزون وسجل الحركات"
 >
-  <!-- SECTION 1: Header -->
-  <div class="mb-8">
-    <div class="flex items-center justify-end gap-3">
-      <button
-        onclick={handleExportMovements}
-        class="btn-secondary flex items-center gap-2"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <span>تصدير حركات المخزون (Excel)</span>
-      </button>
+  <div dir="rtl">
+    <!-- SECTION 1: Header -->
+    <div class="mb-8">
+      <AppPageHeader title="حالة المخزون" subtitle="ملخص المخزون وسجل الحركات">
+        <svelte:fragment slot="actions">
+          <div class="flex items-center gap-2 flex-wrap">
+            <AppButton variant="secondary" on:click={handleExportMovements}>
+              <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              تصدير الحركات (Excel)
+            </AppButton>
+            
+            <AppButton variant="secondary" on:click={handleExportMovementsPackage} ariaLabel="تصدير حركات المخزون كحزمة مشفرة وآمنة للمزامنة مع الولاية">
+              <svg class="w-4 h-4 mr-2 inline-block text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+              </svg>
+              <span class="text-blue-700 dark:text-blue-400">تصدير حزمة حركات (.sync)</span>
+            </AppButton>
 
-
-      <div class="h-8 w-px bg-gray-200 mx-1"></div>
-
-      <button
-        onclick={handleExportMovementsPackage}
-        class="btn-secondary flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border-blue-200 hover:bg-blue-100"
-        title="تصدير حركات المخزون كحزمة مشفرة وآمنة للمزامنة مع الولاية"
-      >
-        <svg
-          class="w-4 h-4 text-blue-600"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-          />
-        </svg>
-        <span class="text-blue-700">تصدير حزمة حركات (.sync)</span>
-      </button>
-
-      <div class="h-8 w-px bg-gray-200 mx-1"></div>
-
-      <button
-        onclick={handleImportProducts}
-        class="btn-secondary flex items-center gap-2"
-        title="استيراد حزمة المزامنة (.sync) - هذا هو مسار المزامنة الرسمي بين العقد"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-          />
-        </svg>
-        <span>استيراد منتجات الولاية</span>
-      </button>
-    </div>
-  </div>
-
-  {#if importError}
-    <div
-      class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
-    >
-      {importError}
-    </div>
-  {/if}
-
-  {#if importSuccess}
-    <div
-      class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm"
-    >
-      {importSuccess}
-    </div>
-  {/if}
-
-  <!-- SECTION 2: Summary Cards -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-    <!-- Card 1: Total Products -->
-    <div class="card p-4 border-l-4 border-blue-500">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي المنتجات</p>
-          <p class="text-2xl font-bold text-blue-600">
-            {totalProducts.toLocaleString("ar-DZ")}
-          </p>
-        </div>
-        <div
-          class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center"
-        >
-          <svg
-            class="w-6 h-6 text-blue-600"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-            />
-          </svg>
-        </div>
-      </div>
+            <AppButton variant="secondary" on:click={handleImportProducts} ariaLabel="استيراد حزمة المزامنة (.sync) - هذا هو مسار المزامنة الرسمي بين العقد">
+              <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+              استيراد منتجات الولاية
+            </AppButton>
+          </div>
+        </svelte:fragment>
+      </AppPageHeader>
     </div>
 
-    <!-- Card 2: Total In -->
-    <div class="card p-4 border-l-4 border-green-500">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي الدخول</p>
-          <p class="text-2xl font-bold text-green-600">
-            {totalIn.toLocaleString("ar-DZ")}
-          </p>
-        </div>
-        <div
-          class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center"
-        >
-          <svg
-            class="w-6 h-6 text-green-600"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M5 10l7-7m0 0l7 7m-7-7v18"
-            />
-          </svg>
-        </div>
-      </div>
-    </div>
-
-    <!-- Card 3: Total Out -->
-    <div class="card p-4 border-l-4 border-red-500">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي الخروج</p>
-          <p class="text-2xl font-bold text-red-600">
-            {totalOut.toLocaleString("ar-DZ")}
-          </p>
-        </div>
-        <div
-          class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center"
-        >
-          <svg
-            class="w-6 h-6 text-red-600"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M19 14l-7 7m0 0l-7-7m7 7V3"
-            />
-          </svg>
-        </div>
-      </div>
-    </div>
-
-    <!-- Card 4: Low Stock -->
-    <div class="card p-4 border-l-4 border-orange-500">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm text-gray-500 dark:text-gray-400">منتجات منخفضة</p>
-          <p class="text-2xl font-bold text-orange-600">
-            {lowStockCount.toLocaleString("ar-DZ")}
-          </p>
-        </div>
-        <div
-          class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center"
-        >
-          <svg
-            class="w-6 h-6 text-orange-600"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-            />
-          </svg>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- SECTION 3: Stock Table -->
-  <div class="card mb-8">
-    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-      <h3 class="font-semibold text-lg">المخزون الحالي</h3>
-    </div>
-
-    {#if summaryLoading}
-      <div class="flex items-center justify-center py-12">
-        <div
-          class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"
-        ></div>
-      </div>
-    {:else if summary.length === 0 && stocks.length === 0}
-      <div class="text-center py-12 text-gray-500 dark:text-gray-400">
-        <svg
-          class="w-16 h-16 mx-auto mb-4 text-gray-300"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-          />
-        </svg>
-        <p class="text-lg">لا يوجد منتجات في المخزون</p>
-        <p class="text-sm mt-2">استورد قائمة منتجات الولاية</p>
-      </div>
-    {:else}
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr>
-              <th class="table-header">المنتج</th>
-              <th class="table-header">الكمية الحالية</th>
-              <th class="table-header">إجمالي الدخول</th>
-              <th class="table-header">إجمالي الخروج</th>
-              <th class="table-header">عدد الحركات</th>
-              <th class="table-header">آخر حركة</th>
-              <th class="table-header">الحالة</th>
-              <th class="table-header">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each summary as product}
-              {@const status = getStatusBadge(product.current_quantity)}
-              {@const isHighlighted =
-                highlightedProductId === product.product_id}
-              <tr class="hover:bg-gray-50 dark:bg-gray-900 {isHighlighted ? 'bg-blue-50 dark:bg-blue-900/20' : ''}">
-                <td class="table-cell font-medium">{product.product_name}</td>
-                <td
-                  class="table-cell {product.current_quantity < 10
-                    ? 'text-red-700 font-bold'
-                    : ''}"
-                >
-                  {product.current_quantity.toFixed(2)}
-                </td>
-                <td class="table-cell text-green-600"
-                  >{product.total_in.toFixed(2)}</td
-                >
-                <td class="table-cell text-red-600"
-                  >{product.total_out.toFixed(2)}</td
-                >
-                <td class="table-cell">{product.movement_count}</td>
-                <td class="table-cell text-sm text-gray-500 dark:text-gray-400">
-                  {product.last_movement
-                    ? formatDate(product.last_movement)
-                    : "-"}
-                </td>
-                <td class="table-cell">
-                  <span
-                    class="px-2 py-1 rounded-full text-xs font-medium {status.class}"
-                  >
-                    {status.text}
-                  </span>
-                </td>
-                <td class="table-cell">
-                  <div class="flex gap-2">
-                    <button
-                      onclick={() =>
-                        showMovementsForProduct(product.product_id)}
-                      class="text-blue-600 hover:text-blue-800 dark:text-blue-300 text-sm font-medium"
-                    >
-                      الحركات
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+    {#if importError}
+      <div class="mb-4">
+        <AppAlert intent="danger" dismissible on:dismiss={() => importError = ''}>{importError}</AppAlert>
       </div>
     {/if}
-  </div>
 
-  <!-- SECTION 4: Movements Table -->
-  {#if movementsVisible}
-    <div id="movements-section" class="card mb-8">
-      <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h3 class="font-semibold text-lg">سجل حركات المخزون</h3>
+    {#if importSuccess}
+      <div class="mb-4">
+        <AppAlert intent="success" dismissible on:dismiss={() => importSuccess = ''}>{importSuccess}</AppAlert>
       </div>
+    {/if}
 
-      <!-- Filters -->
-      <div class="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <!-- Filter 1: Product -->
+    <!-- SECTION 2: Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <AppCard class="border-r-4 border-blue-500" padding="sm">
+        <div class="flex items-center justify-between">
           <div>
-            <label
-              for="filter-product"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">المنتج</label
-            >
-            <select
-              id="filter-product"
-              bind:value={filterProductId}
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-            >
-              <option value="">كل المنتجات</option>
-              {#each summary as product}
-                <option value={product.product_id}
-                  >{product.product_name}</option
-                >
-              {/each}
-            </select>
+            <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي المنتجات</p>
+            <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {totalProducts.toLocaleString("ar-DZ")}
+            </p>
           </div>
-
-          <!-- Filter 2: Movement Type -->
-          <div>
-            <label
-              for="filter-type"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >نوع الحركة</label
-            >
-            <select
-              id="filter-type"
-              bind:value={filterMovementType}
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-            >
-              <option value="">كل الأنواع</option>
-              <option value="IN">دخول مخزون</option>
-              <option value="OUT">خروج مخزون</option>
-              <option value="OPENING">رصيد افتتاحي</option>
-            </select>
-          </div>
-
-          <!-- Filter 3: Start Date -->
-          <div>
-            <label
-              for="filter-start"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >من تاريخ</label
-            >
-            <input
-              id="filter-start"
-              type="date"
-              bind:value={filterStartDate}
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-            />
-          </div>
-
-          <!-- Filter 4: End Date -->
-          <div>
-            <label
-              for="filter-end"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >إلى تاريخ</label
-            >
-            <input
-              id="filter-end"
-              type="date"
-              bind:value={filterEndDate}
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-            />
+          <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+            </svg>
           </div>
         </div>
+      </AppCard>
 
-        <div class="flex gap-3">
-          <button onclick={loadMovements} class="btn-primary">بحث</button>
-          <button onclick={clearFilters} class="btn-secondary">مسح</button>
-        </div>
-      </div>
-
-      <!-- Movements Table -->
-      <div class="overflow-x-auto">
-        {#if movementsLoading}
-          <div class="flex items-center justify-center py-12">
-            <div
-              class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"
-            ></div>
+      <AppCard class="border-r-4 border-green-500" padding="sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي الدخول</p>
+            <p class="text-2xl font-bold text-green-600 dark:text-green-400">
+              {totalIn.toLocaleString("ar-DZ")}
+            </p>
           </div>
-        {:else if movements.length === 0}
-          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-            <p>لا توجد حركات تطابق الفلاتر المحددة</p>
-          </div>
-        {:else}
-          <table class="w-full">
-            <thead>
-              <tr>
-                <th class="table-header">التاريخ والوقت</th>
-                <th class="table-header">المنتج</th>
-                <th class="table-header">نوع الحركة</th>
-                <th class="table-header">الكمية</th>
-                <th class="table-header">الرصيد قبل</th>
-                <th class="table-header">الرصيد بعد</th>
-                <th class="table-header">المرجع</th>
-                <th class="table-header">المستخدم</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each movements as movement}
-                {@const typeBadge = getMovementTypeBadge(
-                  movement.movement_type,
-                )}
-                {@const qtyColor = getMovementQuantityColor(
-                  movement.movement_type,
-                )}
-                {@const refShort = movement.reference_id
-                  ? movement.reference_id.slice(0, 8)
-                  : "-"}
-                <tr class="hover:bg-gray-50 dark:bg-gray-900">
-                  <td class="table-cell text-sm"
-                    >{formatDate(movement.timestamp)}</td
-                  >
-                  <td class="table-cell font-medium"
-                    >{movement.product_name || "-"}</td
-                  >
-                  <td class="table-cell">
-                    <span
-                      class="px-2 py-1 rounded-full text-xs font-medium {typeBadge.class}"
-                    >
-                      {typeBadge.text}
-                    </span>
-                  </td>
-                  <td class="table-cell font-medium {qtyColor}">
-                    {movement.movement_type === "OUT"
-                      ? "-"
-                      : "+"}{movement.quantity.toFixed(2)}
-                  </td>
-                  <td class="table-cell text-gray-500 dark:text-gray-400"
-                    >{movement.balance_before.toFixed(2)}</td
-                  >
-                  <td class="table-cell text-gray-500 dark:text-gray-400"
-                    >{movement.balance_after.toFixed(2)}</td
-                  >
-                  <td class="table-cell text-sm">
-                    {#if movement.reference_type}
-                      <span class="text-gray-600 dark:text-gray-400"
-                        >{movement.reference_type}:</span
-                      >
-                      <span class="font-mono text-xs">{refShort}</span>
-                    {:else}
-                      <span class="text-gray-400">-</span>
-                    {/if}
-                  </td>
-                  <td class="table-cell text-sm">{movement.username}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-      </div>
-
-      <!-- Pagination -->
-      {#if !movementsLoading && movements.length > 0}
-        <div
-          class="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between"
-        >
-          <p class="text-sm text-gray-600 dark:text-gray-400">
-            الصفحة {currentPage + 1} من {totalPages || 1} | إجمالي: {totalMovements.toLocaleString(
-              "ar-DZ",
-            )} حركة
-          </p>
-          <div class="flex gap-2">
-            <button
-              onclick={prevPage}
-              disabled={currentPage === 0}
-              class="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              السابق
-            </button>
-            <button
-              onclick={nextPage}
-              disabled={currentPage >= totalPages - 1}
-              class="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              التالي
-            </button>
+          <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+            </svg>
           </div>
         </div>
-      {/if}
+      </AppCard>
+
+      <AppCard class="border-r-4 border-red-500" padding="sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-500 dark:text-gray-400">إجمالي الخروج</p>
+            <p class="text-2xl font-bold text-red-600 dark:text-red-400">
+              {totalOut.toLocaleString("ar-DZ")}
+            </p>
+          </div>
+          <div class="w-12 h-12 bg-red-100 dark:bg-red-900/50 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+            </svg>
+          </div>
+        </div>
+      </AppCard>
+
+      <AppCard class="border-r-4 border-orange-500" padding="sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-500 dark:text-gray-400">منتجات منخفضة</p>
+            <p class="text-2xl font-bold text-orange-600 dark:text-orange-400">
+              {lowStockCount.toLocaleString("ar-DZ")}
+            </p>
+          </div>
+          <div class="w-12 h-12 bg-orange-100 dark:bg-orange-900/50 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+        </div>
+      </AppCard>
     </div>
-  {/if}
 
-  <!-- Info Card -->
-  <div class="mt-6 card bg-blue-50 dark:bg-blue-900/20 border-blue-200">
-    <h3 class="font-semibold text-blue-800 dark:text-blue-300 mb-2">معلومات</h3>
-    <p class="text-sm text-blue-700">
-      يتم تحديث المخزون تلقائياً عند تأكيد طلبيات الموردين وتسجيل الاستهلاك
-      اليومي. كل حركة مخزون يتم تسجيلها في سجل الحركات مع التفاصيل الكاملة.
-    </p>
+    <!-- SECTION 3: Stock Table -->
+    <div class="mb-8">
+      <AppCard padding="none">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="font-semibold text-lg text-gray-800 dark:text-white">المخزون الحالي</h3>
+        </div>
+
+        <AppTable
+          loading={summaryLoading}
+          empty={!summaryLoading && summary.length === 0 && stocks.length === 0}
+        >
+          <svelte:fragment slot="empty">
+            <AppEmptyState
+              title="لا يوجد منتجات في المخزون"
+              description="استورد قائمة منتجات الولاية"
+              icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+            />
+          </svelte:fragment>
+
+          <svelte:fragment slot="head">
+            <th class="table-header">المنتج</th>
+            <th class="table-header">الكمية الحالية</th>
+            <th class="table-header">إجمالي الدخول</th>
+            <th class="table-header">إجمالي الخروج</th>
+            <th class="table-header">عدد الحركات</th>
+            <th class="table-header">آخر حركة</th>
+            <th class="table-header">الحالة</th>
+            <th class="table-header text-left">إجراءات</th>
+          </svelte:fragment>
+
+          {#each summary as product}
+            {@const status = getStatusBadge(product.current_quantity)}
+            {@const isHighlighted = highlightedProductId === product.product_id}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {isHighlighted ? 'bg-blue-50 dark:bg-blue-900/20' : ''}">
+              <td class="table-cell font-medium">{product.product_name}</td>
+              <td class="table-cell {product.current_quantity < 10 ? 'text-red-700 dark:text-red-400 font-bold' : ''}">
+                {product.current_quantity.toFixed(2)}
+              </td>
+              <td class="table-cell text-green-600 dark:text-green-400">
+                {product.total_in.toFixed(2)}
+              </td>
+              <td class="table-cell text-red-600 dark:text-red-400">
+                {product.total_out.toFixed(2)}
+              </td>
+              <td class="table-cell">{product.movement_count}</td>
+              <td class="table-cell text-sm text-gray-500 dark:text-gray-400">
+                {product.last_movement ? formatDate(product.last_movement) : "-"}
+              </td>
+              <td class="table-cell">
+                <AppBadge intent={status.intent} size="sm">{status.text}</AppBadge>
+              </td>
+              <td class="table-cell text-left">
+                <AppButton variant="ghost" size="sm" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" on:click={() => showMovementsForProduct(product.product_id)}>
+                  الحركات
+                </AppButton>
+              </td>
+            </tr>
+          {/each}
+        </AppTable>
+      </AppCard>
+    </div>
+
+    <!-- SECTION 4: Movements Table -->
+    {#if movementsVisible}
+      <div id="movements-section" class="mb-8">
+        <AppCard padding="none">
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="font-semibold text-lg text-gray-800 dark:text-white">سجل حركات المخزون</h3>
+          </div>
+
+          <!-- Filters -->
+          <div class="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <AppSelect
+                id="filter-product"
+                label="المنتج"
+                bind:value={filterProductId}
+              >
+                <option value="">كل المنتجات</option>
+                {#each summary as product}
+                  <option value={product.product_id}>{product.product_name}</option>
+                {/each}
+              </AppSelect>
+
+              <AppSelect
+                id="filter-type"
+                label="نوع الحركة"
+                bind:value={filterMovementType}
+              >
+                <option value="">كل الأنواع</option>
+                <option value="IN">دخول مخزون</option>
+                <option value="OUT">خروج مخزون</option>
+                <option value="OPENING">رصيد افتتاحي</option>
+              </AppSelect>
+
+              <AppInput
+                id="filter-start"
+                label="من تاريخ"
+                type="date"
+                bind:value={filterStartDate}
+              />
+
+              <AppInput
+                id="filter-end"
+                label="إلى تاريخ"
+                type="date"
+                bind:value={filterEndDate}
+              />
+            </div>
+
+            <div class="flex gap-3">
+              <AppButton variant="primary" on:click={loadMovements}>بحث</AppButton>
+              <AppButton variant="secondary" on:click={clearFilters}>مسح</AppButton>
+            </div>
+          </div>
+
+          <!-- Movements Table -->
+          <AppTable
+            loading={movementsLoading}
+            empty={!movementsLoading && movements.length === 0}
+          >
+            <svelte:fragment slot="empty">
+              <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+                <p>لا توجد حركات تطابق الفلاتر المحددة</p>
+              </div>
+            </svelte:fragment>
+
+            <svelte:fragment slot="head">
+              <th class="table-header">التاريخ والوقت</th>
+              <th class="table-header">المنتج</th>
+              <th class="table-header">نوع الحركة</th>
+              <th class="table-header">الكمية</th>
+              <th class="table-header">الرصيد قبل</th>
+              <th class="table-header">الرصيد بعد</th>
+              <th class="table-header">المرجع</th>
+              <th class="table-header">المستخدم</th>
+            </svelte:fragment>
+
+            {#each movements as movement}
+              {@const typeBadge = getMovementTypeBadge(movement.movement_type)}
+              {@const qtyColor = getMovementQuantityColor(movement.movement_type)}
+              {@const refShort = movement.reference_id ? movement.reference_id.slice(0, 8) : "-"}
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <td class="table-cell text-sm">{formatDate(movement.timestamp)}</td>
+                <td class="table-cell font-medium">{movement.product_name || "-"}</td>
+                <td class="table-cell">
+                  <AppBadge intent={typeBadge.intent} size="sm">{typeBadge.text}</AppBadge>
+                </td>
+                <td class="table-cell font-medium {qtyColor}">
+                  {movement.movement_type === "OUT" ? "-" : "+"}{movement.quantity.toFixed(2)}
+                </td>
+                <td class="table-cell text-gray-500 dark:text-gray-400">{movement.balance_before.toFixed(2)}</td>
+                <td class="table-cell text-gray-500 dark:text-gray-400">{movement.balance_after.toFixed(2)}</td>
+                <td class="table-cell text-sm">
+                  {#if movement.reference_type}
+                    <span class="text-gray-600 dark:text-gray-400">{movement.reference_type}:</span>
+                    <span class="font-mono text-xs text-gray-800 dark:text-gray-200">{refShort}</span>
+                  {:else}
+                    <span class="text-gray-400">-</span>
+                  {/if}
+                </td>
+                <td class="table-cell text-sm">{movement.username}</td>
+              </tr>
+            {/each}
+          </AppTable>
+
+          <!-- Pagination -->
+          {#if !movementsLoading && movements.length > 0}
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <p class="text-sm text-gray-600 dark:text-gray-400">
+                الصفحة {currentPage + 1} من {totalPages || 1} | إجمالي: {totalMovements.toLocaleString("ar-DZ")} حركة
+              </p>
+              <div class="flex gap-2">
+                <AppButton variant="secondary" size="sm" disabled={currentPage === 0} on:click={prevPage}>السابق</AppButton>
+                <AppButton variant="secondary" size="sm" disabled={currentPage >= totalPages - 1} on:click={nextPage}>التالي</AppButton>
+              </div>
+            </div>
+          {/if}
+        </AppCard>
+      </div>
+    {/if}
+
+    <!-- Info Card -->
+    <div class="mt-6">
+      <AppAlert intent="info" title="معلومات">
+        يتم تحديث المخزون تلقائياً عند تأكيد طلبيات الموردين وتسجيل الاستهلاك اليومي. كل حركة مخزون يتم تسجيلها في سجل الحركات مع التفاصيل الكاملة.
+      </AppAlert>
+    </div>
   </div>
 </Layout>

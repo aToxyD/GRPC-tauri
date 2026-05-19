@@ -11,6 +11,14 @@
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
 
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
+  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
+
   let units: Unit[] = [];
   let settings: Settings | null = null;
   let loading = true;
@@ -127,59 +135,75 @@
 </script>
 
 <Layout nodeType="WILAYA" title="المزامنة" subtitle="استيراد تقارير الوحدات">
+  <div dir="rtl">
+    <AppPageHeader title="المزامنة" subtitle="استيراد تقارير الوحدات" />
 
     {#if error}
-      <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-        {error}
+      <div class="mb-4">
+        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
       </div>
     {/if}
 
     {#if success}
-      <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-        {success}
+      <div class="mb-4">
+        <AppAlert intent="success" dismissible on:dismiss={() => success = ''}>{success}</AppAlert>
       </div>
     {/if}
 
     {#if importProgress}
-      <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 rounded-lg text-blue-700 text-sm flex items-center">
-        <svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        {importProgress}
+      <div class="mb-4">
+        <AppAlert intent="info">
+          <div class="flex items-center">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {importProgress}
+          </div>
+        </AppAlert>
       </div>
     {/if}
 
     {#if loading}
-      <div class="flex items-center justify-center py-12">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
-      </div>
+      <AppLoadingState message="جارٍ التحميل..." />
     {:else if units.length === 0}
-      <div class="card text-center py-12 text-gray-500 dark:text-gray-400">
-        <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-        </svg>
-        <p class="text-lg">لا يوجد وحدات متاحة. أنشئ وحدات أولاً.</p>
-        <a href="#/wilaya/units" class="text-civil-blue hover:underline mt-2 inline-block">أنشئ وحدة أولاً</a>
-      </div>
+      <AppCard padding="none">
+        <AppEmptyState
+          title="لا يوجد وحدات متاحة"
+          description="أنشئ وحدات أولاً لتتمكن من المزامنة."
+          icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+        >
+          <svelte:fragment slot="action">
+            <a href="#/wilaya/units">
+              <AppButton variant="primary">أنشئ وحدة أولاً</AppButton>
+            </a>
+          </svelte:fragment>
+        </AppEmptyState>
+      </AppCard>
     {:else}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Unit Selection -->
-        <div class="card md:col-span-2">
-          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">اختيار الوحدة</h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">اختر الوحدة التي تستورد تقريرها</p>
-          <select class="input-field" bind:value={selectedUnit}>
-            {#each units as unit}
-              <option value={unit.id}>{unit.code} - {unit.name}</option>
-            {/each}
-          </select>
+        <div class="md:col-span-2">
+          <AppCard>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">اختيار الوحدة</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">اختر الوحدة التي تستورد تقريرها</p>
+            <AppSelect
+              id="unit-select"
+              label=""
+              bind:value={selectedUnit}
+            >
+              {#each units as unit}
+                <option value={unit.id}>{unit.code} - {unit.name}</option>
+              {/each}
+            </AppSelect>
+          </AppCard>
         </div>
 
         <!-- Import Daily Report -->
-        <div class="card">
-          <div class="flex items-center gap-3 mb-4">
+        <AppCard>
+          <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
             <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
-              <svg class="w-6 h-6 text-civil-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-6 h-6 text-civil-blue dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
               </svg>
             </div>
@@ -189,22 +213,23 @@
             </div>
           </div>
           <div class="space-y-2">
-            <button
-              on:click={importDailyReportPackageSync}
-              class="w-full btn-primary"
+            <AppButton
+              variant="primary"
+              fullWidth
               disabled={!selectedUnit || !!importProgress}
-              title="هذا هو مسار المزامنة الرسمي بين العقد"
+              on:click={importDailyReportPackageSync}
+              ariaLabel="هذا هو مسار المزامنة الرسمي بين العقد"
             >
               استيراد حزمة المزامنة (.sync)
-            </button>
+            </AppButton>
           </div>
-        </div>
+        </AppCard>
 
         <!-- Import Monthly Report -->
-        <div class="card">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-              <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <AppCard>
+          <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+            <div class="w-12 h-12 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
+              <svg class="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
               </svg>
             </div>
@@ -214,22 +239,23 @@
             </div>
           </div>
           <div class="space-y-2">
-            <button
-              on:click={importMonthlyReportSync}
-              class="w-full btn-primary"
+            <AppButton
+              variant="primary"
+              fullWidth
               disabled={!selectedUnit || !!importProgress}
-              title="هذا هو مسار المزامنة الرسمي بين العقد"
+              on:click={importMonthlyReportSync}
+              ariaLabel="هذا هو مسار المزامنة الرسمي بين العقد"
             >
               استيراد حزمة المزامنة (.sync)
-            </button>
+            </AppButton>
           </div>
-        </div>
+        </AppCard>
 
         <!-- Import Stock Movements -->
-        <div class="card">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
-              <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <AppCard>
+          <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+            <div class="w-12 h-12 bg-purple-50 dark:bg-purple-900/20 rounded-lg flex items-center justify-center">
+              <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
               </svg>
             </div>
@@ -239,30 +265,34 @@
             </div>
           </div>
           <div class="space-y-2">
-            <button
-              on:click={importStockMovementsPackageSync}
-              class="w-full btn-primary bg-purple-600 hover:bg-purple-700 border-purple-700"
+            <AppButton
+              variant="primary"
+              fullWidth
+              class="bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-700 border-purple-700"
               disabled={!selectedUnit || !!importProgress}
-              title="استيراد الحزمة المشفرة والموقعة رقمياً للمزامنة الآمنة"
+              on:click={importStockMovementsPackageSync}
+              ariaLabel="استيراد الحزمة المشفرة والموقعة رقمياً للمزامنة الآمنة"
             >
               استيراد حزمة حركات (.sync)
-            </button>
+            </AppButton>
           </div>
-        </div>
+        </AppCard>
       </div>
 
-      <div class="mt-8 card bg-blue-50 dark:bg-blue-900/20 border-blue-200">
-        <h3 class="font-semibold text-blue-800 dark:text-blue-300 mb-2">كيفية استيراد تقارير الوحدة</h3>
-        <ol class="text-sm text-blue-700 list-decimal list-inside space-y-1">
-          <li><strong>من عقدة الوحدة:</strong> صدّر الملفات المطلوبة:
-            <ul class="mr-4 mt-1 text-xs">
-              <li>• تقرير يومي: صفحة "التقارير" → تصدير حزمة .sync</li>
-              <li>• تقرير شهري: صفحة "التقارير" → تصدير حزمة .sync</li>
-              <li>• <strong>حركات المخزون: صفحة "المخزون" → تصدير حزمة حركات (.sync)</strong></li>
-            </ul>
-          </li>
-          <li><strong>من عقدة الولاية:</strong> اختر الوحدة المناسبة ثم استورد كل ملف</li>
-        </ol>
+      <div class="mt-8">
+        <AppAlert intent="info" title="كيفية استيراد تقارير الوحدة">
+          <ol class="text-sm list-decimal list-inside space-y-1 mt-2">
+            <li><strong>من عقدة الوحدة:</strong> صدّر الملفات المطلوبة:
+              <ul class="mr-4 mt-1 text-xs">
+                <li>• تقرير يومي: صفحة "التقارير" → تصدير حزمة .sync</li>
+                <li>• تقرير شهري: صفحة "التقارير" → تصدير حزمة .sync</li>
+                <li>• <strong>حركات المخزون: صفحة "المخزون" → تصدير حزمة حركات (.sync)</strong></li>
+              </ul>
+            </li>
+            <li><strong>من عقدة الولاية:</strong> اختر الوحدة المناسبة ثم استورد كل ملف</li>
+          </ol>
+        </AppAlert>
       </div>
     {/if}
+  </div>
 </Layout>

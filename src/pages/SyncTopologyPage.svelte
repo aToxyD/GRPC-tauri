@@ -4,6 +4,13 @@
   import type { SyncNodeHealth, ConflictSummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
 
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
+  import AppBadge from '../lib/components/ui/AppBadge.svelte';
+
   let nodes: SyncNodeHealth[] = [];
   let summary: ConflictSummary | null = null;
   let loading = true;
@@ -21,7 +28,7 @@
 
   function fmt(ts: string|null) { return ts ? new Date(ts).toLocaleString('ar-DZ') : '—'; }
   function stIcon(s: string) { return s==='HEALTHY'?'✅':s==='DEGRADED'?'⚠️':s==='CRITICAL'?'🔴':'❓'; }
-  function stCls(s: string) { return s==='HEALTHY'?'text-green-600 dark:text-green-400':s==='DEGRADED'?'text-yellow-600 dark:text-yellow-400':'text-red-600 dark:text-red-400'; }
+  function stIntent(s: string): 'success'|'warning'|'danger'|'neutral' { return s==='HEALTHY'?'success':s==='DEGRADED'?'warning':s==='CRITICAL'?'danger':'neutral'; }
 
   // Simple canvas-based node graph
   let canvas: HTMLCanvasElement;
@@ -106,104 +113,134 @@
 </script>
 
 <Layout {nodeType} title="طوبولوجيا المزامنة" subtitle="مراقبة العقد والعلاقات">
-<div class="p-6 max-w-6xl mx-auto" dir="rtl">
-  <div class="flex justify-between items-start mb-6">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">🌐 طوبولوجيا المزامنة</h1>
-      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">خريطة العقد والحزم والصحة التشغيلية</p>
-    </div>
-    <button class="bg-blue-50 dark:bg-blue-900/200 hover:bg-blue-600 disabled:opacity-60 text-white px-5 py-2 rounded-lg transition-colors cursor-pointer" on:click={load} disabled={loading}>⟳ تحديث</button>
+  <div dir="rtl">
+    <AppPageHeader title="طوبولوجيا المزامنة" subtitle="خريطة العقد والحزم والصحة التشغيلية">
+      <svelte:fragment slot="actions">
+        <AppButton variant="primary" on:click={load} disabled={loading}>⟳ تحديث</AppButton>
+      </svelte:fragment>
+    </AppPageHeader>
+
+    {#if error}
+      <div class="mb-4">
+        <AppAlert intent="danger">{error}</AppAlert>
+      </div>
+    {/if}
+
+    {#if loading && !summary}
+      <AppLoadingState message="جارٍ تحميل بيانات الشبكة..." />
+    {:else}
+      <!-- Summary Cards -->
+      {#if summary}
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <AppCard class="border-t-4 border-blue-500" padding="sm">
+          <div class="text-center">
+            <div class="text-2xl mb-2">📦</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.total}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">إجمالي التعارضات</div>
+          </div>
+        </AppCard>
+        <AppCard class="border-t-4 border-red-500" padding="sm">
+          <div class="text-center">
+            <div class="text-2xl mb-2">🔴</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.unresolved}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">غير محلول</div>
+          </div>
+        </AppCard>
+        <AppCard class="border-t-4 border-green-500" padding="sm">
+          <div class="text-center">
+            <div class="text-2xl mb-2">🌐</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-white">{nodes.length}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">عقد نشطة</div>
+          </div>
+        </AppCard>
+        <AppCard class="border-t-4 border-purple-500" padding="sm">
+          <div class="text-center">
+            <div class="text-2xl mb-2">✅</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.total - summary.unresolved}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">تعارضات محلولة</div>
+          </div>
+        </AppCard>
+      </div>
+      {/if}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <!-- Node Graph -->
+        <AppCard class="border-t-4 border-gray-200 dark:border-gray-700">
+          <h2 class="font-semibold text-gray-800 dark:text-white mb-3">🗺️ خريطة العقد</h2>
+          {#if nodes.length > 0}
+            <canvas bind:this={canvas} width="400" height="320" class="w-full max-w-[400px] block mx-auto"></canvas>
+            <p class="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">أخضر = سليم &nbsp;|&nbsp; أصفر = متدهور &nbsp;|&nbsp; أحمر = حرج</p>
+          {:else}
+            <div class="text-center p-8 text-gray-400 dark:text-gray-500 italic">لا توجد بيانات عقد بعد. ستظهر هنا عند أول مزامنة.</div>
+          {/if}
+        </AppCard>
+
+        <!-- Type Breakdown -->
+        <div class="space-y-4">
+          {#if summary && summary.byType.length > 0}
+          <AppCard class="border-t-4 border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-800 dark:text-white mb-3">📊 التعارضات حسب النوع</h2>
+            {#each summary.byType as t}
+              <div class="flex items-center gap-2 mb-1.5 text-sm">
+                <span class="min-w-[160px] text-gray-500 dark:text-gray-400">{t.conflictTypeDisplay}</span>
+                <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500" style="width:{Math.min((t.count/summary.total)*100,100)}%"></div>
+                </div>
+                <span class="min-w-[30px] text-left font-semibold text-gray-800 dark:text-white">{t.count}</span>
+              </div>
+            {/each}
+          </AppCard>
+          {/if}
+
+          {#if summary && summary.bySeverity.length > 0}
+          <AppCard class="border-t-4 border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-800 dark:text-white mb-3">⚠️ التعارضات حسب الشدة</h2>
+            {#each summary.bySeverity as s}
+              <div class="flex items-center gap-2 mb-1.5 text-sm">
+                <span class="min-w-[160px] text-gray-500 dark:text-gray-400">{s.severity}</span>
+                <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all duration-500 {s.severity==='CRITICAL'?'bg-red-500':s.severity==='ERROR'?'bg-orange-500':s.severity==='WARNING'?'bg-yellow-500':'bg-blue-50 dark:bg-blue-900/20'}" style="width:{Math.min((s.count/summary.total)*100,100)}%"></div>
+                </div>
+                <span class="min-w-[30px] text-left font-semibold text-gray-800 dark:text-white">{s.count}</span>
+              </div>
+            {/each}
+          </AppCard>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Node Health Table -->
+      {#if nodes.length > 0}
+      <h2 class="font-semibold text-gray-800 dark:text-white mb-3">📋 تفاصيل العقد ({nodes.length})</h2>
+      <AppCard padding="none" class="mb-6">
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse">
+            <thead><tr>
+              <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">الحالة</th>
+              <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">معرف العقدة</th>
+              <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">آخر مزامنة</th>
+              <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">مستلم</th>
+              <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">مرفوض</th>
+              <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">إعادة تشغيل</th>
+            </tr></thead>
+            <tbody>
+              {#each nodes as n}
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 font-medium">
+                  <AppBadge intent={stIntent(n.status)} size="sm">{stIcon(n.status)} {n.status}</AppBadge>
+                </td>
+                <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700"><code class="dark:text-gray-300">{n.nodeId}</code></td>
+                <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-300">{fmt(n.lastSyncTimestamp)}</td>
+                <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-300">{n.packagesReceived}</td>
+                <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 {n.packagesRejected>0?'text-red-600 dark:text-red-400':'text-gray-800 dark:text-gray-300'}">{n.packagesRejected}</td>
+                <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 {n.replayAttempts>0?'text-orange-600 dark:text-orange-400':'text-gray-800 dark:text-gray-300'}">{n.replayAttempts}</td>
+              </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </AppCard>
+      {/if}
+    {/if}
   </div>
-
-  {#if error}<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg mb-4">{error}</div>{/if}
-
-  {#if loading && !summary}
-    <div class="text-center p-12 bg-white dark:bg-gray-800 rounded-xl shadow">جارٍ تحميل بيانات الشبكة...</div>
-  {:else}
-    <!-- Summary Cards -->
-    {#if summary}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-blue-500"><div class="text-2xl mb-2">📦</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.total}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">إجمالي التعارضات</div></div>
-      <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-red-500"><div class="text-2xl mb-2">🔴</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.unresolved}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">غير محلول</div></div>
-      <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-green-500"><div class="text-2xl mb-2">🌐</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{nodes.length}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">عقد نشطة</div></div>
-      <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow text-center border-t-4 border-purple-500"><div class="text-2xl mb-2">✅</div><div class="text-2xl font-bold text-gray-800 dark:text-white">{summary.total - summary.unresolved}</div><div class="text-xs text-gray-500 dark:text-gray-400 mt-1">تعارضات محلولة</div></div>
-    </div>
-    {/if}
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-      <!-- Node Graph -->
-      <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow border-t-4 border-gray-200 dark:border-gray-700">
-        <h2 class="font-semibold text-gray-800 dark:text-white mb-3">🗺️ خريطة العقد</h2>
-        {#if nodes.length > 0}
-          <canvas bind:this={canvas} width="400" height="320" class="w-full max-w-[400px] block mx-auto"></canvas>
-          <p class="text-center text-xs text-gray-400 dark:text-gray-500 dark:text-gray-400 mt-2">أخضر = سليم &nbsp;|&nbsp; أصفر = متدهور &nbsp;|&nbsp; أحمر = حرج</p>
-        {:else}
-          <div class="text-center p-8 text-gray-400 dark:text-gray-500 dark:text-gray-400 italic">لا توجد بيانات عقد بعد. ستظهر هنا عند أول مزامنة.</div>
-        {/if}
-      </div>
-
-      <!-- Type Breakdown -->
-      <div>
-        {#if summary && summary.byType.length > 0}
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow mb-4 border-t-4 border-gray-200 dark:border-gray-700">
-          <h2 class="font-semibold text-gray-800 dark:text-white mb-3">📊 التعارضات حسب النوع</h2>
-          {#each summary.byType as t}
-            <div class="flex items-center gap-2 mb-1.5 text-sm">
-              <span class="min-w-[160px] text-gray-500 dark:text-gray-400">{t.conflictTypeDisplay}</span>
-              <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500" style="width:{Math.min((t.count/summary.total)*100,100)}%"></div>
-              </div>
-              <span class="min-w-[30px] text-left font-semibold text-gray-800 dark:text-white">{t.count}</span>
-            </div>
-          {/each}
-        </div>
-        {/if}
-
-        {#if summary && summary.bySeverity.length > 0}
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow border-t-4 border-gray-200 dark:border-gray-700">
-          <h2 class="font-semibold text-gray-800 dark:text-white mb-3">⚠️ التعارضات حسب الشدة</h2>
-          {#each summary.bySeverity as s}
-            <div class="flex items-center gap-2 mb-1.5 text-sm">
-              <span class="min-w-[160px] text-gray-500 dark:text-gray-400">{s.severity}</span>
-              <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-500 {s.severity==='CRITICAL'?'bg-red-500':s.severity==='ERROR'?'bg-orange-500':s.severity==='WARNING'?'bg-yellow-500':'bg-blue-50 dark:bg-blue-900/200'}" style="width:{Math.min((s.count/summary.total)*100,100)}%"></div>
-              </div>
-              <span class="min-w-[30px] text-left font-semibold text-gray-800 dark:text-white">{s.count}</span>
-            </div>
-          {/each}
-        </div>
-        {/if}
-      </div>
-    </div>
-
-    <!-- Node Health Table -->
-    {#if nodes.length > 0}
-    <h2 class="font-semibold text-gray-800 dark:text-white mb-3">📋 تفاصيل العقد ({nodes.length})</h2>
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden mb-6">
-      <table class="w-full border-collapse">
-        <thead><tr>
-          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">الحالة</th>
-          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">معرف العقدة</th>
-          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">آخر مزامنة</th>
-          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">مستلم</th>
-          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">مرفوض</th>
-          <th class="bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">إعادة تشغيل</th>
-        </tr></thead>
-        <tbody>
-          {#each nodes as n}
-          <tr>
-            <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 {stCls(n.status)} font-medium">{stIcon(n.status)} {n.status}</td>
-            <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700"><code class="dark:text-gray-300">{n.nodeId}</code></td>
-            <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-300">{fmt(n.lastSyncTimestamp)}</td>
-            <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-300">{n.packagesReceived}</td>
-            <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 {n.packagesRejected>0?'text-red-600 dark:text-red-400':'text-gray-800 dark:text-gray-300'}">{n.packagesRejected}</td>
-            <td class="px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700 {n.replayAttempts>0?'text-orange-600 dark:text-orange-400':'text-gray-800 dark:text-gray-300'}">{n.replayAttempts}</td>
-          </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    {/if}
-  {/if}
-</div>
 </Layout>

@@ -12,6 +12,15 @@
   import type { Unit, Settings, CreateUnitRequest } from "../lib/types";
   import Layout from "../components/Layout.svelte";
 
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppTable from '../lib/components/ui/AppTable.svelte';
+  import AppDialog from '../lib/components/ui/AppDialog.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+
   let units: Unit[] = [];
   let settings: Settings | null = null;
   let loading = true;
@@ -193,451 +202,166 @@
 </script>
 
 <Layout nodeType="WILAYA" title="إدارة الوحدات" subtitle="إنشاء وتكوين الوحدات">
-  <div class="mb-8">
-    <div class="flex items-center justify-end">
-      <button
-        on:click={openCreateModal}
-        class="btn-primary flex items-center gap-2"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        <span>وحدة جديدة</span>
-      </button>
-    </div>
-  </div>
+  <div dir="rtl">
+    <AppPageHeader title="إدارة الوحدات" subtitle="إنشاء وتكوين الوحدات">
+      <svelte:fragment slot="actions">
+        <AppButton variant="primary" on:click={openCreateModal}>
+          <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          وحدة جديدة
+        </AppButton>
+      </svelte:fragment>
+    </AppPageHeader>
 
-  {#if error}
-    <div
-      class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
-    >
-      {error}
-    </div>
-  {/if}
-
-  {#if success}
-    <div
-      class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm"
-    >
-      {success}
-    </div>
-  {/if}
-
-  <div class="card">
-    {#if loading}
-      <div class="flex items-center justify-center py-12">
-        <div
-          class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"
-        ></div>
-      </div>
-    {:else if units.length === 0}
-      <div class="text-center py-12 text-gray-500 dark:text-gray-400">
-        <svg
-          class="w-16 h-16 mx-auto mb-4 text-gray-300"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-          />
-        </svg>
-        <p class="text-lg">لا يوجد وحدات مسجلة</p>
-        <button
-          on:click={openCreateModal}
-          class="text-civil-blue hover:underline mt-2"
-        >
-          إنشاء أول وحدة
-        </button>
-      </div>
-    {:else}
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr>
-              <th class="table-header">الرمز</th>
-              <th class="table-header">الاسم</th>
-              <th class="table-header">تاريخ الإنشاء</th>
-              <th class="table-header text-right">الإجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each units as unit}
-              <tr class="hover:bg-gray-50 dark:bg-gray-900">
-                <td class="table-cell font-medium">{unit.code}</td>
-                <td class="table-cell">{unit.name}</td>
-                <td class="table-cell"
-                  >{new Date(unit.created_at).toLocaleDateString("ar-EG")}</td
-                >
-                <td class="table-cell text-right">
-                  <div class="flex items-center gap-2 justify-end">
-                    <button
-                      on:click={() => openEditModal(unit)}
-                      class="text-blue-600 hover:text-blue-800 dark:text-blue-300 flex items-center gap-1"
-                      title="تعديل الوحدة"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                      <span class="text-sm">تعديل</span>
-                    </button>
-
-                    <button
-                      on:click={() => openDeleteModal(unit)}
-                      class="text-red-600 hover:text-red-800 flex items-center gap-1"
-                      title="حذف الوحدة"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                      <span class="text-sm">حذف</span>
-                    </button>
-
-                    <button
-                      on:click={() => handleExportPackage(unit)}
-                      class="text-civil-blue hover:text-civil-blue-dark flex items-center gap-1"
-                      title="تصدير حزمة التكوين (.unit)"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                        />
-                      </svg>
-                      <span class="text-sm">تصدير</span>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+    {#if error}
+      <div class="mb-4">
+        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
       </div>
     {/if}
+
+    {#if success}
+      <div class="mb-4">
+        <AppAlert intent="success" dismissible on:dismiss={() => success = ''}>{success}</AppAlert>
+      </div>
+    {/if}
+
+    <AppCard padding="none">
+      <AppTable {loading} empty={units.length === 0}>
+        <svelte:fragment slot="empty">
+          <AppEmptyState
+            title="لا يوجد وحدات مسجلة"
+            description="أنشئ وحدتك الأولى للبدء في المزامنة."
+            icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+          >
+            <svelte:fragment slot="action">
+              <AppButton variant="primary" on:click={openCreateModal}>إنشاء أول وحدة</AppButton>
+            </svelte:fragment>
+          </AppEmptyState>
+        </svelte:fragment>
+
+        <svelte:fragment slot="head">
+          <th class="table-header">الرمز</th>
+          <th class="table-header">الاسم</th>
+          <th class="table-header">تاريخ الإنشاء</th>
+          <th class="table-header text-left">الإجراءات</th>
+        </svelte:fragment>
+
+        {#each units as unit}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+            <td class="table-cell font-medium">{unit.code}</td>
+            <td class="table-cell">{unit.name}</td>
+            <td class="table-cell">{new Date(unit.created_at).toLocaleDateString("ar-EG")}</td>
+            <td class="table-cell text-left space-x-2 space-x-reverse">
+              <AppButton variant="ghost" size="sm" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" on:click={() => openEditModal(unit)} ariaLabel="تعديل">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                <span class="text-sm mr-1">تعديل</span>
+              </AppButton>
+
+              <AppButton variant="ghost" size="sm" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300" on:click={() => openDeleteModal(unit)} ariaLabel="حذف">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+                <span class="text-sm mr-1">حذف</span>
+              </AppButton>
+
+              <AppButton variant="ghost" size="sm" class="text-civil-blue hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" on:click={() => handleExportPackage(unit)} ariaLabel="تصدير حزمة التكوين (.unit)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+                <span class="text-sm mr-1">تصدير</span>
+              </AppButton>
+            </td>
+          </tr>
+        {/each}
+      </AppTable>
+    </AppCard>
+  </div>
+</Layout>
+
+<!-- Create Modal -->
+<AppDialog open={showModal} title="وحدة جديدة" on:close={closeModal}>
+  <div dir="rtl" class="space-y-4">
+    {#if error}
+      <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+    {/if}
+
+    <AppInput id="unitCode" label="رمز الوحدة *" placeholder="مثال: U001" bind:value={unitCode} />
+    <AppInput id="unitName" label="اسم الوحدة *" placeholder="مثال: الوحدة المتنقلة الجزائر" bind:value={unitName} />
+
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+      <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-2">بيانات تسجيل الدخول</h3>
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">ستستخدم هذه البيانات من قبل الوحدة للاتصال بالنظام.</p>
+
+      <AppInput id="username" label="اسم المستخدم *" placeholder="اسم المستخدم" bind:value={username} class="mb-4" />
+      
+      <div class="grid grid-cols-2 gap-4">
+        <AppInput id="password" label="كلمة المرور *" type="password" placeholder="••••••••" bind:value={password} />
+        <AppInput id="confirmPassword" label="تأكيد *" type="password" placeholder="تأكيد" bind:value={confirmPassword} />
+      </div>
+    </div>
   </div>
 
-  <!-- Create Modal -->
-  {#if showModal}
-    <div
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    >
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
-          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">وحدة جديدة</h2>
-        </div>
+  <svelte:fragment slot="actions">
+    <AppButton variant="secondary" on:click={closeModal}>إلغاء</AppButton>
+    <AppButton variant="primary" on:click={saveUnit}>إنشاء</AppButton>
+  </svelte:fragment>
+</AppDialog>
 
-        <div class="p-6 space-y-4">
-          {#if error}
-            <div
-              class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
-            >
-              {error}
-            </div>
-          {/if}
+<!-- Edit Modal -->
+<AppDialog open={showEditModal} title="تعديل الوحدة" on:close={closeModal}>
+  <div dir="rtl" class="space-y-4">
+    {#if error}
+      <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+    {/if}
 
-          <div>
-            <label
-              for="unitCode"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >رمز الوحدة *</label
-            >
-            <input
-              id="unitCode"
-              type="text"
-              class="input-field"
-              placeholder="مثال: U001"
-              bind:value={unitCode}
-            />
-          </div>
+    <AppInput id="editUnitCode" label="رمز الوحدة *" placeholder="مثال: U001" bind:value={unitCode} />
+    <AppInput id="editUnitName" label="اسم الوحدة *" placeholder="مثال: الوحدة المتنقلة الجزائر" bind:value={unitName} />
 
-          <div>
-            <label
-              for="unitName"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >اسم الوحدة *</label
-            >
-            <input
-              id="unitName"
-              type="text"
-              class="input-field"
-              placeholder="مثال: الوحدة المتنقلة الجزائر"
-              bind:value={unitName}
-            />
-          </div>
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+      <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-2">بيانات تسجيل الدخول (اختياري)</h3>
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">اترك الحقول فارغة إذا لم تريد تغيير بيانات تسجيل الدخول.</p>
 
-          <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-            <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3">
-              بيانات تسجيل الدخول
-            </h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              ستستخدم هذه البيانات من قبل الوحدة للاتصال بالنظام.
-            </p>
-
-            <div>
-              <label
-                for="username"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-                >اسم المستخدم *</label
-              >
-              <input
-                id="username"
-                type="text"
-                class="input-field"
-                placeholder="اسم المستخدم"
-                bind:value={username}
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-4 mt-3">
-              <div>
-                <label
-                  for="password"
-                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-                  >كلمة المرور *</label
-                >
-                <input
-                  id="password"
-                  type="password"
-                  class="input-field"
-                  placeholder="••••••••"
-                  bind:value={password}
-                />
-              </div>
-              <div>
-                <label
-                  for="confirmPassword"
-                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-                  >تأكيد *</label
-                >
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  class="input-field"
-                  placeholder="تأكيد"
-                  bind:value={confirmPassword}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-          <button on:click={closeModal} class="btn-secondary"> إلغاء </button>
-          <button on:click={saveUnit} class="btn-primary"> إنشاء </button>
-        </div>
+      <AppInput id="editUsername" label="اسم المستخدم" placeholder="اسم المستخدم الجديد" bind:value={username} class="mb-4" />
+      
+      <div class="grid grid-cols-2 gap-4">
+        <AppInput id="editPassword" label="كلمة المرور" type="password" placeholder="كلمة مرور جديدة" bind:value={password} />
+        <AppInput id="editConfirmPassword" label="تأكيد" type="password" placeholder="تأكيد كلمة المرور" bind:value={confirmPassword} />
       </div>
     </div>
-  {/if}
+  </div>
 
-  <!-- Edit Modal -->
-  {#if showEditModal}
-    <div
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    >
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
-          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">تعديل الوحدة</h2>
-        </div>
+  <svelte:fragment slot="actions">
+    <AppButton variant="secondary" on:click={closeModal}>إلغاء</AppButton>
+    <AppButton variant="primary" on:click={updateUnitData}>تحديث</AppButton>
+  </svelte:fragment>
+</AppDialog>
 
-        <div class="p-6 space-y-4">
-          {#if error}
-            <div
-              class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
-            >
-              {error}
-            </div>
-          {/if}
-
-          <div>
-            <label
-              for="editUnitCode"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >رمز الوحدة *</label
-            >
-            <input
-              id="editUnitCode"
-              type="text"
-              class="input-field"
-              placeholder="مثال: U001"
-              bind:value={unitCode}
-            />
-          </div>
-
-          <div>
-            <label
-              for="editUnitName"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-              >اسم الوحدة *</label
-            >
-            <input
-              id="editUnitName"
-              type="text"
-              class="input-field"
-              placeholder="مثال: الوحدة المتنقلة الجزائر"
-              bind:value={unitName}
-            />
-          </div>
-
-          <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-            <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3">
-              بيانات تسجيل الدخول (اختياري)
-            </h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              اترك الحقول فارغة إذا لم تريد تغيير بيانات تسجيل الدخول.
-            </p>
-
-            <div>
-              <label
-                for="editUsername"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-                >اسم المستخدم</label
-              >
-              <input
-                id="editUsername"
-                type="text"
-                class="input-field"
-                placeholder="اسم المستخدم الجديد"
-                bind:value={username}
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-4 mt-3">
-              <div>
-                <label
-                  for="editPassword"
-                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-                  >كلمة المرور</label
-                >
-                <input
-                  id="editPassword"
-                  type="password"
-                  class="input-field"
-                  placeholder="كلمة مرور جديدة"
-                  bind:value={password}
-                />
-              </div>
-              <div>
-                <label
-                  for="editConfirmPassword"
-                  class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-                  >تأكيد</label
-                >
-                <input
-                  id="editConfirmPassword"
-                  type="password"
-                  class="input-field"
-                  placeholder="تأكيد كلمة المرور"
-                  bind:value={confirmPassword}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-          <button on:click={closeModal} class="btn-secondary"> إلغاء </button>
-          <button on:click={updateUnitData} class="btn-primary"> تحديث </button>
-        </div>
+<!-- Delete Modal -->
+<AppDialog open={showDeleteModal} title="حذف الوحدة" destructive on:close={closeModal}>
+  <div dir="rtl">
+    {#if error}
+      <div class="mb-4">
+        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
       </div>
+    {/if}
+
+    <div class="text-center py-4">
+      <svg class="w-12 h-12 mx-auto mb-4 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">تأكيد الحذف</h3>
+      <p class="text-gray-600 dark:text-gray-400">
+        هل أنت متأكد من حذف الوحدة <span class="font-semibold text-gray-900 dark:text-white">{deletingUnit?.code}</span>؟<br />
+        هذا الإجراء لا يمكن التراجع عنه.
+      </p>
     </div>
-  {/if}
+  </div>
 
-  <!-- Delete Modal -->
-  {#if showDeleteModal}
-    <div
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    >
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
-          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">حذف الوحدة</h2>
-        </div>
-
-        <div class="p-6">
-          {#if error}
-            <div
-              class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4"
-            >
-              {error}
-            </div>
-          {/if}
-
-          <div class="text-center">
-            <svg
-              class="w-12 h-12 mx-auto mb-4 text-red-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
-              تأكيد الحذف
-            </h3>
-            <p class="text-gray-600 dark:text-gray-400 mb-6">
-              هل أنت متأكد من حذف الوحدة <span class="font-semibold"
-                >{deletingUnit?.code}</span
-              >؟
-              <br />
-              هذا الإجراء لا يمكن التراجع عنه.
-            </p>
-          </div>
-        </div>
-
-        <div class="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-          <button on:click={closeModal} class="btn-secondary"> إلغاء </button>
-          <button
-            on:click={deleteUnitData}
-            class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            حذف
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-</Layout>
+  <svelte:fragment slot="actions">
+    <AppButton variant="secondary" on:click={closeModal}>إلغاء</AppButton>
+    <AppButton variant="danger" on:click={deleteUnitData}>حذف</AppButton>
+  </svelte:fragment>
+</AppDialog>

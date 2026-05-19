@@ -9,6 +9,16 @@
   import { currentUser } from '../lib/session';
   import { get } from 'svelte/store';
   
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppBadge from '../lib/components/ui/AppBadge.svelte';
+  import AppTable from '../lib/components/ui/AppTable.svelte';
+  import AppDialog from '../lib/components/ui/AppDialog.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
+  
   // State
   let entries: AuditEntry[] = [];
   let totalCount = 0;
@@ -177,217 +187,183 @@
   });
 
   $: nodeType = (settings?.node_type as 'WILAYA' | 'UNIT' | null) || null;
+
+  const actionOptions = [
+    { value: undefined, label: 'الكل' },
+    { value: 'Login', label: 'تسجيل دخول' },
+    { value: 'CreateProduct', label: 'إنشاء منتج' },
+    { value: 'UpdateProduct', label: 'تعديل منتج' },
+    { value: 'DeleteProduct', label: 'حذف منتج' },
+    { value: 'ConfirmOrder', label: 'تأكيد طلبية' },
+    { value: 'CreateDailyReport', label: 'إنشاء تقرير يومي' },
+    { value: 'CreateUnit', label: 'إنشاء وحدة' },
+    { value: 'UpdateUnit', label: 'تعديل وحدة' },
+    { value: 'PasswordChange', label: 'تغيير كلمة المرور' },
+    { value: 'RestoreBackup', label: 'استعادة نسخة احتياطية' }
+  ];
+
+  const statusOptions = [
+    { value: undefined, label: 'الكل' },
+    { value: 'Success', label: 'ناجح' },
+    { value: 'Failed', label: 'فاشل' }
+  ];
 </script>
 
 <Layout {nodeType} title="سجل التدقيق" subtitle="متابعة ومراقبة جميع العمليات في النظام">
-<div class="max-w-7xl mx-auto" dir="rtl">
+  <div class="max-w-7xl mx-auto" dir="rtl">
     <!-- Header -->
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">سجل التدقيق</h1>
-      <div class="flex gap-2">
-        <button
-          on:click={exportToExcel}
-          class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <AppPageHeader title="سجل التدقيق">
+      <svelte:fragment slot="actions">
+        <AppButton variant="secondary" on:click={exportToExcel}>
+          <svg class="w-5 h-5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
           </svg>
           تصدير Excel
-        </button>
-        <button
-          on:click={cleanupOldLogs}
-          class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        </AppButton>
+        <AppButton variant="danger" on:click={cleanupOldLogs}>
+          <svg class="w-5 h-5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
           تنظيف السجلات القديمة
-        </button>
-      </div>
-    </div>
+        </AppButton>
+      </svelte:fragment>
+    </AppPageHeader>
 
     <!-- Statistics Cards -->
     {#if stats}
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <AppCard padding="sm">
           <div class="text-sm text-gray-500 dark:text-gray-400">إجمالي العمليات (30 يوم)</div>
           <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{stats.total_operations.toLocaleString()}</div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        </AppCard>
+        <AppCard padding="sm">
           <div class="text-sm text-gray-500 dark:text-gray-400">العمليات الناجحة</div>
           <div class="text-2xl font-bold text-green-600">
             {(stats.total_operations - stats.failed_operations).toLocaleString()}
           </div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        </AppCard>
+        <AppCard padding="sm">
           <div class="text-sm text-gray-500 dark:text-gray-400">العمليات الفاشلة</div>
           <div class="text-2xl font-bold text-red-600">{stats.failed_operations.toLocaleString()}</div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        </AppCard>
+        <AppCard padding="sm">
           <div class="text-sm text-gray-500 dark:text-gray-400">نسبة النجاح</div>
           <div class="text-2xl font-bold text-blue-600">{stats.success_rate.toFixed(1)}%</div>
-        </div>
+        </AppCard>
       </div>
     {/if}
 
     <!-- Filters -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+    <AppCard padding="md" class="mb-6">
       <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="search-user">المستخدم</label>
-          <input
+          <AppInput
             id="search-user"
-            type="text"
+            label="المستخدم"
             bind:value={filters.search}
             placeholder="بحث في اسم المستخدم..."
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-action">نوع العملية</label>
-          <select
+          <AppSelect
             id="filter-action"
+            label="نوع العملية"
             bind:value={filters.action}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value={undefined}>الكل</option>
-            <option value="Login">تسجيل دخول</option>
-            <option value="CreateProduct">إنشاء منتج</option>
-            <option value="UpdateProduct">تعديل منتج</option>
-            <option value="DeleteProduct">حذف منتج</option>
-            <option value="ConfirmOrder">تأكيد طلبية</option>
-            <option value="CreateDailyReport">إنشاء تقرير يومي</option>
-            <option value="CreateUnit">إنشاء وحدة</option>
-            <option value="UpdateUnit">تعديل وحدة</option>
-            <option value="PasswordChange">تغيير كلمة المرور</option>
-            <option value="RestoreBackup">استعادة نسخة احتياطية</option>
-          </select>
+            {#each actionOptions as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </AppSelect>
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-status">الحالة</label>
-          <select
+          <AppSelect
             id="filter-status"
+            label="الحالة"
             bind:value={filters.status}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value={undefined}>الكل</option>
-            <option value="Success">ناجح</option>
-            <option value="Failed">فاشل</option>
-          </select>
+            {#each statusOptions as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </AppSelect>
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-start-date">من تاريخ</label>
-          <input
+          <AppInput
             id="filter-start-date"
             type="date"
+            label="من تاريخ"
             bind:value={filters.start_date}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1" for="filter-end-date">إلى تاريخ</label>
-          <input
+          <AppInput
             id="filter-end-date"
             type="date"
+            label="إلى تاريخ"
             bind:value={filters.end_date}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         
         <div class="flex items-end gap-2">
-          <button
-            on:click={() => loadAuditLog(true)}
-            class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            بحث
-          </button>
-          <button
-            on:click={clearFilters}
-            class="px-4 py-2 bg-gray-200 text-gray-700 dark:text-gray-100 rounded-lg hover:bg-gray-300 transition-colors"
-          >
-            مسح
-          </button>
+          <div class="flex-1">
+            <AppButton variant="primary" fullWidth on:click={() => loadAuditLog(true)}>
+              بحث
+            </AppButton>
+          </div>
+          <div>
+            <AppButton variant="secondary" on:click={clearFilters}>
+              مسح
+            </AppButton>
+          </div>
         </div>
       </div>
-    </div>
+    </AppCard>
 
     <!-- Error Message -->
     {#if error}
-      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-        {error}
+      <div class="mb-4">
+        <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>{error}</AppAlert>
       </div>
     {/if}
 
     <!-- Table -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="min-w-full">
-          <thead class="bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الوقت</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">المستخدم</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">العملية</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">نوع الكيان</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الكيان</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الحالة</th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">تفاصيل</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200">
-            {#each entries as entry}
-              <tr class="hover:bg-gray-50 dark:bg-gray-900">
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                  {formatTimestamp(entry.timestamp)}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {entry.username}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                  {entry.action_display}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                  {entry.entity_type_display}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                  {entry.entity_name || '-'}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {entry.status === 'Success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                    {entry.status === 'Success' ? 'ناجح' : 'فاشل'}
-                  </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <button
-                    on:click={() => showDetails(entry)}
-                    class="text-blue-600 hover:text-blue-900"
-                  >
-                    عرض
-                  </button>
-                </td>
-              </tr>
-            {:else}
-              <tr>
-                <td colspan="7" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                  {#if loading}
-                    <div class="flex justify-center items-center">
-                      <svg class="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                      </svg>
-                    </div>
-                  {:else}
-                    لا توجد نتائج
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <AppTable
+        loading={loading}
+        empty={!loading && entries.length === 0}
+        emptyMessage="لا توجد نتائج"
+      >
+        <svelte:fragment slot="head">
+          <th class="table-header">الوقت</th>
+          <th class="table-header">المستخدم</th>
+          <th class="table-header">العملية</th>
+          <th class="table-header">نوع الكيان</th>
+          <th class="table-header">الكيان</th>
+          <th class="table-header">الحالة</th>
+          <th class="table-header">تفاصيل</th>
+        </svelte:fragment>
+
+        {#each entries as entry}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td class="table-cell">{formatTimestamp(entry.timestamp)}</td>
+            <td class="table-cell font-medium">{entry.username}</td>
+            <td class="table-cell">{entry.action_display}</td>
+            <td class="table-cell">{entry.entity_type_display}</td>
+            <td class="table-cell">{entry.entity_name || '-'}</td>
+            <td class="table-cell">
+              <AppBadge intent={entry.status === 'Success' ? 'success' : 'danger'}>
+                {entry.status === 'Success' ? 'ناجح' : 'فاشل'}
+              </AppBadge>
+            </td>
+            <td class="table-cell">
+              <AppButton variant="ghost" size="sm" on:click={() => showDetails(entry)}>عرض</AppButton>
+            </td>
+          </tr>
+        {/each}
+      </AppTable>
 
       <!-- Pagination -->
       <div class="bg-gray-50 dark:bg-gray-900 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
@@ -397,20 +373,22 @@
           إجمالي: {totalCount} نتيجة
         </div>
         <div class="flex gap-2">
-          <button
-            on:click={prevPage}
+          <AppButton
+            variant="secondary"
+            size="sm"
             disabled={page === 0 || loading}
-            class="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:bg-gray-900"
+            on:click={prevPage}
           >
             السابق
-          </button>
-          <button
-            on:click={nextPage}
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            size="sm"
             disabled={!hasMore || loading}
-            class="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:bg-gray-900"
+            on:click={nextPage}
           >
             التالي
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>
@@ -418,100 +396,87 @@
 </Layout>
 
 <!-- Detail Modal -->
-{#if showModal && selectedEntry}
-  <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" dir="rtl">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-      <div class="p-6">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">تفاصيل العملية</h2>
-          <button
-            on:click={closeModal}
-            class="text-gray-400 hover:text-gray-600 dark:text-gray-400"
-            aria-label="إغلاق"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
+<AppDialog
+  open={showModal && selectedEntry !== null}
+  title="تفاصيل العملية"
+  size="lg"
+  on:close={closeModal}
+>
+  {#if selectedEntry}
+    <div class="space-y-4 text-sm" dir="rtl">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">المعرف:</span>
+          <span class="text-gray-900 dark:text-gray-100 font-mono block">{selectedEntry.id}</span>
         </div>
-
-        <div class="space-y-4">
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">المعرف:</span>
-              <span class="text-gray-900 dark:text-gray-100 font-mono text-sm block">{selectedEntry.id}</span>
-            </div>
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">الوقت:</span>
-              <span class="text-gray-900 dark:text-gray-100 block">{formatTimestamp(selectedEntry.timestamp)}</span>
-            </div>
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">المستخدم:</span>
-              <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.username}</span>
-            </div>
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">الحالة:</span>
-              <span class="{selectedEntry.status === 'Success' ? 'text-green-600' : 'text-red-600'} font-medium block">
-                {selectedEntry.status === 'Success' ? 'ناجح' : 'فاشل'}
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <span class="text-gray-500 dark:text-gray-400 text-sm">العملية:</span>
-            <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.action_display}</span>
-          </div>
-
-          <div>
-            <span class="text-gray-500 dark:text-gray-400 text-sm">نوع الكيان:</span>
-            <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.entity_type_display}</span>
-          </div>
-
-          {#if selectedEntry.entity_name}
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">اسم الكيان:</span>
-              <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.entity_name}</span>
-            </div>
-          {/if}
-
-          {#if selectedEntry.old_value}
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">القيمة القديمة:</span>
-              <pre class="mt-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.old_value, null, 2)}</pre>
-            </div>
-          {/if}
-
-          {#if selectedEntry.new_value}
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">القيمة الجديدة:</span>
-              <pre class="mt-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.new_value, null, 2)}</pre>
-            </div>
-          {/if}
-
-          {#if selectedEntry.error_message}
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">رسالة الخطأ:</span>
-              <div class="mt-1 bg-red-50 text-red-700 p-3 rounded-lg text-sm">{selectedEntry.error_message}</div>
-            </div>
-          {/if}
-
-          {#if selectedEntry.metadata}
-            <div>
-              <span class="text-gray-500 dark:text-gray-400 text-sm">البيانات الإضافية:</span>
-              <pre class="mt-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-xs overflow-auto">{JSON.stringify(selectedEntry.metadata, null, 2)}</pre>
-            </div>
-          {/if}
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">الوقت:</span>
+          <span class="text-gray-900 dark:text-gray-100 block">{formatTimestamp(selectedEntry.timestamp)}</span>
         </div>
-
-        <div class="mt-6 flex justify-end">
-          <button
-            on:click={closeModal}
-            class="px-4 py-2 bg-gray-200 text-gray-700 dark:text-gray-100 rounded-lg hover:bg-gray-300 transition-colors"
-          >
-            إغلاق
-          </button>
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">المستخدم:</span>
+          <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.username}</span>
+        </div>
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">الحالة:</span>
+          <span class="block">
+            <AppBadge intent={selectedEntry.status === 'Success' ? 'success' : 'danger'}>
+              {selectedEntry.status === 'Success' ? 'ناجح' : 'فاشل'}
+            </AppBadge>
+          </span>
         </div>
       </div>
+
+      <div>
+        <span class="text-gray-500 dark:text-gray-400">العملية:</span>
+        <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.action_display}</span>
+      </div>
+
+      <div>
+        <span class="text-gray-500 dark:text-gray-400">نوع الكيان:</span>
+        <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.entity_type_display}</span>
+      </div>
+
+      {#if selectedEntry.entity_name}
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">اسم الكيان:</span>
+          <span class="text-gray-900 dark:text-gray-100 block">{selectedEntry.entity_name}</span>
+        </div>
+      {/if}
+
+      {#if selectedEntry.old_value}
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">القيمة القديمة:</span>
+          <pre class="mt-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 rounded-lg text-xs overflow-auto font-mono text-gray-800 dark:text-gray-200">{JSON.stringify(selectedEntry.old_value, null, 2)}</pre>
+        </div>
+      {/if}
+
+      {#if selectedEntry.new_value}
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">القيمة الجديدة:</span>
+          <pre class="mt-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 rounded-lg text-xs overflow-auto font-mono text-gray-800 dark:text-gray-200">{JSON.stringify(selectedEntry.new_value, null, 2)}</pre>
+        </div>
+      {/if}
+
+      {#if selectedEntry.error_message}
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">رسالة الخطأ:</span>
+          <div class="mt-1">
+            <AppAlert intent="danger">{selectedEntry.error_message}</AppAlert>
+          </div>
+        </div>
+      {/if}
+
+      {#if selectedEntry.metadata}
+        <div>
+          <span class="text-gray-500 dark:text-gray-400">البيانات الإضافية:</span>
+          <pre class="mt-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 rounded-lg text-xs overflow-auto font-mono text-gray-800 dark:text-gray-200">{JSON.stringify(selectedEntry.metadata, null, 2)}</pre>
+        </div>
+      {/if}
     </div>
-  </div>
-{/if}
+  {/if}
+  
+  <svelte:fragment slot="actions">
+    <AppButton variant="secondary" on:click={closeModal}>إغلاق</AppButton>
+  </svelte:fragment>
+</AppDialog>

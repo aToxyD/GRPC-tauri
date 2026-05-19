@@ -4,6 +4,16 @@
   import { getSettings } from '../lib/tauri';
   import Layout from '../components/Layout.svelte';
 
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppBadge from '../lib/components/ui/AppBadge.svelte';
+  import AppTable from '../lib/components/ui/AppTable.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppSection from '../lib/components/ui/AppSection.svelte';
+  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+
   // ─── State (manual refresh only — no live updates, no websocket) ────────────
   let loading = false;
   let error: string | null = null;
@@ -76,7 +86,7 @@
       bundle = b as any;
       inventory = inv;
       systemHealth = hp;
-      lastRefreshedAt = new Date().toLocaleString();
+      lastRefreshedAt = new Date().toLocaleString('ar-DZ');
     } catch (e: any) {
       error = typeof e === 'string' ? e : JSON.stringify(e);
     } finally {
@@ -98,38 +108,28 @@
     }
   }
 
-  function severityClass(sev: string): string {
+  function severityIntent(sev: string): 'danger' | 'warning' | 'info' {
     switch (sev) {
-      case 'CRITICAL':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800 text-red-900 dark:text-red-300';
-      case 'WARNING':
-        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-800 text-yellow-900 dark:text-yellow-300';
-      default:
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-300';
+      case 'CRITICAL': return 'danger';
+      case 'WARNING': return 'warning';
+      default: return 'info';
     }
   }
 
-  function priorityClass(p: string): string {
+  function priorityIntent(p: string): 'danger' | 'warning' | 'neutral' {
     switch (p) {
-      case 'HIGH':
-        return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400';
-      case 'MEDIUM':
-        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400';
-      default:
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300';
+      case 'HIGH': return 'danger';
+      case 'MEDIUM': return 'warning';
+      default: return 'neutral';
     }
   }
 
-  function integrityClass(state: string): string {
+  function integrityIntent(state: string): 'success' | 'warning' | 'danger' | 'neutral' {
     switch (state) {
-      case 'OK':
-        return 'text-green-700 dark:text-green-400';
-      case 'WARNINGS':
-        return 'text-yellow-700 dark:text-yellow-400';
-      case 'CRITICAL':
-        return 'text-red-700 dark:text-red-400';
-      default:
-        return 'text-gray-600 dark:text-gray-400';
+      case 'OK': return 'success';
+      case 'WARNINGS': return 'warning';
+      case 'CRITICAL': return 'danger';
+      default: return 'neutral';
     }
   }
 
@@ -139,7 +139,7 @@
 
   function formatTs(ts: string): string {
     try {
-      return new Date(ts).toLocaleString();
+      return new Date(ts).toLocaleString('ar-DZ');
     } catch {
       return ts;
     }
@@ -201,7 +201,7 @@
   onMount(async () => {
     try {
       const settings = await getSettings();
-      nodeType = settings.node_type;
+      nodeType = settings.node_type as 'WILAYA' | 'UNIT' | null;
     } catch {}
     refresh();
   });
@@ -209,284 +209,240 @@
 
 <Layout {nodeType} title="تشخيصات النظام المتقدمة" subtitle="رؤية تشغيلية موجَّهة">
   <div class="p-6 space-y-6 max-w-7xl mx-auto text-gray-900 dark:text-white" dir="rtl">
-  <!-- ─── Header ──────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4">
-    <div>
-      <h1 class="text-2xl font-bold">تشخيصات النظام المتقدمة</h1>
-      <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-        رؤية تشغيلية موجَّهة — يدوية بالكامل، لا تحديثات تلقائية.
-      </p>
-    </div>
-    <div class="flex items-center gap-2 flex-wrap justify-end">
-      <label class="text-sm">
-        السنة:
-        <input
-          type="number"
-          bind:value={selectedYear}
-          class="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded px-2 py-1 w-24 mx-2 focus:ring focus:ring-blue-500 focus:outline-none"
-          min="2020"
-          max="2100"
-        />
-      </label>
-      <button
-        on:click={refresh}
-        disabled={loading}
-        class="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white px-4 py-2 rounded transition-colors"
-      >
-        {loading ? '...جاري التحديث' : 'تحديث يدوي'}
-      </button>
-      <button
-        on:click={takeSnapshot}
-        disabled={loading || selectedYear === null}
-        class="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white px-4 py-2 rounded transition-colors"
-        title="إنشاء لقطة تشغيلية يدوية"
-      >
-        لقطة جديدة
-      </button>
-    </div>
-  </div>
-
-  {#if lastRefreshedAt}
-    <div class="text-xs text-gray-500 dark:text-gray-400">آخر تحديث: {lastRefreshedAt}</div>
-  {/if}
-
-  {#if error}
-    <div class="border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 p-3 rounded">
-      <div class="font-semibold">خطأ:</div>
-      <div class="text-sm">{error}</div>
-    </div>
-  {/if}
-
-  <!-- ─── Anomaly Findings ────────────────────────────────────────────────── -->
-  {#if bundle}
-    <section>
-      <h2 class="text-xl font-semibold mb-3">
-        🔍 الاكتشافات التشغيلية
-        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
-          ({bundle.anomalyReport.findings.length})
-        </span>
-      </h2>
-      {#if bundle.anomalyReport.findings.length === 0}
-        <div class="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-3">
-          لم يتم رصد أي شذوذ تشغيلي.
-        </div>
-      {:else}
-        <div class="space-y-2">
-          {#each bundle.anomalyReport.findings as f}
-            <div class="border-r-4 rounded p-3 {severityClass(f.severity)} bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <div class="flex items-center justify-between mb-1">
-                <span class="font-mono text-xs">{translateCode(f.code)}</span>
-                <span class="text-xs font-semibold">{translateSeverity(f.severity)}</span>
-              </div>
-              <div class="text-sm font-medium">{f.message}</div>
-              <div class="text-xs mt-1 opacity-80">
-                <strong>توصية:</strong>
-                {f.recommendation}
-              </div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <!-- ─── Recommendations ───────────────────────────────────────────────── -->
-    <section>
-      <h2 class="text-xl font-semibold mb-3">
-        💡 توصيات تشغيلية
-        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
-          ({bundle.recommendations.length})
-        </span>
-      </h2>
-      {#if bundle.recommendations.length === 0}
-        <div class="text-sm text-gray-600 dark:text-gray-400">لا توجد توصيات نشطة حالياً.</div>
-      {:else}
-        <div class="space-y-2">
-          {#each bundle.recommendations as r}
-            <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
-              <div class="flex items-center justify-between">
-                <div class="font-medium text-gray-900 dark:text-white">{r.title}</div>
-                <span class="text-xs px-2 py-1 rounded {priorityClass(r.priority)}">
-                  {translatePriority(r.priority)}
-                </span>
-              </div>
-              <div class="text-sm text-gray-700 dark:text-gray-300 mt-1">{r.message}</div>
-              <div class="font-mono text-[10px] text-gray-400 dark:text-gray-500 dark:text-gray-400 mt-1">{translateCode(r.code)}</div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <!-- ─── Fiscal Integrity Summary ──────────────────────────────────────── -->
-    <section>
-      <h2 class="text-xl font-semibold mb-3">⚖️ سلامة المالية</h2>
-      <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
-        <div class="font-medium text-gray-900 dark:text-white">
-          الحالة:
-          <span class={bundle.fiscalIntegrity.ok ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}>
-            {bundle.fiscalIntegrity.ok ? 'سليمة' : 'تحذيرات'}
-          </span>
-        </div>
-        {#if bundle.fiscalIntegrity.warnings.length > 0}
-          <ul class="text-sm mt-2 list-disc pr-5 space-y-1 text-gray-700 dark:text-gray-300">
-            {#each bundle.fiscalIntegrity.warnings as w}
-              <li><span class="font-mono text-xs">{w.code}</span> — {w.details}</li>
-            {/each}
-          </ul>
-        {/if}
-      </div>
-    </section>
-
-    <!-- ─── Inventory Mismatches (existing capability) ────────────────────── -->
-    {#if inventory}
-      <section>
-        <h2 class="text-xl font-semibold mb-3">
-          📦 تطابق المخزون
-          <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
-            (فحص {inventory.checked_products} منتج، {inventory.mismatch_count} اختلاف)
-          </span>
-        </h2>
-        {#if inventory.mismatch_count === 0}
-          <div class="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-3">
-            لا توجد اختلافات في المخزون.
+    
+    <!-- ─── Header ──────────────────────────────────────────────────────────── -->
+    <AppPageHeader title="تشخيصات النظام المتقدمة" subtitle="رؤية تشغيلية موجَّهة — يدوية بالكامل، لا تحديثات تلقائية">
+      <svelte:fragment slot="actions">
+        <div class="flex items-center gap-2">
+          <div class="w-32">
+            <AppInput
+              id="year-input"
+              label="السنة"
+              type="number"
+              bind:value={selectedYear}
+              min={2020}
+              max={2100}
+            />
           </div>
-        {:else}
-          <div class="overflow-auto border border-gray-200 dark:border-gray-700 rounded shadow-sm">
-            <table class="min-w-full text-sm">
-              <thead class="bg-gray-100 dark:bg-gray-900/50">
-                <tr>
-                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">المنتج</th>
-                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">المتوقع</th>
-                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">الفعلي</th>
-                  <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">الفرق</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                {#each inventory.issues as it}
-                  <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50">
-                    <td class="px-3 py-2 font-mono text-xs">{it.product_id}</td>
-                    <td class="px-3 py-2">{it.expected_quantity}</td>
-                    <td class="px-3 py-2">{it.actual_quantity}</td>
-                    <td class="px-3 py-2 text-red-700 dark:text-red-400 font-medium">{it.delta.toFixed(2)}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      </section>
+          <AppButton
+            variant="primary"
+            loading={loading}
+            on:click={refresh}
+          >
+            تحديث يدوي
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            disabled={loading || selectedYear === null}
+            on:click={takeSnapshot}
+            ariaLabel="إنشاء لقطة تشغيلية يدوية"
+          >
+            لقطة جديدة
+          </AppButton>
+        </div>
+      </svelte:fragment>
+    </AppPageHeader>
+
+    {#if lastRefreshedAt}
+      <div class="text-xs text-gray-500 dark:text-gray-400">آخر تحديث: {lastRefreshedAt}</div>
     {/if}
 
-    <!-- ─── Operational Snapshots / Growth Analysis ───────────────────────── -->
-    <section>
-      <h2 class="text-xl font-semibold mb-3">
-        📈 اللقطات التشغيلية
-        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
-          ({bundle.recentSnapshots.length})
-        </span>
-      </h2>
-      {#if bundle.recentSnapshots.length === 0}
-        <div class="text-sm text-gray-600 dark:text-gray-400">
-          لا توجد لقطات بعد. اضغط «لقطة جديدة» لإنشاء الأولى.
-        </div>
-      {:else}
-        <div class="overflow-auto border border-gray-200 dark:border-gray-700 rounded shadow-sm">
-          <table class="min-w-full text-sm">
-            <thead class="bg-gray-100 dark:bg-gray-900/50">
-              <tr>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">التاريخ</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">السنة</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">قيمة المخزون</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">المنتجات</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">الحركات</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">التقارير</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">السلامة</th>
-                <th class="px-3 py-2 text-right text-gray-600 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">بواسطة</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
-              {#each bundle.recentSnapshots as s}
-                <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50">
-                  <td class="px-3 py-2 whitespace-nowrap">{s.snapshotDate}</td>
-                  <td class="px-3 py-2">{s.fiscalYear}</td>
-                  <td class="px-3 py-2 font-mono">{s.totalInventoryValue.toFixed(2)}</td>
-                  <td class="px-3 py-2">{s.productCount}</td>
-                  <td class="px-3 py-2">{s.movementCount}</td>
-                  <td class="px-3 py-2">{s.reportCount}</td>
-                  <td class="px-3 py-2 font-semibold {integrityClass(s.integrityState)}">
-                    {s.integrityState}
-                  </td>
-                  <td class="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">{s.createdBy}</td>
+    {#if error}
+      <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>
+        <div class="font-semibold">خطأ:</div>
+        <div class="text-sm">{error}</div>
+      </AppAlert>
+    {/if}
+
+    <!-- ─── Anomaly Findings ────────────────────────────────────────────────── -->
+    {#if bundle}
+      <AppSection title="🔍 الاكتشافات التشغيلية ({bundle.anomalyReport.findings.length})">
+        {#if bundle.anomalyReport.findings.length === 0}
+          <AppAlert intent="success">
+            لم يتم رصد أي شذوذ تشغيلي.
+          </AppAlert>
+        {:else}
+          <div class="space-y-2">
+            {#each bundle.anomalyReport.findings as f}
+              <AppAlert intent={severityIntent(f.severity)}>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-mono text-xs">{translateCode(f.code)}</span>
+                  <AppBadge intent={severityIntent(f.severity)} size="sm">{translateSeverity(f.severity)}</AppBadge>
+                </div>
+                <div class="text-sm font-medium">{f.message}</div>
+                <div class="text-xs mt-1 opacity-80">
+                  <strong>توصية:</strong> {f.recommendation}
+                </div>
+              </AppAlert>
+            {/each}
+          </div>
+        {/if}
+      </AppSection>
+
+      <!-- ─── Recommendations ───────────────────────────────────────────────── -->
+      <AppSection title="💡 توصيات تشغيلية ({bundle.recommendations.length})">
+        {#if bundle.recommendations.length === 0}
+          <p class="text-sm text-gray-600 dark:text-gray-400">لا توجد توصيات نشطة حالياً.</p>
+        {:else}
+          <div class="space-y-2">
+            {#each bundle.recommendations as r}
+              <AppCard padding="sm">
+                <div class="flex items-center justify-between">
+                  <div class="font-medium text-gray-900 dark:text-white">{r.title}</div>
+                  <AppBadge intent={priorityIntent(r.priority)} size="sm">
+                    {translatePriority(r.priority)}
+                  </AppBadge>
+                </div>
+                <div class="text-sm text-gray-700 dark:text-gray-300 mt-1">{r.message}</div>
+                <div class="font-mono text-[10px] text-gray-400 dark:text-gray-500 mt-1">{translateCode(r.code)}</div>
+              </AppCard>
+            {/each}
+          </div>
+        {/if}
+      </AppSection>
+
+      <!-- ─── Fiscal Integrity Summary ──────────────────────────────────────── -->
+      <AppSection title="⚖️ سلامة المالية">
+        <AppCard padding="sm">
+          <div class="font-medium text-gray-900 dark:text-white mb-2">
+            الحالة:
+            <AppBadge intent={bundle.fiscalIntegrity.ok ? 'success' : 'warning'}>
+              {bundle.fiscalIntegrity.ok ? 'سليمة' : 'تحذيرات'}
+            </AppBadge>
+          </div>
+          {#if bundle.fiscalIntegrity.warnings.length > 0}
+            <ul class="text-sm list-disc pr-5 space-y-1 text-gray-700 dark:text-gray-300">
+              {#each bundle.fiscalIntegrity.warnings as w}
+                <li><span class="font-mono text-xs">{w.code}</span> — {w.details}</li>
+              {/each}
+            </ul>
+          {/if}
+        </AppCard>
+      </AppSection>
+
+      <!-- ─── Inventory Mismatches (existing capability) ────────────────────── -->
+      {#if inventory}
+        <AppSection title="📦 تطابق المخزون" description="فحص {inventory.checked_products} منتج، {inventory.mismatch_count} اختلاف">
+          {#if inventory.mismatch_count === 0}
+            <AppAlert intent="success">
+              لا توجد اختلافات في المخزون.
+            </AppAlert>
+          {:else}
+            <AppTable>
+              <svelte:fragment slot="head">
+                <th class="table-header">المنتج</th>
+                <th class="table-header">المتوقع</th>
+                <th class="table-header">الفعلي</th>
+                <th class="table-header">الفرق</th>
+              </svelte:fragment>
+
+              {#each inventory.issues as it}
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                  <td class="table-cell font-mono text-xs">{it.product_id}</td>
+                  <td class="table-cell">{it.expected_quantity}</td>
+                  <td class="table-cell">{it.actual_quantity}</td>
+                  <td class="table-cell text-red-700 dark:text-red-400 font-medium">{it.delta.toFixed(2)}</td>
                 </tr>
               {/each}
-            </tbody>
-          </table>
-        </div>
+            </AppTable>
+          {/if}
+        </AppSection>
       {/if}
-    </section>
 
-    <!-- ─── Fiscal Timeline ───────────────────────────────────────────────── -->
-    <section>
-      <h2 class="text-xl font-semibold mb-3">
-        🕒 الخط الزمني الموحَّد
-        <span class="text-sm font-normal text-gray-500 dark:text-gray-400">
-          ({bundle.timeline.length})
-        </span>
-      </h2>
-      {#if bundle.timeline.length === 0}
-        <div class="text-sm text-gray-600 dark:text-gray-400">لا توجد أحداث مسجّلة في النطاق المحدّد.</div>
-      {:else}
-        <div class="border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 shadow-sm">
-          <ul class="divide-y divide-gray-200 dark:divide-gray-700">
-            {#each bundle.timeline as ev}
-              <li class="p-3 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700/50 transition-colors">
-                <div class="flex items-center justify-between">
-                  <span class="font-mono text-xs text-gray-500 dark:text-gray-400">{formatTs(ev.timestamp)}</span>
-                  <span class="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">
-                    {kindLabel(ev.kind)}
-                  </span>
-                </div>
-                <div class="text-sm mt-1 font-medium">{ev.summary}</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {#if ev.actor}بواسطة {ev.actor} — {/if}
-                  مصدر: {ev.source}
-                  {#if ev.fiscalYear !== null} — سنة {ev.fiscalYear}{/if}
-                </div>
-              </li>
+      <!-- ─── Operational Snapshots / Growth Analysis ───────────────────────── -->
+      <AppSection title="📈 اللقطات التشغيلية ({bundle.recentSnapshots.length})">
+        {#if bundle.recentSnapshots.length === 0}
+          <AppEmptyState
+            title="لا توجد لقطات"
+            description="اضغط «لقطة جديدة» لإنشاء الأولى."
+          />
+        {:else}
+          <AppTable>
+            <svelte:fragment slot="head">
+              <th class="table-header">التاريخ</th>
+              <th class="table-header">السنة</th>
+              <th class="table-header">قيمة المخزون</th>
+              <th class="table-header">المنتجات</th>
+              <th class="table-header">الحركات</th>
+              <th class="table-header">التقارير</th>
+              <th class="table-header">السلامة</th>
+              <th class="table-header">بواسطة</th>
+            </svelte:fragment>
+
+            {#each bundle.recentSnapshots as s}
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="table-cell whitespace-nowrap">{s.snapshotDate}</td>
+                <td class="table-cell">{s.fiscalYear}</td>
+                <td class="table-cell font-mono">{s.totalInventoryValue.toFixed(2)}</td>
+                <td class="table-cell">{s.productCount}</td>
+                <td class="table-cell">{s.movementCount}</td>
+                <td class="table-cell">{s.reportCount}</td>
+                <td class="table-cell">
+                  <AppBadge intent={integrityIntent(s.integrityState)} size="sm">
+                    {s.integrityState}
+                  </AppBadge>
+                </td>
+                <td class="table-cell text-xs text-gray-600 dark:text-gray-400">{s.createdBy}</td>
+              </tr>
             {/each}
-          </ul>
-        </div>
-      {/if}
-    </section>
+          </AppTable>
+        {/if}
+      </AppSection>
 
-    <!-- ─── Backup Health Summary (from existing system health) ───────────── -->
-    {#if systemHealth}
-      <section>
-        <h2 class="text-xl font-semibold mb-3">💾 صحة النسخ الاحتياطية والقاعدة</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">قاعدة البيانات</div>
-            <div class="font-medium mt-1">
-              {translateStatus(systemHealth.databaseStatus.status)} — {systemHealth.databaseStatus.message}
-            </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              الحجم: {bytesToMb(systemHealth.storageUsageBytes)} MB
-            </div>
+      <!-- ─── Fiscal Timeline ───────────────────────────────────────────────── -->
+      <AppSection title="🕒 الخط الزمني الموحَّد ({bundle.timeline.length})">
+        {#if bundle.timeline.length === 0}
+          <p class="text-sm text-gray-600 dark:text-gray-400">لا توجد أحداث مسجّلة في النطاق المحدّد.</p>
+        {:else}
+          <AppCard padding="none">
+            <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+              {#each bundle.timeline as ev}
+                <li class="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono text-xs text-gray-500 dark:text-gray-400">{formatTs(ev.timestamp)}</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">
+                      {kindLabel(ev.kind)}
+                    </span>
+                  </div>
+                  <div class="text-sm mt-1 font-medium">{ev.summary}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {#if ev.actor}بواسطة {ev.actor} — {/if}
+                    مصدر: {ev.source}
+                    {#if ev.fiscalYear !== null} — سنة {ev.fiscalYear}{/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          </AppCard>
+        {/if}
+      </AppSection>
+
+      <!-- ─── Backup Health Summary (from existing system health) ───────────── -->
+      {#if systemHealth}
+        <AppSection title="💾 صحة النسخ الاحتياطية والقاعدة">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <AppCard padding="sm">
+              <div class="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">قاعدة البيانات</div>
+              <AppBadge intent={systemHealth.databaseStatus.status === 'HEALTHY' ? 'success' : 'danger'}>
+                {translateStatus(systemHealth.databaseStatus.status)}
+              </AppBadge>
+              <div class="font-medium mt-2 text-sm">{systemHealth.databaseStatus.message}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">الحجم: {bytesToMb(systemHealth.storageUsageBytes)} MB</div>
+            </AppCard>
+            
+            <AppCard padding="sm">
+              <div class="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">النسخ الاحتياطية</div>
+              <AppBadge intent={systemHealth.backupStatus.status === 'OK' ? 'success' : 'danger'}>
+                {translateStatus(systemHealth.backupStatus.status)}
+              </AppBadge>
+              <div class="font-medium mt-2 text-sm">{systemHealth.backupStatus.message}</div>
+              {#if systemHealth.backupStatus.lastBackup}
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">آخر نسخة: {formatTs(systemHealth.backupStatus.lastBackup)}</div>
+              {/if}
+            </AppCard>
           </div>
-          <div class="border border-gray-200 dark:border-gray-700 rounded p-3 bg-white dark:bg-gray-800 shadow-sm">
-            <div class="text-xs uppercase text-gray-500 dark:text-gray-400">النسخ الاحتياطية</div>
-            <div class="font-medium mt-1">
-              {translateStatus(systemHealth.backupStatus.status)} — {systemHealth.backupStatus.message}
-            </div>
-            {#if systemHealth.backupStatus.lastBackup}
-              <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                آخر نسخة: {formatTs(systemHealth.backupStatus.lastBackup)}
-              </div>
-            {/if}
-          </div>
-        </div>
-      </section>
+        </AppSection>
+      {/if}
     {/if}
-  {/if}
-</div>
+  </div>
 </Layout>

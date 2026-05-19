@@ -5,6 +5,11 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { LogicalSize } from "@tauri-apps/api/dpi";
 
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+
   let wilayaCode = "";
   let wilayaName = "";
   let loading = false;
@@ -86,90 +91,58 @@
   }
 </script>
 
-<div
-  class="min-h-screen flex items-center justify-center bg-gradient-to-br from-civil-blue/5 to-civil-blue/10"
->
-  <div class="card w-full max-w-lg p-8">
-    <div class="text-center mb-8">
-      <div
-        class="w-16 h-16 bg-civil-blue rounded-full flex items-center justify-center mx-auto mb-4"
-      >
-        <svg
-          class="w-8 h-8 text-white"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-          />
-        </svg>
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-civil-blue/5 to-civil-blue/10" dir="rtl">
+  <div class="w-full max-w-lg p-4">
+    <AppCard padding="lg" class="shadow-xl">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 bg-civil-blue rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">تكوين الولاية</h1>
+        <p class="text-gray-600 dark:text-gray-400 mt-1">قم بإعداد مديرية الولاية</p>
       </div>
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">تكوين الولاية</h1>
-      <p class="text-gray-600 dark:text-gray-400 mt-1">قم بإعداد مديرية الولاية</p>
-    </div>
 
-    {#if error}
-      <div
-        class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
-      >
-        {error}
-      </div>
-    {/if}
+      {#if error}
+        <div class="mb-6">
+          <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        </div>
+      {/if}
 
-    {#if success}
-      <div
-        class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm"
-      >
-        {success}
-      </div>
-    {/if}
+      {#if success}
+        <div class="mb-6">
+          <AppAlert intent="success">{success}</AppAlert>
+        </div>
+      {/if}
 
-    <div class="space-y-4">
-      <div>
-        <label
-          for="wilayaCode"
-          class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-          >رمز الولاية</label
-        >
-        <input
+      <div class="space-y-4">
+        <AppInput
           id="wilayaCode"
-          type="text"
-          class="input-field"
+          label="رمز الولاية"
           placeholder="مثال: 16 (الجزائر العاصمة)"
           bind:value={wilayaCode}
         />
-      </div>
 
-      <div>
-        <label
-          for="wilayaName"
-          class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1"
-          >اسم الولاية</label
-        >
-        <input
+        <AppInput
           id="wilayaName"
-          type="text"
-          class="input-field"
+          label="اسم الولاية"
           placeholder="مثال: الجزائر العاصمة"
           bind:value={wilayaName}
         />
-      </div>
 
-      <button
-        class="w-full btn-primary py-3 font-medium disabled:opacity-50"
-        on:click={configureWilaya}
-        disabled={loading}
-      >
-        {#if loading}
-          جاري التكوين...
-        {:else}
-          تكوين كولاية
-        {/if}
-      </button>
-    </div>
+        <div class="pt-4">
+          <AppButton
+            variant="primary"
+            fullWidth
+            size="lg"
+            {loading}
+            on:click={configureWilaya}
+          >
+            تكوين كولاية
+          </AppButton>
+        </div>
+      </div>
+    </AppCard>
   </div>
 </div>

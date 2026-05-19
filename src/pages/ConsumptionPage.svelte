@@ -4,6 +4,14 @@
   import type { Product, Settings, ConsumptionItemInput } from '../lib/types';
   import Layout from '../components/Layout.svelte';
 
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
+  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+
   let products: Product[] = [];
   let settings: Settings | null = null;
   let loading = true;
@@ -120,6 +128,9 @@
       calculatedTotal = items.reduce((sum, [qty, price]) => sum + qty * price, 0);
       const totalMeals = (parseInt(personnelCount) || 0) + (parseInt(guestCount) || 0);
       calculatedRate = totalMeals > 0 ? calculatedTotal / totalMeals : 0;
+    } else {
+      calculatedTotal = 0;
+      calculatedRate = 0;
     }
   }
 
@@ -132,147 +143,139 @@
 </script>
 
 <Layout nodeType="UNIT" title="الاستهلاك اليومي" subtitle="تسجيل استهلاك الوجبات">
+  <div dir="rtl">
+    <AppPageHeader title="الاستهلاك اليومي" subtitle="تسجيل استهلاك الوجبات" />
 
     {#if error}
-      <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-        {error}
+      <div class="mb-4">
+        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
       </div>
     {/if}
 
     {#if success}
-      <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-        {success}
+      <div class="mb-4">
+        <AppAlert intent="success" dismissible on:dismiss={() => success = ''}>{success}</AppAlert>
       </div>
     {/if}
 
     {#if loading}
-      <div class="flex items-center justify-center py-12">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
-      </div>
+      <AppLoadingState message="جاري التحميل..." />
     {:else}
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main Form -->
         <div class="lg:col-span-2 space-y-6">
-          <div class="card">
-            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">المعلومات العامة</h2>
+          <AppCard>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">المعلومات العامة</h2>
             <div class="grid grid-cols-3 gap-4">
-              <div>
-                <label for="date" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">التاريخ *</label>
-                <input
-                  id="date"
-                  type="date"
-                  class="input-field"
-                  bind:value={date}
-                />
-              </div>
-              <div>
-                <label for="personnelCount" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الموظفون *</label>
-                <input
-                  id="personnelCount"
-                  type="number"
-                  class="input-field"
-                  placeholder="العدد"
-                  bind:value={personnelCount}
-                />
-              </div>
-              <div>
-                <label for="guestCount" class="block text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">الضيوف</label>
-                <input
-                  id="guestCount"
-                  type="number"
-                  class="input-field"
-                  placeholder="العدد"
-                  bind:value={guestCount}
-                />
-              </div>
+              <AppInput
+                id="date"
+                label="التاريخ *"
+                type="date"
+                bind:value={date}
+              />
+              <AppInput
+                id="personnelCount"
+                label="الموظفون *"
+                type="number"
+                placeholder="العدد"
+                bind:value={personnelCount}
+              />
+              <AppInput
+                id="guestCount"
+                label="الضيوف"
+                type="number"
+                placeholder="العدد"
+                bind:value={guestCount}
+              />
             </div>
-          </div>
+          </AppCard>
 
-          <div class="card">
-            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">المنتجات المستهلكة</h2>
+          <AppCard>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">المنتجات المستهلكة</h2>
             
             {#if products.length === 0}
-              <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-                <p>لا يوجد منتجات متاحة. استورد قائمة الولاية أولاً.</p>
-              </div>
+              <AppEmptyState
+                title="لا يوجد منتجات"
+                description="استورد قائمة منتجات الولاية أولاً للتمكن من تسجيل الاستهلاك"
+                icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+              />
             {:else}
-              <div class="space-y-2 max-h-[400px] overflow-y-auto">
+              <div class="space-y-2 max-h-[400px] overflow-y-auto pr-2">
                 {#each consumptionItems as item}
-                  <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                  <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
                     <div class="flex-1">
-                      <span class="font-medium block">{item.product.name}</span>
+                      <span class="font-medium block text-gray-800 dark:text-gray-200">{item.product.name}</span>
                       <span class="text-xs text-gray-500 dark:text-gray-400">
                         السعر: {item.product.base_price.toFixed(2)} دج | 
-                        المخزون: <span class={item.stock < 10 ? 'text-red-600 font-semibold' : 'text-green-600'}>{item.stock.toFixed(2)}</span>
+                        المخزون: <span class={item.stock < 10 ? 'text-red-600 font-semibold' : 'text-green-600 dark:text-green-400'}>{item.stock.toFixed(2)}</span>
                       </span>
                     </div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      class="input-field w-24"
-                      placeholder="الكمية"
-                      bind:value={item.quantity}
-                      disabled={item.stock <= 0}
-                    />
+                    <div class="w-24">
+                      <AppInput
+                        id="qty-{item.product.id}"
+                        label=""
+                        type="number"
+                        placeholder="الكمية"
+                        bind:value={item.quantity}
+                        disabled={item.stock <= 0}
+                      />
+                    </div>
                   </div>
                 {/each}
               </div>
             {/if}
-          </div>
+          </AppCard>
 
-          <button
-            on:click={submitReport}
-            class="w-full btn-primary py-3 font-medium disabled:opacity-50"
+          <AppButton
+            variant="primary"
+            fullWidth
+            size="lg"
+            loading={submitting}
             disabled={submitting || products.length === 0}
+            on:click={submitReport}
           >
-            {#if submitting}
-              <span class="flex items-center justify-center">
-                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                جاري التسجيل...
-              </span>
-            {:else}
-              تسجيل التقرير
-            {/if}
-          </button>
+            تسجيل التقرير
+          </AppButton>
         </div>
 
         <!-- Summary Panel -->
         <div class="lg:col-span-1">
-          <div class="card sticky top-6">
-            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">الملخص</h2>
-            
-            <div class="space-y-4">
-              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                <span class="text-gray-600 dark:text-gray-400">الموظفون:</span>
-                <span class="font-medium">{personnelCount || 0}</span>
+          <div class="sticky top-6">
+            <AppCard>
+              <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">الملخص</h2>
+              
+              <div class="space-y-4">
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                  <span class="text-gray-600 dark:text-gray-400">الموظفون:</span>
+                  <span class="font-medium text-gray-800 dark:text-gray-200">{personnelCount || 0}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                  <span class="text-gray-600 dark:text-gray-400">الضيوف:</span>
+                  <span class="font-medium text-gray-800 dark:text-gray-200">{guestCount || 0}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                  <span class="text-gray-600 dark:text-gray-400">إجمالي الوجبات:</span>
+                  <span class="font-medium text-gray-800 dark:text-gray-200">{(parseInt(personnelCount) || 0) + (parseInt(guestCount) || 0)}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                  <span class="text-gray-600 dark:text-gray-400">القيمة المستهلكة:</span>
+                  <span class="font-bold text-civil-blue dark:text-blue-400">{calculatedTotal.toFixed(2)} دج</span>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                  <span class="text-gray-600 dark:text-gray-400">المعدل لكل وجبة:</span>
+                  <span class="font-bold text-civil-blue dark:text-blue-400">{calculatedRate.toFixed(2)} دج</span>
+                </div>
               </div>
-              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                <span class="text-gray-600 dark:text-gray-400">الضيوف:</span>
-                <span class="font-medium">{guestCount || 0}</span>
-              </div>
-              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                <span class="text-gray-600 dark:text-gray-400">إجمالي الوجبات:</span>
-                <span class="font-medium">{(parseInt(personnelCount) || 0) + (parseInt(guestCount) || 0)}</span>
-              </div>
-              <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                <span class="text-gray-600 dark:text-gray-400">القيمة المستهلكة:</span>
-                <span class="font-bold text-civil-blue">{calculatedTotal.toFixed(2)} دج</span>
-              </div>
-              <div class="flex justify-between items-center py-2">
-                <span class="text-gray-600 dark:text-gray-400">المعدل لكل وجبة:</span>
-                <span class="font-bold text-civil-blue">{calculatedRate.toFixed(2)} دج</span>
-              </div>
-            </div>
 
-            <div class="mt-6 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-700">
-              <p class="font-medium mb-1">ملاحظة:</p>
-              <p>يتم إجراء جميع الحسابات من قبل النظام الخلفي. البيانات المعروضة تأتي مباشرة من أوامر Tauri.</p>
-            </div>
+              <div class="mt-6">
+                <AppAlert intent="info" title="ملاحظة">
+                  <span class="text-sm">يتم إجراء جميع الحسابات من قبل النظام الخلفي. البيانات المعروضة تأتي مباشرة من أوامر Tauri.</span>
+                </AppAlert>
+              </div>
+            </AppCard>
           </div>
         </div>
       </div>
     {/if}
+  </div>
 </Layout>
