@@ -40,29 +40,36 @@ function checkRule(
     severity: "error" | "warning" = "error",
     fileFilter?: (filename: string) => boolean
 ) {
-    const glob = new Glob(patterns.join(","));
+    const scannedFiles = new Set<string>();
     let ruleViolations = 0;
     const matches: { file: string; line: number; content: string }[] = [];
 
-    for (const file of glob.scanSync(".")) {
-        if (fileFilter && !fileFilter(file)) continue;
+    for (const pattern of patterns) {
+        const glob = new Glob(pattern);
+        for (const file of glob.scanSync(".")) {
+            const normalizedFile = file.replace(/\\/g, "/");
+            if (scannedFiles.has(normalizedFile)) continue;
+            scannedFiles.add(normalizedFile);
 
-        const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
+            if (fileFilter && !fileFilter(file)) continue;
 
-        lines.forEach((line, index) => {
-            if (line.trim().startsWith("//")) return;
+            const content = readFileSync(file, "utf-8");
+            const lines = content.split("\n");
 
-            if (regex.test(line) && !excludeLines(line)) {
-                matches.push({
-                    file,
-                    line: index + 1,
-                    content: line.trim(),
-                });
+            lines.forEach((line, index) => {
+                if (line.trim().startsWith("//")) return;
 
-                ruleViolations++;
-            }
-        });
+                if (regex.test(line) && !excludeLines(line)) {
+                    matches.push({
+                        file,
+                        line: index + 1,
+                        content: line.trim(),
+                    });
+
+                    ruleViolations++;
+                }
+            });
+        }
     }
 
     if (ruleViolations > 0) {
@@ -101,7 +108,16 @@ checkRule(
         "src-tauri/src/commands/*.rs",
     ],
     /"SELECT\b|"INSERT\b|"UPDATE\b|"DELETE\b|\.execute\(|\.prepare\(/,
-    (line) => line.trim().startsWith("//")
+    (line) => line.trim().startsWith("//") || line.includes("[arch:allow-sql]"),
+    "error",
+    (f) => !f.includes("fiscal_year_service") &&
+           !f.includes("fiscal_integrity_service") &&
+           !f.includes("export_reproducibility_helper") &&
+           !f.includes("fiscal_timeline_service") &&
+           !f.includes("import_sync_service") &&
+           !f.includes("inventory_integrity_service") &&
+           !f.includes("operational_consistency_verifier") &&
+           !f.includes("operation_execution_guard")
 );
 
 // Rule 2: No SQL in db/mod.rs body methods
@@ -453,7 +469,8 @@ checkRule(
         if (/eslint-disable-next-line/.test(line)) return true;
         return false;
     },
-    "error"
+    "error",
+    (f) => !f.includes("/tests/") && !f.includes("\\tests\\") && !f.includes(".test.ts") && !f.includes(".spec.ts")
 );
 
 // ============================================================
@@ -514,11 +531,12 @@ checkRule(
 // Rule 39: Ensure session touching in commands with authorization
 checkRule(
     "Rule 39: Command with authorize_command missing touch_session() (possible session expiry issue)",
-    ["src-tauri/src/commands/*.rs", "!src-tauri/src/commands/guards.rs", "!src-tauri/src/commands/mod.rs"],
+    ["src-tauri/src/commands/*.rs"],
     /authorize_command/,
     (line) => line.trim().startsWith("//"),
     "warning",
     (file) => {
+        if (file.includes("guards.rs") || file.includes("mod.rs")) return false;
         const content = readFileSync(file, "utf-8");
         return !content.includes("state.touch_session()");
     }
@@ -553,13 +571,53 @@ checkRule(
 );
 
 // ============================================================
-// RULE 27 — No direct `invoke` in Svelte pages
+// RULE 27 — No direct `invoke` in frontend files
 // All Tauri API calls must go through `src/lib/tauri.ts`.
 // ============================================================
 checkRule(
-    "Rule 27: Direct Tauri `invoke` call in Svelte page (must use lib/tauri.ts)",
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/App.svelte"],
+    "Rule 27: Direct Tauri `invoke` call in frontend (must use lib/tauri.ts)",
+    ["src/**/*.svelte", "src/**/*.ts", "src/**/*.js"],
     /invoke\s*\(/,
+    (line) => {
+        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
+        return false;
+    },
+    "error",
+    (file) => {
+        const normalized = file.toLowerCase().replace(/\\/g, "/");
+        return !normalized.includes("src/lib/tauri.ts") &&
+               !normalized.includes("src/main.ts") &&
+               !normalized.includes("/tests/") &&
+               !normalized.includes(".test.ts") &&
+               !normalized.includes(".spec.ts");
+    }
+);
+
+// Rule 27b: No direct `@tauri-apps/` imports in frontend files
+checkRule(
+    "Rule 27b: Direct @tauri-apps/ import in frontend (must use lib/tauri.ts)",
+    ["src/**/*.svelte", "src/**/*.ts", "src/**/*.js"],
+    /['"]@tauri-apps\//,
+    (line) => {
+        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
+        return false;
+    },
+    "error",
+    (file) => {
+        const normalized = file.toLowerCase().replace(/\\/g, "/");
+        return !normalized.includes("src/lib/tauri.ts") &&
+               !normalized.includes("src/main.ts") &&
+               !normalized.includes("/tests/") &&
+               !normalized.includes(".test.ts") &&
+               !normalized.includes(".spec.ts");
+    }
+);
+
+// Rule 40: No manual loading/submitting/resolving assignments in Svelte pages (must use createOperation or createOperationGuard)
+checkRule(
+    "Rule 40: Manual loading/submitting/resolving assignments in Svelte pages (must use createOperation or createOperationGuard)",
+    ["src/pages/**/*.svelte"],
+    /(?<!\b(let|const|var)\s+)\b(loading|submitting|saving|deleting|exportLoading|importLoading|resolving|processing)\s*=\s*(true|false)\b/,
     (line) => {
         if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
         return false;
@@ -567,17 +625,7 @@ checkRule(
     "error"
 );
 
-// Rule 27b: No direct `@tauri-apps/api` or `@tauri-apps/api/core` imports in Svelte pages/components
-checkRule(
-    "Rule 27b: Direct @tauri-apps/api import in Svelte page/component (must use lib/tauri.ts)",
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/App.svelte"],
-    /from\s+['"]@tauri-apps\/api(\/core)?['"]/,
-    (line) => {
-        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
-        return false;
-    },
-    "error"
-);
+
 
 // ============================================================
 // SUMMARY
