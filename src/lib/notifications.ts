@@ -49,7 +49,7 @@ class NotificationManager {
     if (notification.auto_close !== false) {
       setTimeout(() => {
         this.remove(newNotification.id);
-      }, 5000); // 5 seconds default
+      }, notification.type === 'success' ? 3000 : 5000); // 3 seconds for success, 5 for others
     }
 
     this.notify();
@@ -108,6 +108,16 @@ class NotificationManager {
     });
   }
 
+  progress(message: string, value?: number, title?: string) {
+    return this.add({
+      type: 'progress',
+      title: title || 'جاري المعالجة',
+      message,
+      auto_close: false,
+      progress_value: value,
+    });
+  }
+
   // Get current notifications (read-only)
   getNotifications(): Notification[] {
     return [...this.notifications];
@@ -132,5 +142,6 @@ export const showSuccess = (message: string, title?: string) => notificationMana
 export const showError = (message: string, title?: string) => notificationManager.error(message, title);
 export const showWarning = (message: string, title?: string) => notificationManager.warning(message, title);
 export const showInfo = (message: string, title?: string) => notificationManager.info(message, title);
+export const showProgress = (message: string, value?: number, title?: string) => notificationManager.progress(message, value, title);
 export const removeNotification = (id: string) => notificationManager.remove(id);
 export const clearNotifications = () => notificationManager.clear();

@@ -12,6 +12,8 @@
         return 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z';
       case 'info':
         return 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+      case 'progress':
+        return 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z';
     }
   }
 
@@ -25,6 +27,8 @@
         return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300';
       case 'info':
         return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300';
+      case 'progress':
+        return 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300';
     }
   }
 
@@ -38,6 +42,8 @@
         return 'text-yellow-600';
       case 'info':
         return 'text-blue-600';
+      case 'progress':
+        return 'text-indigo-600';
     }
   }
 
@@ -78,6 +84,11 @@
           <p class="text-sm text-gray-700 dark:text-gray-300 mt-1">
             {notification.message}
           </p>
+          {#if notification.type === 'progress' && notification.progress_value !== undefined}
+            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
+              <div class="bg-indigo-600 h-1.5 rounded-full transition-all duration-300" style="width: {notification.progress_value}%"></div>
+            </div>
+          {/if}
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
             {formatTime(notification.timestamp)}
           </p>

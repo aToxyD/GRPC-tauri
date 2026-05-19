@@ -291,11 +291,12 @@ export interface SyncPreflightCheck {
 // Notification Types
 export interface Notification {
   id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
+  type: 'success' | 'error' | 'warning' | 'info' | 'progress';
   title: string;
   message: string;
   timestamp: string;
   auto_close?: boolean;
+  progress_value?: number;
 }
 
 // Sync/CSV import result counts
