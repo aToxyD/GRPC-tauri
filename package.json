@@ -14,7 +14,8 @@
     "tauri:build": "tauri build",
     "test": "vitest run",
     "test:ui": "bun test src/lib/operationSafety.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "ci": "bun scripts/run_ci.ts"
   },
   "packageManager": "bun@1.0.0",
   "dependencies": {
