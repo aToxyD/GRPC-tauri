@@ -12,6 +12,8 @@ const mockListFiscalPackageRegistry = vi.fn();
 const mockPreviewFiscalClosurePackage = vi.fn();
 const mockApplyFiscalClosurePackage = vi.fn();
 
+const mockShowAsk = vi.fn();
+
 vi.mock('../../lib/tauri', () => ({
     closeFiscalYear: (...args: any[]) => mockCloseFiscalYear(...args),
     getFiscalYearStatus: (...args: any[]) => mockGetFiscalYearStatus(...args),
@@ -20,13 +22,16 @@ vi.mock('../../lib/tauri', () => ({
     getFiscalTransitionHistory: (...args: any[]) => mockGetFiscalTransitionHistory(...args),
     listFiscalPackageRegistry: (...args: any[]) => mockListFiscalPackageRegistry(...args),
     previewFiscalClosurePackage: (...args: any[]) => mockPreviewFiscalClosurePackage(...args),
-    applyFiscalClosurePackage: (...args: any[]) => mockApplyFiscalClosurePackage(...args)
+    applyFiscalClosurePackage: (...args: any[]) => mockApplyFiscalClosurePackage(...args),
+    showAsk: (...args: any[]) => mockShowAsk(...args),
+    getAppWindow: () => ({ maximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true) }),
+    listenToResize: vi.fn().mockResolvedValue(() => {}),
 }));
 
 describe('Fiscal Management Integration Flow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        window.confirm = vi.fn().mockReturnValue(true);
+        mockShowAsk.mockResolvedValue(true);
 
         mockGetSettings.mockResolvedValue({
             node_type: 'WILAYA',
@@ -80,7 +85,10 @@ describe('Fiscal Management Integration Flow', () => {
         await fireEvent.input(input, { target: { value: '2026' } });
         await fireEvent.click(btn);
 
-        expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('سيتم إغلاق السنة المالية 2026'));
+        expect(mockShowAsk).toHaveBeenCalledWith(
+            expect.stringContaining('سيتم إغلاق السنة المالية 2026'),
+            expect.any(Object)
+        );
 
         await waitFor(() => {
             expect(mockCloseFiscalYear).toHaveBeenCalledWith({ year: 2026, next_year: 2027 });

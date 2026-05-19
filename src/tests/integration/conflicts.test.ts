@@ -12,7 +12,9 @@ vi.mock('../../lib/tauri', () => ({
     listSyncConflicts: (...args: any[]) => mockListSyncConflicts(...args),
     resolveSyncConflict: (...args: any[]) => mockResolveSyncConflict(...args),
     getConflictSummary: (...args: any[]) => mockGetConflictSummary(...args),
-    getSettings: (...args: any[]) => mockGetSettings(...args)
+    getSettings: (...args: any[]) => mockGetSettings(...args),
+    getAppWindow: () => ({ maximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true) }),
+    listenToResize: vi.fn().mockResolvedValue(() => {}),
 }));
 describe('Conflict Center Integration Flow', () => {
     const testConflicts = [

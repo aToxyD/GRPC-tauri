@@ -35,6 +35,7 @@ describe('Session Store', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
         currentUser.set(null);
         sessionState.set({
             isActive: false,
@@ -57,7 +58,7 @@ describe('Session Store', () => {
             
             const result = await bootstrapSession();
             
-            expect(mockInvoke).toHaveBeenCalledWith('get_current_user');
+            expect(mockInvoke).toHaveBeenCalledWith('get_current_user', undefined);
             expect(result).toEqual(user);
             expect(get(currentUser)).toEqual(user);
         });
@@ -78,7 +79,7 @@ describe('Session Store', () => {
             
             await logout();
             
-            expect(mockInvoke).toHaveBeenCalledWith('logout');
+            expect(mockInvoke).toHaveBeenCalledWith('logout', undefined);
             expect(get(currentUser)).toBeNull();
             expect(mockShowInfo).toHaveBeenCalled();
             expect(mockPush).toHaveBeenCalledWith('/login');

@@ -14,7 +14,9 @@ vi.mock('../../lib/tauri', () => ({
     login: (...args: any[]) => mockLogin(...args),
     isConfigured: (...args: any[]) => mockIsConfigured(...args),
     getSettings: (...args: any[]) => mockGetSettings(...args),
-    importUnitNodePackage: (...args: any[]) => mockImportUnitNodePackage(...args)
+    importUnitNodePackage: (...args: any[]) => mockImportUnitNodePackage(...args),
+    getAppWindow: () => ({ maximize: vi.fn(), unmaximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true), center: vi.fn() }),
+    createLogicalSize: vi.fn().mockReturnValue({}),
 }));
 
 // Mock tauri plugin dialog
