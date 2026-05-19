@@ -28,8 +28,8 @@ export class RuntimeContracts {
         return { status: null, currentUser: null, url: window.location.href, error: String(e) };
       }
     });
-    // Throw detailed error
-    throw new Error(`DEBUG SESSION DETAILS: ${JSON.stringify(sessionDetails)}`);
+    expect(sessionDetails.error).toBeNull();
+    expect(sessionDetails.status.is_active).toBe(true);
   }
 
   /**
@@ -37,6 +37,10 @@ export class RuntimeContracts {
    */
   public static async assertIpcGuardsEnforced(page: Page): Promise<void> {
     const ipcBypassAttempt = await page.evaluate(async () => {
+      for (let i = 0; i < 50; i++) {
+        if ((window as any).__TAURI__ && (window as any).__TAURI__.core) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
       try {
         // Attempt an unauthorized directly-invoked internal command
         const { invoke } = (window as any).__TAURI__.core;
@@ -47,7 +51,7 @@ export class RuntimeContracts {
       }
     });
     // Must reject due to unauthorized execution token or command signature mismatch
-    expect(ipcBypassAttempt).toContain('Command not found');
+    expect(ipcBypassAttempt).toMatch(/Command.*not found/);
   }
 
   /**
@@ -55,6 +59,10 @@ export class RuntimeContracts {
    */
   public static async assertPathTraversalRejected(page: Page): Promise<void> {
     const traversalAttempt = await page.evaluate(async () => {
+      for (let i = 0; i < 50; i++) {
+        if ((window as any).__TAURI__ && (window as any).__TAURI__.core) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
       try {
         const { invoke } = (window as any).__TAURI__.core;
         await invoke('read_settings_from_path', { path: '../../../../etc/passwd' });

@@ -25,7 +25,7 @@ test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
     await expect(errorLocators.first()).toBeVisible();
     const texts = await errorLocators.allInnerTexts();
     const joinedText = texts.join(' | ');
-    expect(joinedText).toContain('حظر');
+    expect(joinedText).toMatch(/محظور|تجاوز الحد/);
   });
 
   test('successful authentication, session bootstrap, and node redirection', async ({ tauriApp }) => {

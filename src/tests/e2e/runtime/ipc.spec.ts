@@ -25,6 +25,10 @@ test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
 
     // 3. Test that legitimate IPC queries like fetching settings return structured data
     const settings = await page.evaluate(async () => {
+      for (let i = 0; i < 50; i++) {
+        if ((window as any).__TAURI__ && (window as any).__TAURI__.core) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
       const { invoke } = (window as any).__TAURI__.core;
       return await invoke('get_settings');
     });
@@ -37,8 +41,13 @@ test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
   test('malformed IPC payloads are rejected gracefully by Rust types', async ({ tauriApp }) => {
     const { page } = tauriApp;
 
+    await page.waitForSelector('input[placeholder*="اسم المستخدم"]');
     // Send malformed payload to a command and assert error propagation
     const ipcError = await page.evaluate(async () => {
+      for (let i = 0; i < 50; i++) {
+        if ((window as any).__TAURI__ && (window as any).__TAURI__.core) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
       try {
         const { invoke } = (window as any).__TAURI__.core;
         // invoke expects string parameters but we send numbers or empty objects

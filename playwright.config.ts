@@ -15,6 +15,12 @@ export default defineConfig({
     actionTimeout: 0,
     trace: 'on-first-retry',
   },
+  webServer: {
+    command: 'bun run dev',
+    port: 1420,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120 * 1000,
+  },
   projects: [
     {
       name: 'chromium',
