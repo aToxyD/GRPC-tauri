@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { formatErrorMessage } from '../lib/errors';
   import {
     listDailyReports, getDailyReport, exportDailyReportPackage, exportMonthlySummaryPackage,
-    getMonthlySummary, getSettings
+    getMonthlySummary, getSettings, saveFile
   } from '../lib/tauri';
-  import { save } from '@tauri-apps/plugin-dialog';
   import type { DailyReport, DailyReportResult, MonthlySummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
@@ -16,14 +17,26 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const reportsOp = createOperation();
+  const loading = reportsOp.loading;
+  const error = reportsOp.error;
+
   // Data
   let reports: DailyReport[] = [];
   let settings: Settings | null = null;
-  let loading = true;
-  let error = '';
   let success = '';
   let selectedReport: DailyReportResult | null = null;
   let viewingDetails = false;
+
+  let successTimeouts: number[] = [];
+  function setSuccessWithTimeout(msg: string) {
+    success = msg;
+    const t = window.setTimeout(() => success = '', 3000);
+    successTimeouts.push(t);
+  }
+  onDestroy(() => {
+    successTimeouts.forEach(clearTimeout);
+  });
 
   // Monthly summary
   let currentMonth = new Date().getMonth() + 1;
@@ -35,8 +48,7 @@
   });
 
   async function loadData() {
-    try {
-      loading = true;
+    await reportsOp.run(async () => {
       settings = await getSettings();
 
       if (settings) {
@@ -46,11 +58,7 @@
           getMonthlySummary(currentYear, currentMonth)
         ]);
       }
-    } catch (e) {
-      error = 'خطأ في التحميل: ' + String(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   async function viewDetails(report: DailyReport) {
@@ -59,7 +67,7 @@
       selectedReport = result;
       viewingDetails = true;
     } catch (e) {
-      error = 'خطأ في تحميل التفاصيل: ' + String(e);
+      reportsOp.error.set('خطأ في تحميل التفاصيل: ' + formatErrorMessage(e));
     }
   }
 
@@ -69,38 +77,32 @@
   }
 
   async function exportDailyReport(report: DailyReport) {
-    try {
-      const filePath = await save({
-        filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
-        defaultPath: `تقرير_الإستهلاك_اليومي_${settings?.unit_code || 'UNIT'}_${report.date}.sync`
-      });
-      if (filePath) {
+    const filePath = await saveFile({
+      filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
+      defaultPath: `تقرير_الإستهلاك_اليومي_${settings?.unit_code || 'UNIT'}_${report.date}.sync`
+    });
+    if (filePath) {
+      await reportsOp.run(async () => {
         const result = await exportDailyReportPackage(report.id, filePath);
         if (result.success) {
-          success = `تم تصدير التقرير: ${result.file_path}`;
-          setTimeout(() => success = '', 3000);
+          setSuccessWithTimeout(`تم تصدير التقرير: ${result.file_path}`);
         }
-      }
-    } catch (e) {
-      error = 'خطأ في التصدير: ' + String(e);
+      });
     }
   }
 
   async function exportMonthly() {
-    try {
-      const filePath = await save({
-        filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
-        defaultPath: `تقرير_الإستهلاك_الشهري_${settings?.unit_code || 'UNIT'}_${currentYear}_${currentMonth}.sync`
-      });
-      if (filePath) {
+    const filePath = await saveFile({
+      filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
+      defaultPath: `تقرير_الإستهلاك_الشهري_${settings?.unit_code || 'UNIT'}_${currentYear}_${currentMonth}.sync`
+    });
+    if (filePath) {
+      await reportsOp.run(async () => {
         const result = await exportMonthlySummaryPackage(currentYear, currentMonth, filePath);
         if (result.success) {
-          success = `تم تصدير التقرير الشهري: ${result.record_count} سجل`;
-          setTimeout(() => success = '', 3000);
+          setSuccessWithTimeout(`تم تصدير التقرير الشهري: ${result.record_count} سجل`);
         }
-      }
-    } catch (e) {
-      error = 'خطأ في التصدير: ' + String(e);
+      });
     }
   }
 
@@ -126,9 +128,9 @@
       </AppButton>
     </div>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => reportsOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
@@ -138,8 +140,8 @@
       </div>
     {/if}
 
-    {#if loading}
-      <AppLoadingState message="جارٍ التحميل..." />
+    {#if $loading}
+      <AppLoadingState message="...جارٍ التحميل" />
     {:else}
       <!-- Monthly Summary Card -->
       {#if monthlySummary}

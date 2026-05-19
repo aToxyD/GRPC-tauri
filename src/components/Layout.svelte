@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { onMount, onDestroy } from 'svelte';
+  import { getAppWindow, listenToResize } from '../lib/tauri';
   import Sidebar from './Sidebar.svelte';
 
   export let nodeType: 'WILAYA' | 'UNIT' | null = null;
@@ -10,27 +10,36 @@
   // Display fallback to prevent flicker
   $: displayNodeType = nodeType || 'WILAYA';
 
+  let unlisten: (() => void) | null = null;
+
   onMount(async () => {
     try {
-      const window = getCurrentWindow();
+      const window = getAppWindow();
       await window.setResizable(true);
       await window.setMaximizable(true);
       if (!(await window.isMaximized())) {
         await window.maximize();
       }
       
-      // Wait for window to be maximized before locking resizability/maximizability
-      for (let i = 0; i < 20; i++) {
+      // Wait for window to be maximized before locking resizability/maximizability using event listener
+      unlisten = await listenToResize(async () => {
         if (await window.isMaximized()) {
-          break;
+          await window.setResizable(false);
+          await window.setMaximizable(false);
+          if (unlisten) {
+            unlisten();
+            unlisten = null;
+          }
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      
-      await window.setResizable(false);
-      await window.setMaximizable(false);
+      });
     } catch (err) {
       console.error('Failed to maximize and lock window in Layout:', err);
+    }
+  });
+
+  onDestroy(() => {
+    if (unlisten) {
+      unlisten();
     }
   });
 </script>

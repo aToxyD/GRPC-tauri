@@ -3,6 +3,8 @@
   import { getSyncHealth, getConflictSummary, getSettings } from '../lib/tauri';
   import type { SyncNodeHealth, ConflictSummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { formatErrorMessage } from '../lib/errors';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -11,19 +13,19 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
 
+  const syncOp = createOperation();
+  const loading = syncOp.loading;
+  const error = syncOp.error;
+
   let nodes: SyncNodeHealth[] = [];
   let summary: ConflictSummary | null = null;
-  let loading = true;
-  let error: string | null = null;
   let observer: MutationObserver | null = null;
   let settings: Settings | null = null;
 
   async function load() {
-    loading = true; error = null;
-    try {
+    await syncOp.run(async () => {
       [nodes, summary] = await Promise.all([getSyncHealth(), getConflictSummary()]);
-    } catch(e) { error = e instanceof Error ? e.message : 'فشل التحميل'; }
-    finally { loading = false; }
+    });
   }
 
   function fmt(ts: string|null) { return ts ? new Date(ts).toLocaleString('ar-DZ') : '—'; }
@@ -116,17 +118,17 @@
   <div dir="rtl">
     <AppPageHeader title="طوبولوجيا المزامنة" subtitle="خريطة العقد والحزم والصحة التشغيلية">
       <svelte:fragment slot="actions">
-        <AppButton variant="primary" on:click={load} disabled={loading}>⟳ تحديث</AppButton>
+        <AppButton variant="primary" on:click={load} disabled={$loading}>⟳ تحديث</AppButton>
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger">{error}</AppAlert>
+        <AppAlert intent="danger">{$error}</AppAlert>
       </div>
     {/if}
 
-    {#if loading && !summary}
+    {#if $loading && !summary}
       <AppLoadingState message="جارٍ تحميل بيانات الشبكة..." />
     {:else}
       <!-- Summary Cards -->

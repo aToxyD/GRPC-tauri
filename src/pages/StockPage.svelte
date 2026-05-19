@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { open, save } from "@tauri-apps/plugin-dialog";
+  import { onMount, onDestroy } from "svelte";
+  import { formatErrorMessage } from "../lib/errors";
   import {
     getAllStocks,
     importProductsPackage,
@@ -10,6 +10,8 @@
     exportStockMovementsPackage,
     importStockMovementsPackage,
     getSettings,
+    openFile,
+    saveFile,
   } from "../lib/tauri";
   import { showSuccess, showError } from "../lib/notifications";
   import type {
@@ -65,6 +67,11 @@
   let importSuccess = $state("");
   let settings: Settings | null = $state(null);
 
+  let stockTimeouts: number[] = [];
+  onDestroy(() => {
+    stockTimeouts.forEach(clearTimeout);
+  });
+
   // Fallback stocks
   let stocks: InventoryStock[] = $state([]);
 
@@ -82,12 +89,12 @@
       summaryLoading = true;
       summary = await getStockSummary();
     } catch (e) {
-      showError("خطأ في تحميل ملخص المخزون: " + String(e));
+      showError("خطأ في تحميل ملخص المخزون: " + formatErrorMessage(e));
       // Fallback to old method
       try {
         stocks = await getAllStocks();
       } catch (e2) {
-        showError("خطأ في التحميل الاحتياطي: " + String(e2));
+        showError("خطأ في التحميل الاحتياطي: " + formatErrorMessage(e2));
       }
     } finally {
       summaryLoading = false;
@@ -114,7 +121,7 @@
       movements = response.movements;
       totalMovements = response.total_count;
     } catch (e) {
-      showError("خطأ في تحميل حركات المخزون: " + String(e));
+      showError("خطأ في تحميل حركات المخزون: " + formatErrorMessage(e));
     } finally {
       movementsLoading = false;
     }
@@ -126,11 +133,12 @@
     currentPage = 0;
     await loadMovements(); // انتظر حتى يظهر القسم
     // ثم scroll
-    setTimeout(() => {
+    const t = window.setTimeout(() => {
       document
         .getElementById("movements-section")
         ?.scrollIntoView({ behavior: "smooth" });
     }, 100);
+    stockTimeouts.push(t);
   }
 
   function clearFilters() {
@@ -145,7 +153,7 @@
 
   async function handleExportMovements() {
     try {
-      const filePath = await save({
+      const filePath = await saveFile({
         filters: [{ name: "Excel", extensions: ["xlsx"] }],
       });
 
@@ -157,7 +165,7 @@
         showSuccess(`تم تصدير ${count} حركة إلى Excel بنجاح`);
       }
     } catch (e) {
-      showError("خطأ في التصدير: " + String(e));
+      showError("خطأ في التصدير: " + formatErrorMessage(e));
     }
   }
 
@@ -166,7 +174,7 @@
       importError = "";
       importSuccess = "";
 
-      const selected = await open({
+      const selected = await openFile({
         multiple: false,
         filters: [
           {
@@ -181,10 +189,11 @@
         const count = result.added;
         importSuccess = `تم استيراد ${count} منتجات بنجاح`;
         await loadSummary();
-        setTimeout(() => (importSuccess = ""), 3000);
+        const t = window.setTimeout(() => (importSuccess = ""), 3000);
+        stockTimeouts.push(t);
       }
     } catch (e) {
-      importError = "خطأ في الاستيراد: " + String(e);
+      importError = "خطأ في الاستيراد: " + formatErrorMessage(e);
     }
   }
 
@@ -196,7 +205,7 @@
       const unitCode = settings?.unit_code || "UNIT";
       const defaultFilename = `حزمة_حركة_المخزون_${unitCode}_${dateStr}.sync`;
 
-      const filePath = await save({
+      const filePath = await saveFile({
         defaultPath: defaultFilename,
         filters: [{ name: "Sync Package", extensions: ["sync"] }],
       });
@@ -217,7 +226,7 @@
         );
       }
     } catch (e) {
-      showError("خطأ في تصدير حزمة حركات المخزون: " + String(e));
+      showError("خطأ في تصدير حزمة حركات المخزون: " + formatErrorMessage(e));
     }
   }
 

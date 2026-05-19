@@ -10,31 +10,41 @@
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
+  import { createOperation } from '../lib/operationGuard';
+  import { onDestroy } from 'svelte';
+
+  const statsOp = createOperation();
+  const loading = statsOp.loading;
+  const error = statsOp.error;
 
   let systemMetrics: SystemMetrics | null = null;
   let loginMetrics: LoginMetrics | null = null;
   let settings: Settings | null = null;
   $: currentUser = $userStore;
-  let loading = true;
-  let error: string | null = null;
   let currentTime = new Date();
 
-  const timeInterval = setInterval(() => {
-    currentTime = new Date();
-  }, 1000);
+  let timeInterval: number | null = null;
+  let metricsInterval: number | null = null;
 
   onMount(() => {
     (async () => {
       await loadSettings();
-      loadMetrics();
+      await loadMetrics();
     })();
     
-    const metricsInterval = setInterval(loadMetrics, 30000);
-    
-    return () => {
+    metricsInterval = window.setInterval(loadMetrics, 30000);
+    timeInterval = window.setInterval(() => {
+      currentTime = new Date();
+    }, 1000);
+  });
+
+  onDestroy(() => {
+    if (metricsInterval !== null) {
       clearInterval(metricsInterval);
+    }
+    if (timeInterval !== null) {
       clearInterval(timeInterval);
-    };
+    }
   });
 
   async function loadSettings() {
@@ -46,20 +56,12 @@
   }
 
   async function loadMetrics() {
-    try {
-      loading = true;
-      error = null;
-      const username = currentUser?.username;
-      
+    await statsOp.run(async () => {
       [systemMetrics, loginMetrics] = await Promise.all([
         getSystemMetrics(),
         getLoginMetrics()
       ]);
-    } catch (err) {
-      error = 'فشل تحميل الإحصائيات';
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function formatUptime(seconds: number): string {
@@ -111,11 +113,11 @@
       </div>
     </div>
 
-    {#if loading && !systemMetrics}
+    {#if $loading && !systemMetrics}
       <AppLoadingState message="جاري تحميل الإحصائيات..." />
-    {:else if error}
+    {:else if $error}
       <AppAlert intent="danger" title="خطأ">
-        <p class="mb-2">{error}</p>
+        <p class="mb-2">{$error}</p>
         <AppButton variant="secondary" size="sm" on:click={loadMetrics}>
           إعادة المحاولة
         </AppButton>

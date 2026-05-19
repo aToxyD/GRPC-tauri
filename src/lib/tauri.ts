@@ -1,4 +1,7 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { open as tauriOpen, save as tauriSave, ask as tauriAsk } from '@tauri-apps/plugin-dialog';
+import { getCurrentWindow as tauriGetCurrentWindow } from '@tauri-apps/api/window';
+import { LogicalSize as tauriLogicalSize } from '@tauri-apps/api/dpi';
 import { normalizeError } from './errors';
 import type {
   LoginRequest, LoginResponse, Settings, NodeConfiguration,
@@ -48,6 +51,15 @@ export async function logout(): Promise<boolean> {
 export async function checkSession(): Promise<SessionStatus> {
   return await safeInvoke('check_session');
 }
+
+export async function getCurrentUser(): Promise<User | null> {
+  return await safeInvoke<User | null>('get_current_user');
+}
+
+export async function touchSession(): Promise<void> {
+  return await safeInvoke('touch_session');
+}
+
 
 // Configuration
 export async function getSettings(): Promise<Settings> {
@@ -532,11 +544,11 @@ export async function updateFiscalPackageRetentionStatus(
 
 
 
-export async function getAdvancedDiagnosticsBundle(fiscalYear: number | null): Promise<any> {
+export async function getAdvancedDiagnosticsBundle(fiscalYear: number | null): Promise<unknown> {
   return await safeInvoke('get_advanced_diagnostics_bundle', { fiscalYear });
 }
 
-export async function verifyInventoryIntegrity(year: number): Promise<any> {
+export async function verifyInventoryIntegrity(year: number): Promise<unknown> {
   return await safeInvoke('verify_inventory_integrity', { year });
 }
 
@@ -551,4 +563,35 @@ export async function getBuildInfo(): Promise<BuildInfo> {
 export async function getRecentTelemetry(limit: number): Promise<TelemetryEvent[]> {
   return await safeInvoke('get_recent_telemetry', { limit });
 }
+
+// Platform API Wrappers
+export async function openFile(options?: Parameters<typeof tauriOpen>[0]) {
+  return await tauriOpen(options);
+}
+
+export async function saveFile(options?: Parameters<typeof tauriSave>[0]) {
+  return await tauriSave(options);
+}
+
+export async function showAsk(message: string, options?: Parameters<typeof tauriAsk>[1]): Promise<boolean> {
+  return await tauriAsk(message, options);
+}
+
+export function getAppWindow() {
+  return tauriGetCurrentWindow();
+}
+
+export function createLogicalSize(width: number, height: number) {
+  return new tauriLogicalSize(width, height);
+}
+
+export async function listenToResize(callback: () => void): Promise<() => void> {
+  const win = tauriGetCurrentWindow();
+  const unlisten = await win.onResized(() => {
+    callback();
+  });
+  return unlisten;
+}
+
+
 

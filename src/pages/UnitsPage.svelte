@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { formatErrorMessage } from "../lib/errors";
   import {
     listUnits,
     createUnit,
@@ -7,10 +8,11 @@
     exportUnitNodePackage,
     updateUnit,
     deleteUnit,
+    saveFile,
   } from "../lib/tauri";
-  import { save } from "@tauri-apps/plugin-dialog";
   import type { Unit, Settings, CreateUnitRequest } from "../lib/types";
   import Layout from "../components/Layout.svelte";
+  import { createOperation } from "../lib/operationGuard";
 
   import AppButton from "../lib/components/ui/AppButton.svelte";
   import AppAlert from "../lib/components/ui/AppAlert.svelte";
@@ -21,16 +23,28 @@
   import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
   import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
 
+  const unitsOp = createOperation();
+  const loading = unitsOp.loading;
+  const error = unitsOp.error;
+
   let units: Unit[] = [];
   let settings: Settings | null = null;
-  let loading = true;
   let showModal = false;
   let showEditModal = false;
   let showDeleteModal = false;
-  let error = "";
   let success = "";
   let editingUnit: Unit | null = null;
   let deletingUnit: Unit | null = null;
+
+  let successTimeouts: number[] = [];
+  function setSuccessWithTimeout(msg: string) {
+    success = msg;
+    const t = window.setTimeout(() => (success = ""), 3000);
+    successTimeouts.push(t);
+  }
+  onDestroy(() => {
+    successTimeouts.forEach(clearTimeout);
+  });
 
   // Form fields
   let unitCode = "";
@@ -44,17 +58,12 @@
   });
 
   async function loadData() {
-    try {
-      loading = true;
+    await unitsOp.run(async () => {
       settings = await getSettings();
       if (settings && settings.wilaya_code) {
         units = await listUnits(settings.wilaya_code);
       }
-    } catch (e) {
-      error = "خطأ في التحميل: " + String(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function openCreateModal() {
@@ -64,7 +73,7 @@
     password = "";
     confirmPassword = "";
     showModal = true;
-    error = "";
+    unitsOp.error.set(null);
   }
 
   function openEditModal(unit: Unit) {
@@ -75,13 +84,13 @@
     password = "";
     confirmPassword = "";
     showEditModal = true;
-    error = "";
+    unitsOp.error.set(null);
   }
 
   function openDeleteModal(unit: Unit) {
     deletingUnit = unit;
     showDeleteModal = true;
-    error = "";
+    unitsOp.error.set(null);
   }
 
   function closeModal() {
@@ -90,22 +99,22 @@
     showDeleteModal = false;
     editingUnit = null;
     deletingUnit = null;
-    error = "";
+    unitsOp.error.set(null);
   }
 
   async function saveUnit() {
     if (!unitCode || !unitName || !username || !password) {
-      error = "الرجاء إدخال رمز واسم الوحدة";
+      unitsOp.error.set("الرجاء إدخال رمز واسم الوحدة");
       return;
     }
 
     if (password !== confirmPassword) {
-      error = "كلمات المرور غير متطابقة";
+      unitsOp.error.set("كلمات المرور غير متطابقة");
       return;
     }
 
     if (!settings?.wilaya_code) {
-      error = "تكوين الولاية غير موجود";
+      unitsOp.error.set("تكوين الولاية غير موجود");
       return;
     }
 
@@ -117,23 +126,22 @@
         password,
       };
       await createUnit(request, settings.wilaya_code);
-      success = `تم إنشاء الوحدة ${unitCode} بنجاح.`;
+      setSuccessWithTimeout(`تم إنشاء الوحدة ${unitCode} بنجاح.`);
       closeModal();
       loadData();
-      setTimeout(() => (success = ""), 3000);
     } catch (e) {
-      error = "خطأ: " + String(e);
+      unitsOp.error.set("خطأ: " + formatErrorMessage(e));
     }
   }
 
   async function updateUnitData() {
     if (!unitCode || !unitName) {
-      error = "الرجاء إدخال رمز واسم الوحدة";
+      unitsOp.error.set("الرجاء إدخال رمز واسم الوحدة");
       return;
     }
 
     if (!editingUnit) {
-      error = "لم يتم تحديد الوحدة للتعديل";
+      unitsOp.error.set("لم يتم تحديد الوحدة للتعديل");
       return;
     }
 
@@ -145,58 +153,50 @@
         password: password || "",
       };
       await updateUnit(editingUnit.id, request);
-      success = `تم تحديث الوحدة ${unitCode} بنجاح.`;
+      setSuccessWithTimeout(`تم تحديث الوحدة ${unitCode} بنجاح.`);
       closeModal();
       loadData();
-      setTimeout(() => (success = ""), 3000);
     } catch (e) {
-      error = "خطأ: " + String(e);
+      unitsOp.error.set("خطأ: " + formatErrorMessage(e));
     }
   }
 
   async function deleteUnitData() {
     if (!deletingUnit) {
-      error = "لم يتم تحديد الوحدة للحذف";
+      unitsOp.error.set("لم يتم تحديد الوحدة للحذف");
       return;
     }
 
     try {
       await deleteUnit(deletingUnit.id);
-      success = `تم حذف الوحدة ${deletingUnit.code} بنجاح.`;
+      setSuccessWithTimeout(`تم حذف الوحدة ${deletingUnit.code} بنجاح.`);
       closeModal();
       loadData();
-      setTimeout(() => (success = ""), 3000);
     } catch (e) {
-      error = "خطأ: " + String(e);
+      unitsOp.error.set("خطأ: " + formatErrorMessage(e));
     }
   }
 
   async function handleExportPackage(unit: Unit) {
-    error = "";
-    try {
-      const filePath = await save({
-        filters: [
-          {
-            name: "حزمة التكوين",
-            extensions: ["unit"],
-          },
-        ],
-        defaultPath: `${unit.code}_package.unit`,
-      });
+    const filePath = await saveFile({
+      filters: [
+        {
+          name: "حزمة التكوين",
+          extensions: ["unit"],
+        },
+      ],
+      defaultPath: `${unit.code}_package.unit`,
+    });
 
-      if (filePath) {
+    if (filePath) {
+      await unitsOp.run(async () => {
         const result = await exportUnitNodePackage(unit.id, filePath);
         if (result.success) {
-          success = `تم تصدير حزمة الوحدة ${unit.code} بنجاح.`;
-          setTimeout(() => (success = ""), 3000);
+          setSuccessWithTimeout(`تم تصدير حزمة الوحدة ${unit.code} بنجاح.`);
         } else {
-          error = result.message?.trim()
-            ? result.message
-            : "فشل التصدير دون رسالة من الخادم.";
+          throw new Error(result.message || "فشل تصدير الحزمة");
         }
-      }
-    } catch (e) {
-      error = "خطأ في التصدير: " + String(e);
+      });
     }
   }
 </script>
@@ -224,10 +224,10 @@
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => (error = "")}
-          >{error}</AppAlert
+        <AppAlert intent="danger" dismissible on:dismiss={() => unitsOp.error.set(null)}
+          >{$error}</AppAlert
         >
       </div>
     {/if}
@@ -241,7 +241,7 @@
     {/if}
 
     <AppCard padding="none">
-      <AppTable {loading} empty={units.length === 0}>
+      <AppTable loading={$loading} empty={units.length === 0}>
         <svelte:fragment slot="empty">
           <AppEmptyState
             title="لا يوجد وحدات مسجلة"
@@ -352,9 +352,9 @@
 <!-- Create Modal -->
 <AppDialog open={showModal} title="وحدة جديدة" on:close={closeModal}>
   <div dir="rtl" class="space-y-4">
-    {#if error}
-      <AppAlert intent="danger" dismissible on:dismiss={() => (error = "")}
-        >{error}</AppAlert
+    {#if $error}
+      <AppAlert intent="danger" dismissible on:dismiss={() => unitsOp.error.set(null)}
+        >{$error}</AppAlert
       >
     {/if}
 
@@ -415,9 +415,9 @@
 <!-- Edit Modal -->
 <AppDialog open={showEditModal} title="تعديل الوحدة" on:close={closeModal}>
   <div dir="rtl" class="space-y-4">
-    {#if error}
-      <AppAlert intent="danger" dismissible on:dismiss={() => (error = "")}
-        >{error}</AppAlert
+    {#if $error}
+      <AppAlert intent="danger" dismissible on:dismiss={() => unitsOp.error.set(null)}
+        >{$error}</AppAlert
       >
     {/if}
 
@@ -483,10 +483,10 @@
   on:close={closeModal}
 >
   <div dir="rtl">
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => (error = "")}
-          >{error}</AppAlert
+        <AppAlert intent="danger" dismissible on:dismiss={() => unitsOp.error.set(null)}
+          >{$error}</AppAlert
         >
       </div>
     {/if}

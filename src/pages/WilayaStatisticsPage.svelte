@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getSystemMetrics, getLoginMetrics, getSettings, syncPreflightCheck } from '../lib/tauri';
-  import type { SystemMetrics, LoginMetrics, Settings, User, SyncPreflightCheck } from '../lib/types';
+  import type { SystemMetrics, LoginMetrics, Settings, SyncPreflightCheck } from '../lib/types';
   import { currentUser as userStore } from '../lib/session';
   import Layout from '../components/Layout.svelte';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
@@ -11,31 +12,34 @@
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
 
+  const metricsOp = createOperation();
+  const loading = metricsOp.loading;
+  const error = metricsOp.error;
+
   let systemMetrics: SystemMetrics | null = null;
   let loginMetrics: LoginMetrics | null = null;
   let settings: Settings | null = null;
   $: currentUser = $userStore;
-  let loading = true;
-  let error: string | null = null;
   let currentTime = new Date();
   let preflight: SyncPreflightCheck | null = null;
 
-  const timeInterval = setInterval(() => {
-    currentTime = new Date();
-  }, 1000);
+  let timeInterval: number | null = null;
+  let metricsInterval: number | null = null;
 
-  onMount(() => {
-    (async () => {
-      await loadSettings();
-      loadMetrics();
-    })();
+  onMount(async () => {
+    timeInterval = window.setInterval(() => {
+      currentTime = new Date();
+    }, 1000);
+
+    await loadSettings();
+    await loadMetrics();
     
-    const metricsInterval = setInterval(loadMetrics, 30000);
-    
-    return () => {
-      clearInterval(metricsInterval);
-      clearInterval(timeInterval);
-    };
+    metricsInterval = window.setInterval(loadMetrics, 30000);
+  });
+
+  onDestroy(() => {
+    if (timeInterval !== null) clearInterval(timeInterval);
+    if (metricsInterval !== null) clearInterval(metricsInterval);
   });
 
   async function loadSettings() {
@@ -47,21 +51,13 @@
   }
 
   async function loadMetrics() {
-    try {
-      loading = true;
-      error = null;
-      const username = currentUser?.username;
-      
+    await metricsOp.run(async () => {
       [systemMetrics, loginMetrics, preflight] = await Promise.all([
         getSystemMetrics(),
         getLoginMetrics(),
         syncPreflightCheck()
       ]);
-    } catch (err) {
-      error = 'فشل تحميل الإحصائيات';
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function formatUptime(seconds: number): string {
@@ -113,12 +109,12 @@
       </div>
     </div>
 
-    {#if loading && !systemMetrics}
+    {#if $loading && !systemMetrics}
       <AppLoadingState message="جاري تحميل الإحصائيات..." />
-    {:else if error}
+    {:else if $error}
       <AppAlert intent="danger" title="خطأ">
-        <p class="mb-2">{error}</p>
-        <AppButton variant="secondary" size="sm" on:click={loadMetrics}>
+        <p class="mb-2">{$error}</p>
+        <AppButton variant="secondary" size="sm" on:click={loadMetrics} disabled={$loading}>
           إعادة المحاولة
         </AppButton>
       </AppAlert>

@@ -1,10 +1,22 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { listProducts, createProduct, updateProduct, deleteProduct, exportProductsPackage, importProductsPackage, exportProductsExcel, getSettings } from '../lib/tauri';
-  import { save } from '@tauri-apps/plugin-dialog';
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { onMount, onDestroy } from 'svelte';
+  import { formatErrorMessage } from '../lib/errors';
+  import {
+    listProducts,
+    createProduct,
+    updateProduct,
+    deleteProduct,
+    exportProductsPackage,
+    importProductsPackage,
+    exportProductsExcel,
+    getSettings,
+    saveFile,
+    openFile,
+    showAsk
+  } from '../lib/tauri';
   import type { Product, Settings, CreateProductRequest, UpdateProductRequest } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -15,14 +27,26 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const productsOp = createOperation();
+  const loading = productsOp.loading;
+  const error = productsOp.error;
+
   let products: Product[] = [];
   let settings: Settings | null = null;
-  let loading = true;
   let showModal = false;
   let editingProduct: Product | null = null;
-  let error = '';
   let success = '';
   let currentYear = new Date().getFullYear();
+
+  let successTimeouts: number[] = [];
+  function setSuccessWithTimeout(msg: string) {
+    success = msg;
+    const t = window.setTimeout(() => success = '', 3000);
+    successTimeouts.push(t);
+  }
+  onDestroy(() => {
+    successTimeouts.forEach(clearTimeout);
+  });
 
   // Form fields
   let productName = '';
@@ -31,12 +55,11 @@
   let supplierName = '';
 
   onMount(async () => {
-    loadData();
+    await loadData();
   });
 
   async function loadData() {
-    try {
-      loading = true;
+    await productsOp.run(async () => {
       [products, settings] = await Promise.all([
         listProducts(),
         getSettings()
@@ -44,11 +67,7 @@
       if (settings) {
         currentYear = settings.current_year;
       }
-    } catch (e) {
-      error = 'خطأ في التحميل: ' + String(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function openCreateModal() {
@@ -58,7 +77,7 @@
     tva = '0';
     supplierName = '';
     showModal = true;
-    error = '';
+    productsOp.error.set(null);
   }
 
   function openEditModal(product: Product) {
@@ -68,22 +87,22 @@
     tva = product.tva.toString();
     supplierName = product.supplier_name || '';
     showModal = true;
-    error = '';
+    productsOp.error.set(null);
   }
 
   function closeModal() {
     showModal = false;
     editingProduct = null;
-    error = '';
+    productsOp.error.set(null);
   }
 
   async function saveProduct() {
     if (!productName || !basePrice) {
-      error = 'Veuillez remplir tous les champs obligatoires';
+      productsOp.error.set('Veuillez remplir tous les champs obligatoires');
       return;
     }
 
-    try {
+    await productsOp.run(async () => {
       const price = parseFloat(basePrice);
       const tvaValue = parseFloat(tva) || 0;
 
@@ -96,7 +115,7 @@
           supplier_name: supplierName || null
         };
         await updateProduct(request);
-        success = 'تم تحديث المنتج بنجاح';
+        setSuccessWithTimeout('تم تحديث المنتج بنجاح');
       } else {
         const request: CreateProductRequest = {
           name: productName,
@@ -105,87 +124,79 @@
           supplier_name: supplierName || null
         };
         await createProduct(request);
-        success = 'تم إنشاء المنتج بنجاح';
+        setSuccessWithTimeout('تم إنشاء المنتج بنجاح');
       }
 
       closeModal();
-      loadData();
-      setTimeout(() => success = '', 3000);
-    } catch (e) {
-      error = 'خطأ: ' + String(e);
-    }
+      await loadData();
+    });
   }
 
   async function handleDelete(product: Product) {
-    if (!confirm(`هل أنت متأكد من حذف المنتج "${product.name}" ؟`)) {
-      return;
-    }
+    const confirmed = await showAsk(`هل أنت متأكد من حذف المنتج "${product.name}" ؟`, {
+      title: 'تأكيد الحذف',
+      kind: 'warning',
+      okLabel: 'نعم',
+      cancelLabel: 'لا'
+    });
+    if (!confirmed) return;
 
-    try {
+    await productsOp.run(async () => {
       await deleteProduct(product.id);
-      success = 'تم حذف المنتج بنجاح';
-      loadData();
-      setTimeout(() => success = '', 3000);
-    } catch (e) {
-      error = 'خطأ في الحذف: ' + String(e);
-    }
+      setSuccessWithTimeout('تم حذف المنتج بنجاح');
+      await loadData();
+    });
   }
 
   async function handleExport(format: 'excel' | 'package') {
-    try {
-      const extension = format === 'excel' ? 'xlsx' : 'sync';
-      const filterName = format === 'excel' ? 'Excel' : 'حزمة المزامنة';
-      
-      const wilayaName = settings?.wilaya_name || 'الولاية';
-      const defaultFilename = `منتجات_ولاية_${wilayaName}_${currentYear}.${extension}`;
-      
-      const filePath = await save({
-        filters: [{
-          name: filterName,
-          extensions: [extension]
-        }],
-        defaultPath: defaultFilename
-      });
+    const extension = format === 'excel' ? 'xlsx' : 'sync';
+    const filterName = format === 'excel' ? 'Excel' : 'حزمة المزامنة';
+    
+    const wilayaName = settings?.wilaya_name || 'الولاية';
+    const defaultFilename = `منتجات_ولاية_${wilayaName}_${currentYear}.${extension}`;
+    
+    const filePath = await saveFile({
+      filters: [{
+        name: filterName,
+        extensions: [extension]
+      }],
+      defaultPath: defaultFilename
+    });
 
-      if (filePath) {
-        const result = format === 'excel'
-            ? await exportProductsExcel(filePath)
-            : await exportProductsPackage(filePath);
-          
-        if (result.success) {
-          success = `تم التصدير بنجاح: ${result.record_count} منتجات (${filterName})`;
-          setTimeout(() => success = '', 3000);
-        }
+    if (!filePath) return;
+
+    await productsOp.run(async () => {
+      const result = format === 'excel'
+          ? await exportProductsExcel(filePath)
+          : await exportProductsPackage(filePath);
+        
+      if (result.success) {
+        setSuccessWithTimeout(`تم التصدير بنجاح: ${result.record_count} منتجات (${filterName})`);
       }
-    } catch (e) {
-      error = 'خطأ في التصدير: ' + String(e);
-    }
+    });
   }
 
   async function handleImport() {
-    try {
-      const extension = 'sync';
-      const filterName = 'حزمة المزامنة';
-      
-      const selected = await open({
-        multiple: false,
-        filters: [{
-          name: filterName,
-          extensions: [extension]
-        }]
-      });
+    const extension = 'sync';
+    const filterName = 'حزمة المزامنة';
+    
+    const selected = await openFile({
+      multiple: false,
+      filters: [{
+        name: filterName,
+        extensions: [extension]
+      }]
+    });
 
-      if (selected) {
-        const result = await importProductsPackage(selected as string);
-        const count = result.added;
-          
-        success = `تم استيراد ${count} منتجات بنجاح (${filterName})`;
-        loadData();
-        setTimeout(() => success = '', 3000);
-      }
-    } catch (e) {
-      error = 'خطأ في الاستيراد: ' + String(e);
-    }
+    if (!selected || Array.isArray(selected)) return;
+
+    await productsOp.run(async () => {
+      const result = await importProductsPackage(selected);
+      const count = result.added;
+        
+      setSuccessWithTimeout(`تم استيراد ${count} منتجات بنجاح (${filterName})`);
+      await loadData();
+    });
   }
 </script>
 
@@ -229,9 +240,9 @@
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => productsOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
@@ -243,8 +254,8 @@
 
     <AppCard padding="none">
       <AppTable
-        {loading}
-        empty={!loading && products.length === 0}
+        loading={$loading}
+        empty={!$loading && products.length === 0}
       >
         <svelte:fragment slot="empty">
           <AppEmptyState
@@ -294,9 +305,9 @@
 <!-- Modal -->
 <AppDialog open={showModal} title={editingProduct ? 'تعديل المنتج' : 'منتج جديد'} on:close={closeModal}>
   <div dir="rtl">
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => productsOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 

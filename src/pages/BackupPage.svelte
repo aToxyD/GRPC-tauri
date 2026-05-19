@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ask } from "@tauri-apps/plugin-dialog";
   import {
     createBackup,
     issueOperationExecutionToken,
     listBackups,
     restoreBackup,
     getSettings,
+    showAsk,
   } from "../lib/tauri";
   import type { BackupInfo, Settings } from "../lib/types";
   import { formatBytes, formatDate } from "../lib/utils";
   import { showSuccess } from "../lib/notifications";
   import { currentUser as userStore } from "../lib/session";
   import Layout from "../components/Layout.svelte";
-  import { createOperationGuard } from "../lib/operationGuard";
+  import { createOperation, createOperationGuard } from "../lib/operationGuard";
   import { formatErrorMessage } from "../lib/errors";
   import AppButton from "../lib/components/ui/AppButton.svelte";
   import AppAlert from "../lib/components/ui/AppAlert.svelte";
@@ -22,12 +22,17 @@
   import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
   import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
 
-  const { loading: opLoading, guard } = createOperationGuard();
+  const backupsOp = createOperation();
+  const backupsLoading = backupsOp.loading;
+  const backupsError = backupsOp.error;
+
+  const createBackupOp = createOperationGuard();
+  const createLoading = createBackupOp.loading;
+
+  const restoreBackupOp = createOperationGuard();
+  const restoring = restoreBackupOp.loading;
 
   let backups: BackupInfo[] = [];
-  let loading = false;
-  let error: string | null = null;
-  let restoring = false;
   let settings: Settings | null = null;
 
   $: currentUser = $userStore;
@@ -51,41 +56,30 @@
     | "UNIT";
 
   async function loadBackups() {
-    try {
-      loading = true;
-      error = null;
+    await backupsOp.run(async () => {
       backups = await listBackups();
-    } catch (err) {
-      error = formatErrorMessage(err);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   async function handleCreateBackup() {
-    await guard(async () => {
+    await createBackupOp.guard(async () => {
       try {
-        loading = true;
-        error = null;
-        const backupPath = await createBackup();
+        await createBackup();
         await loadBackups(); // Reload the list
         showSuccess("تم إنشاء نسخة احتياطية بنجاح");
       } catch (err) {
-        error = formatErrorMessage(err);
-      } finally {
-        loading = false;
+        backupsOp.error.set(formatErrorMessage(err));
       }
     });
   }
 
   async function handleRestoreBackup(backupPath: string) {
     if (!isAdmin) {
-      error =
-        "غير مصرح لك باستعادة النسخ الاحتياطية. هذه الميزة متاحة فقط للمسؤول.";
+      backupsOp.error.set("غير مصرح لك باستعادة النسخ الاحتياطية. هذه الميزة متاحة فقط للمسؤول.");
       return;
     }
 
-    const confirmed = await ask(
+    const confirmed = await showAsk(
       "سيتم مسح جميع البيانات السابقة في عملية الإستعادة و إستبدالها ببيانات النسخة الجديدة، ستتم عملية الإستعادة وإعادة تشغيل التطبيق. هل تريد الإستمرار؟",
       {
         title: "تحذير: استعادة النسخة الاحتياطية",
@@ -104,20 +98,16 @@
       '',
     );
     if (typed?.trim() !== 'RESTORE') {
-      error = 'تم إلغاء الاستعادة: التأكيد المكتوب غير صحيح.';
+      backupsOp.error.set('تم إلغاء الاستعادة: التأكيد المكتوب غير صحيح.');
       return;
     }
 
-    await guard(async () => {
+    await restoreBackupOp.guard(async () => {
       try {
-        restoring = true;
-        error = null;
         const { token } = await issueOperationExecutionToken({ operation: 'restore' });
         await restoreBackup(backupPath, typed.trim(), token);
       } catch (err) {
-        error = formatErrorMessage(err);
-      } finally {
-        restoring = false;
+        backupsOp.error.set(formatErrorMessage(err));
       }
     });
   }
@@ -151,8 +141,8 @@
         <svelte:fragment slot="actions">
           <AppButton
             variant="primary"
-            loading={loading || $opLoading}
-            disabled={$opLoading}
+            loading={$backupsLoading || $createLoading || $restoring}
+            disabled={$backupsLoading || $createLoading || $restoring}
             on:click={handleCreateBackup}
           >
             إنشاء نسخة احتياطية
@@ -169,15 +159,15 @@
         </AppAlert>
       </div>
 
-      {#if error}
+      {#if $backupsError}
         <div class="mb-4">
-          <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>
-            {error}
+          <AppAlert intent="danger" dismissible on:dismiss={() => backupsOp.error.set(null)}>
+            {$backupsError}
           </AppAlert>
         </div>
       {/if}
 
-      {#if loading && backups.length === 0}
+      {#if $backupsLoading && backups.length === 0}
         <AppLoadingState message="جاري تحميل النسخ الاحتياطية..." />
       {:else if backups.length === 0}
         <AppEmptyState
@@ -186,7 +176,7 @@
           icon="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
         >
           <svelte:fragment slot="action">
-            <AppButton variant="primary" loading={loading || $opLoading} disabled={$opLoading} on:click={handleCreateBackup}>
+            <AppButton variant="primary" loading={$backupsLoading || $createLoading || $restoring} disabled={$backupsLoading || $createLoading || $restoring} on:click={handleCreateBackup}>
               إنشاء أول نسخة احتياطية
             </AppButton>
           </svelte:fragment>
@@ -241,8 +231,8 @@
                       <AppButton
                         variant="danger"
                         size="sm"
-                        disabled={restoring || $opLoading}
-                        loading={restoring}
+                        disabled={$restoring || $createLoading || $backupsLoading}
+                        loading={$restoring}
                         on:click={() => handleRestoreBackup(backup.path)}
                       >
                         استعادة

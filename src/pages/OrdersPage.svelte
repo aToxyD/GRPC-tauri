@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { listSupplierOrders, createSupplierOrder, confirmOrder, listProducts, getSupplierOrderItems } from '../lib/tauri';
+  import { onMount, onDestroy } from 'svelte';
+  import { formatErrorMessage } from '../lib/errors';
+  import { listSupplierOrders, createSupplierOrder, confirmOrder, listProducts, getSupplierOrderItems, showAsk } from '../lib/tauri';
   import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -14,14 +16,26 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const ordersOp = createOperation();
+  const loading = ordersOp.loading;
+  const error = ordersOp.error;
+
   let orders: SupplierOrder[] = [];
   let products: Product[] = [];
-  let loading = true;
   let showModal = false;
-  let error = '';
   let success = '';
   let selectedOrder: SupplierOrder | null = null;
   let orderItems: SupplierOrderItem[] = [];
+
+  let successTimeouts: number[] = [];
+  function setSuccessWithTimeout(msg: string) {
+    success = msg;
+    const t = window.setTimeout(() => success = '', 3000);
+    successTimeouts.push(t);
+  }
+  onDestroy(() => {
+    successTimeouts.forEach(clearTimeout);
+  });
 
   // Form fields
   let supplierName = '';
@@ -33,17 +47,12 @@
   });
 
   async function loadData() {
-    try {
-      loading = true;
+    await ordersOp.run(async () => {
       [orders, products] = await Promise.all([
         listSupplierOrders(),
         listProducts()
       ]);
-    } catch (e) {
-      error = 'خطأ في التحميل: ' + String(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function openCreateModal() {
@@ -51,19 +60,19 @@
     referenceNumber = '';
     orderProducts = products.map(p => ({ product: p, quantity: '', unitPrice: p.base_price.toString() }));
     showModal = true;
-    error = '';
+    ordersOp.error.set(null);
   }
 
   function closeModal() {
     showModal = false;
     selectedOrder = null;
     orderItems = [];
-    error = '';
+    ordersOp.error.set(null);
   }
 
   async function saveOrder() {
     if (!supplierName) {
-      error = 'الرجاء إدخال اسم المورد';
+      ordersOp.error.set('الرجاء إدخال اسم المورد');
       return;
     }
 
@@ -76,47 +85,41 @@
       }));
 
     if (items.length === 0) {
-      error = 'الرجاء إضافة منتج واحد على الأقل';
+      ordersOp.error.set('الرجاء إضافة منتج واحد على الأقل');
       return;
     }
 
-    try {
+    await ordersOp.run(async () => {
       await createSupplierOrder({
         supplier_name: supplierName,
         reference_number: referenceNumber || null,
         items
       });
-      success = 'تم إنشاء الطلبية بنجاح';
+      setSuccessWithTimeout('تم إنشاء الطلبية بنجاح');
       closeModal();
-      loadData();
-      setTimeout(() => success = '', 3000);
-    } catch (e) {
-      error = 'خطأ: ' + String(e);
-    }
+      await loadData();
+    });
   }
 
   async function handleConfirm(order: SupplierOrder) {
-    if (!confirm('هل أنت متأكد من تأكيد هذه الطلبية؟ سيتم تحديث المخزون تلقائياً.')) {
-      return;
-    }
+    const yes = await showAsk('هل أنت متأكد من تأكيد هذه الطلبية؟ سيتم تحديث المخزون تلقائياً.', {
+      title: 'تأكيد الطلبية',
+      kind: 'warning'
+    });
+    if (!yes) return;
 
-    try {
+    await ordersOp.run(async () => {
       await confirmOrder(order.id);
-      success = 'تم تأكيد الطلبية وتحديث المخزون';
-      loadData();
-      setTimeout(() => success = '', 3000);
-    } catch (e) {
-      error = 'خطأ: ' + String(e);
-    }
+      setSuccessWithTimeout('تم تأكيد الطلبية وتحديث المخزون');
+      await loadData();
+    });
   }
 
   async function viewOrderDetails(order: SupplierOrder) {
-    try {
+    await ordersOp.run(async () => {
       selectedOrder = order;
       orderItems = await getSupplierOrderItems(order.id);
-    } catch (e) {
-      error = 'خطأ في تحميل التفاصيل: ' + String(e);
-    }
+    });
   }
 
   function closeDetails() {
@@ -154,9 +157,9 @@
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error && !showModal}
+    {#if $error && !showModal}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => ordersOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
@@ -168,8 +171,8 @@
 
     <AppCard padding="none">
       <AppTable
-        {loading}
-        empty={!loading && orders.length === 0}
+        loading={$loading}
+        empty={!$loading && orders.length === 0}
       >
         <svelte:fragment slot="empty">
           <AppEmptyState
@@ -228,9 +231,9 @@
 <!-- Create Order Modal -->
 <AppDialog open={showModal} title="طلبية مورد جديدة" size="xl" on:close={closeModal}>
   <div dir="rtl">
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => ordersOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 

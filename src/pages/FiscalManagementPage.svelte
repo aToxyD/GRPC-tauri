@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { save, open } from '@tauri-apps/plugin-dialog';
   import { 
     closeFiscalYear, 
     getFiscalYearStatus, 
@@ -11,7 +10,10 @@
     applyFiscalClosurePackage,
     getFiscalTransitionHistory,
     listFiscalPackageRegistry,
-    updateFiscalPackageRetentionStatus
+    updateFiscalPackageRetentionStatus,
+    saveFile,
+    openFile,
+    showAsk
   } from '../lib/tauri';
   import type { 
     FiscalYearStatus, 
@@ -40,7 +42,6 @@
   let currentYear = new Date().getFullYear();
   let nextYear = currentYear + 1;
   let confirmation = '';
-  let loading = false;
   let message = '';
   let productCount = 0;
   let fiscalStatus: FiscalYearStatus | null = null;
@@ -93,7 +94,6 @@
     }
 
     await guard(async () => {
-      loading = true;
       try {
         await updateFiscalPackageRetentionStatus(transitionId, status, retentionConfirmation);
         message = `تم تحديث حالة الحزمة إلى ${status} بنجاح.`;
@@ -102,8 +102,6 @@
         await refreshHistory();
       } catch (error) {
         message = formatErrorMessage(error);
-      } finally {
-        loading = false;
       }
     });
   }
@@ -114,11 +112,15 @@
       return;
     }
 
-    const confirmed = confirm(`سيتم إغلاق السنة المالية ${currentYear} وفتح ${nextYear}. لا يمكن التراجع عن العملية.`);
+    const confirmed = await showAsk(`سيتم إغلاق السنة المالية ${currentYear} وفتح ${nextYear}. لا يمكن التراجع عن العملية.`, {
+      title: 'تحذير: إغلاق السنة المالية',
+      kind: 'warning',
+      okLabel: 'نعم',
+      cancelLabel: 'لا',
+    });
     if (!confirmed) return;
 
     await guard(async () => {
-      loading = true;
       message = '';
 
       try {
@@ -133,8 +135,6 @@
         await refreshHistory();
       } catch (error) {
         message = formatErrorMessage(error);
-      } finally {
-        loading = false;
       }
     });
   }
@@ -148,7 +148,7 @@
   }
 
   async function handleExportRegistryPackage(closedYear: number, openedYear: number, timestamp: string, transitionId: string | null = null) {
-    const filePath = await save({
+    const filePath = await saveFile({
       title: 'حفظ حزمة ترخيص إغلاق السنة المالية',
       defaultPath: `fiscal_closure_${closedYear}.fiscal-close.sync`,
       filters: [{ name: 'Fiscal Closure Package', extensions: ['sync'] }]
@@ -157,7 +157,6 @@
     if (!filePath) return;
 
     await guard(async () => {
-      loading = true;
       try {
         await exportFiscalClosurePackage(
           closedYear,
@@ -170,14 +169,12 @@
         await refreshHistory();
       } catch (error) {
         message = formatErrorMessage(error);
-      } finally {
-        loading = false;
       }
     });
   }
 
   async function handleSelectPackage() {
-    const filePath = await open({
+    const filePath = await openFile({
       title: 'اختر حزمة ترخيص إغلاق السنة المالية',
       multiple: false,
       filters: [{ name: 'Fiscal Closure Package', extensions: ['sync'] }]
@@ -187,7 +184,6 @@
 
     selectedFilePath = filePath;
     await guard(async () => {
-      loading = true;
       preview = null;
       message = '';
 
@@ -199,8 +195,6 @@
       } catch (error) {
         message = formatErrorMessage(error);
         selectedFilePath = '';
-      } finally {
-        loading = false;
       }
     });
   }
@@ -213,7 +207,6 @@
     }
 
     await guard(async () => {
-      loading = true;
       message = '';
 
       try {
@@ -226,8 +219,6 @@
         await refreshHistory();
       } catch (error) {
         message = formatErrorMessage(error);
-      } finally {
-        loading = false;
       }
     });
   }
@@ -296,8 +287,8 @@
             variant="danger"
             fullWidth
             size="lg"
-            disabled={loading || $opLoading}
-            loading={loading || $opLoading}
+            disabled={$opLoading}
+            loading={$opLoading}
             on:click={executeClose}
           >
             إصدار قرار إغلاق السنة {currentYear}
@@ -317,8 +308,8 @@
           <AppButton
             variant="primary"
             size="lg"
-            disabled={loading || $opLoading}
-            loading={loading || $opLoading}
+            disabled={$opLoading}
+            loading={$opLoading}
             on:click={handleExportPackage}
           >
             تصدير حزمة الترخيص (.sync)
@@ -347,7 +338,7 @@
           <div class="mt-6">
             <button
               on:click={handleSelectPackage}
-              disabled={loading || $opLoading}
+              disabled={$opLoading}
               class="w-full py-8 border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-2xl text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center justify-center space-y-2 cursor-pointer disabled:opacity-50"
             >
               <span class="font-medium text-lg">استيراد حزمة الانتقال (.sync)</span>
@@ -433,7 +424,7 @@
                   variant="primary"
                   fullWidth
                   size="lg"
-                  loading={loading || $opLoading}
+                  loading={$opLoading}
                   disabled={applyConfirmation !== 'APPLY-FISCAL-TRANSITION' || $opLoading}
                   on:click={handleApplyPackage}
                 >
@@ -576,12 +567,12 @@
       <svelte:fragment slot="actions">
         <AppButton 
           variant="secondary" 
-          disabled={loading || $opLoading}
+          disabled={$opLoading}
           on:click={() => { selectedPackageForRetention = null; targetRetentionStatus = null; retentionConfirmation = ''; }}
         >إلغاء</AppButton>
         <AppButton 
           variant="danger"
-          loading={loading || $opLoading}
+          loading={$opLoading}
           disabled={retentionConfirmation !== `${targetRetentionStatus}-PACKAGE` || $opLoading}
           on:click={() => handleUpdateRetention(selectedPackageForRetention!.transition_id, targetRetentionStatus!)}
         >تأكيد التغيير</AppButton>

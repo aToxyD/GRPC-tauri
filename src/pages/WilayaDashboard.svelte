@@ -9,6 +9,8 @@
   } from "../lib/tauri";
   import type { Unit, Product, Settings, SystemMetrics, SyncPreflightCheck } from "../lib/types";
   import Layout from "../components/Layout.svelte";
+  import { formatErrorMessage } from "../lib/errors";
+  import { createOperation } from "../lib/operationGuard";
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
@@ -18,10 +20,16 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
 
+  const dataOp = createOperation();
+  const loading = dataOp.loading;
+
+  const statsOp = createOperation();
+  const loadingStats = statsOp.loading;
+  const statsError = statsOp.error;
+
   let units: Unit[] = [];
   let products: Product[] = [];
   let settings: Settings | null = null;
-  let loading = true;
   let currentYear = new Date().getFullYear();
   let currentMonth = new Date().getMonth() + 1;
   let reportsThisMonth = 0;
@@ -29,8 +37,6 @@
   // Stats Data
   let metrics: SystemMetrics | null = null;
   let preflight: SyncPreflightCheck | null = null;
-  let loadingStats = true;
-  let statsError = "";
 
   onMount(async () => {
     loadData();
@@ -38,23 +44,17 @@
   });
 
   async function loadStats() {
-    try {
-      loadingStats = true;
+    await statsOp.run(async () => {
       [metrics, preflight] = await Promise.all([
         getSystemMetrics(),
         syncPreflightCheck(),
       ]);
       reportsThisMonth = metrics.monthly_reports;
-    } catch (err) {
-      statsError = err instanceof Error ? err.message : String(err);
-    } finally {
-      loadingStats = false;
-    }
+    });
   }
 
   async function loadData() {
-    try {
-      loading = true;
+    await dataOp.run(async () => {
       settings = await getSettings();
       const wilayaCode = settings?.wilaya_code || "";
 
@@ -66,11 +66,7 @@
       if (settings) {
         currentYear = settings.current_year;
       }
-    } catch (e) {
-      // Error loading data
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   $: currentYearProducts = products.filter((p) => p.year === currentYear);
@@ -81,7 +77,7 @@
   <div dir="rtl">
     <AppPageHeader title="لوحة تحكم الولاية" {subtitle} />
 
-    {#if loading}
+    {#if $loading}
       <AppLoadingState message="جارٍ التحميل..." />
     {:else}
       <div class="mb-8">
@@ -91,13 +87,13 @@
           </h2>
         </div>
 
-        {#if loadingStats}
+        {#if $loadingStats}
           <div class="flex items-center justify-center h-24">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-civil-blue"></div>
           </div>
-        {:else if statsError}
+        {:else if $statsError}
           <AppAlert intent="danger" title="حدث خطأ أثناء تحميل الإحصائيات">
-            {statsError}
+            {$statsError}
           </AppAlert>
         {:else}
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6">

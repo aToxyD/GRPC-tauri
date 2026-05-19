@@ -3,6 +3,8 @@
   import { getSystemHealth, getSyncHealth, getSettings, getBuildInfo, getRecentTelemetry } from '../lib/tauri';
   import type { SystemHealthReport, SyncNodeHealth, Settings, BuildInfo, TelemetryEvent } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { formatErrorMessage } from '../lib/errors';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -12,25 +14,25 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import AppTable from '../lib/components/ui/AppTable.svelte';
 
+  const healthOp = createOperation();
+  const loading = healthOp.loading;
+  const error = healthOp.error;
+
   let health: SystemHealthReport | null = null;
   let nodes: SyncNodeHealth[] = [];
   let buildInfo: BuildInfo | null = null;
   let telemetry: TelemetryEvent[] = [];
-  let loading = true;
-  let error: string | null = null;
   let settings: Settings | null = null;
 
   async function load() {
-    loading = true; error = null;
-    try {
+    await healthOp.run(async () => {
       [health, nodes, buildInfo, telemetry] = await Promise.all([
         getSystemHealth(), 
         getSyncHealth(), 
         getBuildInfo(),
         getRecentTelemetry(20)
       ]);
-    } catch(e) { error = e instanceof Error ? e.message : 'فشل التحميل'; }
-    finally { loading = false; }
+    });
   }
 
   function fmtBytes(b: number): string {
@@ -60,17 +62,17 @@
   <div dir="rtl">
     <AppPageHeader title="صحة النظام" subtitle="المراقبة التشغيلية الشاملة للعقدة">
       <svelte:fragment slot="actions">
-        <AppButton variant="primary" on:click={load} disabled={loading}>⟳ تحديث</AppButton>
+        <AppButton variant="primary" on:click={load} disabled={$loading}>⟳ تحديث</AppButton>
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger">{error}</AppAlert>
+        <AppAlert intent="danger">{$error}</AppAlert>
       </div>
     {/if}
 
-    {#if loading && !health}
+    {#if $loading && !health}
       <AppLoadingState message="جارٍ تحميل بيانات صحة النظام..." />
     {:else if health}
       <!-- Status Cards -->

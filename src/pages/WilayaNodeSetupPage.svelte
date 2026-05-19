@@ -1,20 +1,29 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { configureAsWilaya, getSettings } from "../lib/tauri";
+  import { onMount, onDestroy } from "svelte";
+  import { configureAsWilaya, getSettings, getAppWindow, createLogicalSize } from "../lib/tauri";
   import { push } from "svelte-spa-router";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { LogicalSize } from "@tauri-apps/api/dpi";
+  import { formatErrorMessage } from "../lib/errors";
+  import { createOperation } from "../lib/operationGuard";
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
 
+  const setupOp = createOperation();
+  const loading = setupOp.loading;
+  const error = setupOp.error;
+
   let wilayaCode = "";
   let wilayaName = "";
-  let loading = false;
-  let error = "";
   let success = "";
+  let setupTimeout: number | null = null;
+
+  onDestroy(() => {
+    if (setupTimeout) {
+      clearTimeout(setupTimeout);
+    }
+  });
 
   onMount(async () => {
     // Check if already configured
@@ -22,7 +31,7 @@
       const settings = await getSettings();
       if (settings.configured) {
         try {
-          const window = getCurrentWindow();
+          const window = getAppWindow();
           await window.setResizable(true);
           await window.setMaximizable(true);
           await window.maximize();
@@ -43,13 +52,13 @@
 
     // Ensure the setup page runs in the compact, locked 450x650 frame
     try {
-      const window = getCurrentWindow();
+      const window = getAppWindow();
       await window.setResizable(true);
       await window.setMaximizable(true);
       if (await window.isMaximized()) {
         await window.unmaximize();
       }
-      await window.setSize(new LogicalSize(450, 650));
+      await window.setSize(createLogicalSize(450, 650));
       await window.setResizable(false);
       await window.setMaximizable(false);
       await window.center();
@@ -60,21 +69,19 @@
 
   async function configureWilaya() {
     if (!wilayaCode || !wilayaName) {
-      error = "الرجاء إدخال رمز واسم الولاية";
+      setupOp.error.set("الرجاء إدخال رمز واسم الولاية");
       return;
     }
 
-    loading = true;
-    error = "";
     success = "";
 
-    try {
+    await setupOp.run(async () => {
       await configureAsWilaya(wilayaCode, wilayaName);
       success = "تم تكوين الولاية بنجاح. جاري إعادة التوجيه...";
       
       // Maximize the window for the main dashboard on successful configuration
       try {
-        const window = getCurrentWindow();
+        const window = getAppWindow();
         await window.setResizable(true);
         await window.setMaximizable(true);
         await window.maximize();
@@ -82,12 +89,8 @@
         console.error("Failed to maximize window after configuration:", err);
       }
 
-      setTimeout(() => push("/wilaya"), 1500);
-    } catch (e) {
-      error = "خطأ في التكوين: " + String(e);
-    } finally {
-      loading = false;
-    }
+      setupTimeout = window.setTimeout(() => push("/wilaya"), 1500);
+    });
   }
 </script>
 
@@ -104,9 +107,9 @@
         <p class="text-gray-600 dark:text-gray-400 mt-1">قم بإعداد مديرية الولاية</p>
       </div>
 
-      {#if error}
+      {#if $error}
         <div class="mb-6">
-          <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+          <AppAlert intent="danger" dismissible on:dismiss={() => setupOp.error.set(null)}>{$error}</AppAlert>
         </div>
       {/if}
 
@@ -122,6 +125,7 @@
           label="رمز الولاية"
           placeholder="مثال: 16 (الجزائر العاصمة)"
           bind:value={wilayaCode}
+          disabled={$loading}
         />
 
         <AppInput
@@ -129,6 +133,7 @@
           label="اسم الولاية"
           placeholder="مثال: الجزائر العاصمة"
           bind:value={wilayaName}
+          disabled={$loading}
         />
 
         <div class="pt-4">
@@ -136,7 +141,8 @@
             variant="primary"
             fullWidth
             size="lg"
-            {loading}
+            loading={$loading}
+            disabled={$loading}
             on:click={configureWilaya}
           >
             تكوين كولاية

@@ -5,12 +5,12 @@
     importMonthlySummaryPackage,
     listUnits,
     getSettings,
-    importStockMovementsPackage
+    importStockMovementsPackage,
+    openFile
   } from '../lib/tauri';
-  import { open } from '@tauri-apps/plugin-dialog';
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
-  import { createOperationGuard } from '../lib/operationGuard';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
   import { formatErrorMessage } from '../lib/errors';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -21,18 +21,21 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
 
+  const initialOp = createOperation();
+  const loading = initialOp.loading;
+  const initialError = initialOp.error;
+
   const { loading: operationLoading, guard } = createOperationGuard();
 
   let units: Unit[] = [];
   let settings: Settings | null = null;
-  let loading = true;
   let error = '';
   let success = '';
   let importProgress = '';
   let selectedUnit: string = '';
 
   onMount(async () => {
-    try {
+    await initialOp.run(async () => {
       settings = await getSettings();
       if (settings?.wilaya_code) {
         units = await listUnits(settings.wilaya_code);
@@ -40,11 +43,7 @@
           selectedUnit = units[0].id;
         }
       }
-    } catch (e) {
-      error = formatErrorMessage(e);
-    } finally {
-      loading = false;
-    }
+    });
   });
 
   async function importDailyReportPackageSync() {
@@ -55,7 +54,7 @@
 
     await guard(async () => {
       try {
-        const selected = await open({
+        const selected = await openFile({
           multiple: false,
           filters: [{
             name: 'حزمة المزامنة',
@@ -87,7 +86,7 @@
 
     await guard(async () => {
       try {
-        const selected = await open({
+        const selected = await openFile({
           multiple: false,
           filters: [{
             name: 'حزمة المزامنة',
@@ -120,7 +119,7 @@
 
     await guard(async () => {
       try {
-        const selected = await open({
+        const selected = await openFile({
           multiple: false,
           filters: [{
             name: 'حزمة المزامنة',
@@ -148,9 +147,9 @@
   <div dir="rtl">
     <AppPageHeader title="المزامنة" subtitle="استيراد تقارير الوحدات" />
 
-    {#if error}
+    {#if error || $initialError}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => { error = ''; initialOp.error.set(null); }}>{error || $initialError}</AppAlert>
       </div>
     {/if}
 
@@ -174,7 +173,7 @@
       </div>
     {/if}
 
-    {#if loading}
+    {#if $loading}
       <AppLoadingState message="جارٍ التحميل..." />
     {:else if units.length === 0}
       <AppCard padding="none">

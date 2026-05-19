@@ -20,6 +20,19 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
 
+  import type { SystemHealthReport } from '../lib/types';
+
+  interface InventoryIntegrityReport {
+    checked_products: number;
+    mismatch_count: number;
+    issues: Array<{
+      product_id: string;
+      expected_quantity: number;
+      actual_quantity: number;
+      delta: number;
+    }>;
+  }
+
   // ─── State (manual refresh only — no live updates, no websocket) ────────────
   const op = createOperation();
   const loading = op.loading;
@@ -29,7 +42,7 @@
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
 
   // Existing data
-  let inventory: any = null;
+  let inventory: InventoryIntegrityReport | null = null;
 
   // New data
   let bundle: {
@@ -41,7 +54,7 @@
         code: string;
         message: string;
         recommendation: string;
-        context: any;
+        context: unknown;
       }>;
     };
     recommendations: Array<{
@@ -77,7 +90,7 @@
   } | null = null;
 
   // System health (kept from existing page) — fetched in parallel
-  let systemHealth: any = null;
+  let systemHealth: SystemHealthReport | null = null;
 
   async function refresh() {
     await op.run(async () => {
@@ -88,9 +101,9 @@
           : Promise.resolve(null),
         getSystemHealth().catch(() => null),
       ]);
-      bundle = b as any;
-      inventory = inv;
-      systemHealth = hp;
+      bundle = b as typeof bundle;
+      inventory = inv as InventoryIntegrityReport | null;
+      systemHealth = hp as SystemHealthReport | null;
       lastRefreshedAt = new Date().toLocaleString('ar-DZ');
     });
   }
@@ -428,7 +441,7 @@
             
             <AppCard padding="sm">
               <div class="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">النسخ الاحتياطية</div>
-              <AppBadge intent={systemHealth.backupStatus.status === 'OK' ? 'success' : 'danger'}>
+              <AppBadge intent={systemHealth.backupStatus.status === 'HEALTHY' ? 'success' : 'danger'}>
                 {translateStatus(systemHealth.backupStatus.status)}
               </AppBadge>
               <div class="font-medium mt-2 text-sm">{systemHealth.backupStatus.message}</div>

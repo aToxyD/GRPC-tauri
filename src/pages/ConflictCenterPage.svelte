@@ -3,6 +3,7 @@
   import { listSyncConflicts, resolveSyncConflict, getConflictSummary, getSettings } from '../lib/tauri';
   import type { SyncConflict, ConflictSummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { formatErrorMessage } from '../lib/errors';
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
@@ -12,41 +13,45 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppTextarea from '../lib/components/ui/AppTextarea.svelte';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
+
+  const conflictsOp = createOperation();
+  const loading = conflictsOp.loading;
+  const error = conflictsOp.error;
+
+  const { loading: resolving, guard } = createOperationGuard();
 
   let conflicts: SyncConflict[] = [];
   let summary: ConflictSummary | null = null;
-  let loading = true;
-  let error: string | null = null;
   let settings: Settings | null = null;
   let showUnresolvedOnly = false;
   let filterType = '';
   let filterSeverity = '';
   let selectedConflict: SyncConflict | null = null;
   let resolveNote = '';
-  let resolving = false;
 
   async function load() {
-    loading = true; error = null;
-    try {
+    await conflictsOp.run(async () => {
       [conflicts, summary] = await Promise.all([
         listSyncConflicts(showUnresolvedOnly),
         getConflictSummary()
       ]);
-    } catch(e) { error = e instanceof Error ? e.message : 'فشل التحميل'; }
-    finally { loading = false; }
+    });
   }
 
   async function doResolve() {
     if (!selectedConflict || !resolveNote.trim()) return;
-    resolving = true;
-    try {
-      await resolveSyncConflict(selectedConflict.id, resolveNote);
-      selectedConflict = null;
-      resolveNote = '';
-      await load();
-    } catch(e) {
-      error = e instanceof Error ? e.message : 'فشل في حل التعارض';
-    } finally { resolving = false; }
+    const conflict = selectedConflict;
+    await guard(async () => {
+      try {
+        await resolveSyncConflict(conflict.id, resolveNote);
+        selectedConflict = null;
+        resolveNote = '';
+        await load();
+      } catch(e) {
+        conflictsOp.error.set(formatErrorMessage(e));
+      }
+    });
   }
 
   function fmt(ts: string | null) { return ts ? new Date(ts).toLocaleString('ar-DZ') : '—'; }
@@ -81,13 +86,13 @@
     <!-- رأس الصفحة -->
     <AppPageHeader title="⚡ مركز التعارضات" subtitle="كشف وتحليل وحل تعارضات المزامنة">
       <svelte:fragment slot="actions">
-        <AppButton variant="secondary" size="sm" {loading} on:click={load}>⟳ تحديث</AppButton>
+        <AppButton variant="secondary" size="sm" loading={$loading} on:click={load}>⟳ تحديث</AppButton>
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => conflictsOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
@@ -144,7 +149,7 @@
     </AppCard>
 
     <!-- جدول التعارضات -->
-    {#if loading && !conflicts.length}
+    {#if $loading && !conflicts.length}
       <AppLoadingState message="جارٍ تحميل التعارضات..." />
     {:else}
       <AppTable empty={filtered.length === 0} emptyMessage="لا توجد تعارضات تطابق الفلاتر المحددة" caption="جدول تعارضات المزامنة">
@@ -241,7 +246,7 @@
       {#if selectedConflict && !selectedConflict.resolved}
         <AppButton
           variant="primary"
-          loading={resolving}
+          loading={$resolving}
           disabled={!resolveNote.trim()}
           on:click={doResolve}
         >

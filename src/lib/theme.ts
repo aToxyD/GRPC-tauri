@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 export type Theme = 'light' | 'dark';
 
 function createThemeStore() {
-	const { subscribe, set, update } = writable<Theme>('dark');
+	const { subscribe, set } = writable<Theme>('dark');
 
 	return {
 		subscribe,
@@ -19,18 +19,17 @@ function createThemeStore() {
 			set(value);
 		},
 		toggle: () => {
-			update((current) => {
-				const nextTheme = current === 'light' ? 'dark' : 'light';
-				if (typeof window !== 'undefined') {
-					localStorage.setItem('theme', nextTheme);
-					if (nextTheme === 'dark') {
-						document.documentElement.classList.add('dark');
-					} else {
-						document.documentElement.classList.remove('dark');
-					}
+			const current = get(theme);
+			const nextTheme = current === 'light' ? 'dark' : 'light';
+			if (typeof window !== 'undefined') {
+				localStorage.setItem('theme', nextTheme);
+				if (nextTheme === 'dark') {
+					document.documentElement.classList.add('dark');
+				} else {
+					document.documentElement.classList.remove('dark');
 				}
-				return nextTheme;
-			});
+			}
+			set(nextTheme);
 		}
 	};
 }

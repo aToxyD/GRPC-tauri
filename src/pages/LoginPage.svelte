@@ -1,29 +1,35 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { open } from '@tauri-apps/plugin-dialog';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { LogicalSize } from '@tauri-apps/api/dpi';
-  import { login, getSettings, isConfigured, importUnitNodePackage } from '../lib/tauri';
+  import { login, getSettings, isConfigured, importUnitNodePackage, openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
   import type { LoginRequest, LoginResponse } from '../lib/types';
   import { push } from 'svelte-spa-router';
   import { showSuccess } from '../lib/notifications';
   import { setCurrentUser } from '../lib/session';
+  import { formatErrorMessage } from '../lib/errors';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
 
+  const loginOp = createOperation();
+  const loginLoading = loginOp.loading;
+  const loginError = loginOp.error;
+
+  const importOp = createOperationGuard();
+  const importLoading = importOp.loading;
+
   let username = '';
   let password = '';
-  let error = '';
-  let loading = false;
+  let localError = '';
   let isAppConfigured = true;
-  let importLoading = false;
 
   let loginAttempts = 0;
   let remainingAttempts: number | null = null;
   let lockoutTimeRemaining: number | null = null;
   let isRateLimited = false;
+
+  $: displayError = $loginError || localError;
 
   onMount(async () => {
     try {
@@ -32,11 +38,11 @@
       isAppConfigured = false;
     }
     try {
-      const window = getCurrentWindow();
+      const window = getAppWindow();
       await window.setResizable(true);
       await window.setMaximizable(true);
       if (await window.isMaximized()) await window.unmaximize();
-      await window.setSize(new LogicalSize(450, 650));
+      await window.setSize(createLogicalSize(450, 650));
       await window.setResizable(false);
       await window.setMaximizable(false);
       await window.center();
@@ -46,37 +52,37 @@
   });
 
   async function handleImportPackage() {
-    try {
-      importLoading = true;
-      error = '';
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: 'حزمة التكوين', extensions: ['unit'] }],
-      });
-      if (selected) {
-        await importUnitNodePackage(selected as string);
-        isAppConfigured = true;
-        showSuccess('تم استيراد حزمة التكوين بنجاح! يمكنك الآن تسجيل الدخول.');
+    await importOp.guard(async () => {
+      try {
+        localError = '';
+        loginOp.error.set(null);
+        const selected = await openFile({
+          multiple: false,
+          filters: [{ name: 'حزمة التكوين', extensions: ['unit'] }],
+        });
+        if (selected) {
+          await importUnitNodePackage(selected as string);
+          isAppConfigured = true;
+          showSuccess('تم استيراد حزمة التكوين بنجاح! يمكنك الآن تسجيل الدخول.');
+        }
+      } catch (e) {
+        localError = 'خطأ في استيراد الحزمة: ' + formatErrorMessage(e);
       }
-    } catch (e) {
-      error = 'خطأ في استيراد الحزمة: ' + String(e);
-    } finally {
-      importLoading = false;
-    }
+    });
   }
 
   async function handleLogin() {
     if (!username || !password) {
-      error = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
+      localError = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
       return;
     }
     if (isRateLimited) {
-      error = `تم حظر تسجيل الدخول مؤقتاً. انتظر ${lockoutTimeRemaining || 5} دقائق`;
+      localError = `تم حظر تسجيل الدخول مؤقتاً. انتظر ${lockoutTimeRemaining || 5} دقائق`;
       return;
     }
-    loading = true;
-    error = '';
-    try {
+    localError = '';
+    
+    await loginOp.run(async () => {
       const request: LoginRequest = { username, password };
       const response: LoginResponse = await login(request);
       if (response.success && response.user) {
@@ -88,7 +94,7 @@
           push('/configure?nodeType=WILAYA');
         } else {
           try {
-            const window = getCurrentWindow();
+            const window = getAppWindow();
             await window.setResizable(true);
             await window.setMaximizable(true);
             await window.maximize();
@@ -105,7 +111,8 @@
           }
         }
       } else {
-        error = response.message || 'بيانات الدخول غير صالحة';
+        const msg = response.message || 'بيانات الدخول غير صالحة';
+        localError = msg;
         if (response.message.includes('تجاوز الحد')) {
           isRateLimited = true;
           loginAttempts = 5;
@@ -117,12 +124,9 @@
           remainingAttempts = Math.max(0, 5 - loginAttempts);
           if (loginAttempts >= 5) { isRateLimited = true; lockoutTimeRemaining = 5; }
         }
+        throw new Error(msg);
       }
-    } catch (e) {
-      error = 'خطأ في تسجيل الدخول: ' + String(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function handleKeydown(e: CustomEvent<KeyboardEvent> | KeyboardEvent) {
@@ -147,9 +151,9 @@
     </div>
 
     <!-- رسالة الخطأ -->
-    {#if error}
+    {#if displayError}
       <div class="mb-4">
-        <AppAlert intent="danger">{error}</AppAlert>
+        <AppAlert intent="danger">{displayError}</AppAlert>
       </div>
     {/if}
 
@@ -185,7 +189,7 @@
         placeholder="أدخل اسم المستخدم"
         autocomplete="username"
         required
-        disabled={loading || isRateLimited}
+        disabled={$loginLoading || isRateLimited}
         on:keydown={handleKeydown}
       />
 
@@ -197,7 +201,7 @@
         placeholder="أدخل كلمة المرور"
         autocomplete="current-password"
         required
-        disabled={loading || isRateLimited}
+        disabled={$loginLoading || isRateLimited}
         on:keydown={handleKeydown}
       />
 
@@ -206,7 +210,7 @@
         variant="primary"
         size="lg"
         fullWidth
-        {loading}
+        loading={$loginLoading}
         disabled={isRateLimited}
       >
         تسجيل الدخول
@@ -221,7 +225,7 @@
           variant="secondary"
           size="lg"
           fullWidth
-          loading={importLoading}
+          loading={$importLoading}
           on:click={handleImportPackage}
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

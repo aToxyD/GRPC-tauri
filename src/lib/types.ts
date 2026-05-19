@@ -735,7 +735,7 @@ export interface TelemetryEvent {
   outcome: TelemetryOutcome;
   duration_ms: number | null;
   timestamp: string;
-  metadata: any | null;
+  metadata: Record<string, unknown> | null;
   user_id: string | null;
   schema_version: number;
 }

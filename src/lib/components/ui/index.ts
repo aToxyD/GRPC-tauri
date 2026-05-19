@@ -8,7 +8,7 @@ export { default as AppBadge }       from './AppBadge.svelte';
 export { default as AppAlert }       from './AppAlert.svelte';
 export { default as AppInput }       from './AppInput.svelte';
 export { default as AppTextarea }    from './AppTextarea.svelte';
-export { default as AppSelect }      from './AppSelect.svelte';
+export { default as AppSelect}      from './AppSelect.svelte';
 export { default as AppFormField }   from './AppFormField.svelte';
 export { default as AppDialog }      from './AppDialog.svelte';
 export { default as AppTable }       from './AppTable.svelte';

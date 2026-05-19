@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAuditLog, getAuditStats, exportAuditLogExcel, cleanupAuditLogs, getSettings } from '../lib/tauri';
+  import { getAuditLog, getAuditStats, exportAuditLogExcel, cleanupAuditLogs, getSettings, saveFile, showAsk } from '../lib/tauri';
   import type { AuditEntry, AuditFilters, AuditStats, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
-  import { save } from '@tauri-apps/plugin-dialog';
+  import { formatErrorMessage } from '../lib/errors';
   import { push } from 'svelte-spa-router';
   import { showSuccess, showError } from '../lib/notifications';
   import { currentUser } from '../lib/session';
   import { get } from 'svelte/store';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
   
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -19,14 +20,22 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
   
+  const auditOp = createOperation();
+  const loading = auditOp.loading;
+  const error = auditOp.error;
+
+  const exportOp = createOperationGuard();
+  const exportLoading = exportOp.loading;
+
+  const cleanupOp = createOperationGuard();
+  const cleanupLoading = cleanupOp.loading;
+
   // State
   let entries: AuditEntry[] = [];
   let totalCount = 0;
   let page = 0;
   const pageSize = 50;
   let hasMore = false;
-  let loading = false;
-  let error: string | null = null;
   let stats: AuditStats | null = null;
   let settings: Settings | null = null;
   
@@ -55,19 +64,13 @@
   // Load audit log
   async function loadAuditLog(resetPage = true) {
     if (resetPage) page = 0;
-    loading = true;
-    error = null;
     
-    try {
+    await auditOp.run(async () => {
       const response = await getAuditLog(filters, page, pageSize);
       entries = resetPage ? response.entries : [...entries, ...response.entries];
       totalCount = response.total_count;
       hasMore = response.has_more;
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'حدث خطأ في تحميل البيانات';
-    } finally {
-      loading = false;
-    }
+    });
   }
   
   // Load stats
@@ -123,33 +126,43 @@
   
   // Export to Excel
   async function exportToExcel() {
-    try {
-      const filePath = await save({
-        filters: [{ name: 'Excel', extensions: ['xlsx'] }],
-        defaultPath: 'audit_log.xlsx',
-      });
-      
-      if (filePath) {
-        const result = await exportAuditLogExcel(filters, filePath);
-        showSuccess(`تم تصدير ${result.record_count} سجل بنجاح إلى ملف Excel`);
+    await exportOp.guard(async () => {
+      try {
+        const filePath = await saveFile({
+          filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+          defaultPath: 'audit_log.xlsx',
+        });
+        
+        if (filePath) {
+          const result = await exportAuditLogExcel(filters, filePath);
+          showSuccess(`تم تصدير ${result.record_count} سجل بنجاح إلى ملف Excel`);
+        }
+      } catch (e) {
+        showError('فشل تصدير البيانات: ' + formatErrorMessage(e));
       }
-    } catch (e) {
-      showError('فشل تصدير البيانات: ' + (e instanceof Error ? e.message : 'خطأ غير معروف'));
-    }
+    });
   }
   
   // Cleanup old logs
   async function cleanupOldLogs() {
-    if (!confirm('هل أنت متأكد من حذف السجلات القديمة (أكثر من سنة)؟')) return;
+    const confirmed = await showAsk('هل أنت متأكد من حذف السجلات القديمة (أكثر من سنة)؟', {
+      title: 'تأكيد الحذف',
+      kind: 'warning',
+      okLabel: 'نعم',
+      cancelLabel: 'لا',
+    });
+    if (!confirmed) return;
     
-    try {
-      const deleted = await cleanupAuditLogs();
-      showSuccess(`تم حذف ${deleted} سجل قديم`);
-      loadAuditLog(true);
-      loadStats();
-    } catch (e) {
-      showError('فشل حذف السجلات: ' + (e instanceof Error ? e.message : 'خطأ غير معروف'));
-    }
+    await cleanupOp.guard(async () => {
+      try {
+        const deleted = await cleanupAuditLogs();
+        showSuccess(`تم حذف ${deleted} سجل قديم`);
+        loadAuditLog(true);
+        loadStats();
+      } catch (e) {
+        showError('فشل حذف السجلات: ' + formatErrorMessage(e));
+      }
+    });
   }
   
   // Show entry details
@@ -214,13 +227,13 @@
     <!-- Header -->
     <AppPageHeader title="سجل التدقيق">
       <svelte:fragment slot="actions">
-        <AppButton variant="secondary" on:click={exportToExcel}>
+        <AppButton variant="secondary" on:click={exportToExcel} loading={$exportLoading} disabled={$loading || $exportLoading || $cleanupLoading}>
           <svg class="w-5 h-5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
           </svg>
           تصدير Excel
         </AppButton>
-        <AppButton variant="danger" on:click={cleanupOldLogs}>
+        <AppButton variant="danger" on:click={cleanupOldLogs} loading={$cleanupLoading} disabled={$loading || $exportLoading || $cleanupLoading}>
           <svg class="w-5 h-5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
@@ -309,12 +322,12 @@
         
         <div class="flex items-end gap-2">
           <div class="flex-1">
-            <AppButton variant="primary" fullWidth on:click={() => loadAuditLog(true)}>
+            <AppButton variant="primary" fullWidth on:click={() => loadAuditLog(true)} disabled={$loading || $exportLoading || $cleanupLoading}>
               بحث
             </AppButton>
           </div>
           <div>
-            <AppButton variant="secondary" on:click={clearFilters}>
+            <AppButton variant="secondary" on:click={clearFilters} disabled={$loading || $exportLoading || $cleanupLoading}>
               مسح
             </AppButton>
           </div>
@@ -323,17 +336,17 @@
     </AppCard>
 
     <!-- Error Message -->
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => auditOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
     <!-- Table -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
       <AppTable
-        loading={loading}
-        empty={!loading && entries.length === 0}
+        loading={$loading}
+        empty={!$loading && entries.length === 0}
         emptyMessage="لا توجد نتائج"
       >
         <svelte:fragment slot="head">
@@ -376,7 +389,7 @@
           <AppButton
             variant="secondary"
             size="sm"
-            disabled={page === 0 || loading}
+            disabled={page === 0 || $loading}
             on:click={prevPage}
           >
             السابق
@@ -384,7 +397,7 @@
           <AppButton
             variant="secondary"
             size="sm"
-            disabled={!hasMore || loading}
+            disabled={!hasMore || $loading}
             on:click={nextPage}
           >
             التالي

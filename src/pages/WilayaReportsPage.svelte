@@ -10,8 +10,10 @@
   import MonthlySummaryModal from '../components/reports/MonthlySummaryModal.svelte';
   import StockMovementModal from '../components/reports/StockMovementModal.svelte';
   import { exportAllUnitsMonthlyStatusExcel } from '../lib/tauri';
-  import { save } from '@tauri-apps/plugin-dialog';
+  import { saveFile } from '../lib/tauri';
   import { showSuccess, showError } from '../lib/notifications';
+  import { formatErrorMessage } from '../lib/errors';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
@@ -23,14 +25,18 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const reportsOp = createOperation();
+  const loading = reportsOp.loading;
+  const error = reportsOp.error;
+
+  const exportOp = createOperationGuard();
+
   // Data
   let reports: DailyReport[] = [];
   let monthlySummaries: MonthlySummary[] = [];
   let stockMovements: StockMovement[] = [];
   let settings: Settings | null = null;
   let units: Unit[] = [];
-  let loading = true;
-  let error = '';
   let selectedReport: DailyReportResult | null = null;
   let selectedStockMovement: StockMovement | null = null;
   let selectedMonthlySummary: MonthlySummary | null = null;
@@ -44,7 +50,7 @@
   let currentMonth = new Date().getMonth() + 1;
   let currentYear = new Date().getFullYear();
 
-  let isExporting = false;
+  const isExporting = exportOp.loading;
 
   const months = [
     { value: 1, label: 'جانفي' },
@@ -62,28 +68,27 @@
   ];
 
   async function handleExport() {
-    try {
-      const suggestedName = `حالة_الوحدات_الشهرية_${currentYear}_${currentMonth}.xlsx`;
-      
-      const filePath = await save({
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
-        defaultPath: suggestedName
-      });
+    const suggestedName = `حالة_الوحدات_الشهرية_${currentYear}_${currentMonth}.xlsx`;
+    
+    const filePath = await saveFile({
+      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+      defaultPath: suggestedName
+    });
 
-      if (!filePath) return;
+    if (!filePath) return;
 
-      isExporting = true;
-      const result = await exportAllUnitsMonthlyStatusExcel(currentYear, currentMonth, filePath);
-      
-      if (result.success) {
-        showSuccess(`تم التصدير بنجاح: ${result.count} وحدة مسجلة في التقرير.`);
+    await exportOp.guard(async () => {
+      try {
+        const result = await exportAllUnitsMonthlyStatusExcel(currentYear, currentMonth, filePath);
+        
+        if (result.success) {
+          showSuccess(`تم التصدير بنجاح: ${result.count} وحدة مسجلة في التقرير.`);
+        }
+      } catch (err) {
+        const errorMsg = formatErrorMessage(err);
+        showError('حدث خطأ أثناء التصدير: ' + errorMsg);
       }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      showError('حدث خطأ أثناء التصدير: ' + errorMsg);
-    } finally {
-      isExporting = false;
-    }
+    });
   }
 
   onMount(async () => {
@@ -91,8 +96,7 @@
   });
 
   async function loadData() {
-    try {
-      loading = true;
+    await reportsOp.run(async () => {
       settings = await getSettings();
 
       if (settings?.wilaya_code) {
@@ -100,43 +104,36 @@
         if (units.length > 0 && !selectedUnitId) {
           selectedUnitId = units[0].id;
         }
-        await loadReports();
+        await loadReportsInternal();
       }
-    } catch (e) {
-      error = 'خطأ في التحميل: ' + String(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   async function loadReports() {
-    try {
-      loading = true;
-      error = '';
+    await reportsOp.run(async () => {
+      await loadReportsInternal();
+    });
+  }
 
-      const result = await listWilayaReports(
-        selectedUnitId || null,
-        selectedReportType,
-        currentYear,
-        selectedReportType === 'monthly' ? undefined : currentMonth
-      );
+  async function loadReportsInternal() {
+    const result = await listWilayaReports(
+      selectedUnitId || null,
+      selectedReportType,
+      currentYear,
+      selectedReportType === 'monthly' ? undefined : currentMonth
+    );
 
-      // Reset all report types
-      reports = [];
-      monthlySummaries = [];
-      stockMovements = [];
+    // Reset all report types
+    reports = [];
+    monthlySummaries = [];
+    stockMovements = [];
 
-      if (result.type === 'Daily') {
-        reports = result.data as DailyReport[];
-      } else if (result.type === 'Monthly') {
-        monthlySummaries = result.data as MonthlySummary[];
-      } else if (result.type === 'Stock') {
-        stockMovements = result.data as StockMovement[];
-      }
-    } catch (e) {
-      error = 'خطأ في تحميل التقارير: ' + String(e);
-    } finally {
-      loading = false;
+    if (result.type === 'Daily') {
+      reports = result.data as DailyReport[];
+    } else if (result.type === 'Monthly') {
+      monthlySummaries = result.data as MonthlySummary[];
+    } else if (result.type === 'Stock') {
+      stockMovements = result.data as StockMovement[];
     }
   }
 
@@ -154,7 +151,7 @@
       selectedReport = result;
       viewingDetails = true;
     } catch (e) {
-      error = 'خطأ في تحميل التفاصيل: ' + String(e);
+      reportsOp.error.set('خطأ في تحميل التفاصيل: ' + formatErrorMessage(e));
     }
   }
 
@@ -217,7 +214,7 @@
                 label="الشهر"
                 bind:value={currentMonth}
                 on:change={onReportTypeChange}
-                disabled={isExporting}
+                disabled={$isExporting}
               >
                 {#each months as m}
                   <option value={m.value}>{m.label}</option>
@@ -232,14 +229,15 @@
                 type="number"
                 bind:value={currentYear}
                 on:change={onReportTypeChange}
-                disabled={isExporting}
+                disabled={$isExporting}
               />
             </div>
             
             <AppButton 
               variant="primary"
               on:click={handleExport}
-              loading={isExporting}
+              loading={$isExporting}
+              disabled={$loading || $isExporting}
             >
               <svg class="w-5 h-5 ml-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -305,9 +303,9 @@
       </AppCard>
     </div>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => reportsOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
@@ -321,7 +319,7 @@
         </h2>
       </div>
 
-      {#if loading}
+      {#if $loading}
         <AppLoadingState message="جاري التحميل..." />
       {:else}
         {#if selectedReportType === 'monthly'}

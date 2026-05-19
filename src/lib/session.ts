@@ -9,10 +9,10 @@
  */
 
 import { writable, type Writable } from 'svelte/store';
-import { invoke } from '@tauri-apps/api/core';
 import { push } from 'svelte-spa-router';
 import { showError, showWarning, showInfo } from './notifications';
 import type { SessionStatus, User } from './types';
+import { getCurrentUser, touchSession as tauriTouchSession, logout as tauriLogout, checkSession as tauriCheckSession } from './tauri';
 
 // Auth State
 export const currentUser = writable<User | null>(null);
@@ -23,7 +23,7 @@ export function setCurrentUser(user: User | null) {
 
 export async function bootstrapSession(): Promise<User | null> {
     try {
-        const user = await invoke<User | null>('get_current_user');
+        const user = await getCurrentUser();
         setCurrentUser(user);
         if (user) {
             startSessionMonitoring();
@@ -68,7 +68,7 @@ const TRACKED_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const
  */
 export async function checkSession(): Promise<SessionStatus | null> {
     try {
-        const status = await invoke<SessionStatus>('check_session');
+        const status = await tauriCheckSession();
         sessionState.update(s => ({
             ...s,
             lastCheck: new Date(),
@@ -201,7 +201,7 @@ function setupActivityTracking(): void {
  */
 async function touchSession(): Promise<void> {
     try {
-        await invoke('touch_session');
+        await tauriTouchSession();
     } catch (error) {
         // Failed to touch session
     }
@@ -212,7 +212,7 @@ async function touchSession(): Promise<void> {
  */
 export async function logout(): Promise<void> {
     try {
-        await invoke('logout');
+        await tauriLogout();
         setCurrentUser(null);
         showInfo('تم تسجيل خروجك بنجاح', 'تم تسجيل الخروج');
         push('/login');

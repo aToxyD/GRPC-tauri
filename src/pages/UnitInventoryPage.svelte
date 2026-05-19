@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { open, save } from '@tauri-apps/plugin-dialog';
   import {
     listUnits, getSettings,
     computeUnitInventorySnapshot, getUnitInventoryView,
-    getAvailableReportMonths, exportUnitInventoryExcel
+    getAvailableReportMonths, exportUnitInventoryExcel,
+    saveFile
   } from '../lib/tauri';
   import { showSuccess, showError, showWarning } from '../lib/notifications';
+  import { formatErrorMessage } from '../lib/errors';
   import type {
     Unit, Settings, UnitInventoryView,
     UnitMonthlySnapshot, ComputeSnapshotResult
@@ -113,7 +114,7 @@
         showSuccess(`تم حساب ${result.products_computed} منتج بنجاح`);
       }
     } catch (e) {
-      showError('خطأ في الحساب: ' + String(e));
+      showError('خطأ في الحساب: ' + formatErrorMessage(e));
     } finally {
       computing = false;
     }
@@ -122,7 +123,7 @@
   async function handleExport() {
     if (!inventoryView) return;
     try {
-      const path = await save({
+      const path = await saveFile({
         filters: [{ name: 'Excel', extensions: ['xlsx'] }],
         defaultPath: `مخزون_${selectedUnitName}_${MONTHS_AR[selectedMonth]}_${selectedYear}.xlsx`
       });

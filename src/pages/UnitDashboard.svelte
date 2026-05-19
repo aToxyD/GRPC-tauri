@@ -10,23 +10,23 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppTable from '../lib/components/ui/AppTable.svelte';
 
+  import { createOperation } from '../lib/operationGuard';
+
+  const dashboardOp = createOperation();
+  const loading = dashboardOp.loading;
+
   let settings: Settings | null = null;
   let stocks: InventoryStock[] = [];
   let orders: SupplierOrder[] = [];
-  let loading = true;
 
   onMount(async () => {
-    try {
+    await dashboardOp.run(async () => {
       [stocks, orders, settings] = await Promise.all([
         getAllStocks(),
         listSupplierOrders(),
         getSettings()
       ]);
-    } catch (e) {
-      // Error loading data
-    } finally {
-      loading = false;
-    }
+    });
   });
 
   $: confirmedOrders = orders.filter(o => o.status === 'Confirmed' || o.status === 'Received');
@@ -45,7 +45,7 @@
 
 <Layout nodeType="UNIT" title="لوحة تحكم الوحدة" {subtitle}>
 
-  {#if loading}
+  {#if $loading}
     <AppLoadingState message="جارٍ التحميل..." />
   {:else}
     <!-- Stats Cards -->

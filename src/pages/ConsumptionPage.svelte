@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { formatErrorMessage } from '../lib/errors';
   import { listProducts, createDailyReport, checkStockAvailability, getSettings } from '../lib/tauri';
   import type { Product, Settings, ConsumptionItemInput } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -12,12 +14,25 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const consumptionOp = createOperation();
+  const loading = consumptionOp.loading;
+  const error = consumptionOp.error;
+
+  const { loading: submitting, guard } = createOperationGuard();
+
   let products: Product[] = [];
   let settings: Settings | null = null;
-  let loading = true;
-  let error = '';
   let success = '';
-  let submitting = false;
+
+  let successTimeouts: number[] = [];
+  function setSuccessWithTimeout(msg: string) {
+    success = msg;
+    const t = window.setTimeout(() => success = '', 5000);
+    successTimeouts.push(t);
+  }
+  onDestroy(() => {
+    successTimeouts.forEach(clearTimeout);
+  });
 
   // Form fields
   let date = new Date().toISOString().split('T')[0];
@@ -26,18 +41,14 @@
   let consumptionItems: { product: Product; quantity: string; available: boolean; stock: number }[] = [];
 
   onMount(async () => {
-    try {
+    await consumptionOp.run(async () => {
       [products, settings] = await Promise.all([
         listProducts(),
         getSettings()
       ]);
       consumptionItems = products.map(p => ({ product: p, quantity: '', available: true, stock: 0 }));
-      checkStocks();
-    } catch (e) {
-      error = 'خطأ في التحميل: ' + String(e);
-    } finally {
-      loading = false;
-    }
+      await checkStocks();
+    });
   });
 
   async function checkStocks() {
@@ -60,7 +71,7 @@
 
   async function submitReport() {
     if (!date || !personnelCount) {
-      error = 'الرجاء إدخال التاريخ وعدد الموظفين';
+      consumptionOp.error.set('الرجاء إدخال التاريخ وعدد الموظفين');
       return;
     }
 
@@ -72,22 +83,17 @@
       }));
 
     if (items.length === 0) {
-      error = 'الرجاء إدخال استهلاك واحد على الأقل';
+      consumptionOp.error.set('الرجاء إدخال استهلاك واحد على الأقل');
       return;
     }
 
-    submitting = true;
-    error = '';
-
-    try {
+    await guard(async () => {
       // Check stock availability before submitting
       const stockCheck = await checkStockAvailability(items);
       const insufficient = stockCheck.filter(s => !s.available);
       
       if (insufficient.length > 0) {
-        error = `مخزون غير كافٍ لـ: ${insufficient.map(i => i.product_name).join(', ')}`;
-        submitting = false;
-        return;
+        throw new Error(`مخزون غير كافٍ لـ: ${insufficient.map(i => i.product_name).join(', ')}`);
       }
 
       const result = await createDailyReport({
@@ -97,7 +103,7 @@
         items
       }, settings?.unit_name || undefined);
 
-      success = `تم تسجيل التقرير. التكلفة الإجمالية: ${result.report.total_meals_cost.toFixed(2)} دج، المعدل: ${result.report.actual_meal_rate.toFixed(2)} دج/وجبة`;
+      setSuccessWithTimeout(`تم تسجيل التقرير. التكلفة الإجمالية: ${result.report.total_meals_cost.toFixed(2)} دج، المعدل: ${result.report.actual_meal_rate.toFixed(2)} دج/وجبة`);
       
       // Reset form
       personnelCount = '';
@@ -106,13 +112,7 @@
       
       // Refresh stock status
       await checkStocks();
-      
-      setTimeout(() => success = '', 5000);
-    } catch (e) {
-      error = 'خطأ: ' + String(e);
-    } finally {
-      submitting = false;
-    }
+    });
   }
 
   // Calculate totals
@@ -146,9 +146,9 @@
   <div dir="rtl">
     <AppPageHeader title="الاستهلاك اليومي" subtitle="تسجيل استهلاك الوجبات" />
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = ''}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => consumptionOp.error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
@@ -158,7 +158,7 @@
       </div>
     {/if}
 
-    {#if loading}
+    {#if $loading}
       <AppLoadingState message="جاري التحميل..." />
     {:else}
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -230,8 +230,8 @@
             variant="primary"
             fullWidth
             size="lg"
-            loading={submitting}
-            disabled={submitting || products.length === 0}
+            loading={$submitting}
+            disabled={$submitting || products.length === 0}
             on:click={submitReport}
           >
             تسجيل التقرير
