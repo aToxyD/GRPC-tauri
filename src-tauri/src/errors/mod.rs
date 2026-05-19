@@ -665,7 +665,7 @@ pub fn into_command_error(e: AppError) -> String {
         // في debug: أظهر التفاصيل للمطوّر مباشرةً.
         #[cfg(debug_assertions)]
         if let Some(ref details) = user_error.details {
-            return format!("{} [dev: {}]", user_error.message, details);
+            return format!("{} [dev: {}]", user_error.message, details); // ADR-0012
         }
 
         // في production: أرجع رسالة عامة آمنة فقط.
