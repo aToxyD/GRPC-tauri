@@ -230,10 +230,6 @@
           استيراد حزمة التكوين (.unit)
         </AppButton>
       </div>
-    {:else}
-      <p class="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
-        بيانات الدخول الافتراضية: admin / admin
-      </p>
     {/if}
   </AppCard>
   </div>

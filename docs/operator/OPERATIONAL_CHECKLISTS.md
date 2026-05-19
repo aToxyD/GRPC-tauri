@@ -1,42 +1,56 @@
-# Operational Checklists
+# قوائم التدقيق والتحقق التشغيلية (Operational Checklists)
 
-### A) Daily Opening Checklist
-- [ ] Login with assigned operator credentials.
-- [ ] Check System Health dashboard; ensure status is `Healthy`.
-- [ ] Review any unread Notifications or Operational Warnings.
-- [ ] Verify `Audit Log` for any unauthorized access attempts from previous sessions.
+---
 
-### B) Pre-Close Fiscal Checklist (Wilaya)
-- [ ] Run a comprehensive `System Health` test to confirm zero anomalies.
-- [ ] Verify all Unit imports for the month are synchronized and successful.
-- [ ] Click "Create Backup" and wait for the successful confirmation.
-- [ ] Verify there are no pending synchronization packages in the queue.
+### أ) قائمة التدقيق اليومية عند بدء العمل (Daily Opening Checklist)
+*   [ ] تسجيل الدخول باستخدام بيانات المشغل المعين والتحقق من الصلاحيات الممنوحة.
+*   [ ] فحص لوحة صحة النظام (System Health Dashboard) والتأكد من أن الحالة هي **"سليم" (Healthy)**.
+*   [ ] مراجعة أي إشعارات أو تحذيرات تشغيلية غير مقروءة.
+*   [ ] مراجعة **سجل التدقيق (Audit Log)** للتحقق من أي محاولات وصول غير مصرح بها من الجلسات السابقة.
 
-### C) Pre-Restore Checklist
-- [ ] Confirm with administration that a restore is explicitly authorized.
-- [ ] Export a fresh backup of the *current* state (even if corrupted) for forensic purposes.
-- [ ] Visually verify the date and time of the backup target to ensure correct selection.
-- [ ] Have the exact confirmation token ready to type (`RESTORE`).
+---
 
-### D) Post-Restore Validation Checklist
-- [ ] Log in with standard credentials.
-- [ ] Navigate to the `Audit Log` and confirm the `RESTORE_EXECUTED` event is present.
-- [ ] Run the System Health diagnostics to confirm the restored database is `Healthy`.
-- [ ] Visually inspect the latest inventory numbers to confirm the rollback target date.
+### ب) قائمة التدقيق قبل إغلاق السنة المالية للولاية (Pre-Close Fiscal Checklist - Wilaya)
+*   [ ] إجراء فحص شامل لصحة النظام وتأكيد خلوه التام من أي شذوذ أو تباين في البيانات.
+*   [ ] التحقق من نجاح ومزامنة كافة عمليات الاستيراد الخاصة بالوحدات التابعة لهذا الشهر.
+*   [ ] النقر فوق زر **"إنشاء نسخة احتياطية"** والانتظار حتى نجاح العملية وتأكيد الحفظ.
+*   [ ] التأكد من خلو قائمة الانتظار الخاصة بحزم المزامنة من أي حزم معلقة.
 
-### E) Monthly Integrity Review Checklist
-- [ ] Open `Audit Integrity` page.
-- [ ] Verify the Audit Chain is fully verified and unbroken.
-- [ ] Inspect the `Conflict Center` for unresolved data anomalies.
-- [ ] Archive all successfully processed monthly reports.
+---
 
-### F) Before Applying Authorized Fiscal Transition (Unit)
-- [ ] Verify the `.pkg` file source is from an authorized Wilaya representative.
-- [ ] Ensure the computer's system clock is synchronized to standard time (UTC).
-- [ ] Generate a local backup of the Unit prior to applying the transition.
-- [ ] Read the confirmation warning fully before typing `APPLY-FISCAL-TRANSITION`.
+### ج) قائمة التدقيق قبل استرجاع البيانات (Pre-Restore Checklist)
+*   [ ] تأكيد الحصول على موافقة خطية أو إذن صريح من الإدارة قبل الشروع في عملية استرجاع البيانات.
+*   [ ] تصدير نسخة احتياطية جديدة ومستقلة للحالة *الحالية* للنظام (حتى لو كانت تالفة) لاستخدامها لأغراض التحقيق الجنائي الرقمي والتدقيق اللاحق.
+*   [ ] التحقق بصرياً وبدقة من تاريخ ووقت نسخة الاحتياط المستهدفة لضمان عدم اختيار نسخة خاطئة.
+*   [ ] تجهيز الرمز النصي الخاص بالتأكيد لكتابته يدوياً بدقة وهو كلمة: (`RESTORE`).
 
-### G) Before Archiving Fiscal Year
-- [ ] Ensure the fiscal close was successfully completed and tested.
-- [ ] Verify there are no outstanding transactions for the targeted year.
-- [ ] Acknowledge the permanent immutability warning. (Archived years CANNOT be restored to an active state).
+---
+
+### د) قائمة التدقيق والتحقق بعد استرجاع البيانات (Post-Restore Validation Checklist)
+*   [ ] تسجيل الدخول باستخدام الحساب القياسي المعتمد.
+*   [ ] الانتقال إلى **سجل التدقيق (Audit Log)** والتحقق من وجود حدث تسجيل العملية بالرمز `RESTORE_EXECUTED`.
+*   [ ] تشغيل الفحص التشخيصي العام للتأكد من عودة قاعدة البيانات المسترجعة للحالة **"سليم" (Healthy)**.
+*   [ ] فحص كميات المخزون الحالية بصرياً لمطابقتها مع تاريخ الاسترجاع المستهدف للتأكد من صحة البيانات المرجعة.
+
+---
+
+### هـ) قائمة التدقيق للمراجعة الشهرية لسلامة البيانات (Monthly Integrity Review Checklist)
+*   [ ] الانتقال إلى صفحة **تدقيق السلامة (Audit Integrity)**.
+*   [ ] التأكد من أن سلسلة سجلات التدقيق (Audit Chain) متصلة تماماً ومحققة بنجاح 100% دون أي انقطاع.
+*   [ ] مراجعة **مركز التعارضات (Conflict Center)** للتأكد من معالجة وحل كافة تعارضات البيانات والتحذيرات.
+*   [ ] أرشفة جميع التقارير الشهرية التي تم التحقق منها واعتمادها بنجاح.
+
+---
+
+### و) قبل تطبيق حزمة الانتقال المالي المصرح بها للوحدات (Before Applying Fiscal Transition - Unit)
+*   [ ] التحقق من مصدر ملف الحزمة (`.sync`) والتأكد من استلامه رسمياً من ممثل معتمد لبلدية الولاية.
+*   [ ] التأكد من مزامنة ساعة نظام الكمبيوتر المحلي بدقة مع التوقيت القياسي (توقيت الجزائر / UTC).
+*   [ ] إنشاء نسخة احتياطية محلية للوحدة مباشرة قبل محاولة تطبيق الحزمة المستلمة.
+*   [ ] قراءة التحذير المصاحب بعناية تامة قبل كتابة نص التأكيد المطلوب: `APPLY-FISCAL-TRANSITION`.
+
+---
+
+### ز) قبل أرشفة السنة المالية (Before Archiving Fiscal Year)
+*   [ ] التأكد من اكتمال عملية الإغلاق المالي للسنة بنجاح واجتيازها كافة الفحوصات التشغيلية.
+*   [ ] التحقق من عدم وجود أي معاملات أو طلبيات أو فواتير معلقة للسنة المالية المستهدفة.
+*   [ ] تأكيد استيعاب وفهم تحذير عدم الرجعة الأبدي (السنوات المؤرشفة **لا يمكن** إعادتها للحالة النشطة أو التعديل عليها نهائياً).

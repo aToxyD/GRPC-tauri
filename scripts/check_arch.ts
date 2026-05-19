@@ -567,6 +567,18 @@ checkRule(
     "error"
 );
 
+// Rule 27b: No direct `@tauri-apps/api` or `@tauri-apps/api/core` imports in Svelte pages/components
+checkRule(
+    "Rule 27b: Direct @tauri-apps/api import in Svelte page/component (must use lib/tauri.ts)",
+    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/App.svelte"],
+    /from\s+['"]@tauri-apps\/api(\/core)?['"]/,
+    (line) => {
+        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
+        return false;
+    },
+    "error"
+);
+
 // ============================================================
 // SUMMARY
 // ============================================================

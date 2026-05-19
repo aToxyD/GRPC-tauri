@@ -6,9 +6,17 @@
     noBorder: boolean — بدون حد
 -->
 <script lang="ts">
+  import AppLoadingState from './AppLoadingState.svelte';
+  import AppEmptyState from './AppEmptyState.svelte';
+  import AppAlert from './AppAlert.svelte';
+
   export let elevated = false;
   export let padding: 'none' | 'sm' | 'md' | 'lg' = 'md';
   export let noBorder = false;
+  export let loading = false;
+  export let empty = false;
+  export let emptyMessage = 'لا توجد بيانات';
+  export let error: string | null | undefined = undefined;
 
   let className = '';
   export { className as class };
@@ -34,5 +42,21 @@
 </script>
 
 <div class={classes}>
-  <slot />
+  {#if error}
+    <div aria-live="assertive">
+      <AppAlert intent="danger">{error}</AppAlert>
+    </div>
+  {:else if loading}
+    <AppLoadingState message="جارٍ التحميل..." />
+  {:else if empty}
+    {#if $$slots.empty}
+      <slot name="empty" />
+    {:else}
+      <AppEmptyState title={emptyMessage}>
+        <slot name="empty-action" slot="action" />
+      </AppEmptyState>
+    {/if}
+  {:else}
+    <slot />
+  {/if}
 </div>

@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
-  import { getSettings } from '../lib/tauri';
+  import {
+    getSettings,
+    getAdvancedDiagnosticsBundle,
+    verifyInventoryIntegrity,
+    getSystemHealth,
+    createFiscalOperationalSnapshot
+  } from '../lib/tauri';
+  import { createOperation } from '../lib/operationGuard';
   import Layout from '../components/Layout.svelte';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -15,8 +21,9 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
 
   // ─── State (manual refresh only — no live updates, no websocket) ────────────
-  let loading = false;
-  let error: string | null = null;
+  const op = createOperation();
+  const loading = op.loading;
+  const error = op.error;
   let selectedYear: number | null = new Date().getFullYear();
   let lastRefreshedAt: string | null = null;
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
@@ -73,39 +80,28 @@
   let systemHealth: any = null;
 
   async function refresh() {
-    loading = true;
-    error = null;
-    try {
+    await op.run(async () => {
       const [b, inv, hp] = await Promise.all([
-        invoke('get_advanced_diagnostics_bundle', { fiscalYear: selectedYear }),
+        getAdvancedDiagnosticsBundle(selectedYear),
         selectedYear !== null
-          ? invoke('verify_inventory_integrity', { year: selectedYear })
+          ? verifyInventoryIntegrity(selectedYear)
           : Promise.resolve(null),
-        invoke('get_system_health').catch(() => null),
+        getSystemHealth().catch(() => null),
       ]);
       bundle = b as any;
       inventory = inv;
       systemHealth = hp;
       lastRefreshedAt = new Date().toLocaleString('ar-DZ');
-    } catch (e: any) {
-      error = typeof e === 'string' ? e : JSON.stringify(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   async function takeSnapshot() {
     if (selectedYear === null) return;
-    loading = true;
-    error = null;
-    try {
-      await invoke('create_fiscal_operational_snapshot', { fiscalYear: selectedYear });
+    const year = selectedYear;
+    await op.run(async () => {
+      await createFiscalOperationalSnapshot(year);
       await refresh();
-    } catch (e: any) {
-      error = typeof e === 'string' ? e : JSON.stringify(e);
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   function severityIntent(sev: string): 'danger' | 'warning' | 'info' {
@@ -213,7 +209,7 @@
     <!-- ─── Header ──────────────────────────────────────────────────────────── -->
     <AppPageHeader title="تشخيصات النظام المتقدمة" subtitle="رؤية تشغيلية موجَّهة — يدوية بالكامل، لا تحديثات تلقائية">
       <svelte:fragment slot="actions">
-        <div class="flex items-center gap-2">
+        <div class="flex items-end gap-2">
           <div class="w-32">
             <AppInput
               id="year-input"
@@ -226,14 +222,14 @@
           </div>
           <AppButton
             variant="primary"
-            loading={loading}
+            loading={$loading}
             on:click={refresh}
           >
             تحديث يدوي
           </AppButton>
           <AppButton
             variant="secondary"
-            disabled={loading || selectedYear === null}
+            disabled={$loading || selectedYear === null}
             on:click={takeSnapshot}
             ariaLabel="إنشاء لقطة تشغيلية يدوية"
           >
@@ -247,10 +243,10 @@
       <div class="text-xs text-gray-500 dark:text-gray-400">آخر تحديث: {lastRefreshedAt}</div>
     {/if}
 
-    {#if error}
-      <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>
+    {#if $error}
+      <AppAlert intent="danger" dismissible on:dismiss={() => error.set(null)}>
         <div class="font-semibold">خطأ:</div>
-        <div class="text-sm">{error}</div>
+        <div class="text-sm">{$error}</div>
       </AppAlert>
     {/if}
 

@@ -8,8 +8,16 @@
     actions: إجراءات رأس القسم
 -->
 <script lang="ts">
+  import AppLoadingState from './AppLoadingState.svelte';
+  import AppEmptyState from './AppEmptyState.svelte';
+  import AppAlert from './AppAlert.svelte';
+
   export let title: string | undefined = undefined;
   export let description: string | undefined = undefined;
+  export let loading = false;
+  export let empty = false;
+  export let emptyMessage = 'لا توجد بيانات';
+  export let error: string | null | undefined = undefined;
 </script>
 
 <section class="mb-6">
@@ -30,5 +38,22 @@
       {/if}
     </div>
   {/if}
-  <slot />
+
+  {#if error}
+    <div aria-live="assertive">
+      <AppAlert intent="danger">{error}</AppAlert>
+    </div>
+  {:else if loading}
+    <AppLoadingState message="جارٍ التحميل..." />
+  {:else if empty}
+    {#if $$slots.empty}
+      <slot name="empty" />
+    {:else}
+      <AppEmptyState title={emptyMessage}>
+        <slot name="empty-action" slot="action" />
+      </AppEmptyState>
+    {/if}
+  {:else}
+    <slot />
+  {/if}
 </section>

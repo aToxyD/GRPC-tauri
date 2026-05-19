@@ -11,6 +11,10 @@
     empty-action: إجراء اختياري في حالة الفراغ
 -->
 <script lang="ts">
+  import AppLoadingState from './AppLoadingState.svelte';
+  import AppEmptyState from './AppEmptyState.svelte';
+  import AppAlert from './AppAlert.svelte';
+
   interface $$Slots {
     head: {};
     default: {};
@@ -20,47 +24,40 @@
   export let loading = false;
   export let empty = false;
   export let emptyMessage = 'لا توجد بيانات';
+  export let error: string | null | undefined = undefined;
   export let caption: string | undefined = undefined;
 </script>
 
 <div class="w-full overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-  {#if loading}
-    <!-- حالة التحميل -->
-    <div class="flex items-center justify-center py-16 text-gray-400 dark:text-gray-500" aria-busy="true" aria-label="جارٍ التحميل">
-      <svg class="animate-spin h-6 w-6 ml-2" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-      </svg>
-      <span class="text-sm">جارٍ التحميل...</span>
+  {#if error}
+    <div class="p-4" aria-live="assertive">
+      <AppAlert intent="danger">{error}</AppAlert>
     </div>
-  {:else if empty}
-    <!-- حالة الفراغ -->
-    {#if $$slots.empty}
-      <slot name="empty" />
-    {:else}
-      <div class="flex flex-col items-center justify-center py-16 gap-3 text-gray-400 dark:text-gray-500">
-        <svg class="h-10 w-10 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-        </svg>
-        <p class="text-sm font-medium">{emptyMessage}</p>
-        {#if $$slots['empty-action']}
-          <slot name="empty-action" />
-        {/if}
-      </div>
-    {/if}
+  {:else if loading}
+    <AppLoadingState message="جارٍ التحميل..." />
   {:else}
-    <table class="w-full border-collapse">
-      {#if caption}
-        <caption class="sr-only">{caption}</caption>
+    {#if empty}
+      {#if $$slots.empty}
+        <slot name="empty" />
+      {:else}
+        <AppEmptyState title={emptyMessage}>
+          <slot name="empty-action" slot="action" />
+        </AppEmptyState>
       {/if}
-      <thead>
-        <tr>
-          <slot name="head" />
-        </tr>
-      </thead>
-      <tbody>
-        <slot />
-      </tbody>
-    </table>
+    {:else}
+      <table class="w-full border-collapse">
+        {#if caption}
+          <caption class="sr-only">{caption}</caption>
+        {/if}
+        <thead>
+          <tr>
+            <slot name="head" />
+          </tr>
+        </thead>
+        <tbody>
+          <slot />
+        </tbody>
+      </table>
+    {/if}
   {/if}
 </div>

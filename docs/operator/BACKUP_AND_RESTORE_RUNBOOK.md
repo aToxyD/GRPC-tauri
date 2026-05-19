@@ -1,48 +1,63 @@
-# Backup & Restore Runbook
+# دليل التشغيل لعمليات النسخ الاحتياطي واسترجاع البيانات (Backup & Restore Runbook)
 
-## 1. Creating a Backup
-- Navigate to the **Backup** page.
-- Click "Create Backup". The system performs an atomic SQLite backup ensuring no incomplete transactions are included.
-- Wait for the "Success" notification. The system automatically tags the backup with the timestamp.
+---
 
-### WAL Snapshot Validation (Fail-Closed Policy)
-- **Checkpoint Verification**: Before backup creation, the system performs a WAL checkpoint and verifies it completes successfully. If the checkpoint fails or leaves frames in the WAL, the backup is aborted immediately.
-- **Snapshot Integrity Check**: After creating the temporary SQLite snapshot but before encryption, the system validates:
-  - Temp file exists and is not empty
-  - Temp file size is reasonable (not suspiciously small)
-  - SQLite integrity_check passes
-  - Page count and page size are valid
-  - Snapshot size is consistent with source database
-- **Fail-Closed Behavior**: If any validation fails, the backup is NOT created. The system logs the failure, writes an audit event, and securely deletes temporary files. No partial or corrupted backups are ever persisted.
+## 1. إنشاء نسخة احتياطية (Creating a Backup)
+*   انتقل إلى صفحة **النسخ الاحتياطي (Backup)** في التطبيق.
+*   انقر فوق زر **"إنشاء نسخة احتياطية"**. يقوم النظام بإجراء نسخة احتياطية ذرية (Atomic SQLite Backup) لضمان عدم تضمين أي معاملات غير مكتملة.
+*   انتظر ظهور إشعار **"بنجاح"**. يقوم النظام تلقائياً بوسم النسخة الاحتياطية بالطابع الزمني الدقيق.
 
-## 2. Verifying Backup Integrity
-- The system automatically performs heuristic validation of the backup file immediately after creation.
-- Ensure no `Integrity Mismatch` errors are returned. If they are, discard the backup and retry.
+### التحقق من لقطة WAL وسلوك الإغلاق الآمن (WAL Snapshot Validation - Fail-Closed Policy)
+*   **التحقق من نقطة الفحص (Checkpoint Verification):** قبل بدء إنشاء النسخة الاحتياطية، يقوم النظام بإجراء نقطة فحص للـ WAL (WAL checkpoint) والتحقق من اكتمالها بنجاح. إذا فشلت نقطة الفحص أو تركت إطارات معلقة في ملف الـ WAL، يتم إلغاء عملية النسخ الاحتياطي فوراً.
+*   **فحص سلامة اللقطة (Snapshot Integrity Check):** بعد إنشاء اللقطة المؤقتة لقاعدة البيانات وقبل تشفيرها، يقوم النظام بالتحقق من التالي:
+    *   الملف المؤقت موجود وغير فارغ.
+    *   حجم الملف المؤقت ضمن الحدود المعقولة (وليس صغيراً بشكل مريب).
+    *   اجتياز فحص السلامة البنيوي لقاعدة البيانات SQLite (`integrity_check`).
+    *   أعداد الصفحات وأحجامها صالحة تماماً.
+    *   تطابق الحجم الإجمالي للقطة مع قاعدة البيانات المصدر.
+*   **سلوك الإغلاق الآمن عند الفشل (Fail-Closed):** إذا فشل أي من فحوصات التحقق السابقة، يتم **إلغاء** إنشاء النسخة الاحتياطية فوراً. يقوم النظام بتسجيل الفشل بملفات السجل وكتابة حدث تدقيق أمني، مع حذف الملفات المؤقتة بشكل آمن. لا يُسمح نهائياً بحفظ أو إبقاء أي نسخ احتياطية جزئية أو تالفة.
 
-## 3. Safe Storage Expectations
-- Ensure the backup directory (`.grpc-data/backups`) is periodically synced to a secure, off-site location (e.g., encrypted flash drive or secure local offline server).
-- Backups contain sensitive offline application data. Secure them physically.
+---
 
-## 4. Restore Workflow
-1. Navigate to the **Backup** page.
-2. Select the backup file to restore.
-3. The system will prompt a critical confirmation dialogue requiring an explicit typed string (e.g., `RESTORE`). 
-4. The system issues a short-lived execution token.
-5. A full restart of the Tauri backend will occur (managed safely by the offline-first environment) applying the atomic rollback.
+## 2. التحقق من سلامة النسخة الاحتياطية (Verifying Backup Integrity)
+*   يقوم النظام تلقائياً بإجراء فحص استدلالي (Heuristic Validation) لملف النسخة الاحتياطية مباشرة بعد عملية الإنشاء.
+*   تأكد من عدم ظهور أي أخطاء متعلقة بـ **"عدم تطابق البصمة والترابط" (Integrity Mismatch)**. في حال ظهورها، يجب استبعاد وتجاهل ملف النسخة الاحتياطية هذا وإعادة محاولة عملية الإنشاء.
 
-## 5. Restore Restrictions
-- **Restore Blocked**: You cannot restore a backup from an older, archived fiscal year. The historical retention policies strictly prevent regressions.
-- **Corrupted Backup**: If the backup hash fails or structure is deemed malformed, the system will instantly reject the file.
-- **Integrity Mismatch**: If the system fingerprint does not match the backup signature, the action will be aborted.
+---
 
-## 6. Recovery Validation After Restore
-- Review the `Audit Log` to confirm the restoration event was securely recorded in the newly restored environment.
-- Run a System Health Check to confirm the database integrity is `Healthy`.
+## 3. متطلبات التخزين الآمن (Safe Storage Expectations)
+*   تأكد من مزامنة مجلد النسخ الاحتياطية المحلي (`.grpc-data/backups`) بشكل دوري ونقله لموقع خارجي آمن ومستقل (على سبيل المثال: ذاكرة فلاش مشفرة أو خادم محلي آمن غير متصل بالإنترنت).
+*   تحتوي النسخ الاحتياطية على بيانات التطبيق الحساسة، لذا يرجى تأمين وسائط التخزين الخاصة بها فيزيائياً ومادياً.
 
-## Incident Response Procedures
-- **Backup File Corrupted**: Discard the specific backup file. Attempt to restore from the immediate previous healthy backup.
-- **Backup Verification Failed**: Do not attempt to use the backup. Verify hard drive health and memory limits, and initiate a new backup.
-- **Restore Interrupted**: The system uses atomic temporary files. If power is lost during a restore, the system will rollback to the state prior to the restoration attempt.
-- **Missing Backup Metadata**: Backups manually tampered with or renamed outside the application may lose metadata binding and will be rejected.
-- **Backup Creation Failed (Checkpoint Validation)**: If backup creation fails with a checkpoint error, this indicates the WAL could not be flushed to the main database file. Check disk space, file permissions, and database lock status. Retry after resolving the underlying issue.
-- **Backup Creation Failed (Snapshot Validation)**: If backup creation fails with a snapshot validation error, the temporary snapshot was corrupted or incomplete. This may indicate disk I/O issues or database corruption. Check system health and consider running database integrity checks before retrying. 
+---
+
+## 4. سير عمل استرجاع البيانات (Restore Workflow)
+1.  انتقل إلى صفحة **النسخ الاحتياطي (Backup)** في التطبيق.
+2.  اختر ملف النسخة الاحتياطية المستهدف لاسترجاعه.
+3.  سيعرض النظام رسالة تأكيد تحذيرية حرجة تتطلب منك كتابة نص محدد يدوياً للتأكيد (على سبيل المثال: كلمة `RESTORE`).
+4.  يصدر النظام رمز تنفيذ قصير الصلاحية (Short-lived Execution Token).
+5.  ستحدث عملية إعادة تشغيل كاملة وآمنة للمحرك الخلفي لـ Tauri لتطبيق عملية التراجع والرجوع الذري للحالة المحددة.
+
+---
+
+## 5. قيود ومحددات الاسترجاع (Restore Restrictions)
+*   **حظر عمليات التراجع المالي التاريخي:** يمنع النظام تماماً استرجاع أي نسخة احتياطية تعود لسنة مالية قديمة ومؤرشفة. تحظر سياسات الاحتفاظ التاريخي أي تراجع أو رجوع بالحالة المالية السابقة.
+*   **حظر النسخ التالفة:** إذا فشل فحص البصمة التشفيرية (Hash Check) أو وجد قصور في البنية الهيكلية للملف، سيرفض النظام الملف المستورد فوراً.
+*   **عدم تطابق البصمات:** في حال عدم تطابق البصمة المسجلة للنظام مع توقيع النسخة الاحتياطية، سيتم إحباط العملية فوراً.
+
+---
+
+## 6. التحقق من التعافي بعد الاسترجاع (Recovery Validation After Restore)
+*   راجع **سجل التدقيق (Audit Log)** لتأكيد تسجيل حدث الاسترجاع وأمان بيئة العمل المسترجعة حديثاً.
+*   قم بإجراء فحص حالة النظام للتأكد من أن حالة قاعدة البيانات مستقرة وسليمة (`Healthy`).
+
+---
+
+## إجراءات الاستجابة للحوادث والمشكلات (Incident Response Procedures)
+
+*   **تلف ملف النسخة الاحتياطية (Backup File Corrupted):** تخلص من ملف النسخة الاحتياطية المحدد فوراً. حاول الاسترجاع من أقرب نسخة احتياطية سابقة تم التحقق من سلامتها.
+*   **فشل التحقق من النسخة الاحتياطية (Backup Verification Failed):** لا تحاول استخدام أو استيراد هذه النسخة. تحقق من سلامة القرص الصلب للجهاز وحدود الذاكرة المتوفرة، ثم ابدأ عملية نسخ احتياطي جديدة.
+*   **انقطاع عملية الاسترجاع (Restore Interrupted):** يعتمد النظام على معالجة ملفات مؤقتة ذرية؛ لذا في حال انقطاع التيار الكهربائي أو توقف النظام أثناء الاسترجاع، سيقوم النظام تلقائياً بالتراجع والعودة إلى الحالة المستقرة التي سبقت بدء عملية الاسترجاع.
+*   **فقدان البيانات الوصفية (Missing Backup Metadata):** النسخ الاحتياطية التي يتم تعديلها يدوياً أو إعادة تسميتها خارج نطاق التطبيق قد تفقد ارتباط بياناتها الوصفية وبالتالي سيرفض النظام استيرادها.
+*   **فشل إنشاء النسخة بسبب فحص نقطة الفحص (Backup Creation Failed - Checkpoint):** يشير هذا الخطأ إلى تعذر كتابة وتفريغ ملف الـ WAL في ملف قاعدة البيانات الرئيسي. تحقق من مساحة القرص الشاغرة، وصلاحيات الملفات، وحالة قفل قاعدة البيانات، ثم أعد المحاولة بعد حل المشكلة الأساسية.
+*   **فشل إنشاء النسخة بسبب فحص اللقطة (Backup Creation Failed - Snapshot):** يشير هذا إلى تلف أو عدم اكتمال اللقطة المؤقتة الناتجة. قد يعود السبب لمشكلات في وحدات الإدخال والإخراج للقرص (I/O) أو تلف في قاعدة البيانات. تحقق من صحة النظام العام وفكر في إجراء فحص سلامة لبنية قاعدة البيانات قبل إعادة المحاولة.

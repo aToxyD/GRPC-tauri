@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import AppButton from '../../lib/components/ui/AppButton.svelte';
+import AppButton from '../../../lib/components/ui/AppButton.svelte';
 
 describe('AppButton', () => {
   // ─── الحالات الأساسية ──────────────────────────────────────

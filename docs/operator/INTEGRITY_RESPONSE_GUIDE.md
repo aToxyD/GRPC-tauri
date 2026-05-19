@@ -1,46 +1,56 @@
-# Integrity & Corruption Response Guide
+# دليل الاستجابة للمشكلات وحماية سلامة البيانات (Integrity & Corruption Response Guide)
 
-The GRPC-tauri offline system enforces an absolute zero-trust verification of local data files to protect against tampering, bit-rot, and unauthorized physical disk modifications.
+---
 
-## 1. System Integrity States
-- **Healthy**: Normal operational parameters. No anomalies detected.
-- **Warning**: A non-fatal discrepancy was found (e.g., minor operational inconsistency). Operations continue, but a diagnostic review is recommended.
-- **Corrupted**: Data integrity is compromised. The system enters a fail-closed protection state blocking critical actions.
-- **Critical**: Severe structural or cryptographic failure. The system immediately halts operations.
+يعتمد النظام غير المتصل بالإنترنت (Offline System) لـ **GRPC-Tauri** على سياسة انعدام الثقة التام (Zero-Trust Validation) للملفات المحلية لحمايتها من التلاعب، وتلف البيانات الفيزيائي (Bit-rot)، والتعديلات غير المصرح بها على القرص الصلب.
 
-## 2. Terminology
-- **Anomaly**: Unusual statistical variance (e.g., sudden massive consumption spike) that does not necessarily mean corruption.
-- **Integrity Failure**: A cryptographic hash or schema constraint was violated.
-- **Corruption**: Actual damage to the data structure or files.
-- **Operational Warning**: A procedural misstep was caught before application.
+---
 
-## 3. Incident Response Procedures
+## 1. حالات سلامة النظام (System Integrity States)
+*   **سليم (Healthy):** جميع المؤشرات والعمليات تعمل وفق النطاق الطبيعي دون رصد أي شذوذ في البيانات.
+*   **تحذير (Warning):** تم العثور على تباين غير حرج (على سبيل المثال: تعارضات تشغيلية بسيطة). تستمر العمليات بالعمل ولكن يوصى بإجراء فحص تشخيصي.
+*   **تالف (Corrupted):** تعرضت سلامة البيانات لخلل أو تلف بنيوي. يدخل النظام فوراً في حالة "الإغلاق الآمن" (Fail-closed) لحظر كافة الإجراءات والعمليات الحساسة.
+*   **حرج (Critical):** حدوث فشل بنيوي حاد أو انهيار في فك التشفير والتحقق التوثيقي. يتوقف النظام عن العمل فوراً لحماية أصول البيانات.
 
-### Corruption Detected
-- **Symptoms**: State transitions to `Corrupted`. File access denied warnings.
-- **Logs Expected**: `CRITICAL_DATA_CORRUPTION` event.
-- **Operator Action**: Halt all input. DO NOT attempt to write new data. Navigate to Backups and perform a verified restore from the last known `Healthy` backup.
+---
 
-### Audit Chain Failure
-- **Symptoms**: The audit log chain validation rejects the current state.
-- **Logs Expected**: `TAMPERING_DETECTED_AUDIT_CHAIN_INVALID`.
-- **Operator Action**: Escalate to Wilaya Administration immediately. This indicates manual SQLite tampering or malicious activity. Restore required.
+## 2. المصطلحات والمفاهيم (Terminology)
+*   **الشذوذ / الاختلاف (Anomaly):** انحراف إحصائي غير معتاد (مثل قفزة استهلاك ضخمة ومفاجئة) ولكنه لا يعني بالضرورة وجود تلف بنيوي في الملفات.
+*   **فشل سلامة البيانات (Integrity Failure):** حدوث انتهاك للبصمة التشفيرية (Cryptographic Hash) أو قيود قواعد البيانات والجداول.
+*   **التلف (Corruption):** ضرر فيزيائي أو هيكلي فعلي يصيب ملف البيانات أو بنية قاعدة البيانات SQLite.
+*   **تحذير تشغيلي (Operational Warning):** خطأ إجرائي تم رصده وإيقافه قبل تطبيقه على النظام.
 
-### Replay Rejection
-- **Symptoms**: Applying a fiscal package results in "Replay Detected".
-- **Logs Expected**: `REPLAY_ATTEMPT_REJECTED`.
-- **Operator Action**: Ensure you are not re-importing an already applied package. Discard the package. Operations continue normally.
+---
 
-### Expired Fiscal Transition Package
-- **Symptoms**: Import fails with "Validity Window Expired".
-- **Operator Action**: Delete the `.pkg` file. Contact the Wilaya to issue a fresh, unexpired package.
+## 3. إجراءات الاستجابة للمشكلات والحوادث (Incident Response Procedures)
 
-### Orphan Snapshots
-- **Symptoms**: Snapshot found without an associated transaction boundary.
-- **Operator Action**: Run the diagnostic cleanup. The system will isolate the orphan data safely without impacting operations.
+### أ) رصد تلف في البيانات (Corruption Detected)
+*   **الأعراض المرافقة:** تتحول حالة النظام إلى `Corrupted`. تظهر رسائل تفيد برفض أو منع الوصول إلى الملفات.
+*   **السجلات المتوقعة:** تسجيل حدث يحمل الرمز `CRITICAL_DATA_CORRUPTION`.
+*   **إجراء المشغل:** أوقف كافة عمليات الإدخال فوراً. **يُمنع منعاً باتاً** محاولة كتابة أو إرسال أي بيانات جديدة. انتقل فوراً إلى قسم النسخ الاحتياطية ونفذ عملية استرجاع من آخر نسخة احتياطية سليمة معترف بها ومجربة (`Healthy`).
 
-### Spike in Operational Findings
-- **Symptoms**: Dashboard shows elevated warnings.
-- **Operator Action**: Review the System Health and Conflict Center pages. Verify recent order data entry for typos or duplicate entries.
+### ب) فشل سلسلة التدقيق (Audit Chain Failure)
+*   **الأعراض المرافقة:** تفشل عملية التحقق من تسلسل وسلسلة سجل التدقيق المغلق، وبالتالي يرفض النظام الحالة الحالية.
+*   **السجلات المتوقعة:** تسجيل حدث يحمل الرمز `TAMPERING_DETECTED_AUDIT_CHAIN_INVALID`.
+*   **إجراء المشغل:** تواصل فوراً مع إدارة الولاية للتبليغ والتصعيد. يشير هذا الخطأ بوضوح إلى تلاعب يدوي بملف قاعدة البيانات SQLite أو نشاط تخريبي خارجي. يتطلب ذلك استرجاع نسخة احتياطية موثوقة.
 
-> **CRITICAL REMINDER**: The system does NOT magically auto-heal from cryptographic corruption. Its design is strictly deterministic and fail-closed. If it is broken, it stays broken to protect data until an operator explicitly rolls back to a safe, verified state.
+### ج) رفض إعادة التشغيل (Replay Rejection)
+*   **الأعراض المرافقة:** فشل تطبيق حزمة انتقال مالي وظهور رسالة تفيد بـ "رصد محاولة إعادة تشغيل الحزمة" (Replay Detected).
+*   **السجلات المتوقعة:** تسجيل حدث يحمل الرمز `REPLAY_ATTEMPT_REJECTED`.
+*   **إجراء المشغل:** تأكد من أنك لا تحاول استيراد حزمة تم تطبيقها ومزامنتها مسبقاً. استبعد هذه الحزمة وتابع العمليات بشكل طبيعي.
+
+### د) انتهاء صلاحية حزمة الانتقال المالي (Expired Fiscal Transition Package)
+*   **الأعراض المرافقة:** فشل عملية الاستيراد مع ظهور رسالة "انتهاء صلاحية نافذة التنفيذ المصرح بها" (Validity Window Expired).
+*   **إجراء المشغل:** احذف ملف الحزمة (`.sync`). اتصل بإدارة الولاية لإصدار حزمة جديدة وسارية الصلاحية.
+
+### هـ) اللقطات اليتيمة (Orphan Snapshots)
+*   **الأعراض المرافقة:** العثور على لقطة مالية مؤقتة غير مرتبطة بأي معاملة معترف بها.
+*   **إجراء المشغل:** قم بتشغيل سكريبت التنظيف التشخيصي المتوفر بالواجهة. سيقوم النظام بعزل اللقطة اليتيمة بأمان دون التأثير على سير العمليات.
+
+### و) تصاعد النتائج التحذيرية التشغيلية (Spike in Operational Findings)
+*   **الأعراض المرافقة:** يظهر في لوحة التحكم عدد مرتفع من التحذيرات أو الحالات غير الطبيعية.
+*   **إجراء المشغل:** راجع صفحة صحة النظام (System Health) وصفحة مركز التعارضات (Conflict Center). تحقق من صحة إدخالات الطلبات والمخزون الأخيرة وتأكد من خلوها من الأخطاء المطبعية أو التكرار.
+
+---
+
+> ⚠️ **تنبيه حرج للغاية:** لا يقوم النظام بإصلاح أو معالجة التلف التشفيري تلقائياً أو بشكل سحري. تصميم النظام حتمي تماماً وينغلق بأمان عند أي فشل (Fail-closed). إذا تعطل النظام نتيجة تلف تشفيري، سيبقى معطلاً لحماية سلامة البيانات حتى يتدخل المشغل يدوياً ويقوم بالتراجع إلى حالة سابقة آمنة وموثوقة.

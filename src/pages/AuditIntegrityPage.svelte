@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getAuditHealth, getAuditChainStatus, getSettings } from '../lib/tauri';
+  import { createOperation } from '../lib/operationGuard';
   import type { AuditHealthReport, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -12,16 +13,16 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const op = createOperation();
+  const loading = op.loading;
+  const error = op.error;
   let health: AuditHealthReport | null = null;
-  let loading = true;
-  let error: string | null = null;
   let settings: Settings | null = null;
 
   async function loadHealth() {
-    loading = true; error = null;
-    try { health = await getAuditHealth(); }
-    catch (e) { error = e instanceof Error ? e.message : 'فشل التحميل'; }
-    finally { loading = false; }
+    await op.run(async () => {
+      health = await getAuditHealth();
+    });
   }
 
   function fmt(ts: string | null) { return ts ? new Date(ts).toLocaleString('ar-DZ') : '—'; }
@@ -47,17 +48,17 @@
     
     <AppPageHeader title="🔐 لوحة سلامة التدقيق" subtitle="مراقبة وتحقق من سلسلة Hash التدقيق">
       <svelte:fragment slot="actions">
-        <AppButton variant="secondary" size="sm" {loading} on:click={loadHealth}>⟳ تحديث</AppButton>
+        <AppButton variant="secondary" size="sm" loading={$loading} on:click={loadHealth}>⟳ تحديث</AppButton>
       </svelte:fragment>
     </AppPageHeader>
 
-    {#if error}
+    {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => error = null}>{error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => error.set(null)}>{$error}</AppAlert>
       </div>
     {/if}
 
-    {#if loading && !health}
+    {#if $loading && !health}
       <AppLoadingState message="جارٍ التحميل..." />
     {:else if health}
       <!-- Chain Banner -->

@@ -13,12 +13,16 @@
   import { showSuccess } from "../lib/notifications";
   import { currentUser as userStore } from "../lib/session";
   import Layout from "../components/Layout.svelte";
+  import { createOperationGuard } from "../lib/operationGuard";
+  import { formatErrorMessage } from "../lib/errors";
   import AppButton from "../lib/components/ui/AppButton.svelte";
   import AppAlert from "../lib/components/ui/AppAlert.svelte";
   import AppCard from "../lib/components/ui/AppCard.svelte";
   import AppLoadingState from "../lib/components/ui/AppLoadingState.svelte";
   import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
   import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
+
+  const { loading: opLoading, guard } = createOperationGuard();
 
   let backups: BackupInfo[] = [];
   let loading = false;
@@ -52,24 +56,26 @@
       error = null;
       backups = await listBackups();
     } catch (err) {
-      error = "فشل تحميل قائمة النسخ الاحتياطية";
+      error = formatErrorMessage(err);
     } finally {
       loading = false;
     }
   }
 
   async function handleCreateBackup() {
-    try {
-      loading = true;
-      error = null;
-      const backupPath = await createBackup();
-      await loadBackups(); // Reload the list
-      showSuccess("تم إنشاء نسخة احتياطية بنجاح");
-    } catch (err) {
-      error = "فشل إنشاء النسخة الاحتياطية";
-    } finally {
-      loading = false;
-    }
+    await guard(async () => {
+      try {
+        loading = true;
+        error = null;
+        const backupPath = await createBackup();
+        await loadBackups(); // Reload the list
+        showSuccess("تم إنشاء نسخة احتياطية بنجاح");
+      } catch (err) {
+        error = formatErrorMessage(err);
+      } finally {
+        loading = false;
+      }
+    });
   }
 
   async function handleRestoreBackup(backupPath: string) {
@@ -102,15 +108,18 @@
       return;
     }
 
-    try {
-      restoring = true;
-      const { token } = await issueOperationExecutionToken({ operation: 'restore' });
-      await restoreBackup(backupPath, typed.trim(), token);
-    } catch (err) {
-      error = "فشل استعادة النسخة الاحتياطية";
-    } finally {
-      restoring = false;
-    }
+    await guard(async () => {
+      try {
+        restoring = true;
+        error = null;
+        const { token } = await issueOperationExecutionToken({ operation: 'restore' });
+        await restoreBackup(backupPath, typed.trim(), token);
+      } catch (err) {
+        error = formatErrorMessage(err);
+      } finally {
+        restoring = false;
+      }
+    });
   }
 
   function formatFileSize(bytes: number): string {
@@ -142,7 +151,8 @@
         <svelte:fragment slot="actions">
           <AppButton
             variant="primary"
-            loading={loading}
+            loading={loading || $opLoading}
+            disabled={$opLoading}
             on:click={handleCreateBackup}
           >
             إنشاء نسخة احتياطية
@@ -176,7 +186,7 @@
           icon="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
         >
           <svelte:fragment slot="action">
-            <AppButton variant="primary" on:click={handleCreateBackup}>
+            <AppButton variant="primary" loading={loading || $opLoading} disabled={$opLoading} on:click={handleCreateBackup}>
               إنشاء أول نسخة احتياطية
             </AppButton>
           </svelte:fragment>
@@ -231,7 +241,7 @@
                       <AppButton
                         variant="danger"
                         size="sm"
-                        disabled={restoring}
+                        disabled={restoring || $opLoading}
                         loading={restoring}
                         on:click={() => handleRestoreBackup(backup.path)}
                       >

@@ -21,6 +21,8 @@
     FiscalPackageRegistryEntry
   } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createOperationGuard } from '../lib/operationGuard';
+  import { formatErrorMessage } from '../lib/errors';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -31,6 +33,8 @@
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppSection from '../lib/components/ui/AppSection.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
+
+  const { loading: opLoading, guard } = createOperationGuard();
 
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
   let currentYear = new Date().getFullYear();
@@ -88,18 +92,20 @@
       return;
     }
 
-    loading = true;
-    try {
-      await updateFiscalPackageRetentionStatus(transitionId, status, retentionConfirmation);
-      message = `تم تحديث حالة الحزمة إلى ${status} بنجاح.`;
-      selectedPackageForRetention = null;
-      retentionConfirmation = '';
-      await refreshHistory();
-    } catch (error) {
-      message = String(error);
-    } finally {
-      loading = false;
-    }
+    await guard(async () => {
+      loading = true;
+      try {
+        await updateFiscalPackageRetentionStatus(transitionId, status, retentionConfirmation);
+        message = `تم تحديث حالة الحزمة إلى ${status} بنجاح.`;
+        selectedPackageForRetention = null;
+        retentionConfirmation = '';
+        await refreshHistory();
+      } catch (error) {
+        message = formatErrorMessage(error);
+      } finally {
+        loading = false;
+      }
+    });
   }
 
   async function executeClose() {
@@ -111,24 +117,26 @@
     const confirmed = confirm(`سيتم إغلاق السنة المالية ${currentYear} وفتح ${nextYear}. لا يمكن التراجع عن العملية.`);
     if (!confirmed) return;
 
-    loading = true;
-    message = '';
+    await guard(async () => {
+      loading = true;
+      message = '';
 
-    try {
-      const result = await closeFiscalYear({
-        year: currentYear,
-        next_year: nextYear,
-      });
+      try {
+        const result = await closeFiscalYear({
+          year: currentYear,
+          next_year: nextYear,
+        });
 
-      message = `تم إغلاق ${result.closed_year} وفتح ${result.opened_year} بنجاح.`;
-      await load(); // Reload state
-      confirmation = '';
-      await refreshHistory();
-    } catch (error) {
-      message = String(error);
-    } finally {
-      loading = false;
-    }
+        message = `تم إغلاق ${result.closed_year} وفتح ${result.opened_year} بنجاح.`;
+        await load(); // Reload state
+        confirmation = '';
+        await refreshHistory();
+      } catch (error) {
+        message = formatErrorMessage(error);
+      } finally {
+        loading = false;
+      }
+    });
   }
 
   async function handleExportPackage() {
@@ -148,22 +156,24 @@
 
     if (!filePath) return;
 
-    loading = true;
-    try {
-      await exportFiscalClosurePackage(
-        closedYear,
-        openedYear,
-        timestamp,
-        filePath,
-        transitionId
-      );
-      message = `تم تصدير حزمة الترخيص للسنة ${closedYear} بنجاح إلى: ${filePath}`;
-      await refreshHistory();
-    } catch (error) {
-      message = String(error);
-    } finally {
-      loading = false;
-    }
+    await guard(async () => {
+      loading = true;
+      try {
+        await exportFiscalClosurePackage(
+          closedYear,
+          openedYear,
+          timestamp,
+          filePath,
+          transitionId
+        );
+        message = `تم تصدير حزمة الترخيص للسنة ${closedYear} بنجاح إلى: ${filePath}`;
+        await refreshHistory();
+      } catch (error) {
+        message = formatErrorMessage(error);
+      } finally {
+        loading = false;
+      }
+    });
   }
 
   async function handleSelectPackage() {
@@ -176,21 +186,23 @@
     if (!filePath || Array.isArray(filePath)) return;
 
     selectedFilePath = filePath;
-    loading = true;
-    preview = null;
-    message = '';
+    await guard(async () => {
+      loading = true;
+      preview = null;
+      message = '';
 
-    try {
-      preview = await previewFiscalClosurePackage(selectedFilePath);
-      if (!preview.validation_ok) {
-        message = 'فشل التحقق المسبق من الحزمة. راجع التفاصيل أدناه.';
+      try {
+        preview = await previewFiscalClosurePackage(selectedFilePath);
+        if (!preview.validation_ok) {
+          message = 'فشل التحقق المسبق من الحزمة. راجع التفاصيل أدناه.';
+        }
+      } catch (error) {
+        message = formatErrorMessage(error);
+        selectedFilePath = '';
+      } finally {
+        loading = false;
       }
-    } catch (error) {
-      message = String(error);
-      selectedFilePath = '';
-    } finally {
-      loading = false;
-    }
+    });
   }
 
   async function handleApplyPackage() {
@@ -200,22 +212,24 @@
       return;
     }
 
-    loading = true;
-    message = '';
+    await guard(async () => {
+      loading = true;
+      message = '';
 
-    try {
-      const result = await applyFiscalClosurePackage(selectedFilePath, applyConfirmation);
-      message = `تم تطبيق الانتقال المالي للسنة ${result.closed_year} بنجاح. تم ترحيل ${result.snapshot_count} سجل.`;
-      preview = null;
-      selectedFilePath = '';
-      applyConfirmation = '';
-      await load();
-      await refreshHistory();
-    } catch (error) {
-      message = String(error);
-    } finally {
-      loading = false;
-    }
+      try {
+        const result = await applyFiscalClosurePackage(selectedFilePath, applyConfirmation);
+        message = `تم تطبيق الانتقال المالي للسنة ${result.closed_year} بنجاح. تم ترحيل ${result.snapshot_count} سجل.`;
+        preview = null;
+        selectedFilePath = '';
+        applyConfirmation = '';
+        await load();
+        await refreshHistory();
+      } catch (error) {
+        message = formatErrorMessage(error);
+      } finally {
+        loading = false;
+      }
+    });
   }
 
   onMount(load);
@@ -282,8 +296,8 @@
             variant="danger"
             fullWidth
             size="lg"
-            disabled={loading}
-            loading={loading}
+            disabled={loading || $opLoading}
+            loading={loading || $opLoading}
             on:click={executeClose}
           >
             إصدار قرار إغلاق السنة {currentYear}
@@ -303,7 +317,8 @@
           <AppButton
             variant="primary"
             size="lg"
-            loading={loading}
+            disabled={loading || $opLoading}
+            loading={loading || $opLoading}
             on:click={handleExportPackage}
           >
             تصدير حزمة الترخيص (.sync)
@@ -332,7 +347,7 @@
           <div class="mt-6">
             <button
               on:click={handleSelectPackage}
-              disabled={loading}
+              disabled={loading || $opLoading}
               class="w-full py-8 border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-2xl text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center justify-center space-y-2 cursor-pointer disabled:opacity-50"
             >
               <span class="font-medium text-lg">استيراد حزمة الانتقال (.sync)</span>
@@ -418,8 +433,8 @@
                   variant="primary"
                   fullWidth
                   size="lg"
-                  loading={loading}
-                  disabled={applyConfirmation !== 'APPLY-FISCAL-TRANSITION'}
+                  loading={loading || $opLoading}
+                  disabled={applyConfirmation !== 'APPLY-FISCAL-TRANSITION' || $opLoading}
                   on:click={handleApplyPackage}
                 >
                   تنفيذ الانتقال المالي المصرح به
@@ -561,12 +576,13 @@
       <svelte:fragment slot="actions">
         <AppButton 
           variant="secondary" 
+          disabled={loading || $opLoading}
           on:click={() => { selectedPackageForRetention = null; targetRetentionStatus = null; retentionConfirmation = ''; }}
         >إلغاء</AppButton>
         <AppButton 
           variant="danger"
-          loading={loading}
-          disabled={retentionConfirmation !== `${targetRetentionStatus}-PACKAGE`}
+          loading={loading || $opLoading}
+          disabled={retentionConfirmation !== `${targetRetentionStatus}-PACKAGE` || $opLoading}
           on:click={() => handleUpdateRetention(selectedPackageForRetention!.transition_id, targetRetentionStatus!)}
         >تأكيد التغيير</AppButton>
       </svelte:fragment>

@@ -10,6 +10,8 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createOperationGuard } from '../lib/operationGuard';
+  import { formatErrorMessage } from '../lib/errors';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -18,6 +20,8 @@
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
+
+  const { loading: operationLoading, guard } = createOperationGuard();
 
   let units: Unit[] = [];
   let settings: Settings | null = null;
@@ -37,7 +41,7 @@
         }
       }
     } catch (e) {
-      error = 'خطأ في التحميل: ' + String(e);
+      error = formatErrorMessage(e);
     } finally {
       loading = false;
     }
@@ -49,27 +53,29 @@
       return;
     }
 
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{
-          name: 'حزمة المزامنة',
-          extensions: ['sync']
-        }]
-      });
+    await guard(async () => {
+      try {
+        const selected = await open({
+          multiple: false,
+          filters: [{
+            name: 'حزمة المزامنة',
+            extensions: ['sync']
+          }]
+        });
 
-      if (selected) {
-        importProgress = 'استيراد تقرير يومي مؤمن...';
-        error = '';
-        success = '';
-        const result = await importDailyReportPackage(selected as string, selectedUnit);
-        success = `تم استيراد ${result.report_count} تقرير (${result.item_count} عناصر استهلاك)`;
+        if (selected) {
+          importProgress = 'استيراد تقرير يومي مؤمن...';
+          error = '';
+          success = '';
+          const result = await importDailyReportPackage(selected as string, selectedUnit);
+          success = `تم استيراد ${result.report_count} تقرير (${result.item_count} عناصر استهلاك)`;
+          importProgress = '';
+        }
+      } catch (e) {
+        error = formatErrorMessage(e);
         importProgress = '';
       }
-    } catch (e) {
-      error = 'خطأ في الاستيراد: ' + String(e);
-      importProgress = '';
-    }
+    });
   }
 
 
@@ -79,27 +85,29 @@
       return;
     }
 
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{
-          name: 'حزمة المزامنة',
-          extensions: ['sync']
-        }]
-      });
+    await guard(async () => {
+      try {
+        const selected = await open({
+          multiple: false,
+          filters: [{
+            name: 'حزمة المزامنة',
+            extensions: ['sync']
+          }]
+        });
 
-      if (selected) {
-        importProgress = 'استيراد حزمة شهرية مؤمنة...';
-        error = '';
-        success = '';
-        const result = await importMonthlySummaryPackage(selected as string, selectedUnit);
-        success = `تم استيراد الملخص الشهري (${result.report_count} تقارير مسجلة في الحزمة)`;
+        if (selected) {
+          importProgress = 'استيراد حزمة شهرية مؤمنة...';
+          error = '';
+          success = '';
+          const result = await importMonthlySummaryPackage(selected as string, selectedUnit);
+          success = `تم استيراد الملخص الشهري (${result.report_count} تقارير مسجلة في الحزمة)`;
+          importProgress = '';
+        }
+      } catch (e) {
+        error = formatErrorMessage(e);
         importProgress = '';
       }
-    } catch (e) {
-      error = 'خطأ في الاستيراد: ' + String(e);
-      importProgress = '';
-    }
+    });
   }
 
 
@@ -110,27 +118,29 @@
       return;
     }
 
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{
-          name: 'حزمة المزامنة',
-          extensions: ['sync']
-        }]
-      });
+    await guard(async () => {
+      try {
+        const selected = await open({
+          multiple: false,
+          filters: [{
+            name: 'حزمة المزامنة',
+            extensions: ['sync']
+          }]
+        });
 
-      if (selected) {
-        importProgress = 'استيراد حزمة حركات مؤمنة...';
-        error = '';
-        success = '';
-        const result = await importStockMovementsPackage(selected as string, selectedUnit);
-        success = `تم استيراد ${result.movement_count} حركة مخزون بنجاح (المعرف الفريد للحزمة: ${result.file_hash.substring(0, 8)}...)`;
+        if (selected) {
+          importProgress = 'استيراد حزمة حركات مؤمنة...';
+          error = '';
+          success = '';
+          const result = await importStockMovementsPackage(selected as string, selectedUnit);
+          success = `تم استيراد ${result.movement_count} حركة مخزون بنجاح (المعرف الفريد للحزمة: ${result.file_hash.substring(0, 8)}...)`;
+          importProgress = '';
+        }
+      } catch (e) {
+        error = formatErrorMessage(e);
         importProgress = '';
       }
-    } catch (e) {
-      error = 'خطأ في الاستيراد: ' + String(e);
-      importProgress = '';
-    }
+    });
   }
 </script>
 
@@ -216,7 +226,8 @@
             <AppButton
               variant="primary"
               fullWidth
-              disabled={!selectedUnit || !!importProgress}
+              disabled={!selectedUnit || !!importProgress || $operationLoading}
+              loading={importProgress === 'استيراد تقرير يومي مؤمن...'}
               on:click={importDailyReportPackageSync}
               ariaLabel="هذا هو مسار المزامنة الرسمي بين العقد"
             >
@@ -242,7 +253,8 @@
             <AppButton
               variant="primary"
               fullWidth
-              disabled={!selectedUnit || !!importProgress}
+              disabled={!selectedUnit || !!importProgress || $operationLoading}
+              loading={importProgress === 'استيراد حزمة شهرية مؤمنة...'}
               on:click={importMonthlyReportSync}
               ariaLabel="هذا هو مسار المزامنة الرسمي بين العقد"
             >
@@ -269,7 +281,8 @@
               variant="primary"
               fullWidth
               class="bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-700 border-purple-700"
-              disabled={!selectedUnit || !!importProgress}
+              disabled={!selectedUnit || !!importProgress || $operationLoading}
+              loading={importProgress === 'استيراد حزمة حركات مؤمنة...'}
               on:click={importStockMovementsPackageSync}
               ariaLabel="استيراد الحزمة المشفرة والموقعة رقمياً للمزامنة الآمنة"
             >
