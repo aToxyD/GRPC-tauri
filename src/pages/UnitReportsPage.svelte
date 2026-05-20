@@ -8,6 +8,7 @@
   import type { DailyReport, DailyReportResult, MonthlySummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
+  import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
@@ -17,7 +18,8 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
-  const reportsOp = createOperation();
+  const scope = createRuntimeScope();
+  const reportsOp = createOperation({ scope });
   const loading = reportsOp.loading;
   const error = reportsOp.error;
 
@@ -28,15 +30,8 @@
   let selectedReport: DailyReportResult | null = null;
   let viewingDetails = false;
 
-  let successTimeouts: number[] = [];
-  function setSuccessWithTimeout(msg: string) {
-    success = msg;
-    const t = window.setTimeout(() => success = '', 3000);
-    successTimeouts.push(t);
-  }
-  onDestroy(() => {
-    successTimeouts.forEach(clearTimeout);
-  });
+  const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
+  onDestroy(() => scope.dispose());
 
   // Monthly summary
   let currentMonth = new Date().getMonth() + 1;

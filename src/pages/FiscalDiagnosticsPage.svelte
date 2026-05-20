@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     getSettings,
     getAdvancedDiagnosticsBundle,
@@ -7,6 +7,7 @@
     getSystemHealth,
     createFiscalOperationalSnapshot
   } from '../lib/tauri';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
   import Layout from '../components/Layout.svelte';
 
@@ -34,7 +35,10 @@
   }
 
   // ─── State (manual refresh only — no live updates, no websocket) ────────────
-  const op = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const op = createOperation({ scope });
   const loading = op.loading;
   const error = op.error;
   let selectedYear: number | null = new Date().getFullYear();
@@ -211,7 +215,7 @@
     try {
       const settings = await getSettings();
       nodeType = settings.node_type as 'WILAYA' | 'UNIT' | null;
-    } catch {}
+    } catch (_e) { /* optional settings */ }
     refresh();
   });
 </script>

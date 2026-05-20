@@ -1,22 +1,26 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { login, getSettings, isConfigured, importUnitNodePackage, openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
   import type { LoginRequest, LoginResponse } from '../lib/types';
   import { push } from 'svelte-spa-router';
   import { showSuccess } from '../lib/notifications';
   import { setCurrentUser } from '../lib/session';
   import { formatErrorMessage } from '../lib/errors';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
 
-  const loginOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const loginOp = createOperation({ scope });
   const loginLoading = loginOp.loading;
   const loginError = loginOp.error;
 
-  const importOp = createOperationGuard();
+  const importOp = createOperationGuard({ scope });
   const importLoading = importOp.loading;
 
   let username = '';

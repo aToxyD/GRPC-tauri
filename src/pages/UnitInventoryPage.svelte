@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     listUnits, getSettings,
     computeUnitInventorySnapshot, getUnitInventoryView,
@@ -13,6 +13,8 @@
     UnitMonthlySnapshot, ComputeSnapshotResult
   } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
@@ -27,6 +29,15 @@
     'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
   ];
 
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+  const unitsOp = createOperation({ scope });
+  const monthsOp = createOperation({ scope });
+  const computeOp = createOperation({ scope });
+  const loadingUnits = unitsOp.loading;
+  const loadingMonths = monthsOp.loading;
+  const computing = computeOp.loading;
+
   // ── State ──────────────────────────────────────
   let units: Unit[] = $state([]);
   let availableMonths: [number, number][] = $state([]);
@@ -36,10 +47,6 @@
   let selectedYear = $state(new Date().getFullYear());
   let selectedMonth = $state(new Date().getMonth() + 1);
   let searchProduct = $state('');
-
-  let loadingUnits = $state(true);
-  let loadingMonths = $state(false);
-  let computing = $state(false);
 
   // ── Derived ────────────────────────────────────
   let filteredItems: UnitMonthlySnapshot[] = $derived(
@@ -58,14 +65,10 @@
 
   // ── Lifecycle ──────────────────────────────────
   onMount(async () => {
-    try {
+    await unitsOp.run(async () => {
       const settings = await getSettings();
       units = await listUnits(settings?.wilaya_code ?? '');
-    } catch (e) {
-      showError('خطأ في تحميل الوحدات');
-    } finally {
-      loadingUnits = false;
-    }
+    });
   });
 
   // ── Event Handlers ─────────────────────────────
@@ -74,23 +77,17 @@
     availableMonths = [];
     if (!selectedUnitId) return;
 
-    try {
-      loadingMonths = true;
+    await monthsOp.run(async () => {
       availableMonths = await getAvailableReportMonths(selectedUnitId);
       if (availableMonths.length > 0) {
         [selectedYear, selectedMonth] = availableMonths[0];
       }
-    } catch (e) {
-      showError('خطأ في جلب الأشهر');
-    } finally {
-      loadingMonths = false;
-    }
+    });
   }
 
   async function loadInventory(forceRecompute = false) {
     if (!selectedUnitId) { showWarning('اختر وحدة أولاً'); return; }
-    try {
-      computing = true;
+    await computeOp.run(async () => {
       const result: ComputeSnapshotResult = await computeUnitInventorySnapshot(
         selectedUnitId, selectedYear, selectedMonth, forceRecompute
       );
@@ -105,7 +102,6 @@
         selectedUnitId, selectedYear, selectedMonth
       );
 
-      // إشعارات الشذوذات
       if (result.balance_anomalies > 0 || result.consumption_anomalies > 0) {
         showWarning(
           `${result.balance_anomalies} شذوذ رصيد، ${result.consumption_anomalies} شذوذ استهلاك`
@@ -113,11 +109,7 @@
       } else if (!result.already_existed) {
         showSuccess(`تم حساب ${result.products_computed} منتج بنجاح`);
       }
-    } catch (e) {
-      showError('خطأ في الحساب: ' + formatErrorMessage(e));
-    } finally {
-      computing = false;
-    }
+    });
   }
 
   async function handleExport() {
@@ -149,7 +141,7 @@
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
         <!-- الوحدة -->
         <div>
-          {#if loadingUnits}
+          {#if $loadingUnits}
             <div class="animate-pulse h-10 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
           {:else}
             <AppSelect
@@ -168,7 +160,7 @@
 
         <!-- الشهر -->
         <div>
-          {#if loadingMonths}
+          {#if $loadingMonths}
             <div class="animate-pulse h-10 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
           {:else if availableMonths.length > 0}
             <AppSelect
@@ -200,8 +192,8 @@
           <AppButton
             variant="primary"
             fullWidth
-            loading={computing}
-            disabled={!selectedUnitId || computing || !availableMonths.length}
+            loading={$computing}
+            disabled={!selectedUnitId || $computing || !availableMonths.length}
             on:click={() => loadInventory(false)}
           >
             عرض المخزون
@@ -212,7 +204,7 @@
         <div class="flex gap-2 h-[42px]">
           {#if inventoryView}
             <div class="flex-1">
-              <AppButton variant="secondary" fullWidth disabled={computing} on:click={() => loadInventory(true)} title="إعادة الحساب">
+              <AppButton variant="secondary" fullWidth disabled={$computing} on:click={() => loadInventory(true)} title="إعادة الحساب">
                 ↺ تحديث
               </AppButton>
             </div>
@@ -399,7 +391,7 @@
         {/if}
       </AppCard>
 
-    {:else if selectedUnitId && !computing}
+    {:else if selectedUnitId && !$computing}
       <AppCard class="p-12 text-center">
         <AppEmptyState
           title="اضغط 'عرض المخزون' لبدء الحساب"

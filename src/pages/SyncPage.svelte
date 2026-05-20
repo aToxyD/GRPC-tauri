@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     importDailyReportPackage,
     importMonthlySummaryPackage,
@@ -10,6 +10,7 @@
   } from '../lib/tauri';
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
   import { formatErrorMessage } from '../lib/errors';
 
@@ -21,11 +22,14 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
 
-  const initialOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const initialOp = createOperation({ scope });
   const loading = initialOp.loading;
   const initialError = initialOp.error;
 
-  const { loading: operationLoading, guard } = createOperationGuard();
+  const { loading: operationLoading, guard } = createOperationGuard({ scope });
 
   let units: Unit[] = [];
   let settings: Settings | null = null;

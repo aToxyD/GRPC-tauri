@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { listSyncConflicts, resolveSyncConflict, getConflictSummary, getSettings } from '../lib/tauri';
   import type { SyncConflict, ConflictSummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
@@ -13,13 +13,17 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppTextarea from '../lib/components/ui/AppTextarea.svelte';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
 
-  const conflictsOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const conflictsOp = createOperation({ scope });
   const loading = conflictsOp.loading;
   const error = conflictsOp.error;
 
-  const { loading: resolving, guard } = createOperationGuard();
+  const { loading: resolving, guard } = createOperationGuard({ scope });
 
   let conflicts: SyncConflict[] = [];
   let summary: ConflictSummary | null = null;
@@ -73,7 +77,7 @@
   });
 
   onMount(async () => {
-    try { settings = await getSettings(); } catch {}
+    try { settings = await getSettings(); } catch (_e) { /* optional settings */ }
     await load();
   });
 

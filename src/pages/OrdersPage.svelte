@@ -5,6 +5,7 @@
   import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
+  import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -16,7 +17,8 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
-  const ordersOp = createOperation();
+  const scope = createRuntimeScope();
+  const ordersOp = createOperation({ scope });
   const loading = ordersOp.loading;
   const error = ordersOp.error;
 
@@ -27,15 +29,8 @@
   let selectedOrder: SupplierOrder | null = null;
   let orderItems: SupplierOrderItem[] = [];
 
-  let successTimeouts: number[] = [];
-  function setSuccessWithTimeout(msg: string) {
-    success = msg;
-    const t = window.setTimeout(() => success = '', 3000);
-    successTimeouts.push(t);
-  }
-  onDestroy(() => {
-    successTimeouts.forEach(clearTimeout);
-  });
+  const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
+  onDestroy(() => scope.dispose());
 
   // Form fields
   let supplierName = '';

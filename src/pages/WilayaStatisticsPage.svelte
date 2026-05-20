@@ -5,6 +5,7 @@
   import { currentUser as userStore } from '../lib/session';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
@@ -12,7 +13,8 @@
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
 
-  const metricsOp = createOperation();
+  const scope = createRuntimeScope();
+  const metricsOp = createOperation({ scope });
   const loading = metricsOp.loading;
   const error = metricsOp.error;
 
@@ -23,24 +25,18 @@
   let currentTime = new Date();
   let preflight: SyncPreflightCheck | null = null;
 
-  let timeInterval: number | null = null;
-  let metricsInterval: number | null = null;
-
   onMount(async () => {
-    timeInterval = window.setInterval(() => {
+    scope.setInterval(() => {
       currentTime = new Date();
     }, 1000);
 
     await loadSettings();
     await loadMetrics();
-    
-    metricsInterval = window.setInterval(loadMetrics, 30000);
+
+    scope.setInterval(loadMetrics, 30000);
   });
 
-  onDestroy(() => {
-    if (timeInterval !== null) clearInterval(timeInterval);
-    if (metricsInterval !== null) clearInterval(metricsInterval);
-  });
+  onDestroy(() => scope.dispose());
 
   async function loadSettings() {
     try {

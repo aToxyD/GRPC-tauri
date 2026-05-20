@@ -13,6 +13,7 @@
   import type { Unit, Settings, CreateUnitRequest } from "../lib/types";
   import Layout from "../components/Layout.svelte";
   import { createOperation } from "../lib/operationGuard";
+  import { createRuntimeScope, createTransientMessage } from "../lib/runtimeCleanup";
 
   import AppButton from "../lib/components/ui/AppButton.svelte";
   import AppAlert from "../lib/components/ui/AppAlert.svelte";
@@ -23,7 +24,8 @@
   import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
   import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
 
-  const unitsOp = createOperation();
+  const scope = createRuntimeScope();
+  const unitsOp = createOperation({ scope });
   const loading = unitsOp.loading;
   const error = unitsOp.error;
 
@@ -36,15 +38,8 @@
   let editingUnit: Unit | null = null;
   let deletingUnit: Unit | null = null;
 
-  let successTimeouts: number[] = [];
-  function setSuccessWithTimeout(msg: string) {
-    success = msg;
-    const t = window.setTimeout(() => (success = ""), 3000);
-    successTimeouts.push(t);
-  }
-  onDestroy(() => {
-    successTimeouts.forEach(clearTimeout);
-  });
+  const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
+  onDestroy(() => scope.dispose());
 
   // Form fields
   let unitCode = "";

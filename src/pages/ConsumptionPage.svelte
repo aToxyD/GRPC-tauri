@@ -5,6 +5,7 @@
   import type { Product, Settings, ConsumptionItemInput } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
+  import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
@@ -14,25 +15,19 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
-  const consumptionOp = createOperation();
+  const scope = createRuntimeScope();
+  const consumptionOp = createOperation({ scope });
   const loading = consumptionOp.loading;
   const error = consumptionOp.error;
 
-  const { loading: submitting, guard } = createOperationGuard();
+  const { loading: submitting, guard } = createOperationGuard({ scope });
 
   let products: Product[] = [];
   let settings: Settings | null = null;
   let success = '';
 
-  let successTimeouts: number[] = [];
-  function setSuccessWithTimeout(msg: string) {
-    success = msg;
-    const t = window.setTimeout(() => success = '', 5000);
-    successTimeouts.push(t);
-  }
-  onDestroy(() => {
-    successTimeouts.forEach(clearTimeout);
-  });
+  const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m), 5000);
+  onDestroy(() => scope.dispose());
 
   // Form fields
   let date = new Date().toISOString().split('T')[0];

@@ -4,6 +4,7 @@
   import type { SyncNodeHealth, ConflictSummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { formatErrorMessage } from '../lib/errors';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -13,7 +14,9 @@
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
 
-  const syncOp = createOperation();
+  const scope = createRuntimeScope();
+
+  const syncOp = createOperation({ scope });
   const loading = syncOp.loading;
   const error = syncOp.error;
 
@@ -93,7 +96,7 @@
   }
 
   onMount(async () => {
-    try { settings = await getSettings(); } catch {}
+    try { settings = await getSettings(); } catch (_e) { /* optional settings */ }
     await load();
     
     // Redraw graph when theme changes
@@ -109,6 +112,7 @@
 
   onDestroy(() => {
     observer?.disconnect();
+    scope.dispose();
   });
 
   $: nodeType = settings?.node_type || null;

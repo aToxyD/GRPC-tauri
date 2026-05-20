@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getSettings, getAllStocks, listSupplierOrders } from '../lib/tauri';
   import type { Settings, InventoryStock, SupplierOrder } from '../lib/types';
   import Layout from '../components/Layout.svelte';
@@ -10,9 +10,13 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppTable from '../lib/components/ui/AppTable.svelte';
 
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
 
-  const dashboardOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const dashboardOp = createOperation({ scope });
   const loading = dashboardOp.loading;
 
   let settings: Settings | null = null;

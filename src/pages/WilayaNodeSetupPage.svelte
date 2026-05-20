@@ -4,26 +4,22 @@
   import { push } from "svelte-spa-router";
   import { formatErrorMessage } from "../lib/errors";
   import { createOperation } from "../lib/operationGuard";
+  import { createRuntimeScope } from "../lib/runtimeCleanup";
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
 
-  const setupOp = createOperation();
+  const scope = createRuntimeScope();
+  const setupOp = createOperation({ scope });
   const loading = setupOp.loading;
   const error = setupOp.error;
 
   let wilayaCode = "";
   let wilayaName = "";
   let success = "";
-  let setupTimeout: number | null = null;
-
-  onDestroy(() => {
-    if (setupTimeout) {
-      clearTimeout(setupTimeout);
-    }
-  });
+  onDestroy(() => scope.dispose());
 
   onMount(async () => {
     // Check if already configured
@@ -89,7 +85,7 @@
         console.error("Failed to maximize window after configuration:", err);
       }
 
-      setupTimeout = window.setTimeout(() => push("/wilaya"), 1500);
+      scope.setTimeout(() => push("/wilaya"), 1500);
     });
   }
 </script>

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getAuditHealth, getAuditChainStatus, getSettings } from '../lib/tauri';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
   import type { AuditHealthReport, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
@@ -13,7 +14,10 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
-  const op = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const op = createOperation({ scope });
   const loading = op.loading;
   const error = op.error;
   let health: AuditHealthReport | null = null;
@@ -35,7 +39,7 @@
   }
 
   onMount(async () => {
-    try { settings = await getSettings(); } catch {}
+    try { settings = await getSettings(); } catch (_e) { /* optional settings */ }
     await loadHealth();
   });
 

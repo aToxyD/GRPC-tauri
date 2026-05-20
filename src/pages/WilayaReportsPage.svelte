@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     getDailyReport, listUnits, listWilayaReports, getSettings
   } from '../lib/tauri';
@@ -13,6 +13,7 @@
   import { saveFile } from '../lib/tauri';
   import { showSuccess, showError } from '../lib/notifications';
   import { formatErrorMessage } from '../lib/errors';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -25,11 +26,14 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
-  const reportsOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const reportsOp = createOperation({ scope });
   const loading = reportsOp.loading;
   const error = reportsOp.error;
 
-  const exportOp = createOperationGuard();
+  const exportOp = createOperationGuard({ scope });
 
   // Data
   let reports: DailyReport[] = [];

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { 
     closeFiscalYear, 
     getFiscalYearStatus, 
@@ -23,6 +23,7 @@
     FiscalPackageRegistryEntry
   } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperationGuard } from '../lib/operationGuard';
   import { formatErrorMessage } from '../lib/errors';
 
@@ -36,7 +37,10 @@
   import AppSection from '../lib/components/ui/AppSection.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
 
-  const { loading: opLoading, guard } = createOperationGuard();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const { loading: opLoading, guard } = createOperationGuard({ scope });
 
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
   let currentYear = new Date().getFullYear();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     createBackup,
     issueOperationExecutionToken,
@@ -13,7 +13,8 @@
   import { showSuccess } from "../lib/notifications";
   import { currentUser as userStore } from "../lib/session";
   import Layout from "../components/Layout.svelte";
-  import { createOperation, createOperationGuard } from "../lib/operationGuard";
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
   import { formatErrorMessage } from "../lib/errors";
   import AppButton from "../lib/components/ui/AppButton.svelte";
   import AppAlert from "../lib/components/ui/AppAlert.svelte";
@@ -22,14 +23,17 @@
   import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
   import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
 
-  const backupsOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const backupsOp = createOperation({ scope });
   const backupsLoading = backupsOp.loading;
   const backupsError = backupsOp.error;
 
-  const createBackupOp = createOperationGuard();
+  const createBackupOp = createOperationGuard({ scope });
   const createLoading = createBackupOp.loading;
 
-  const restoreBackupOp = createOperationGuard();
+  const restoreBackupOp = createOperationGuard({ scope });
   const restoring = restoreBackupOp.loading;
 
   let backups: BackupInfo[] = [];

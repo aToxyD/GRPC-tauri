@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     listUnits,
     listProducts,
@@ -10,7 +10,8 @@
   import type { Unit, Product, Settings, SystemMetrics, SyncPreflightCheck } from "../lib/types";
   import Layout from "../components/Layout.svelte";
   import { formatErrorMessage } from "../lib/errors";
-  import { createOperation } from "../lib/operationGuard";
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
+  import { createOperation } from '../lib/operationGuard';
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
@@ -20,10 +21,13 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
 
-  const dataOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const dataOp = createOperation({ scope });
   const loading = dataOp.loading;
 
-  const statsOp = createOperation();
+  const statsOp = createOperation({ scope });
   const loadingStats = statsOp.loading;
   const statsError = statsOp.error;
 

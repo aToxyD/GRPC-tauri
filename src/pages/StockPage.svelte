@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { createRuntimeScope, createTransientMessage } from "../lib/runtimeCleanup";
+  import { createOperation } from "../lib/operationGuard";
   import { formatErrorMessage } from "../lib/errors";
   import {
     getAllStocks,
@@ -35,9 +37,20 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
+  const scope = createRuntimeScope();
+  const summaryOp = createOperation({ scope });
+  const movementsOp = createOperation({ scope });
+  const setImportSuccessTransient = createTransientMessage(
+    scope,
+    (m) => (importSuccess = m),
+  );
+  onDestroy(() => scope.dispose());
+
+  const summaryLoading = summaryOp.loading;
+  const movementsLoading = movementsOp.loading;
+
   // Section 2 & 3: Summary
   let summary: StockSummary[] = $state([]);
-  let summaryLoading = $state(true);
 
   // Computed stats from summary
   let totalProducts = $derived(summary.length);
@@ -49,7 +62,6 @@
 
   // Section 4: Movements
   let movements: StockMovement[] = $state([]);
-  let movementsLoading = $state(false);
   let movementsVisible = $state(false);
   let totalMovements = $state(0);
   let currentPage = $state(0);
@@ -67,11 +79,6 @@
   let importSuccess = $state("");
   let settings: Settings | null = $state(null);
 
-  let stockTimeouts: number[] = [];
-  onDestroy(() => {
-    stockTimeouts.forEach(clearTimeout);
-  });
-
   // Fallback stocks
   let stocks: InventoryStock[] = $state([]);
 
@@ -85,27 +92,23 @@
   });
 
   async function loadSummary() {
-    try {
-      summaryLoading = true;
-      summary = await getStockSummary();
-    } catch (e) {
-      showError("خطأ في تحميل ملخص المخزون: " + formatErrorMessage(e));
-      // Fallback to old method
+    await summaryOp.run(async () => {
       try {
-        stocks = await getAllStocks();
-      } catch (e2) {
-        showError("خطأ في التحميل الاحتياطي: " + formatErrorMessage(e2));
+        summary = await getStockSummary();
+      } catch (e) {
+        showError("خطأ في تحميل ملخص المخزون: " + formatErrorMessage(e));
+        try {
+          stocks = await getAllStocks();
+        } catch (e2) {
+          showError("خطأ في التحميل الاحتياطي: " + formatErrorMessage(e2));
+        }
       }
-    } finally {
-      summaryLoading = false;
-    }
+    });
   }
 
   async function loadMovements() {
-    try {
-      movementsLoading = true;
-      movementsVisible = true;
-
+    movementsVisible = true;
+    await movementsOp.run(async () => {
       const filters: StockMovementFilters = {};
       if (filterProductId) filters.product_id = filterProductId;
       if (filterMovementType)
@@ -120,11 +123,7 @@
       );
       movements = response.movements;
       totalMovements = response.total_count;
-    } catch (e) {
-      showError("خطأ في تحميل حركات المخزون: " + formatErrorMessage(e));
-    } finally {
-      movementsLoading = false;
-    }
+    });
   }
 
   async function showMovementsForProduct(productId: string) {
@@ -133,12 +132,11 @@
     currentPage = 0;
     await loadMovements(); // انتظر حتى يظهر القسم
     // ثم scroll
-    const t = window.setTimeout(() => {
+    scope.setTimeout(() => {
       document
         .getElementById("movements-section")
         ?.scrollIntoView({ behavior: "smooth" });
     }, 100);
-    stockTimeouts.push(t);
   }
 
   function clearFilters() {
@@ -187,10 +185,8 @@
       if (selected) {
         const result = await importProductsPackage(selected as string);
         const count = result.added;
-        importSuccess = `تم استيراد ${count} منتجات بنجاح`;
+        setImportSuccessTransient(`تم استيراد ${count} منتجات بنجاح`);
         await loadSummary();
-        const t = window.setTimeout(() => (importSuccess = ""), 3000);
-        stockTimeouts.push(t);
       }
     } catch (e) {
       importError = "خطأ في الاستيراد: " + formatErrorMessage(e);
@@ -401,8 +397,8 @@
         </div>
 
         <AppTable
-          loading={summaryLoading}
-          empty={!summaryLoading && summary.length === 0 && stocks.length === 0}
+          loading={$summaryLoading}
+          empty={!$summaryLoading && summary.length === 0 && stocks.length === 0}
         >
           <svelte:fragment slot="empty">
             <AppEmptyState
@@ -511,8 +507,8 @@
 
           <!-- Movements Table -->
           <AppTable
-            loading={movementsLoading}
-            empty={!movementsLoading && movements.length === 0}
+            loading={$movementsLoading}
+            empty={!$movementsLoading && movements.length === 0}
           >
             <svelte:fragment slot="empty">
               <div class="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -560,7 +556,7 @@
           </AppTable>
 
           <!-- Pagination -->
-          {#if !movementsLoading && movements.length > 0}
+          {#if !$movementsLoading && movements.length > 0}
             <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <p class="text-sm text-gray-600 dark:text-gray-400">
                 الصفحة {currentPage + 1} من {totalPages || 1} | إجمالي: {totalMovements.toLocaleString("ar-DZ")} حركة

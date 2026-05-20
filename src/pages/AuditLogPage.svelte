@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getAuditLog, getAuditStats, exportAuditLogExcel, cleanupAuditLogs, getSettings, saveFile, showAsk } from '../lib/tauri';
   import type { AuditEntry, AuditFilters, AuditStats, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
@@ -8,6 +8,7 @@
   import { showSuccess, showError } from '../lib/notifications';
   import { currentUser } from '../lib/session';
   import { get } from 'svelte/store';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
   
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -20,14 +21,17 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
   
-  const auditOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const auditOp = createOperation({ scope });
   const loading = auditOp.loading;
   const error = auditOp.error;
 
-  const exportOp = createOperationGuard();
+  const exportOp = createOperationGuard({ scope });
   const exportLoading = exportOp.loading;
 
-  const cleanupOp = createOperationGuard();
+  const cleanupOp = createOperationGuard({ scope });
   const cleanupLoading = cleanupOp.loading;
 
   // State

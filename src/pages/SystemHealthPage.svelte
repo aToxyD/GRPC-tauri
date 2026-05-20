@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getSystemHealth, getSyncHealth, getSettings, getBuildInfo, getRecentTelemetry } from '../lib/tauri';
   import type { SystemHealthReport, SyncNodeHealth, Settings, BuildInfo, TelemetryEvent } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { formatErrorMessage } from '../lib/errors';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
@@ -14,7 +15,10 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import AppTable from '../lib/components/ui/AppTable.svelte';
 
-  const healthOp = createOperation();
+  const scope = createRuntimeScope();
+  onDestroy(() => scope.dispose());
+
+  const healthOp = createOperation({ scope });
   const loading = healthOp.loading;
   const error = healthOp.error;
 
@@ -51,7 +55,7 @@
   }
 
   onMount(async () => {
-    try { settings = await getSettings(); } catch {}
+    try { settings = await getSettings(); } catch (_e) { /* optional settings */ }
     await load();
   });
 

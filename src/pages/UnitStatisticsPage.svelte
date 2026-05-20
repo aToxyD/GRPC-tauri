@@ -12,8 +12,10 @@
   import AppBadge from '../lib/components/ui/AppBadge.svelte';
   import { createOperation } from '../lib/operationGuard';
   import { onDestroy } from 'svelte';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
 
-  const statsOp = createOperation();
+  const scope = createRuntimeScope();
+  const statsOp = createOperation({ scope });
   const loading = statsOp.loading;
   const error = statsOp.error;
 
@@ -23,29 +25,19 @@
   $: currentUser = $userStore;
   let currentTime = new Date();
 
-  let timeInterval: number | null = null;
-  let metricsInterval: number | null = null;
-
   onMount(() => {
     (async () => {
       await loadSettings();
       await loadMetrics();
     })();
-    
-    metricsInterval = window.setInterval(loadMetrics, 30000);
-    timeInterval = window.setInterval(() => {
+
+    scope.setInterval(loadMetrics, 30000);
+    scope.setInterval(() => {
       currentTime = new Date();
     }, 1000);
   });
 
-  onDestroy(() => {
-    if (metricsInterval !== null) {
-      clearInterval(metricsInterval);
-    }
-    if (timeInterval !== null) {
-      clearInterval(timeInterval);
-    }
-  });
+  onDestroy(() => scope.dispose());
 
   async function loadSettings() {
     try {
