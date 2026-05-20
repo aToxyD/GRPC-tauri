@@ -780,8 +780,7 @@ pub fn recover_interrupted_restore_and_orphans(
     }
 
     // The journal file is naturally small (contains a few paths), so fs::read is acceptable.
-    let raw = fs::read(&journal).map_err(|e| {
-        // [arch:allow-memory-unsafe]
+    let raw = fs::read(&journal).map_err(|e| { // [arch:allow-memory-unsafe]
         io::Error::new(io::ErrorKind::Other, format!("restore journal read: {}", e))
     })?;
 
