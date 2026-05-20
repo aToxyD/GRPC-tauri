@@ -478,19 +478,59 @@ checkRule(
 // ============================================================
 
 // Rule 31: Prevent whole-file reading in security-sensitive paths
-checkRule(
-    "Dangerous read_to_end or fs::read in sync/backup/security paths",
-    [
+// Custom implementation to support checking next line for [arch:allow-memory-unsafe]
+{
+    const patterns = [
         "src-tauri/src/infrastructure/sync/**/*.rs",
         "src-tauri/src/infrastructure/backup/**/*.rs",
         "src-tauri/src/infrastructure/security/**/*.rs",
         "src-tauri/src/infrastructure/export/**/*.rs",
-    ],
-    /\bread_to_end\(|fs::read\(|serde_json::from_slice\(/,
-    (line) => line.includes("[arch:allow-memory-unsafe]") || line.trim().startsWith("//"),
-    "error",
-    (f) => !f.includes("tests") && !f.includes("development_key")
-);
+    ];
+    const regex = /\bread_to_end\(|fs::read\(|serde_json::from_slice\(/;
+    const scannedFiles = new Set<string>();
+    let ruleViolations = 0;
+    const matches: { file: string; line: number; content: string }[] = [];
+
+    for (const pattern of patterns) {
+        const glob = new Glob(pattern);
+        for (const file of glob.scanSync(".")) {
+            const normalizedFile = file.replace(/\\/g, "/");
+            if (scannedFiles.has(normalizedFile)) continue;
+            scannedFiles.add(normalizedFile);
+
+            if (file.includes("tests") || file.includes("development_key")) continue;
+
+            const content = readFileSync(file, "utf-8");
+            const lines = content.split("\n");
+
+            lines.forEach((line, index) => {
+                if (line.trim().startsWith("//")) return;
+
+                if (regex.test(line)) {
+                    // Check current line for allow comment
+                    if (line.includes("[arch:allow-memory-unsafe]")) return;
+                    // Check next line for allow comment (cargo fmt compatibility)
+                    if (index + 1 < lines.length && lines[index + 1].includes("[arch:allow-memory-unsafe]")) return;
+
+                    matches.push({
+                        file,
+                        line: index + 1,
+                        content: line.trim(),
+                    });
+                    ruleViolations++;
+                }
+            });
+        }
+    }
+
+    if (ruleViolations > 0) {
+        console.log(`${colors.red}❌ Dangerous read_to_end or fs::read in sync/backup/security paths${colors.reset}`);
+        matches.forEach((m) => {
+            console.log(`  ${m.file}:${m.line} → ${m.content}`);
+        });
+        violations++;
+    }
+}
 
 // Rule 32: Prevent fake architectural overclaims
 checkRule(
