@@ -7,7 +7,10 @@ export default defineConfig({
     conditions: ['browser', 'development']
   },
   test: {
-    include: ['src/tests/unit/**/*.{test,spec}.{js,ts}', 'src/tests/integration/**/*.{test,spec}.{js,ts}'],
+    include: [
+      'src/tests/unit/**/*.{test,spec}.{js,ts}',
+      'src/tests/integration/**/*.{test,spec}.{js,ts}',
+    ],
     globals: true,
     environment: 'jsdom',
     setupFiles: ['src/tests/helpers/setup.ts'],

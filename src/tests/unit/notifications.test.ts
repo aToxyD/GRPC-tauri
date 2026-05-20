@@ -21,7 +21,7 @@ describe('Notification System', () => {
         vi.useRealTimers();
     });
 
-    it('should add a success notification and auto-close it after 5 seconds', () => {
+    it('should add a success notification and auto-close it after 3 seconds', () => {
         showSuccess('عملية ناجحة', 'نجاح');
         
         let list = get(notifications);
@@ -31,9 +31,14 @@ describe('Notification System', () => {
         expect(list[0].title).toBe('نجاح');
         expect(list[0].auto_close).toBe(true);
 
-        // Fast-forward time to check auto-close
-        vi.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(3000);
         expect(get(notifications).length).toBe(0);
+    });
+
+    it('should deduplicate identical notifications within window', () => {
+        showSuccess('نفس الرسالة');
+        showSuccess('نفس الرسالة');
+        expect(get(notifications).length).toBe(1);
     });
 
     it('should add an error notification and NOT auto-close it', () => {
@@ -60,10 +65,11 @@ describe('Notification System', () => {
     });
 
     it('should allow manually removing a notification by ID', () => {
-        const notif = showSuccess('سيتم الحذف');
+        const notif = showSuccess('سيتم الحذف يدوياً');
+        expect(notif).not.toBeNull();
         expect(get(notifications).length).toBe(1);
 
-        removeNotification(notif.id);
+        removeNotification(notif!.id);
         expect(get(notifications).length).toBe(0);
     });
 
