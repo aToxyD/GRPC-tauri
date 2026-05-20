@@ -71,4 +71,47 @@ bun run test:e2e     # تشغيل اختبارات التكامل ونهاية �
 
 ---
 
+## 5. حوكمة التنظيف وقت التشغيل (Runtime Cleanup Governance)
+
+### البنية المركزية
+* `src/lib/disposables.ts` — مكدس التخلص الموحد (`DisposableStack`)
+* `src/lib/runtimeCleanup.ts` — نطاق دورة الحياة (`createRuntimeScope`) مع مؤقتات ومستمعات مُتتبَّعة
+* `src/lib/asyncLifecycle.ts` — حراسة العمليات غير المتزامنة ورفض الاستجابات القديمة (stale)
+* `src/lib/renderSafety.ts` — عرض دفاعي للقيم القابلة للإبطال
+
+### قواعد إلزامية
+1. **كل صفحة** (ما عدا `NotFoundPage`) تُعلن `createRuntimeScope()` وتستدعي `scope.dispose()` في `onDestroy`.
+2. **ممنوع** `setTimeout` / `setInterval` الخام في الصفحات والمكوّنات — استخدم `scope.setTimeout` / `scope.setInterval`.
+3. **ممنوع** `addEventListener` غير المُدار — استخدم `scope.addListener`.
+4. **كل** `createOperation` / `createOperationGuard` يستقبل `{ scope }` عند وجود نطاق صفحة.
+5. الرسائل العابرة (نجاح مؤقت) عبر `createTransientMessage(scope, setter)`.
+
+### إلغاء العمليات غير المتزامنة
+* بعد `scope.dispose()` أو `signal.aborted` لا يُسمح بتحديث الحالة.
+* `createAsyncGuard(scope)` يرفض نتائج الـ Promise المتأخرة بعد التفكيك.
+
+---
+
+## 6. قواعد الأمان عند العرض (Render Safety)
+
+* استخدم `safeString` / `safeArray` / `safeNumber` عند عرض بيانات الخلفية غير المؤكدة.
+* لا تفترض وجود حقول في استجابات IPC — استخدم قيم افتراضية حتمية.
+
+---
+
+## 7. فرض الحوكمة آلياً (`scripts/check_arch.ts`)
+
+| القاعدة | الوصف |
+|---------|--------|
+| 40 | منع تعيين أعلام التحميل اليدوية في الصفحات |
+| 41 | منع المؤقتات غير المتتبعة |
+| 42 | منع المستمعات غير المُدارة |
+| 43 | منع `alert()` / `confirm()` الخام |
+| 44 | إلزام `createRuntimeScope` في كل صفحة |
+| 45 | منع `catch {}` الصامت |
+
+سياسة CI: **صفر أخطاء وصفر تحذيرات** في `bun run check:arch`.
+
+---
+
 *تم إعداد وتوثيق هذه المعايير كجزء من عملية تدقيق الاستقرار الهندسي لمنصة GRPC-Tauri.*

@@ -617,7 +617,7 @@ checkRule(
 checkRule(
     "Rule 40: Manual loading/submitting/resolving assignments in Svelte pages (must use createOperation or createOperationGuard)",
     ["src/pages/**/*.svelte"],
-    /(?<!\b(let|const|var)\s+)\b(loading|submitting|saving|deleting|exportLoading|importLoading|resolving|processing)\s*=\s*(true|false)\b/,
+    /(?<!\b(let|const|var)\s+)\b(loading|submitting|saving|deleting|exportLoading|importLoading|resolving|processing|summaryLoading|movementsLoading|loadingUnits|loadingMonths|computing)\s*=\s*(true|false)\b/,
     (line) => {
         if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
         return false;
@@ -625,7 +625,90 @@ checkRule(
     "error"
 );
 
+// Rule 41: No untracked timers in pages/components (use createRuntimeScope)
+checkRule(
+    "Rule 41: Untracked setTimeout/setInterval in pages/components (use createRuntimeScope)",
+    [
+        "src/pages/**/*.svelte",
+        "src/components/**/*.svelte",
+        "src/lib/components/**/*.svelte",
+    ],
+    /\b(window\.)?set(Timeout|Interval)\s*\(/,
+    (line) => {
+        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
+        if (/scope\.set(Timeout|Interval)/.test(line)) return true;
+        if (/runtimeCleanup/.test(line)) return true;
+        return false;
+    },
+    "error"
+);
 
+// Rule 42: No unmanaged addEventListener in pages/components
+checkRule(
+    "Rule 42: Unmanaged addEventListener in pages/components (use createRuntimeScope.addListener)",
+    [
+        "src/pages/**/*.svelte",
+        "src/components/**/*.svelte",
+        "src/lib/components/**/*.svelte",
+    ],
+    /\.addEventListener\s*\(/,
+    (line) => {
+        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
+        if (/scope\.addListener/.test(line)) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 43: No raw alert/confirm (use centralized tauri wrappers)
+checkRule(
+    "Rule 43: Raw alert()/confirm() in frontend (use lib/tauri.ts wrappers)",
+    ["src/**/*.svelte", "src/**/*.ts", "src/**/*.js"],
+    /\b(window\.)?(alert|confirm)\s*\(/,
+    (line) => {
+        if (/^\s*(\/\/|<!--|\*)/.test(line)) return true;
+        return false;
+    },
+    "error",
+    (file) => {
+        const normalized = file.toLowerCase().replace(/\\/g, "/");
+        return !normalized.includes("src/lib/tauri.ts") &&
+               !normalized.includes("/tests/") &&
+               !normalized.includes(".test.ts") &&
+               !normalized.includes(".spec.ts");
+    }
+);
+
+// Rule 45: Empty catch blocks swallow errors in pages
+checkRule(
+    "Rule 45: Silent catch block in pages (must use formatErrorMessage or telemetry)",
+    ["src/pages/**/*.svelte"],
+    /catch\s*\{\s*\}/,
+    (line) => {
+        if (/^\s*(\/\/|<!--)/.test(line)) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 44: Pages must declare createRuntimeScope (file-level)
+{
+    const pageGlob = new Glob("src/pages/**/*.svelte");
+    const missingScope: string[] = [];
+    for (const file of pageGlob.scanSync(".")) {
+        const normalized = file.toLowerCase().replace(/\\/g, "/");
+        if (normalized.includes("notfoundpage.svelte")) continue;
+        const content = readFileSync(file, "utf-8");
+        if (!content.includes("createRuntimeScope")) {
+            missingScope.push(file);
+        }
+    }
+    if (missingScope.length > 0) {
+        console.log(`❌ ${colors.red}Rule 44: Page without createRuntimeScope (runtime cleanup required)${colors.reset}`);
+        missingScope.forEach((f) => console.log(`  ${f}`));
+        violations++;
+    }
+}
 
 // ============================================================
 // SUMMARY
@@ -641,10 +724,10 @@ if (violations === 0 && warnings === 0) {
     process.exit(0);
 } else if (violations === 0) {
     console.log(
-        `✅ ${colors.green}Architecture check passed.${colors.reset} ${colors.yellow}${warnings} warning(s) require review.${colors.reset}`
+        `❌ ${colors.yellow}Architecture check failed: ${warnings} warning(s) require resolution (zero-warning policy).${colors.reset}`
     );
 
-    process.exit(0);
+    process.exit(1);
 } else {
     console.log(
         `\n❌ ${colors.red}${violations} rule(s) violated. Architectural integrity compromised.${colors.reset}`

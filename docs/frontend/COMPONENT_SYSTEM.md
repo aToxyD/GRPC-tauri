@@ -380,7 +380,26 @@ bun run check:arch
 6. ✅ لا ألوان مشفرة خارج `app.css`
 7. ✅ كل العمليات غير المتزامنة واستدعاءات الـ IPC يجب قياسها وتتبعها بواسطة نظام الـ Telemetry (`src/lib/telemetry.ts`)
 8. ✅ كل التنبيهات والإشعارات للمستخدم يجب أن تمر عبر قناة الإشعارات المركزية الموحدة (`src/lib/notifications.ts`)
+9. ✅ كل الصفحات تستخدم `createRuntimeScope()` و`onDestroy(() => scope.dispose())`
+10. ✅ المؤقتات والمستمعات في المكوّنات عبر `scope.setTimeout` / `scope.addListener` — لا استخدام خام
+11. ✅ العمليات غير المتزامنة في الصفحات تمر عبر `createOperation({ scope })` أو `createOperationGuard({ scope })`
+12. ✅ الأخطاء المعروضة للمستخدم عبر `formatErrorMessage()` — لا `catch {}` صامت
+
+### دورة حياة المكوّن (مثال)
+
+```svelte
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { createRuntimeScope } from '../lib/runtimeCleanup';
+  import { createOperation } from '../lib/operationGuard';
+
+  const scope = createRuntimeScope();
+  const op = createOperation({ scope });
+  onDestroy(() => scope.dispose());
+</script>
+```
 
 ---
+
 
 *تم إنشاء هذا التوثيق بالعربية وفق قواعد حوكمة التوثيق في منصة GRPC-Tauri.*
