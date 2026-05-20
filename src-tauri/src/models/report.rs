@@ -24,7 +24,7 @@ impl MealType {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str_custom(s: &str) -> Option<Self> {
         match s {
             "breakfast" => Some(MealType::Breakfast),
             "lunch" => Some(MealType::Lunch),
@@ -322,6 +322,39 @@ pub struct DailyReportImportResult {
     pub timestamp: String,
 }
 
+impl Default for DailyReportMeal {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            daily_report_id: String::new(),
+            meal_type: MealType::Breakfast,
+            staff_24h_count: 0,
+            staff_8h_count: 0,
+            reservation_count: 0,
+            mission_count: 0,
+            guest_count: 0,
+            total_beneficiaries: 0,
+            total_meal_cost: 0.0,
+            meal_average: 0.0,
+        }
+    }
+}
+
+impl Default for DailyReport {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            date: Utc::now().date_naive(),
+            unit_id: None,
+            total_daily_cost: 0.0,
+            total_daily_average: 0.0,
+            total_daily_beneficiaries: 0,
+            created_at: Utc::now(),
+            fiscal_year: Utc::now().year(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,38 +396,5 @@ mod tests {
         assert_eq!(s.lunch_cost, 300.0);
         assert_eq!(s.daily_average, 25.0);
         assert_eq!(s.total_daily_beneficiaries, 30);
-    }
-}
-
-impl Default for DailyReportMeal {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            daily_report_id: String::new(),
-            meal_type: MealType::Breakfast,
-            staff_24h_count: 0,
-            staff_8h_count: 0,
-            reservation_count: 0,
-            mission_count: 0,
-            guest_count: 0,
-            total_beneficiaries: 0,
-            total_meal_cost: 0.0,
-            meal_average: 0.0,
-        }
-    }
-}
-
-impl Default for DailyReport {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            date: Utc::now().date_naive(),
-            unit_id: None,
-            total_daily_cost: 0.0,
-            total_daily_average: 0.0,
-            total_daily_beneficiaries: 0,
-            created_at: Utc::now(),
-            fiscal_year: Utc::now().year(),
-        }
     }
 }

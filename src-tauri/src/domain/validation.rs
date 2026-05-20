@@ -233,7 +233,7 @@ fn validate_meal_section_input(section: &MealSectionInput) -> ValidationResult {
     ];
 
     for (field, value) in beneficiary_fields {
-        if value < 0 || value > 1000 {
+        if !(0..=1000).contains(&value) {
             return Err(AppError::Validation(ValidationError::OutOfRange {
                 field: field.to_string(),
                 value: value.to_string(),

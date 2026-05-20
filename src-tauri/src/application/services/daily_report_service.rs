@@ -11,6 +11,8 @@ use chrono::Datelike;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+type ComputedMeal = (MealSectionInput, i32, f64, f64, Vec<(String, f64, f64, f64)>);
+
 pub struct DailyReportService<'a> {
     executor: DbExecutor<'a>,
 }
@@ -58,13 +60,7 @@ impl<'a> DailyReportService<'a> {
         let now = chrono::Utc::now().to_rfc3339();
         let report_id = Uuid::new_v4().to_string();
 
-        let mut computed_meals: Vec<(
-            MealSectionInput,
-            i32,
-            f64,
-            f64,
-            Vec<(String, f64, f64, f64)>,
-        )> = Vec::new();
+        let mut computed_meals: Vec<ComputedMeal> = Vec::new();
 
         for section in &input.meals {
             let mut item_costs: Vec<(String, f64, f64, f64)> = Vec::new();

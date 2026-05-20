@@ -97,7 +97,7 @@ const MEAL_SELECT: &str = "SELECT id, daily_report_id, meal_type, staff_24h_coun
 
 fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Error> {
     let meal_type_str: String = row.get(2)?;
-    let meal_type = MealType::from_str(&meal_type_str).ok_or_else(|| {
+    let meal_type = MealType::from_str_custom(&meal_type_str).ok_or_else(|| {
         rusqlite::Error::FromSqlConversionFailure(
             2,
             rusqlite::types::Type::Text,

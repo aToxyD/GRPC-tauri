@@ -5,9 +5,8 @@ use crate::models::{
     DailyReport, DailyReportMeal, DailyReportMealItem, MealSectionInput, MealType, MonthlyReport,
 };
 use crate::repositories::executor::DbExecutor;
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use rusqlite::params;
-use uuid::Uuid;
 
 const REPORT_SELECT: &str = "SELECT id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year FROM daily_reports";
 
@@ -36,7 +35,7 @@ fn map_report_row(row: &rusqlite::Row<'_>) -> Result<DailyReport, rusqlite::Erro
 
 fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Error> {
     let meal_type_str: String = row.get(2)?;
-    let meal_type = MealType::from_str(&meal_type_str).ok_or_else(|| {
+    let meal_type = MealType::from_str_custom(&meal_type_str).ok_or_else(|| {
         rusqlite::Error::FromSqlConversionFailure(
             2,
             rusqlite::types::Type::Text,
@@ -196,6 +195,7 @@ impl<'a> ReportRepository<'a> {
         Ok(count > 0)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_daily_report_header(
         &self,
         id: &str,

@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::{DailyReport, DailyReportMeal, MonthlySummary, WilayaReportList};
+use crate::models::{DailyReportMeal, MonthlySummary, WilayaReportList};
 use crate::repositories::RepositoryProvider;
 use chrono::NaiveDate;
 

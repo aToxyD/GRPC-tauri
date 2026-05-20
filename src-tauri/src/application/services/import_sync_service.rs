@@ -119,7 +119,7 @@ impl<'a> ImportSyncService<'a> {
 
     pub fn import_monthly_report(
         &self,
-        unit_id: &str,
+        _unit_id: &str,
         _year: i32,
         _month: u32,
         reports: Vec<DailyReportResult>,

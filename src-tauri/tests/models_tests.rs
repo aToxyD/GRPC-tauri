@@ -2,7 +2,7 @@
 //!
 //! Tests for domain models and business logic
 
-use chrono::{Datelike, Utc};
+use chrono::Utc;
 use grpc_lib::models::*;
 
 /// Test user role conversions

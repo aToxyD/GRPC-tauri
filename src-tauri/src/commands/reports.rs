@@ -14,7 +14,7 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError};
 use crate::models::{
-    DailyConsumptionInput, DailyConsumptionView, DailyReport, DailyReportInput, DailyReportResult,
+    DailyConsumptionView, DailyReport, DailyReportInput, DailyReportResult,
     MonthlySummary, WilayaReportList,
 };
 
