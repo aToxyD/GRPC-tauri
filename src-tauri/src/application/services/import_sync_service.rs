@@ -1,10 +1,7 @@
 //! Import Sync Service
-//! Handles synchronization of imported data into the database.
-//! Strictly follows Clean Architecture: Services -> Repositories -> DB
 
 use crate::errors::AppError;
-use crate::models::DailyReportResult;
-use crate::models::ProductSyncRecord;
+use crate::models::{DailyReportMeal, DailyReportResult, ProductSyncRecord};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::{Datelike, Utc};
 
@@ -30,7 +27,7 @@ impl<'a> ImportSyncService<'a> {
         crate::application::services::FiscalYearService::new(self.executor)
             .assert_fiscal_year_open(incoming_year)?;
         if package_type != "historical_import" && incoming_year != current_year {
-            log::warn!(target:"grpc::sync","[FISCAL_IMPORT_REJECTED] source_node={} package_id={} incoming_year={} current_year={} reason=fiscal_year_mismatch",source_node,package_id,incoming_year,current_year);
+            log::warn!(target:"grpc::sync","[FISCAL_IMPORT_REJECTED] source_node={} package_id={} incoming_year={} current_year={}",source_node,package_id,incoming_year,current_year);
             return Err(AppError::Internal(
                 "Fiscal year mismatch during import".into(),
             ));
@@ -43,7 +40,6 @@ impl<'a> ImportSyncService<'a> {
     }
 
     pub fn get_current_node_id(db: &crate::db::Database) -> String {
-        // Services use other services/repositories via executor
         match crate::application::services::SettingsService::new(db.executor()).get_settings() {
             Ok(s) => s.unit_name.unwrap_or_else(|| "WILAYA".to_string()),
             Err(_) => "unknown".to_string(),
@@ -62,7 +58,10 @@ impl<'a> ImportSyncService<'a> {
         }
     }
 
-    pub fn import_daily_reports(&self, reports: Vec<DailyReportResult>) -> Result<usize, AppError> {
+    pub fn import_daily_reports(
+        &self,
+        reports: Vec<DailyReportResult>,
+    ) -> Result<usize, AppError> {
         let mut count = 0;
         let now = Utc::now().to_rfc3339();
 
@@ -72,7 +71,6 @@ impl<'a> ImportSyncService<'a> {
         for report_result in reports {
             let fiscal_year = report_result.report.fiscal_year;
 
-            // 1. Fiscal Guard
             self.validate_import_fiscal_year(
                 fiscal_year,
                 "sync_import",
@@ -89,12 +87,29 @@ impl<'a> ImportSyncService<'a> {
             };
 
             if !exists {
-                let id = uuid::Uuid::new_v4().to_string();
-                report_repo.insert_raw_daily_report(&id, &report_result.report, &now)?;
+                let report_id = uuid::Uuid::new_v4().to_string();
+                report_repo.insert_raw_daily_report(&report_id, &report_result.report, &now)?;
 
-                for item in &report_result.items {
-                    if product_repo.product_exists(&item.product_id)? {
-                        report_repo.insert_raw_consumption_item(&id, item)?;
+                for meal_result in &report_result.meals {
+                    let meal_id = uuid::Uuid::new_v4().to_string();
+                    let meal = DailyReportMeal {
+                        id: meal_id.clone(),
+                        daily_report_id: report_id.clone(),
+                        ..meal_result.meal
+                    };
+                    report_repo.insert_raw_meal(&meal)?;
+
+                    for item in &meal_result.items {
+                        if product_repo.product_exists(&item.product_id)? {
+                            report_repo.insert_meal_item(
+                                &uuid::Uuid::new_v4().to_string(),
+                                &meal_id,
+                                &item.product_id,
+                                item.quantity,
+                                item.unit_price,
+                                item.total_cost,
+                            )?;
+                        }
                     }
                 }
 
@@ -120,7 +135,6 @@ impl<'a> ImportSyncService<'a> {
             let now = Utc::now().to_rfc3339();
             let fiscal_year = report.report.fiscal_year;
 
-            // 1. Fiscal Guard
             self.validate_import_fiscal_year(
                 fiscal_year,
                 "sync_import",
@@ -128,27 +142,20 @@ impl<'a> ImportSyncService<'a> {
                 &report.report.id,
             )?;
 
-            report_repo.insert_or_replace_raw_daily_report(
-                &report_id,
-                &report.report.date.to_string(),
-                report.report.personnel_count,
-                report.report.guest_count,
-                report.report.total_meals_cost,
-                report.report.actual_meal_rate,
-                unit_id,
-                &now,
-                fiscal_year,
-            )?;
+            report_repo.insert_or_replace_raw_daily_report(&report_id, &report.report, &now)?;
 
-            // Items
-            for item in report.items {
-                report_repo.insert_consumption_item(
-                    &report_id,
-                    &item.product_id,
-                    item.quantity,
-                    item.unit_price,
-                    item.total_cost,
-                )?;
+            for meal_result in report.meals {
+                let meal_id = uuid::Uuid::new_v4().to_string();
+                let meal = DailyReportMeal {
+                    id: meal_id.clone(),
+                    daily_report_id: report_id.clone(),
+                    ..meal_result.meal
+                };
+                report_repo.insert_raw_meal(&meal)?;
+
+                for item in meal_result.items {
+                    report_repo.insert_raw_meal_item(&item)?;
+                }
             }
         }
         Ok(count)
@@ -213,15 +220,11 @@ impl<'a> ImportSyncService<'a> {
         let movement_repo = self.executor.stock_movements();
 
         for mut m in movements {
-            // 1. Fiscal Guard
             if let Some(fiscal_year) = m.fiscal_year {
                 crate::application::services::FiscalYearService::new(self.executor)
                     .assert_fiscal_year_open(fiscal_year)?;
             } else {
-                // Determine fiscal year from timestamp if missing
                 let dt = crate::errors::parse_datetime_rfc3339(&m.timestamp)?;
-                // FALLBACK: movement lacks explicit fiscal_year — infer from timestamp.
-                // Emit warn so operators can identify legacy rows needing backfill.
                 let fiscal_year = dt.year();
                 log::warn!(
                     target: "grpc::fiscal",
@@ -233,7 +236,6 @@ impl<'a> ImportSyncService<'a> {
                 m.fiscal_year = Some(fiscal_year);
             }
 
-            // Override or set unit_id if provided (critical for Wilaya-side partitioned stock views)
             if let Some(uid) = unit_id {
                 m.unit_id = Some(uid.to_string());
             }

@@ -294,7 +294,12 @@ pub fn export_daily_report_package(
 
     Ok(PackageExportResult::success(
         file_path,
-        dataset.snapshot.items.len() + 1,
+        1 + dataset
+            .snapshot
+            .meals
+            .iter()
+            .map(|m| m.items.len())
+            .sum::<usize>(),
         "encrypted".to_string(),
     ))
 }

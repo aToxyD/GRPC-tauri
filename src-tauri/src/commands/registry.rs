@@ -30,6 +30,8 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::check_stock_availability,
         // Orders
         commands::create_supplier_order,
+        commands::update_supplier_order,
+        commands::delete_supplier_order,
         commands::confirm_order,
         commands::get_supplier_order,
         commands::get_supplier_order_items,

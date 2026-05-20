@@ -131,5 +131,11 @@ pub fn validate_daily_report_package_for_import(
             message: "الحزمة لا تحتوي معرف تقرير صالح".into(),
         }));
     }
+    if package.payload.snapshot.meals.is_empty() {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "meals".into(),
+            message: "الحزمة لا تحتوي وجبات صالحة".into(),
+        }));
+    }
     Ok(())
 }
