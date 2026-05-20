@@ -26,8 +26,13 @@ impl<'a> ReportCalculationService<'a> {
         mission: i32,
         guest: i32,
     ) -> f64 {
-        let total_beneficiaries =
-            DailyReportMeal::compute_total_beneficiaries(staff_24h, staff_8h, reservation, mission, guest);
+        let total_beneficiaries = DailyReportMeal::compute_total_beneficiaries(
+            staff_24h,
+            staff_8h,
+            reservation,
+            mission,
+            guest,
+        );
         DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
 

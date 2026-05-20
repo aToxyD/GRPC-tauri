@@ -98,9 +98,14 @@ const MEAL_SELECT: &str = "SELECT id, daily_report_id, meal_type, staff_24h_coun
 fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Error> {
     let meal_type_str: String = row.get(2)?;
     let meal_type = MealType::from_str(&meal_type_str).ok_or_else(|| {
-        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid meal_type"),
-        ))
+        rusqlite::Error::FromSqlConversionFailure(
+            2,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid meal_type",
+            )),
+        )
     })?;
     Ok(DailyReportMeal {
         id: row.get(0)?,
@@ -158,7 +163,9 @@ pub fn load_monthly_summary_projection(
     let end_date = window.end.to_string();
 
     let reports = executor.query_all(
-        &format!("{REPORT_SELECT} WHERE date >= ?1 AND date <= ?2 AND (?3 IS NULL OR unit_id = ?3)"),
+        &format!(
+            "{REPORT_SELECT} WHERE date >= ?1 AND date <= ?2 AND (?3 IS NULL OR unit_id = ?3)"
+        ),
         rusqlite::params![start_date, end_date, unit_id],
         map_report_row,
     )?;

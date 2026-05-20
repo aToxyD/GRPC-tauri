@@ -7,9 +7,7 @@ use grpc_lib::application::services::{
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::ports::backup::BackupPort;
 use grpc_lib::errors::{AppError, BusinessLogicError};
-use grpc_lib::models::{
-    DailyReport, DailyReportMeal, DailyReportResult, MealSectionResult,
-};
+use grpc_lib::models::{DailyReport, DailyReportMeal, DailyReportResult, MealSectionResult};
 use grpc_lib::repositories::RepositoryProvider;
 use tempfile::tempdir;
 

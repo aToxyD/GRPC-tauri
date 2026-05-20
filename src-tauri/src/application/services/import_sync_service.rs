@@ -58,10 +58,7 @@ impl<'a> ImportSyncService<'a> {
         }
     }
 
-    pub fn import_daily_reports(
-        &self,
-        reports: Vec<DailyReportResult>,
-    ) -> Result<usize, AppError> {
+    pub fn import_daily_reports(&self, reports: Vec<DailyReportResult>) -> Result<usize, AppError> {
         let mut count = 0;
         let now = Utc::now().to_rfc3339();
 

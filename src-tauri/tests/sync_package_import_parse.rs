@@ -180,7 +180,7 @@ fn rejects_package_too_old_schema() {
             daily_detail_rows: vec![DailyDetailSyncSnapshot {
                 date: NaiveDate::from_ymd_opt(2026, 1, 4).unwrap(),
                 total_daily_beneficiaries: 0,
-            total_daily_cost: 0.0,
+                total_daily_cost: 0.0,
                 breakfast_average: 0.0,
                 lunch_average: 0.0,
                 dinner_average: 0.0,

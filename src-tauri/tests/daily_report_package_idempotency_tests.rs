@@ -13,8 +13,8 @@ use grpc_lib::db::ConnectionFactory;
 use grpc_lib::errors::{AppError, BusinessLogicError};
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
 use grpc_lib::models::{
-    DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType,
-    NodeType, WilayaNodeConfiguration,
+    DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType, NodeType,
+    WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::{SettingsRepository, UnitRepository};
 

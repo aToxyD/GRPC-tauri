@@ -58,8 +58,13 @@ impl<'a> DailyReportService<'a> {
         let now = chrono::Utc::now().to_rfc3339();
         let report_id = Uuid::new_v4().to_string();
 
-        let mut computed_meals: Vec<(MealSectionInput, i32, f64, f64, Vec<(String, f64, f64, f64)>)> =
-            Vec::new();
+        let mut computed_meals: Vec<(
+            MealSectionInput,
+            i32,
+            f64,
+            f64,
+            Vec<(String, f64, f64, f64)>,
+        )> = Vec::new();
 
         for section in &input.meals {
             let mut item_costs: Vec<(String, f64, f64, f64)> = Vec::new();
@@ -69,16 +74,12 @@ impl<'a> DailyReportService<'a> {
                 if item.quantity <= 0.0 {
                     continue;
                 }
-                let product = product_repo
-                    .get_product(&item.product_id)?
-                    .ok_or_else(|| {
-                        AppError::BusinessLogic(
-                            crate::errors::BusinessLogicError::ResourceNotFound {
-                                resource: "Product".to_string(),
-                                id: item.product_id.clone(),
-                            },
-                        )
-                    })?;
+                let product = product_repo.get_product(&item.product_id)?.ok_or_else(|| {
+                    AppError::BusinessLogic(crate::errors::BusinessLogicError::ResourceNotFound {
+                        resource: "Product".to_string(),
+                        id: item.product_id.clone(),
+                    })
+                })?;
                 let item_cost = item.quantity * product.base_price;
                 total_cost += item_cost;
                 item_costs.push((
@@ -109,8 +110,7 @@ impl<'a> DailyReportService<'a> {
         }
 
         let total_daily_cost: f64 = computed_meals.iter().map(|(_, _, c, _, _)| c).sum();
-        let total_daily_beneficiaries: i32 =
-            computed_meals.iter().map(|(_, b, _, _, _)| b).sum();
+        let total_daily_beneficiaries: i32 = computed_meals.iter().map(|(_, b, _, _, _)| b).sum();
         let total_daily_average: f64 = computed_meals.iter().map(|(_, _, _, a, _)| a).sum();
 
         report_repo.insert_daily_report_header(
@@ -148,9 +148,7 @@ impl<'a> DailyReportService<'a> {
                     item_cost,
                 )?;
 
-                *stock_by_product
-                    .entry(product_id.clone())
-                    .or_insert(0.0) += quantity;
+                *stock_by_product.entry(product_id.clone()).or_insert(0.0) += quantity;
             }
         }
 
@@ -177,11 +175,11 @@ impl<'a> DailyReportService<'a> {
         Ok(report_id)
     }
 
-    pub fn load_daily_report_result(&self, report_id: &str) -> Result<Option<DailyReportResult>, AppError> {
-        let report = self
-            .executor
-            .reports()
-            .get_daily_report(report_id)?;
+    pub fn load_daily_report_result(
+        &self,
+        report_id: &str,
+    ) -> Result<Option<DailyReportResult>, AppError> {
+        let report = self.executor.reports().get_daily_report(report_id)?;
         let Some(report) = report else {
             return Ok(None);
         };
@@ -245,7 +243,9 @@ impl<'a> DailyReportService<'a> {
         year: i32,
         month: i32,
     ) -> Result<crate::models::WilayaReportSummary, AppError> {
-        self.executor.reports().get_wilaya_monthly_report(year, month)
+        self.executor
+            .reports()
+            .get_wilaya_monthly_report(year, month)
     }
 
     pub fn list_daily_reports_by_month(
@@ -272,8 +272,13 @@ impl<'a> DailyReportService<'a> {
         mission: i32,
         guest: i32,
     ) -> f64 {
-        let total_beneficiaries =
-            DailyReportMeal::compute_total_beneficiaries(staff_24h, staff_8h, reservation, mission, guest);
+        let total_beneficiaries = DailyReportMeal::compute_total_beneficiaries(
+            staff_24h,
+            staff_8h,
+            reservation,
+            mission,
+            guest,
+        );
         DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
 

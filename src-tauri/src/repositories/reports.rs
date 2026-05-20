@@ -37,9 +37,14 @@ fn map_report_row(row: &rusqlite::Row<'_>) -> Result<DailyReport, rusqlite::Erro
 fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Error> {
     let meal_type_str: String = row.get(2)?;
     let meal_type = MealType::from_str(&meal_type_str).ok_or_else(|| {
-        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid meal_type"),
-        ))
+        rusqlite::Error::FromSqlConversionFailure(
+            2,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid meal_type",
+            )),
+        )
     })?;
     Ok(DailyReportMeal {
         id: row.get(0)?,
@@ -169,7 +174,11 @@ impl<'a> ReportRepository<'a> {
         Ok(result)
     }
 
-    pub fn daily_report_exists_for_date_unit(&self, date: &str, unit_id: &str) -> Result<bool, AppError> {
+    pub fn daily_report_exists_for_date_unit(
+        &self,
+        date: &str,
+        unit_id: &str,
+    ) -> Result<bool, AppError> {
         let count: i64 = self.executor.query_row(
             "SELECT COUNT(*) FROM daily_reports WHERE date = ?1 AND unit_id = ?2",
             [date, unit_id],
@@ -277,20 +286,21 @@ impl<'a> ReportRepository<'a> {
             None => format!("{REPORT_SELECT} WHERE date = ?1 AND unit_id IS NULL"),
         };
         Ok(match unit_id {
-            Some(uid) => self
-                .executor
-                .query_row_optional(&sql, rusqlite::params![date, uid], map_report_row)?,
-            None => self
-                .executor
-                .query_row_optional(&sql, rusqlite::params![date], map_report_row)?,
+            Some(uid) => self.executor.query_row_optional(
+                &sql,
+                rusqlite::params![date, uid],
+                map_report_row,
+            )?,
+            None => {
+                self.executor
+                    .query_row_optional(&sql, rusqlite::params![date], map_report_row)?
+            }
         })
     }
 
     pub fn list_meals_for_report(&self, report_id: &str) -> Result<Vec<DailyReportMeal>, AppError> {
         let sql = format!("{MEAL_SELECT} WHERE daily_report_id = ?1 ORDER BY meal_type ASC");
-        Ok(self
-            .executor
-            .query_all(&sql, [report_id], map_meal_row)?)
+        Ok(self.executor.query_all(&sql, [report_id], map_meal_row)?)
     }
 
     pub fn get_meal_items(&self, meal_id: &str) -> Result<Vec<DailyReportMealItem>, AppError> {
@@ -325,7 +335,10 @@ impl<'a> ReportRepository<'a> {
         );
         Ok(self.executor.query_all(
             &sql,
-            rusqlite::params![start_date.map(|d| d.to_string()), end_date.map(|d| d.to_string())],
+            rusqlite::params![
+                start_date.map(|d| d.to_string()),
+                end_date.map(|d| d.to_string())
+            ],
             map_report_row,
         )?)
     }
@@ -357,7 +370,10 @@ impl<'a> ReportRepository<'a> {
         unit_id: Option<&str>,
     ) -> Result<Vec<DailyReport>, AppError> {
         crate::infrastructure::db::read::reports::list_daily_reports_by_month(
-            self.executor, year, month, unit_id,
+            self.executor,
+            year,
+            month,
+            unit_id,
         )
     }
 
@@ -377,7 +393,10 @@ impl<'a> ReportRepository<'a> {
         unit_id: Option<&str>,
     ) -> Result<u32, AppError> {
         crate::infrastructure::db::read::reports::count_daily_reports_by_month(
-            self.executor, year, month, unit_id,
+            self.executor,
+            year,
+            month,
+            unit_id,
         )
     }
 
@@ -387,7 +406,9 @@ impl<'a> ReportRepository<'a> {
         month: i32,
     ) -> Result<crate::models::WilayaReportSummary, AppError> {
         let projections = crate::infrastructure::db::read::reports::load_wilaya_reports_projection(
-            self.executor, year, month,
+            self.executor,
+            year,
+            month,
         )?;
         let reports = projections
             .into_iter()

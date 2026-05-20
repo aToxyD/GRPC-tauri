@@ -106,12 +106,7 @@ impl ExcelPort for XlsxAdapter {
         worksheet.set_right_to_left(true);
 
         let header_fmt = self.header_format();
-        let headers = [
-            "التاريخ",
-            "المستفيدون",
-            "التكلفة اليومية",
-            "المعدل اليومي",
-        ];
+        let headers = ["التاريخ", "المستفيدون", "التكلفة اليومية", "المعدل اليومي"];
 
         for (col, h) in headers.iter().enumerate() {
             worksheet

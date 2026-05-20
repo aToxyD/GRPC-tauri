@@ -180,17 +180,15 @@ fn test_opening_is_last_balance_before_month_unit_scoped() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_jan),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 10.0,
-                unit_price: 100.0,
-                total_cost: 1000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_jan),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 10.0,
+            unit_price: 100.0,
+            total_cost: 1000.0,
+        })
         .unwrap();
 
     // أولاً: دخول مخزون في يناير (balance_after = 100)
@@ -226,17 +224,15 @@ fn test_opening_is_last_balance_before_month_unit_scoped() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_feb),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 5.0,
-                unit_price: 100.0,
-                total_cost: 500.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_feb),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 5.0,
+            unit_price: 100.0,
+            total_cost: 500.0,
+        })
         .unwrap();
 
     // خروج في فبراير للكشف عن المنتج في snapshot فبراير
@@ -287,17 +283,15 @@ fn test_opening_correct_when_in_precedes_first_out_in_month() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_feb),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 20.0,
-                unit_price: 100.0,
-                total_cost: 2000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_feb),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 20.0,
+            unit_price: 100.0,
+            total_cost: 2000.0,
+        })
         .unwrap();
 
     // دخول في فبراير قبل أي خروج (للتأكد أن Opening يأخذ من قبل الشهر فقط)
@@ -364,17 +358,15 @@ fn test_new_product_first_month_no_false_anomaly() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_mar),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 30.0,
-                unit_price: 100.0,
-                total_cost: 3000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_mar),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 30.0,
+            unit_price: 100.0,
+            total_cost: 3000.0,
+        })
         .unwrap();
 
     // منتج جديد: دخول ثم خروج في نفس الشهر
@@ -442,17 +434,15 @@ fn test_product_with_consumption_but_no_prior_stock_triggers_anomaly() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_apr),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 10.0,
-                unit_price: 100.0,
-                total_cost: 1000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_apr),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 10.0,
+            unit_price: 100.0,
+            total_cost: 1000.0,
+        })
         .unwrap();
 
     // منتج جديد: دخول قليل ثم خروج
@@ -518,17 +508,15 @@ fn test_total_in_includes_order_without_consumption_link() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_jan),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 10.0,
-                unit_price: 100.0,
-                total_cost: 1000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_jan),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 10.0,
+            unit_price: 100.0,
+            total_cost: 1000.0,
+        })
         .unwrap();
 
     // دخول مخزون (IN) - global، ليس مرتبطًا بconsumption مباشرة
@@ -590,17 +578,15 @@ fn test_property_computed_closing_never_negative() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_jan),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 20.0,
-                unit_price: 100.0,
-                total_cost: 2000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_jan),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 20.0,
+            unit_price: 100.0,
+            total_cost: 2000.0,
+        })
         .unwrap();
 
     // دخول 10 فقط
@@ -663,17 +649,15 @@ fn test_property_formula_is_deterministic() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_jan),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 30.0,
-                unit_price: 100.0,
-                total_cost: 3000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_jan),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 30.0,
+            unit_price: 100.0,
+            total_cost: 3000.0,
+        })
         .unwrap();
 
     create_stock_movement(
@@ -768,17 +752,15 @@ fn test_opening_does_not_leak_other_units_balance() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_b),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 20.0,
-                unit_price: 100.0,
-                total_cost: 2000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_b),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 20.0,
+            unit_price: 100.0,
+            total_cost: 2000.0,
+        })
         .unwrap();
 
     create_stock_movement(
@@ -812,17 +794,15 @@ fn test_opening_does_not_leak_other_units_balance() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_a),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 10.0,
-                unit_price: 100.0,
-                total_cost: 1000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_a),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 10.0,
+            unit_price: 100.0,
+            total_cost: 1000.0,
+        })
         .unwrap();
 
     create_stock_movement(
@@ -867,17 +847,15 @@ fn test_in_for_correct_unit_is_counted() {
     let dr_a = create_test_daily_report(&db, &unit_a, "2024-01-10");
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_a),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 10.0,
-                unit_price: 100.0,
-                total_cost: 1000.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_a),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 10.0,
+            unit_price: 100.0,
+            total_cost: 1000.0,
+        })
         .unwrap();
 
     // IN لوحدة A فقط
@@ -940,30 +918,26 @@ fn test_in_not_double_counted_across_units() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_a),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 5.0,
-                unit_price: 100.0,
-                total_cost: 500.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_a),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 5.0,
+            unit_price: 100.0,
+            total_cost: 500.0,
+        })
         .unwrap();
     report_repo
-        .insert_raw_meal_item(
-            &grpc_lib::models::DailyReportMealItem {
-                id: Uuid::new_v4().to_string(),
-                meal_id: test_breakfast_meal_id(&dr_b),
-                product_id: product_id.clone(),
-                product_name: "Test Product".to_string(),
-                quantity: 5.0,
-                unit_price: 100.0,
-                total_cost: 500.0,
-            },
-        )
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_b),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 5.0,
+            unit_price: 100.0,
+            total_cost: 500.0,
+        })
         .unwrap();
 
     // IN لوحدة A فقط (100)

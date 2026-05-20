@@ -139,10 +139,11 @@ pub fn execute(
     }
 
     let item_count: usize = meal_results.iter().map(|m| m.items.len()).sum();
-    let imported = ImportSyncService::new(executor).import_daily_reports(vec![DailyReportResult {
-        report,
-        meals: meal_results,
-    }])?;
+    let imported =
+        ImportSyncService::new(executor).import_daily_reports(vec![DailyReportResult {
+            report,
+            meals: meal_results,
+        }])?;
     registry.mark_imported(&package_id)?;
 
     Ok(ImportDailyReportPackageOutcome {

@@ -147,20 +147,16 @@ pub fn create_daily_report(
 
     let user_ctx = user_ctx_from_session(&session);
 
-    let report_id = AuditTxService::execute_with_audit(
-        db,
-        AuditAction::CreateDailyReport,
-        &user_ctx,
-        |tx| {
+    let report_id =
+        AuditTxService::execute_with_audit(db, AuditAction::CreateDailyReport, &user_ctx, |tx| {
             DailyReportService::new(tx.executor).create_daily_report(
                 &input,
                 effective_unit_id.as_deref(),
                 &session.user_id,
                 &session.username,
             )
-        },
-    )
-    .map_err(into_command_error)?;
+        })
+        .map_err(into_command_error)?;
 
     DailyReportService::new(db.executor())
         .load_daily_report_result(&report_id)

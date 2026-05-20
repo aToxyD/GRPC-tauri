@@ -48,12 +48,12 @@ impl<'a> OrderService<'a> {
         validate_update_order_request(req)?;
 
         let repo = self.executor.orders();
-        let order = repo
-            .get_supplier_order(&req.id)?
-            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+        let order = repo.get_supplier_order(&req.id)?.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
                 resource: "طلبية".to_string(),
                 id: req.id.clone(),
-            }))?;
+            })
+        })?;
         check_order_is_editable(&order)?;
 
         let total_amount: f64 = req.items.iter().map(|i| i.quantity * i.unit_price).sum();
@@ -84,12 +84,12 @@ impl<'a> OrderService<'a> {
 
     pub fn delete_supplier_order(&self, order_id: &str) -> Result<(), AppError> {
         let repo = self.executor.orders();
-        let order = repo
-            .get_supplier_order(order_id)?
-            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+        let order = repo.get_supplier_order(order_id)?.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
                 resource: "طلبية".to_string(),
                 id: order_id.to_string(),
-            }))?;
+            })
+        })?;
         check_order_is_editable(&order)?;
         repo.delete_supplier_order(order_id)
     }

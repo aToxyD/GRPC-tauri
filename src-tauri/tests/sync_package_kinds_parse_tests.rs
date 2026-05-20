@@ -15,8 +15,8 @@ use grpc_lib::infrastructure::sync::{
     read_daily_report_package_from_file, read_products_package_from_file,
 };
 use grpc_lib::models::{
-    DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType,
-    Product, ProductExportRow,
+    DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType, Product,
+    ProductExportRow,
 };
 
 fn fixture_products_package() -> SyncPackage<ProductsExportDataset> {
