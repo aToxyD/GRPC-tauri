@@ -34,7 +34,7 @@ cache:
 
 secrets_scanning:
   stage: validate
-  image: oven/bun:1.3-alpine
+  image: oven/bun:1.3.9-alpine
   script:
     - bun run scripts/check_secrets.ts
   rules:
@@ -51,7 +51,7 @@ secrets_scanning:
 # (clippy, build, test all need ../dist to exist)
 frontend_build:
   stage: frontend
-  image: oven/bun:1.3
+  image: oven/bun:1.3.9
   timeout: 20m
   before_script:
     - bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
@@ -67,7 +67,7 @@ frontend_build:
 
 frontend_governance:
   stage: frontend
-  image: oven/bun:1.3
+  image: oven/bun:1.3.9
   timeout: 15m
   before_script:
     - bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
@@ -112,7 +112,7 @@ backend_governance:
 
 architectural_governance:
   stage: architecture
-  image: oven/bun:1.3-alpine
+  image: oven/bun:1.3.9-alpine
   script:
     - bun run check:arch
   rules:
@@ -124,7 +124,7 @@ architectural_governance:
 
 bun_dependency_audit:
   stage: security
-  image: oven/bun:1.3-alpine
+  image: oven/bun:1.3.9-alpine
   script:
     - bun audit
   allow_failure: true # Audit warning policy is documented in DEPENDENCY_GOVERNANCE.md
@@ -155,7 +155,7 @@ cargo_dependency_audit:
 
 documentation_governance:
   stage: documentation
-  image: oven/bun:1.3-alpine
+  image: oven/bun:1.3.9-alpine
   script:
     - bun run scripts/check_docs_governance.ts
   rules:
@@ -163,7 +163,7 @@ documentation_governance:
 
 release_integrity:
   stage: documentation
-  image: oven/bun:1.3-alpine
+  image: oven/bun:1.3.9-alpine
   script:
     - bun run scripts/check_release_integrity.ts
   rules:
