@@ -33,36 +33,38 @@
   const loading = productsOp.loading;
   const error = productsOp.error;
 
-  let products: Product[] = [];
-  let settings: Settings | null = null;
-  let showModal = false;
-  let editingProduct: Product | null = null;
-  let success = '';
-  let currentYear = new Date().getFullYear();
+  let products = $state<Product[]>([]);
+  let settings = $state<Settings | null>(null);
+  let showModal = $state(false);
+  let editingProduct = $state<Product | null>(null);
+  let success = $state('');
+  let currentYear = $state(new Date().getFullYear());
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Form fields
-  let productName = '';
-  let basePrice = '';
-  let tva = '';
-  let supplierName = '';
+  let productName = $state('');
+  let basePrice = $state('');
+  let tva = $state('');
+  let supplierName = $state('');
 
   onMount(async () => {
     await loadData();
   });
 
+  /** تحديث القائمة دون تداخل مع productsOp.run (تجنب الرفض عند busy) */
+  async function refreshList() {
+    const [nextProducts, nextSettings] = await Promise.all([listProducts(), getSettings()]);
+    products = nextProducts;
+    settings = nextSettings;
+    if (nextSettings) {
+      currentYear = nextSettings.current_year;
+    }
+  }
+
   async function loadData() {
-    await productsOp.run(async () => {
-      [products, settings] = await Promise.all([
-        listProducts(),
-        getSettings()
-      ]);
-      if (settings) {
-        currentYear = settings.current_year;
-      }
-    });
+    await productsOp.run(refreshList);
   }
 
   function openCreateModal() {
@@ -123,7 +125,7 @@
       }
 
       closeModal();
-      await loadData();
+      await refreshList();
     });
   }
 
@@ -139,7 +141,7 @@
     await productsOp.run(async () => {
       await deleteProduct(product.id);
       setSuccessWithTimeout('تم حذف المنتج بنجاح');
-      await loadData();
+      await refreshList();
     });
   }
 
@@ -190,7 +192,7 @@
       const count = result.added;
         
       setSuccessWithTimeout(`تم استيراد ${count} منتجات بنجاح (${filterName})`);
-      await loadData();
+      await refreshList();
     });
   }
 </script>
@@ -272,7 +274,7 @@
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
 
-        {#each products as product}
+        {#each products as product (product.id)}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{product.name}</td>
             <td class="table-cell">{product.base_price.toFixed(2)} دج</td>

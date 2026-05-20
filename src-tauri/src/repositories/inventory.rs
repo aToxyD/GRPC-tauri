@@ -219,7 +219,7 @@ impl<'a> InventoryRepository<'a> {
         month_end: &str,
     ) -> Result<Vec<(String, String)>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT DISTINCT p.id, p.name FROM products p WHERE EXISTS (SELECT 1 FROM stock_movements sm JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = p.id AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OUT' AND dr.unit_id = ?3) OR EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.product_id = p.id AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OUT' AND sm.unit_id = ?3) OR EXISTS (SELECT 1 FROM daily_consumption_items dci JOIN daily_reports dr ON dci.daily_report_id = dr.id JOIN stock_movements sm ON sm.product_id = dci.product_id WHERE dci.product_id = p.id AND dr.unit_id = ?3 AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OPENING') OR EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.product_id = p.id AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OPENING' AND sm.unit_id = ?3) ORDER BY p.name",
+            "SELECT DISTINCT p.id, p.name FROM products p WHERE EXISTS (SELECT 1 FROM stock_movements sm JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = p.id AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OUT' AND dr.unit_id = ?3) OR EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.product_id = p.id AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OUT' AND sm.unit_id = ?3) OR EXISTS (SELECT 1 FROM daily_report_meal_items dci JOIN daily_report_meals dm ON dci.meal_id = dm.id JOIN daily_reports dr ON dm.daily_report_id = dr.id JOIN stock_movements sm ON sm.product_id = dci.product_id WHERE dci.product_id = p.id AND dr.unit_id = ?3 AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OPENING') OR EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.product_id = p.id AND sm.timestamp >= ?1 AND sm.timestamp <= ?2 AND sm.movement_type = 'OPENING' AND sm.unit_id = ?3) ORDER BY p.name",
             rusqlite::params![month_start, month_end, unit_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?)
@@ -349,7 +349,7 @@ impl<'a> InventoryRepository<'a> {
         month_end_ts: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "UPDATE unit_monthly_snapshots SET is_stale = CASE WHEN (SELECT MAX(timestamp) FROM stock_movements WHERE product_id IN (SELECT DISTINCT dci.product_id FROM daily_consumption_items dci JOIN daily_reports dr ON dci.daily_report_id = dr.id WHERE dr.unit_id = ?1) AND timestamp >= ?2 AND timestamp <= ?3) > computed_at THEN 1 ELSE 0 END WHERE unit_id=?1 AND report_year=?4 AND report_month=?5",
+            "UPDATE unit_monthly_snapshots SET is_stale = CASE WHEN (SELECT MAX(timestamp) FROM stock_movements WHERE product_id IN (SELECT DISTINCT dci.product_id FROM daily_report_meal_items dci JOIN daily_report_meals dm ON dci.meal_id = dm.id JOIN daily_reports dr ON dm.daily_report_id = dr.id WHERE dr.unit_id = ?1) AND timestamp >= ?2 AND timestamp <= ?3) > computed_at THEN 1 ELSE 0 END WHERE unit_id=?1 AND report_year=?4 AND report_month=?5",
             rusqlite::params![unit_id, month_start_ts, month_end_ts, year, month],
         )?;
         Ok(())

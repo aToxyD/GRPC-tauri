@@ -7,9 +7,10 @@ import { telemetry } from './telemetry';
 import type {
   LoginRequest, LoginResponse, Settings, NodeConfiguration,
   User, Product, CreateProductRequest, UpdateProductRequest,
-  Unit, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem,
-  CreateOrderRequest, DailyReport, DailyConsumptionInput, DailyConsumptionItem,
-  DailyReportResult, StockCheckResult, MonthlySummary,
+  Unit, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem, UpdateOrderRequest,
+  CreateOrderRequest, MealConsumption, MealConsumptionInput, MealConsumptionItem,
+  DailyReportResult, DailyReportInput, DailyConsumptionView, StockCheckResult, MonthlySummary, DailyReport,
+  MealType,
   ConsumptionItemInput, OrderItemInput,
   BackupInfo, LoginMetrics, SystemMetrics, Notification, ProgressInfo,
   SyncSecurityDiagnostics, SyncPreflightCheck,
@@ -153,6 +154,14 @@ export async function confirmOrder(orderId: string): Promise<void> {
   return await safeInvoke('confirm_order', { orderId });
 }
 
+export async function updateSupplierOrder(request: UpdateOrderRequest): Promise<number> {
+  return await safeInvoke('update_supplier_order', { request });
+}
+
+export async function deleteSupplierOrder(orderId: string): Promise<void> {
+  return await safeInvoke('delete_supplier_order', { orderId });
+}
+
 export async function getSupplierOrder(orderId: string): Promise<SupplierOrder | null> {
   return await safeInvoke('get_supplier_order', { orderId });
 }
@@ -171,8 +180,13 @@ export async function createOrder(request: CreateOrderRequest): Promise<{ orderI
 }
 
 // Daily Reports
-export async function createDailyReport(input: DailyConsumptionInput, unitId?: string): Promise<DailyReportResult> {
+export async function createDailyReport(input: DailyReportInput, unitId?: string): Promise<DailyReportResult> {
   return await safeInvoke('create_daily_report', { input, unitId });
+}
+
+/** @deprecated Use createDailyReport */
+export async function createMealConsumption(input: DailyReportInput, unitId?: string): Promise<DailyReportResult> {
+  return createDailyReport(input, unitId);
 }
 
 export async function getDailyReport(reportId: string): Promise<DailyReportResult> {
@@ -204,8 +218,22 @@ export async function calculateMealCost(items: [number, number][]): Promise<numb
   return await safeInvoke('calculate_meal_cost', { items });
 }
 
-export async function calculateMealRate(totalCost: number, personnelCount: number, guestCount: number): Promise<number> {
-  return await safeInvoke('calculate_meal_rate', { totalCost, personnelCount, guestCount });
+export async function calculateMealRate(
+  totalCost: number,
+  staff24hCount: number,
+  staff8hCount: number,
+  reservationCount: number,
+  missionCount: number,
+  guestCount: number
+): Promise<number> {
+  return await safeInvoke('calculate_meal_rate', {
+    totalCost,
+    staff_24h_count: staff24hCount,
+    staff_8h_count: staff8hCount,
+    reservation_count: reservationCount,
+    mission_count: missionCount,
+    guest_count: guestCount,
+  });
 }
 
 export async function calculateProductPriceWithTva(basePrice: number, tva: number): Promise<number> {
@@ -279,7 +307,7 @@ export async function getCurrentStock(): Promise<InventoryStock[]> {
   return await safeInvoke('get_current_stock');
 }
 
-export async function getDailyConsumption(date: string): Promise<DailyConsumptionItem[]> {
+export async function getDailyConsumption(date: string): Promise<DailyConsumptionView | null> {
   return await safeInvoke('get_daily_consumption', { date });
 }
 
@@ -287,7 +315,7 @@ export async function getOrders(): Promise<SupplierOrder[]> {
   return await safeInvoke('get_orders');
 }
 
-export async function recordConsumption(consumption: DailyConsumptionInput): Promise<void> {
+export async function recordConsumption(consumption: MealConsumptionInput): Promise<void> {
   return await safeInvoke('record_consumption', { consumption });
 }
 
