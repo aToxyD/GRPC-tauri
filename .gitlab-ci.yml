@@ -47,6 +47,24 @@ secrets_scanning:
 # STAGE: frontend
 # ==========================================
 
+# Build Frontend FIRST (required by Tauri generate_context!)
+# Must be before ANY Rust command that compiles the bin target
+# (clippy, build, test all need ../dist to exist)
+frontend_build:
+  stage: frontend
+  image: oven/bun:1.1
+  before_script:
+    - bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+  script:
+    - bun run build
+  artifacts:
+    name: "frontend-dist"
+    paths:
+      - dist/
+    expire_in: 1 day
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
 frontend_governance:
   stage: frontend
   image: oven/bun:1.1
@@ -71,6 +89,8 @@ frontend_governance:
 
 backend_governance:
   stage: backend
+  needs:
+    - frontend_build
   image: rust:1.75
   before_script:
     - rustup component add rustfmt clippy
