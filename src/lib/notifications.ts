@@ -1,26 +1,29 @@
-//! Notification System
-//!
-//! نظام إشعارات عصري للواجهة الأمامية
-//!
-//! # Features
-//! - إشعارات متعددة الأنواع (success, error, warning, info)
-//! - إغلاق تلقائي
-//! - قوائم انتظار
-//! - RTL support للعربية
+//! Notification System — unified bus with deterministic lifecycle
 
 import type { Notification } from './types';
+import { telemetry } from './telemetry';
+
+const MAX_QUEUE = 10;
+const AUTO_CLOSE_MS: Record<Notification['type'], number | null> = {
+  success: 3000,
+  warning: 5000,
+  info: 5000,
+  error: null,
+  progress: null,
+};
 
 class NotificationManager {
   private notifications: Notification[] = [];
   private listeners: ((notifications: Notification[]) => void)[] = [];
   private nextId = 1;
+  private dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private recentKeys = new Map<string, number>();
+  private readonly DEDUP_WINDOW_MS = 2000;
 
-  // Subscribe to notifications changes
   subscribe(listener: (notifications: Notification[]) => void) {
     this.listeners.push(listener);
     listener(this.notifications);
-    
-    // Return unsubscribe function
+
     return () => {
       const index = this.listeners.indexOf(listener);
       if (index > -1) {
@@ -29,13 +32,59 @@ class NotificationManager {
     };
   }
 
-  // Notify all listeners
   private notify() {
-    this.listeners.forEach(listener => listener(this.notifications));
+    this.listeners.forEach((listener) => listener(this.notifications));
   }
 
-  // Add a new notification
-  add(notification: Omit<Notification, 'id' | 'timestamp'>): Notification {
+  private cancelTimer(id: string) {
+    const timer = this.dismissTimers.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.dismissTimers.delete(id);
+    }
+  }
+
+  private cancelAllTimers() {
+    this.dismissTimers.forEach((timer) => clearTimeout(timer));
+    this.dismissTimers.clear();
+  }
+
+  private scheduleAutoDismiss(notification: Notification) {
+    if (notification.auto_close === false) return;
+
+    const ms = AUTO_CLOSE_MS[notification.type];
+    if (ms === null) return;
+
+    const timer = setTimeout(() => {
+      this.dismissTimers.delete(notification.id);
+      this.remove(notification.id);
+    }, ms);
+
+    this.dismissTimers.set(notification.id, timer);
+  }
+
+  private isDuplicate(type: Notification['type'], message: string): boolean {
+    const key = `${type}:${message}`;
+    const last = this.recentKeys.get(key);
+    const now = Date.now();
+    if (last !== undefined && now - last < this.DEDUP_WINDOW_MS) {
+      return true;
+    }
+    this.recentKeys.set(key, now);
+    return false;
+  }
+
+  add(notification: Omit<Notification, 'id' | 'timestamp'>): Notification | null {
+    if (this.isDuplicate(notification.type, notification.message)) {
+      telemetry.trackNotification('deduped', notification.type);
+      return null;
+    }
+
+    while (this.notifications.length >= MAX_QUEUE) {
+      const oldest = this.notifications[this.notifications.length - 1];
+      if (oldest) this.remove(oldest.id);
+    }
+
     const newNotification: Notification = {
       ...notification,
       id: this.nextId.toString(),
@@ -45,33 +94,28 @@ class NotificationManager {
     this.notifications.unshift(newNotification);
     this.nextId++;
 
-    // Auto remove if specified
-    if (notification.auto_close !== false) {
-      setTimeout(() => {
-        this.remove(newNotification.id);
-      }, notification.type === 'success' ? 3000 : 5000); // 3 seconds for success, 5 for others
-    }
-
+    this.scheduleAutoDismiss(newNotification);
+    telemetry.trackNotification('shown', newNotification.type);
     this.notify();
     return newNotification;
   }
 
-  // Remove a notification
   remove(id: string) {
-    const index = this.notifications.findIndex(n => n.id === id);
+    this.cancelTimer(id);
+    const index = this.notifications.findIndex((n) => n.id === id);
     if (index > -1) {
       this.notifications.splice(index, 1);
+      telemetry.trackNotification('dismissed');
       this.notify();
     }
   }
 
-  // Clear all notifications
   clear() {
+    this.cancelAllTimers();
     this.notifications = [];
     this.notify();
   }
 
-  // Convenience methods
   success(message: string, title?: string) {
     return this.add({
       type: 'success',
@@ -86,7 +130,7 @@ class NotificationManager {
       type: 'error',
       title: title || 'خطأ',
       message,
-      auto_close: false, // Errors stay until manually closed
+      auto_close: false,
     });
   }
 
@@ -118,30 +162,30 @@ class NotificationManager {
     });
   }
 
-  // Get current notifications (read-only)
   getNotifications(): Notification[] {
     return [...this.notifications];
   }
 }
 
-// Singleton instance
 export const notificationManager = new NotificationManager();
 
-// Svelte store for reactive notifications
 import { writable } from 'svelte/store';
 
 export const notifications = writable<Notification[]>([]);
 
-// Subscribe to manager and update store
 notificationManager.subscribe((notifs) => {
   notifications.set(notifs);
 });
 
-// Export convenience functions
-export const showSuccess = (message: string, title?: string) => notificationManager.success(message, title);
-export const showError = (message: string, title?: string) => notificationManager.error(message, title);
-export const showWarning = (message: string, title?: string) => notificationManager.warning(message, title);
-export const showInfo = (message: string, title?: string) => notificationManager.info(message, title);
-export const showProgress = (message: string, value?: number, title?: string) => notificationManager.progress(message, value, title);
+export const showSuccess = (message: string, title?: string) =>
+  notificationManager.success(message, title);
+export const showError = (message: string, title?: string) =>
+  notificationManager.error(message, title);
+export const showWarning = (message: string, title?: string) =>
+  notificationManager.warning(message, title);
+export const showInfo = (message: string, title?: string) =>
+  notificationManager.info(message, title);
+export const showProgress = (message: string, value?: number, title?: string) =>
+  notificationManager.progress(message, value, title);
 export const removeNotification = (id: string) => notificationManager.remove(id);
 export const clearNotifications = () => notificationManager.clear();

@@ -12,7 +12,8 @@
   الأحداث: on:close
 -->
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { createRuntimeScope } from '../../runtimeCleanup';
 
   interface $$Slots {
     default: {};
@@ -35,6 +36,7 @@
   };
 
   let dialogEl: HTMLDivElement;
+  const scope = createRuntimeScope();
 
   function handleClose() {
     dispatch('close');
@@ -72,7 +74,7 @@
     const focusable = dialogEl.querySelector<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
-    setTimeout(() => focusable?.focus(), 10);
+    scope.setTimeout(() => focusable?.focus(), 10);
   }
 
   // منع التمرير خلف الحوار
@@ -81,6 +83,7 @@
   }
 
   onDestroy(() => {
+    scope.dispose();
     if (typeof document !== 'undefined') {
       document.body.style.overflow = '';
     }
