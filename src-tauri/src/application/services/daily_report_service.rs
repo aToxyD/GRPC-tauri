@@ -11,7 +11,13 @@ use chrono::Datelike;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-type ComputedMeal = (MealSectionInput, i32, f64, f64, Vec<(String, f64, f64, f64)>);
+type ComputedMeal = (
+    MealSectionInput,
+    i32,
+    f64,
+    f64,
+    Vec<(String, f64, f64, f64)>,
+);
 
 pub struct DailyReportService<'a> {
     executor: DbExecutor<'a>,
