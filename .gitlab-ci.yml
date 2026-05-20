@@ -91,7 +91,7 @@ backend_governance:
   stage: backend
   needs:
     - frontend_build
-  image: rust:1.82
+  image: rust:latest
   before_script:
     - rustup component add rustfmt clippy
   script:
@@ -137,7 +137,7 @@ bun_dependency_audit:
 
 cargo_dependency_audit:
   stage: security
-  image: rust:1.82
+  image: rust:latest
   before_script:
     - cargo install cargo-audit
   script:
