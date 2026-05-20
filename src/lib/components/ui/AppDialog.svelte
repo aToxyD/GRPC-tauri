@@ -111,10 +111,10 @@
   >
     <div
       bind:this={dialogEl}
-      class="w-full {sizeMap[size]} bg-white dark:bg-gray-800 rounded-xl shadow-2xl dark:shadow-gray-950/70 border border-gray-200 dark:border-gray-700 flex flex-col"
+      class="w-full {sizeMap[size]} max-h-[90vh] bg-white dark:bg-gray-800 rounded-xl shadow-2xl dark:shadow-gray-950/70 border border-gray-200 dark:border-gray-700 flex flex-col"
     >
       <!-- رأس الحوار -->
-      <div class="flex items-start justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+      <div class="flex-shrink-0 flex items-start justify-between p-6 border-b border-gray-200 dark:border-gray-700">
         <div>
           <h2
             id="dialog-title"
@@ -141,13 +141,13 @@
       </div>
 
       <!-- جسم الحوار -->
-      <div class="p-6 overflow-y-auto">
+      <div class="p-6 overflow-y-auto flex-1 min-h-0">
         <slot />
       </div>
 
       <!-- الإجراءات -->
       {#if $$slots.actions}
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-b-xl">
+        <div class="flex-shrink-0 flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-b-xl">
           <slot name="actions" />
         </div>
       {/if}

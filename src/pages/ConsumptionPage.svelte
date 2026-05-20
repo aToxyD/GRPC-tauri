@@ -1,8 +1,20 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import { listProducts, createDailyReport, checkStockAvailability, getSettings } from '../lib/tauri';
-  import type { Product, Settings, ConsumptionItemInput } from '../lib/types';
+  import {
+    listProducts,
+    createDailyReport,
+    checkStockAvailability,
+    getSettings,
+    getDailyConsumption,
+  } from '../lib/tauri';
+  import type {
+    Product,
+    Settings,
+    MealType,
+    DailyConsumptionView,
+    MealSectionInput,
+  } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
   import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
@@ -13,263 +25,249 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
-  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+
+  import DailySummaryPanel from '../components/consumption/DailySummaryPanel.svelte';
+  import MealTabs from '../components/consumption/MealTabs.svelte';
+  import MealSection from '../components/consumption/MealSection.svelte';
+  import {
+    computeDailySummary,
+    computeMealPreview,
+    hasAnyConsumption,
+    mealItemsFromForm,
+    parseBeneficiaryCounts,
+    summaryFromSaved,
+  } from '../components/consumption/preview';
+  import {
+    emptyMealForms,
+    MEAL_OPTIONS,
+    type ConsumptionProductRow,
+    type MealFormState,
+  } from '../components/consumption/types';
 
   const scope = createRuntimeScope();
   const consumptionOp = createOperation({ scope });
   const loading = consumptionOp.loading;
   const error = consumptionOp.error;
-
   const { loading: submitting, guard } = createOperationGuard({ scope });
 
-  let products: Product[] = [];
-  let settings: Settings | null = null;
-  let success = '';
+  let products = $state<Product[]>([]);
+  let settings = $state<Settings | null>(null);
+  let success = $state('');
+  let dailyView = $state<DailyConsumptionView | null>(null);
+  let reportLocked = $state(false);
+  let date = $state(new Date().toISOString().split('T')[0]);
+  let activeMeal = $state<MealType>('breakfast');
+  let mealForms = $state<Record<MealType, MealFormState>>(emptyMealForms());
+  let consumptionItems = $state<ConsumptionProductRow[]>([]);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m), 5000);
   onDestroy(() => scope.dispose());
 
-  // Form fields
-  let date = new Date().toISOString().split('T')[0];
-  let personnelCount = '';
-  let guestCount = '';
-  let consumptionItems: { product: Product; quantity: string; available: boolean; stock: number }[] = [];
+  let displaySummary = $derived(
+    dailyView ? summaryFromSaved(dailyView) : computeDailySummary(mealForms, products)
+  );
 
-  onMount(async () => {
-    await consumptionOp.run(async () => {
-      [products, settings] = await Promise.all([
-        listProducts(),
-        getSettings()
-      ]);
-      consumptionItems = products.map(p => ({ product: p, quantity: '', available: true, stock: 0 }));
-      await checkStocks();
-    });
-  });
+  let activeMealPreview = $derived(computeMealPreview(mealForms[activeMeal], products));
+
+  let activeMealLabel = $derived(
+    MEAL_OPTIONS.find((m) => m.id === activeMeal)?.label ?? activeMeal
+  );
+
+  function applyDailyView(view: DailyConsumptionView) {
+    dailyView = view;
+    reportLocked = true;
+    const next = emptyMealForms();
+    for (const entry of view.meals) {
+      const m = entry.meal;
+      next[m.meal_type] = {
+        beneficiaries: {
+          staff24h: String(m.staff_24h_count),
+          staff8h: String(m.staff_8h_count),
+          reservation: String(m.reservation_count),
+          mission: String(m.mission_count),
+          guest: String(m.guest_count),
+        },
+        quantities: Object.fromEntries(entry.items.map((i) => [i.product_id, String(i.quantity)])),
+      };
+    }
+    mealForms = next;
+  }
+
+  function resetForms() {
+    dailyView = null;
+    reportLocked = false;
+    mealForms = emptyMealForms();
+  }
+
+  async function loadDailyData() {
+    try {
+      const view = await getDailyConsumption(date);
+      if (view) {
+        applyDailyView(view);
+      } else {
+        resetForms();
+      }
+    } catch {
+      resetForms();
+    }
+  }
 
   async function checkStocks() {
     try {
       const stocks = await checkStockAvailability(
-        products.map(p => ({ product_id: p.id, quantity: 1 }))
+        products.map((p) => ({ product_id: p.id, quantity: 1 }))
       );
-      consumptionItems = consumptionItems.map(item => {
-        const stock = stocks.find(s => s.product_id === item.product.id);
+      consumptionItems = products.map((p) => {
+        const stock = stocks.find((s) => s.product_id === p.id);
         return {
-          ...item,
+          product: p,
           available: stock?.available ?? true,
-          stock: stock?.available_stock ?? 0
+          stock: stock?.available_stock ?? 0,
         };
       });
-    } catch (e) {
-      // Error checking stocks
+    } catch {
+      // stock check failed — keep UI usable
     }
   }
 
-  async function submitReport() {
-    if (!date || !personnelCount) {
-      consumptionOp.error.set('الرجاء إدخال التاريخ وعدد الموظفين');
+  onMount(async () => {
+    await consumptionOp.run(async () => {
+      [products, settings] = await Promise.all([listProducts(), getSettings()]);
+      consumptionItems = products.map((p) => ({
+        product: p,
+        available: true,
+        stock: 0,
+      }));
+      await checkStocks();
+      await loadDailyData();
+    });
+  });
+
+  async function handleDateChange() {
+    await loadDailyData();
+  }
+
+  function buildMealInputs(): MealSectionInput[] {
+    return MEAL_OPTIONS.map((meal) => {
+      const form = mealForms[meal.id];
+      const counts = parseBeneficiaryCounts(form.beneficiaries);
+      return {
+        meal_type: meal.id,
+        ...counts,
+        items: mealItemsFromForm(form),
+      };
+    });
+  }
+
+  async function submitDailyReport() {
+    if (!date) {
+      consumptionOp.error.set('الرجاء إدخال التاريخ');
+      return;
+    }
+    if (!hasAnyConsumption(mealForms)) {
+      consumptionOp.error.set('الرجاء إدخال بيانات استهلاك لوجبة واحدة على الأقل');
       return;
     }
 
-    const items: ConsumptionItemInput[] = consumptionItems
-      .filter(ci => ci.quantity && parseFloat(ci.quantity) > 0)
-      .map(ci => ({
-        product_id: ci.product.id,
-        quantity: parseFloat(ci.quantity)
-      }));
-
-    if (items.length === 0) {
-      consumptionOp.error.set('الرجاء إدخال استهلاك واحد على الأقل');
+    const allItems = MEAL_OPTIONS.flatMap((m) => mealItemsFromForm(mealForms[m.id]));
+    if (allItems.length === 0) {
+      consumptionOp.error.set('الرجاء إدخال استهلاك منتج واحد على الأقل');
       return;
     }
 
     await guard(async () => {
-      // Check stock availability before submitting
-      const stockCheck = await checkStockAvailability(items);
-      const insufficient = stockCheck.filter(s => !s.available);
-      
+      const stockCheck = await checkStockAvailability(allItems);
+      const insufficient = stockCheck.filter((s) => !s.available);
       if (insufficient.length > 0) {
-        throw new Error(`مخزون غير كافٍ لـ: ${insufficient.map(i => i.product_name).join(', ')}`);
+        throw new Error(`مخزون غير كافٍ لـ: ${insufficient.map((i) => i.product_name).join(', ')}`);
       }
 
-      const result = await createDailyReport({
-        date,
-        personnel_count: parseInt(personnelCount),
-        guest_count: parseInt(guestCount) || 0,
-        items
-      }, settings?.unit_name || undefined);
+      const result = await createDailyReport(
+        { date, meals: buildMealInputs() },
+        settings?.unit_name || undefined
+      );
 
-      setSuccessWithTimeout(`تم تسجيل التقرير. التكلفة الإجمالية: ${result.report.total_meals_cost.toFixed(2)} دج، المعدل: ${result.report.actual_meal_rate.toFixed(2)} دج/وجبة`);
-      
-      // Reset form
-      personnelCount = '';
-      guestCount = '';
-      consumptionItems = consumptionItems.map(ci => ({ ...ci, quantity: '' }));
-      
-      // Refresh stock status
+      setSuccessWithTimeout(
+        `تم تسجيل التقرير اليومي. التكلفة: ${result.report.total_daily_cost.toFixed(2)} دج، المعدل: ${result.report.total_daily_average.toFixed(2)} دج`
+      );
+
+      await loadDailyData();
       await checkStocks();
     });
   }
-
-  // Calculate totals
-  let calculatedTotal = 0;
-  let calculatedRate = 0;
-
-  async function updateCalculations() {
-    const items = consumptionItems
-      .filter(ci => ci.quantity && parseFloat(ci.quantity) > 0)
-      .map(ci => [parseFloat(ci.quantity), ci.product.base_price] as [number, number]);
-    
-    if (items.length > 0) {
-      calculatedTotal = items.reduce((sum, [qty, price]) => sum + qty * price, 0);
-      const totalMeals = (parseInt(personnelCount) || 0) + (parseInt(guestCount) || 0);
-      calculatedRate = totalMeals > 0 ? calculatedTotal / totalMeals : 0;
-    } else {
-      calculatedTotal = 0;
-      calculatedRate = 0;
-    }
-  }
-
-  $: {
-    consumptionItems;
-    personnelCount;
-    guestCount;
-    updateCalculations();
-  }
 </script>
 
-<Layout nodeType="UNIT" title="الاستهلاك اليومي" subtitle="تسجيل استهلاك الوجبات">
+<Layout nodeType="UNIT" title="الاستهلاك اليومي" subtitle="تقرير يومي واحد — فطور · غداء · عشاء">
   <div dir="rtl">
-    <AppPageHeader title="الاستهلاك اليومي" subtitle="تسجيل استهلاك الوجبات" />
+    <AppPageHeader title="الاستهلاك اليومي" subtitle="تقرير استهلاك يومي واحد يتضمن الفطور والغداء والعشاء" />
 
     {#if $error}
       <div class="mb-4">
-        <AppAlert intent="danger" dismissible on:dismiss={() => consumptionOp.error.set(null)}>{$error}</AppAlert>
+        <AppAlert intent="danger" dismissible on:dismiss={() => consumptionOp.error.set(null)}>
+          {formatErrorMessage($error)}
+        </AppAlert>
       </div>
     {/if}
 
     {#if success}
       <div class="mb-4">
-        <AppAlert intent="success" dismissible on:dismiss={() => success = ''}>{success}</AppAlert>
+        <AppAlert intent="success" dismissible on:dismiss={() => (success = '')}>{success}</AppAlert>
       </div>
     {/if}
 
     {#if $loading}
       <AppLoadingState message="جاري التحميل..." />
     {:else}
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Main Form -->
-        <div class="lg:col-span-2 space-y-6">
-          <AppCard>
-            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">المعلومات العامة</h2>
-            <div class="grid grid-cols-3 gap-4">
-              <AppInput
-                id="date"
-                label="التاريخ *"
-                type="date"
-                bind:value={date}
-              />
-              <AppInput
-                id="personnelCount"
-                label="الموظفون *"
-                type="number"
-                placeholder="العدد"
-                bind:value={personnelCount}
-              />
-              <AppInput
-                id="guestCount"
-                label="الضيوف"
-                type="number"
-                placeholder="العدد"
-                bind:value={guestCount}
-              />
-            </div>
-          </AppCard>
+      <div class="space-y-6">
+        <AppCard>
+          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">
+            المعلومات العامة
+          </h2>
+          <div class="max-w-xs">
+            <AppInput
+              id="date"
+              label="التاريخ *"
+              type="date"
+              bind:value={date}
+              on:change={handleDateChange}
+              disabled={reportLocked}
+            />
+          </div>
+          {#if reportLocked}
+            <p class="mt-2 text-sm text-amber-600 dark:text-amber-400">
+              تقرير هذا التاريخ مسجّل مسبقاً ولا يمكن تعديله من هذه الشاشة.
+            </p>
+          {/if}
+        </AppCard>
 
-          <AppCard>
-            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">المنتجات المستهلكة</h2>
-            
-            {#if products.length === 0}
-              <AppEmptyState
-                title="لا يوجد منتجات"
-                description="استورد قائمة منتجات الولاية أولاً للتمكن من تسجيل الاستهلاك"
-                icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-              />
-            {:else}
-              <div class="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                {#each consumptionItems as item}
-                  <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-                    <div class="flex-1">
-                      <span class="font-medium block text-gray-800 dark:text-gray-200">{item.product.name}</span>
-                      <span class="text-xs text-gray-500 dark:text-gray-400">
-                        السعر: {item.product.base_price.toFixed(2)} دج | 
-                        المخزون: <span class={item.stock < 10 ? 'text-red-600 font-semibold' : 'text-green-600 dark:text-green-400'}>{item.stock.toFixed(2)}</span>
-                      </span>
-                    </div>
-                    <div class="w-24">
-                      <AppInput
-                        id="qty-{item.product.id}"
-                        label=""
-                        type="number"
-                        placeholder="الكمية"
-                        bind:value={item.quantity}
-                        disabled={item.stock <= 0}
-                      />
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </AppCard>
+        <DailySummaryPanel summary={displaySummary} isPreview={!dailyView} />
 
-          <AppButton
-            variant="primary"
-            fullWidth
-            size="lg"
-            loading={$submitting}
-            disabled={$submitting || products.length === 0}
-            on:click={submitReport}
-          >
-            تسجيل التقرير
-          </AppButton>
-        </div>
+        <div class="space-y-4">
+          <MealTabs bind:activeMeal {mealForms} />
 
-        <!-- Summary Panel -->
-        <div class="lg:col-span-1">
-          <div class="sticky top-6">
-            <AppCard>
-              <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">الملخص</h2>
-              
-              <div class="space-y-4">
-                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                  <span class="text-gray-600 dark:text-gray-400">الموظفون:</span>
-                  <span class="font-medium text-gray-800 dark:text-gray-200">{personnelCount || 0}</span>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                  <span class="text-gray-600 dark:text-gray-400">الضيوف:</span>
-                  <span class="font-medium text-gray-800 dark:text-gray-200">{guestCount || 0}</span>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                  <span class="text-gray-600 dark:text-gray-400">إجمالي الوجبات:</span>
-                  <span class="font-medium text-gray-800 dark:text-gray-200">{(parseInt(personnelCount) || 0) + (parseInt(guestCount) || 0)}</span>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                  <span class="text-gray-600 dark:text-gray-400">القيمة المستهلكة:</span>
-                  <span class="font-bold text-civil-blue dark:text-blue-400">{calculatedTotal.toFixed(2)} دج</span>
-                </div>
-                <div class="flex justify-between items-center py-2">
-                  <span class="text-gray-600 dark:text-gray-400">المعدل لكل وجبة:</span>
-                  <span class="font-bold text-civil-blue dark:text-blue-400">{calculatedRate.toFixed(2)} دج</span>
-                </div>
-              </div>
-
-              <div class="mt-6">
-                <AppAlert intent="info" title="ملاحظة">
-                  <span class="text-sm">يتم إجراء جميع الحسابات من قبل النظام الخلفي. البيانات المعروضة تأتي مباشرة من أوامر Tauri.</span>
-                </AppAlert>
-              </div>
-            </AppCard>
+          <div role="tabpanel" aria-label={activeMealLabel}>
+            <MealSection
+              mealId={activeMeal}
+              mealLabel={activeMealLabel}
+              form={mealForms[activeMeal]}
+              preview={activeMealPreview}
+              productRows={consumptionItems}
+              disabled={reportLocked}
+              isPreview={!dailyView}
+            />
           </div>
         </div>
+
+        <AppButton
+          variant="primary"
+          fullWidth
+          size="lg"
+          loading={$submitting}
+          disabled={$submitting || products.length === 0 || reportLocked}
+          on:click={submitDailyReport}
+        >
+          {reportLocked ? 'التقرير اليومي مسجّل' : 'تسجيل التقرير اليومي'}
+        </AppButton>
       </div>
     {/if}
   </div>
