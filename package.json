@@ -22,7 +22,6 @@
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-fs": "^2.5.0",
-    "@tauri-apps/plugin-shell": "^2.3.5",
     "lucide-svelte": "^1.0.1",
     "svelte-spa-router": "^5.1.0"
   },
