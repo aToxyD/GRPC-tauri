@@ -7,7 +7,9 @@ use grpc_lib::application::services::{
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::ports::backup::BackupPort;
 use grpc_lib::errors::{AppError, BusinessLogicError};
-use grpc_lib::models::DailyReportResult;
+use grpc_lib::models::{
+    DailyReport, DailyReportMeal, DailyReportResult, MealSectionResult,
+};
 use grpc_lib::repositories::RepositoryProvider;
 use tempfile::tempdir;
 
@@ -58,18 +60,32 @@ fn case_b_rejects_import_records_for_archived_year() {
     db.executor().settings().set_current_year(2026).unwrap();
 
     let report = DailyReportResult {
-        report: grpc_lib::models::DailyReport {
+        report: DailyReport {
             id: "r1".into(),
             date: chrono::NaiveDate::from_ymd_opt(2018, 6, 1).unwrap(),
-            personnel_count: 1,
-            guest_count: 1,
-            total_meals_cost: 0.0,
-            actual_meal_rate: 0.0,
             unit_id: None,
+            total_daily_cost: 0.0,
+            total_daily_average: 0.0,
+            total_daily_beneficiaries: 2,
             created_at: chrono::Utc::now(),
             fiscal_year: 2018,
         },
-        items: vec![],
+        meals: vec![MealSectionResult {
+            meal: DailyReportMeal {
+                id: "m1".into(),
+                daily_report_id: "r1".into(),
+                meal_type: grpc_lib::models::MealType::Breakfast,
+                staff_24h_count: 1,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 1,
+                total_beneficiaries: 2,
+                total_meal_cost: 0.0,
+                meal_average: 0.0,
+            },
+            items: vec![],
+        }],
     };
 
     let err = ImportSyncService::new(db.executor())

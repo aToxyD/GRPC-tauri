@@ -14,7 +14,8 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError};
 use crate::models::{
-    DailyConsumptionInput, DailyReport, DailyReportResult, MonthlySummary, WilayaReportList,
+    DailyConsumptionInput, DailyConsumptionView, DailyReport, DailyReportInput, DailyReportResult,
+    MonthlySummary, WilayaReportList,
 };
 
 use crate::application::services::{
@@ -47,16 +48,22 @@ pub fn calculate_meal_cost(items: Vec<(f64, f64)>) -> Result<f64, String> {
     Ok(ReportCalculationService::calculate_meal_cost(items))
 }
 
-/// Calculate meal rate from total cost
+/// Calculate meal rate from total cost and beneficiary counts
 #[tauri::command]
 pub fn calculate_meal_rate(
     total_cost: f64,
-    personnel_count: i32,
+    staff_24h_count: i32,
+    staff_8h_count: i32,
+    reservation_count: i32,
+    mission_count: i32,
     guest_count: i32,
 ) -> Result<f64, String> {
     Ok(ReportCalculationService::calculate_meal_rate(
         total_cost,
-        personnel_count,
+        staff_24h_count,
+        staff_8h_count,
+        reservation_count,
+        mission_count,
         guest_count,
     ))
 }
@@ -111,7 +118,7 @@ pub fn get_monthly_summary(
 #[tauri::command]
 pub fn create_daily_report(
     state: State<AppState>,
-    input: DailyConsumptionInput,
+    input: DailyReportInput,
     _unit_id: Option<String>,
 ) -> Result<DailyReportResult, String> {
     let (session, _) =
@@ -140,33 +147,29 @@ pub fn create_daily_report(
 
     let user_ctx = user_ctx_from_session(&session);
 
-    // Create daily report within a transaction via AuditTxService
-    let (report_id, _total_cost, _meal_rate) =
-        AuditTxService::execute_with_audit(db, AuditAction::CreateDailyReport, &user_ctx, |tx| {
+    let report_id = AuditTxService::execute_with_audit(
+        db,
+        AuditAction::CreateDailyReport,
+        &user_ctx,
+        |tx| {
             DailyReportService::new(tx.executor).create_daily_report(
                 &input,
                 effective_unit_id.as_deref(),
                 &session.user_id,
                 &session.username,
             )
-        })
-        .map_err(into_command_error)?;
+        },
+    )
+    .map_err(into_command_error)?;
 
-    // Fetch result (delegated to DailyReportService)
-    let report_svc = DailyReportService::new(db.executor());
-    let report = report_svc
-        .get_daily_report(&report_id)
+    DailyReportService::new(db.executor())
+        .load_daily_report_result(&report_id)
         .map_err(into_command_error)?
         .ok_or_else(|| {
             into_command_error(AppError::Internal(
                 "Report not found after creation".to_string(),
             ))
-        })?;
-    let items = report_svc
-        .get_daily_report_items(&report_id)
-        .map_err(into_command_error)?;
-
-    Ok(DailyReportResult { report, items })
+        })
 }
 
 /// Get daily report by ID
@@ -232,12 +235,12 @@ pub fn list_daily_reports(
         .map_err(into_command_error)
 }
 
-/// Get daily consumption for a date
+/// Get daily consumption view for a date (meals + daily summary)
 #[tauri::command]
 pub fn get_daily_consumption(
     state: State<AppState>,
     date: String,
-) -> Result<Vec<DailyReport>, String> {
+) -> Result<Option<DailyConsumptionView>, String> {
     let (_session, _) =
         authorize_command(&state, Action::ReadDailyReports, None).map_err(into_command_error)?;
     state.touch_session();
@@ -247,16 +250,20 @@ pub fn get_daily_consumption(
 
     let executor = db.executor();
     let settings_svc = SettingsService::new(executor);
-    let (scope, _) = build_report_scope(&settings_svc).map_err(into_command_error)?;
 
-    let target_date = NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| {
-        into_command_error(AppError::DateParse(format!("Invalid date format: {}", e)))
-    })?;
-    let filters = DailyReportFilters {
-        start_date: Some(target_date),
-        end_date: Some(target_date),
+    let effective_unit_id = {
+        let settings = settings_svc.get_settings().map_err(into_command_error)?;
+        if settings.node_type == crate::models::NodeType::Unit {
+            settings_svc
+                .get_current_unit_id()
+                .map_err(into_command_error)?
+        } else {
+            None
+        }
     };
-    crate::application::usecases::reports::list_daily_reports::execute(executor, scope, filters)
+
+    DailyReportService::new(executor)
+        .get_daily_consumption_view(&date, effective_unit_id.as_deref())
         .map_err(into_command_error)
 }
 
@@ -308,7 +315,7 @@ pub fn generate_reports(
 #[tauri::command]
 pub fn record_consumption(
     state: State<AppState>,
-    consumption: DailyConsumptionInput,
+    consumption: DailyReportInput,
     unit_id: Option<String>,
 ) -> Result<DailyReportResult, String> {
     create_daily_report(state, consumption, unit_id)

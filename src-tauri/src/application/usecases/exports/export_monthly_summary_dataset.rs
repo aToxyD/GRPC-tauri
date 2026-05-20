@@ -20,11 +20,12 @@ pub fn execute<'a>(
     let summary = crate::models::MonthlySummary {
         month: projection.month,
         year: projection.year,
-        total_personnel: projection.total_personnel,
-        total_guests: projection.total_guests,
-        total_meals: projection.total_meals,
+        total_beneficiaries: projection.total_beneficiaries,
         total_consumption_value: projection.total_cost,
-        average_meal_rate: projection.average_meal_rate,
+        breakfast_average: projection.breakfast_average,
+        lunch_average: projection.lunch_average,
+        dinner_average: projection.dinner_average,
+        daily_average: projection.daily_average,
         report_count: projection.report_count,
     };
     let daily_detail_rows: Vec<DailyDetailSyncSnapshot> = projection
@@ -32,10 +33,12 @@ pub fn execute<'a>(
         .into_iter()
         .map(|r| DailyDetailSyncSnapshot {
             date: r.date,
-            personnel_count: r.personnel,
-            guest_count: r.guests,
-            total_meals_cost: r.cost,
-            actual_meal_rate: r.actual_meal_rate,
+            total_daily_beneficiaries: r.total_daily_beneficiaries,
+            total_daily_cost: r.total_daily_cost,
+            breakfast_average: r.breakfast_average,
+            lunch_average: r.lunch_average,
+            dinner_average: r.dinner_average,
+            daily_average: r.daily_average,
         })
         .collect();
 

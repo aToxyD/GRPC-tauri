@@ -1,22 +1,8 @@
-// use crate::db::Database;
 use crate::errors::AppError;
-use crate::models::{MonthlySummary, WilayaReportList};
+use crate::models::{DailyReport, DailyReportMeal, MonthlySummary, WilayaReportList};
 use crate::repositories::RepositoryProvider;
 use chrono::NaiveDate;
 
-/// ReportCalculationService
-///
-/// Business logic for:
-/// - meal cost and rate calculations
-/// - product price with TVA
-/// - Wilaya-level report aggregation and branching
-///
-/// ReportCalculationService
-///
-/// Business logic for:
-/// - meal cost and rate calculations
-/// - product price with TVA
-/// - Wilaya-level report aggregation and branching
 pub struct ReportCalculationService<'a> {
     executor: crate::repositories::DbExecutor<'a>,
 }
@@ -32,13 +18,17 @@ impl<'a> ReportCalculationService<'a> {
             .fold(0.0, |acc, (qty, price)| acc + qty * price)
     }
 
-    pub fn calculate_meal_rate(total_cost: f64, personnel_count: i32, guest_count: i32) -> f64 {
-        let total_meals = personnel_count + guest_count;
-        if total_meals > 0 {
-            total_cost / total_meals as f64
-        } else {
-            0.0
-        }
+    pub fn calculate_meal_rate(
+        total_cost: f64,
+        staff_24h: i32,
+        staff_8h: i32,
+        reservation: i32,
+        mission: i32,
+        guest: i32,
+    ) -> f64 {
+        let total_beneficiaries =
+            DailyReportMeal::compute_total_beneficiaries(staff_24h, staff_8h, reservation, mission, guest);
+        DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
 
     pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> f64 {
@@ -86,9 +76,6 @@ impl<'a> ReportCalculationService<'a> {
             "monthly" => {
                 let target_year = match year {
                     Some(y) => y,
-                    // FALLBACK: year not supplied by caller — use current UTC year.
-                    // This is only reached from non-fiscal API paths (UI year filter).
-                    // Financial operations always supply an explicit year.
                     None => crate::application::services::fiscal_scope::resolve_active_fiscal_year(
                         self.executor,
                     )?,
@@ -102,11 +89,12 @@ impl<'a> ReportCalculationService<'a> {
                     summaries.push(MonthlySummary {
                         month: r.report_month,
                         year: r.report_year,
-                        total_personnel: r.total_personnel,
-                        total_guests: r.total_guests,
-                        total_meals: r.total_meals,
+                        total_beneficiaries: r.total_beneficiaries,
                         total_consumption_value: r.total_consumption_value,
-                        average_meal_rate: r.average_meal_rate,
+                        breakfast_average: r.breakfast_average,
+                        lunch_average: r.lunch_average,
+                        dinner_average: r.dinner_average,
+                        daily_average: r.daily_average,
                         report_count: r.report_count,
                     });
                 }

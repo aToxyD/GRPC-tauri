@@ -108,11 +108,9 @@ impl ExcelPort for XlsxAdapter {
         let header_fmt = self.header_format();
         let headers = [
             "التاريخ",
-            "عدد الموظفين",
-            "عدد الضيوف",
-            "إجمالي الوجبات",
-            "تكلفة الوجبات",
-            "معدل الوجبة",
+            "المستفيدون",
+            "التكلفة اليومية",
+            "المعدل اليومي",
         ];
 
         for (col, h) in headers.iter().enumerate() {
@@ -133,19 +131,13 @@ impl ExcelPort for XlsxAdapter {
                 .write_with_format(row, 0, r.date.to_string(), &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 1, r.personnel_count as f64, &fmt)
+                .write_with_format(row, 1, r.total_daily_beneficiaries as f64, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 2, r.guest_count as f64, &fmt)
+                .write_with_format(row, 2, r.total_daily_cost, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 3, (r.personnel_count + r.guest_count) as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            worksheet
-                .write_with_format(row, 4, r.total_meals_cost, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            worksheet
-                .write_with_format(row, 5, r.actual_meal_rate, &fmt)
+                .write_with_format(row, 3, r.total_daily_average, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
 
@@ -163,9 +155,12 @@ impl ExcelPort for XlsxAdapter {
         let headers = [
             "السنة",
             "الشهر",
-            "إجمالي الوجبات",
+            "إجمالي المستفيدين",
             "إجمالي الاستهلاك",
-            "متوسط المعدل",
+            "متوسط الفطور",
+            "متوسط الغداء",
+            "متوسط العشاء",
+            "المعدل اليومي",
         ];
 
         for (col, h) in headers.iter().enumerate() {
@@ -189,13 +184,22 @@ impl ExcelPort for XlsxAdapter {
                 .write_with_format(row, 1, s.month as f64, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 2, s.total_meals as f64, &fmt)
+                .write_with_format(row, 2, s.total_beneficiaries as f64, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
                 .write_with_format(row, 3, s.total_consumption_value, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 4, s.average_meal_rate, &fmt)
+                .write_with_format(row, 4, s.breakfast_average, &fmt)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            worksheet
+                .write_with_format(row, 5, s.lunch_average, &fmt)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            worksheet
+                .write_with_format(row, 6, s.dinner_average, &fmt)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            worksheet
+                .write_with_format(row, 7, s.daily_average, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
 
@@ -213,10 +217,9 @@ impl ExcelPort for XlsxAdapter {
         let headers = [
             "اسم الوحدة",
             "كود الوحدة",
-            "إجمالي الموظفين",
-            "إجمالي الضيوف",
+            "إجمالي المستفيدين",
             "إجمالي التكلفة",
-            "المعدل المتوسط",
+            "المعدل اليومي",
         ];
 
         for (col, h) in headers.iter().enumerate() {
@@ -240,16 +243,13 @@ impl ExcelPort for XlsxAdapter {
                 .write_with_format(row, 1, &r.unit_id, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 2, r.total_personnel as f64, &fmt)
+                .write_with_format(row, 2, r.total_beneficiaries as f64, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 3, r.total_guests as f64, &fmt)
+                .write_with_format(row, 3, r.total_cost, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             worksheet
-                .write_with_format(row, 4, r.total_cost, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            worksheet
-                .write_with_format(row, 5, r.avg_meal_rate, &fmt)
+                .write_with_format(row, 4, r.daily_average, &fmt)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
 

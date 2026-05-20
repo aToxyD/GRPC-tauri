@@ -151,11 +151,10 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 CREATE TABLE IF NOT EXISTS daily_reports (
     id TEXT PRIMARY KEY,
     date TEXT NOT NULL,
-    personnel_count INTEGER NOT NULL CHECK (personnel_count >= 0),
-    guest_count INTEGER NOT NULL DEFAULT 0 CHECK (guest_count >= 0),
-    total_meals_cost REAL NOT NULL CHECK (total_meals_cost >= 0),
-    actual_meal_rate REAL NOT NULL CHECK (actual_meal_rate >= 0),
     unit_id TEXT,
+    total_daily_cost REAL NOT NULL DEFAULT 0 CHECK (total_daily_cost >= 0),
+    total_daily_average REAL NOT NULL DEFAULT 0 CHECK (total_daily_average >= 0),
+    total_daily_beneficiaries INTEGER NOT NULL DEFAULT 0 CHECK (total_daily_beneficiaries >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
@@ -163,9 +162,28 @@ CREATE TABLE IF NOT EXISTS daily_reports (
     fiscal_year INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS daily_consumption_items (
+CREATE TABLE IF NOT EXISTS daily_report_meals (
     id TEXT PRIMARY KEY,
     daily_report_id TEXT NOT NULL,
+    meal_type TEXT NOT NULL CHECK (meal_type IN ('breakfast', 'lunch', 'dinner')),
+    staff_24h_count INTEGER NOT NULL DEFAULT 0 CHECK (staff_24h_count >= 0),
+    staff_8h_count INTEGER NOT NULL DEFAULT 0 CHECK (staff_8h_count >= 0),
+    reservation_count INTEGER NOT NULL DEFAULT 0 CHECK (reservation_count >= 0),
+    mission_count INTEGER NOT NULL DEFAULT 0 CHECK (mission_count >= 0),
+    guest_count INTEGER NOT NULL DEFAULT 0 CHECK (guest_count >= 0),
+    total_beneficiaries INTEGER NOT NULL DEFAULT 0 CHECK (total_beneficiaries >= 0),
+    total_meal_cost REAL NOT NULL DEFAULT 0 CHECK (total_meal_cost >= 0),
+    meal_average REAL NOT NULL DEFAULT 0 CHECK (meal_average >= 0),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    node_id TEXT,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    FOREIGN KEY (daily_report_id) REFERENCES daily_reports(id) ON DELETE CASCADE,
+    UNIQUE(daily_report_id, meal_type)
+);
+
+CREATE TABLE IF NOT EXISTS daily_report_meal_items (
+    id TEXT PRIMARY KEY,
+    meal_id TEXT NOT NULL,
     product_id TEXT NOT NULL,
     quantity REAL NOT NULL CHECK (quantity > 0),
     unit_price REAL NOT NULL CHECK (unit_price >= 0),
@@ -173,7 +191,7 @@ CREATE TABLE IF NOT EXISTS daily_consumption_items (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
-    FOREIGN KEY (daily_report_id) REFERENCES daily_reports(id) ON DELETE CASCADE,
+    FOREIGN KEY (meal_id) REFERENCES daily_report_meals(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
@@ -238,11 +256,12 @@ CREATE TABLE IF NOT EXISTS monthly_reports (
     unit_id TEXT NOT NULL,
     report_year INTEGER NOT NULL CHECK(report_year >= 2020),
     report_month INTEGER NOT NULL CHECK(report_month BETWEEN 1 AND 12),
-    total_personnel INTEGER NOT NULL DEFAULT 0 CHECK(total_personnel >= 0),
-    total_guests INTEGER NOT NULL DEFAULT 0 CHECK(total_guests >= 0),
-    total_meals INTEGER NOT NULL DEFAULT 0 CHECK(total_meals >= 0),
+    total_beneficiaries INTEGER NOT NULL DEFAULT 0 CHECK(total_beneficiaries >= 0),
     total_consumption_value REAL NOT NULL DEFAULT 0.0 CHECK(total_consumption_value >= 0),
-    average_meal_rate REAL NOT NULL DEFAULT 0.0 CHECK(average_meal_rate >= 0),
+    breakfast_average REAL NOT NULL DEFAULT 0.0 CHECK(breakfast_average >= 0),
+    lunch_average REAL NOT NULL DEFAULT 0.0 CHECK(lunch_average >= 0),
+    dinner_average REAL NOT NULL DEFAULT 0.0 CHECK(dinner_average >= 0),
+    daily_average REAL NOT NULL DEFAULT 0.0 CHECK(daily_average >= 0),
     report_count INTEGER NOT NULL DEFAULT 0 CHECK(report_count >= 0),
     imported_at TEXT NOT NULL,
     imported_by TEXT NOT NULL,
@@ -420,6 +439,8 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 CREATE INDEX IF NOT EXISTS idx_daily_reports_date ON daily_reports(date);
 CREATE INDEX IF NOT EXISTS idx_daily_reports_unit_id ON daily_reports(unit_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_date_unit_unique ON daily_reports(date, COALESCE(unit_id, '__NULL__'));
+CREATE INDEX IF NOT EXISTS idx_daily_report_meals_report_id ON daily_report_meals(daily_report_id);
+CREATE INDEX IF NOT EXISTS idx_daily_report_meal_items_meal_id ON daily_report_meal_items(meal_id);
 CREATE INDEX IF NOT EXISTS idx_daily_reports_fiscal_year ON daily_reports(fiscal_year);
 
 -- Products & Stocks
@@ -436,8 +457,8 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_order_date ON supplier_orders(order_date);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_status ON supplier_orders(status);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_fiscal_year ON supplier_orders(fiscal_year);
-CREATE INDEX IF NOT EXISTS idx_daily_consumption_items_report_id ON daily_consumption_items(daily_report_id);
-CREATE INDEX IF NOT EXISTS idx_daily_consumption_items_product_id ON daily_consumption_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_daily_report_meal_items_meal_id ON daily_report_meal_items(meal_id);
+CREATE INDEX IF NOT EXISTS idx_daily_report_meal_items_product_id ON daily_report_meal_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_order_items_order_id ON supplier_order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_order_items_product_id ON supplier_order_items(product_id);
 

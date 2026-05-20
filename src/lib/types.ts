@@ -125,27 +125,50 @@ export interface CreateOrderRequest {
   items: OrderItemInput[];
 }
 
+export interface UpdateOrderRequest {
+  id: string;
+  supplier_name: string;
+  reference_number: string | null;
+  items: OrderItemInput[];
+}
+
 export interface OrderItemInput {
   product_id: string;
   quantity: number;
   unit_price: number;
 }
 
-// Daily Report Types
+// Daily consumption report (one per date + unit, three meal sections)
+export type MealType = 'breakfast' | 'lunch' | 'dinner';
+
 export interface DailyReport {
   id: string;
   date: string;
-  personnel_count: number;
-  guest_count: number;
-  total_meals_cost: number;
-  actual_meal_rate: number;
   unit_id: string | null;
+  total_daily_cost: number;
+  total_daily_average: number;
+  total_daily_beneficiaries: number;
   created_at: string;
+  fiscal_year: number;
 }
 
-export interface DailyConsumptionItem {
+export interface DailyReportMeal {
   id: string;
   daily_report_id: string;
+  meal_type: MealType;
+  staff_24h_count: number;
+  staff_8h_count: number;
+  reservation_count: number;
+  mission_count: number;
+  guest_count: number;
+  total_beneficiaries: number;
+  total_meal_cost: number;
+  meal_average: number;
+}
+
+export interface DailyReportMealItem {
+  id: string;
+  meal_id: string;
   product_id: string;
   product_name: string;
   quantity: number;
@@ -153,17 +176,55 @@ export interface DailyConsumptionItem {
   total_cost: number;
 }
 
-export interface DailyReportResult {
-  report: DailyReport;
-  items: DailyConsumptionItem[];
+export interface MealSectionResult {
+  meal: DailyReportMeal;
+  items: DailyReportMealItem[];
 }
 
-export interface DailyConsumptionInput {
-  date: string;
-  personnel_count: number;
+export interface MealSectionInput {
+  meal_type: MealType;
+  staff_24h_count: number;
+  staff_8h_count: number;
+  reservation_count: number;
+  mission_count: number;
   guest_count: number;
   items: ConsumptionItemInput[];
 }
+
+export interface DailyReportInput {
+  date: string;
+  meals: MealSectionInput[];
+}
+
+export interface DailyReportResult {
+  report: DailyReport;
+  meals: MealSectionResult[];
+}
+
+export interface DailyConsumptionSummary {
+  breakfast_beneficiaries: number;
+  lunch_beneficiaries: number;
+  dinner_beneficiaries: number;
+  breakfast_cost: number;
+  lunch_cost: number;
+  dinner_cost: number;
+  breakfast_average: number;
+  lunch_average: number;
+  dinner_average: number;
+  total_daily_beneficiaries: number;
+  total_daily_cost: number;
+  daily_average: number;
+}
+
+export type DailyConsumptionView = DailyReportResult;
+
+// Legacy aliases
+export type MealConsumption = DailyReportMeal;
+export type MealConsumptionItem = DailyReportMealItem;
+export type MealConsumptionResult = MealSectionResult;
+export type MealConsumptionInput = MealSectionInput;
+export type DailyConsumptionInput = DailyReportInput;
+export type DailyConsumptionItem = DailyReportMealItem;
 
 export interface ConsumptionItemInput {
   product_id: string;
@@ -174,11 +235,12 @@ export interface ConsumptionItemInput {
 export interface MonthlySummary {
   month: number;
   year: number;
-  total_personnel: number;
-  total_guests: number;
-  total_meals: number;
+  total_beneficiaries: number;
   total_consumption_value: number;
-  average_meal_rate: number;
+  breakfast_average: number;
+  lunch_average: number;
+  dinner_average: number;
+  daily_average: number;
   report_count: number;
 }
 

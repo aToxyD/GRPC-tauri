@@ -74,10 +74,12 @@ pub fn create_test_product(db: &Database, id: &str, name: &str) -> String {
     id.to_string()
 }
 
-// Helper: إنشاء تقرير يومي
+// Helper: إنشاء تقرير يومي (رأس + وجبة فطور للاختبارات)
 pub fn create_test_daily_report(db: &Database, unit_id: &str, date: &str) -> String {
     let id = Uuid::new_v4().to_string();
+    let meal_id = format!("{id}-breakfast");
     let now = Utc::now().to_rfc3339();
+    let naive_date: chrono::NaiveDate = date.parse().unwrap();
     let report_repo = ReportRepository::new(db.executor());
 
     report_repo
@@ -85,20 +87,39 @@ pub fn create_test_daily_report(db: &Database, unit_id: &str, date: &str) -> Str
             &id,
             &grpc_lib::models::DailyReport {
                 id: id.clone(),
-                date: date.parse().unwrap(),
-                personnel_count: 10,
-                guest_count: 5,
-                total_meals_cost: 1000.0,
-                actual_meal_rate: 66.67,
+                date: naive_date,
                 unit_id: Some(unit_id.to_string()),
-                fiscal_year: date.parse::<chrono::NaiveDate>().unwrap().year(),
+                total_daily_cost: 1000.0,
+                total_daily_average: 66.67,
+                total_daily_beneficiaries: 15,
+                fiscal_year: naive_date.year(),
                 created_at: Utc::now(),
             },
             &now,
         )
         .unwrap();
 
+    report_repo
+        .insert_raw_meal(&grpc_lib::models::DailyReportMeal {
+            id: meal_id,
+            daily_report_id: id.clone(),
+            meal_type: grpc_lib::models::MealType::Breakfast,
+            staff_24h_count: 5,
+            staff_8h_count: 3,
+            reservation_count: 1,
+            mission_count: 1,
+            guest_count: 5,
+            total_beneficiaries: 15,
+            total_meal_cost: 1000.0,
+            meal_average: 66.67,
+        })
+        .unwrap();
+
     id
+}
+
+pub fn test_breakfast_meal_id(report_id: &str) -> String {
+    format!("{report_id}-breakfast")
 }
 
 // Helper: إنشاء حركة مخزون مباشرة (للاختبارات)
@@ -159,11 +180,10 @@ fn test_opening_is_last_balance_before_month_unit_scoped() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_jan,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_jan.clone(),
+                meal_id: test_breakfast_meal_id(&dr_jan),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 10.0,
@@ -206,11 +226,10 @@ fn test_opening_is_last_balance_before_month_unit_scoped() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_feb,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_feb.clone(),
+                meal_id: test_breakfast_meal_id(&dr_feb),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 5.0,
@@ -268,11 +287,10 @@ fn test_opening_correct_when_in_precedes_first_out_in_month() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_feb,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_feb.clone(),
+                meal_id: test_breakfast_meal_id(&dr_feb),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 20.0,
@@ -346,11 +364,10 @@ fn test_new_product_first_month_no_false_anomaly() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_mar,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_mar.clone(),
+                meal_id: test_breakfast_meal_id(&dr_mar),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 30.0,
@@ -425,11 +442,10 @@ fn test_product_with_consumption_but_no_prior_stock_triggers_anomaly() {
     // إضافة عنصر استهلاك للتقرير
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_apr,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_apr.clone(),
+                meal_id: test_breakfast_meal_id(&dr_apr),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 10.0,
@@ -502,11 +518,10 @@ fn test_total_in_includes_order_without_consumption_link() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_jan,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_jan.clone(),
+                meal_id: test_breakfast_meal_id(&dr_jan),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 10.0,
@@ -575,11 +590,10 @@ fn test_property_computed_closing_never_negative() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_jan,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_jan.clone(),
+                meal_id: test_breakfast_meal_id(&dr_jan),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 20.0,
@@ -649,11 +663,10 @@ fn test_property_formula_is_deterministic() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_jan,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_jan.clone(),
+                meal_id: test_breakfast_meal_id(&dr_jan),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 30.0,
@@ -755,11 +768,10 @@ fn test_opening_does_not_leak_other_units_balance() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_b,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_b.clone(),
+                meal_id: test_breakfast_meal_id(&dr_b),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 20.0,
@@ -800,11 +812,10 @@ fn test_opening_does_not_leak_other_units_balance() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_a,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_a.clone(),
+                meal_id: test_breakfast_meal_id(&dr_a),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 10.0,
@@ -856,11 +867,10 @@ fn test_in_for_correct_unit_is_counted() {
     let dr_a = create_test_daily_report(&db, &unit_a, "2024-01-10");
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_a,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_a.clone(),
+                meal_id: test_breakfast_meal_id(&dr_a),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 10.0,
@@ -930,11 +940,10 @@ fn test_in_not_double_counted_across_units() {
 
     let report_repo = ReportRepository::new(db.executor());
     report_repo
-        .insert_raw_consumption_item(
-            &dr_a,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_a.clone(),
+                meal_id: test_breakfast_meal_id(&dr_a),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 5.0,
@@ -944,11 +953,10 @@ fn test_in_not_double_counted_across_units() {
         )
         .unwrap();
     report_repo
-        .insert_raw_consumption_item(
-            &dr_b,
-            &grpc_lib::models::DailyConsumptionItem {
+        .insert_raw_meal_item(
+            &grpc_lib::models::DailyReportMealItem {
                 id: Uuid::new_v4().to_string(),
-                daily_report_id: dr_b.clone(),
+                meal_id: test_breakfast_meal_id(&dr_b),
                 product_id: product_id.clone(),
                 product_name: "Test Product".to_string(),
                 quantity: 5.0,

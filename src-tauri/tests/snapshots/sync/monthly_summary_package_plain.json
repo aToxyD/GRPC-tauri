@@ -9,27 +9,32 @@
     "summary": {
       "month": 3,
       "year": 2024,
-      "total_personnel": 100,
-      "total_guests": 20,
-      "total_meals": 120,
+      "total_beneficiaries": 120,
       "total_consumption_value": 1500.25,
-      "average_meal_rate": 12.5,
+      "breakfast_average": 12.5,
+      "lunch_average": 0.0,
+      "dinner_average": 0.0,
+      "daily_average": 12.5,
       "report_count": 2
     },
     "daily_detail_rows": [
       {
         "date": "2024-03-01",
-        "personnel_count": 50,
-        "guest_count": 10,
-        "total_meals_cost": 750.125,
-        "actual_meal_rate": 12.5
+        "total_daily_beneficiaries": 60,
+        "total_daily_cost": 750.125,
+        "breakfast_average": 12.5,
+        "lunch_average": 0.0,
+        "dinner_average": 0.0,
+        "daily_average": 12.5
       },
       {
         "date": "2024-03-02",
-        "personnel_count": 50,
-        "guest_count": 10,
-        "total_meals_cost": 750.125,
-        "actual_meal_rate": 12.5
+        "total_daily_beneficiaries": 60,
+        "total_daily_cost": 750.125,
+        "breakfast_average": 12.5,
+        "lunch_average": 0.0,
+        "dinner_average": 0.0,
+        "daily_average": 12.5
       }
     ]
   }

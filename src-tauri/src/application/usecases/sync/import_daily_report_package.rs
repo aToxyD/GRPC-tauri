@@ -1,4 +1,4 @@
-//! Apply decrypted daily report interchange package on Wilaya node.
+//! Apply decrypted daily report package on Wilaya node (one report + meals[]).
 
 use chrono::Utc;
 
@@ -9,7 +9,9 @@ use crate::application::sync::{
 };
 use crate::application::usecases::exports::types::DailyReportExportDataset;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
-use crate::models::{DailyConsumptionItem, DailyReport, DailyReportResult};
+use crate::models::{
+    DailyReport, DailyReportMeal, DailyReportMealItem, DailyReportResult, MealSectionResult,
+};
 use crate::repositories::{DbExecutor, UnitRepository};
 
 pub const DAILY_REPORT_PACKAGE_KIND: &str = "daily_report";
@@ -92,35 +94,55 @@ pub fn execute(
 
     let snapshot = input.package.payload.snapshot;
     use chrono::Datelike;
+
     let report = DailyReport {
-        id: snapshot.report_id,
+        id: snapshot.report_id.clone(),
         date: snapshot.date,
-        personnel_count: snapshot.personnel_count,
-        guest_count: snapshot.guest_count,
-        total_meals_cost: snapshot.total_meals_cost,
-        actual_meal_rate: snapshot.actual_meal_rate,
         unit_id: Some(unit_trim.to_string()),
+        total_daily_cost: snapshot.total_daily_cost,
+        total_daily_average: snapshot.total_daily_average,
+        total_daily_beneficiaries: snapshot.total_daily_beneficiaries,
         created_at: Utc::now(),
         fiscal_year: snapshot.date.year(),
     };
-    let report_id = report.id.clone();
-    let items: Vec<DailyConsumptionItem> = snapshot
-        .items
-        .into_iter()
-        .map(|i| DailyConsumptionItem {
-            id: uuid::Uuid::new_v4().to_string(),
-            daily_report_id: report_id.clone(),
-            product_id: i.product_id,
-            product_name: i.product_name,
-            quantity: i.quantity,
-            unit_price: i.unit_price,
-            total_cost: i.total_cost,
-        })
-        .collect();
 
-    let item_count = items.len();
-    let imported = ImportSyncService::new(executor)
-        .import_daily_reports(vec![DailyReportResult { report, items }])?;
+    let mut meal_results = Vec::new();
+    for meal_snap in snapshot.meals {
+        let meal_id = uuid::Uuid::new_v4().to_string();
+        let meal = DailyReportMeal {
+            id: meal_id.clone(),
+            daily_report_id: report.id.clone(),
+            meal_type: meal_snap.meal_type,
+            staff_24h_count: meal_snap.staff_24h_count,
+            staff_8h_count: meal_snap.staff_8h_count,
+            reservation_count: meal_snap.reservation_count,
+            mission_count: meal_snap.mission_count,
+            guest_count: meal_snap.guest_count,
+            total_beneficiaries: meal_snap.total_beneficiaries,
+            total_meal_cost: meal_snap.total_meal_cost,
+            meal_average: meal_snap.meal_average,
+        };
+        let items: Vec<DailyReportMealItem> = meal_snap
+            .items
+            .into_iter()
+            .map(|i| DailyReportMealItem {
+                id: uuid::Uuid::new_v4().to_string(),
+                meal_id: meal_id.clone(),
+                product_id: i.product_id,
+                product_name: i.product_name,
+                quantity: i.quantity,
+                unit_price: i.unit_price,
+                total_cost: i.total_cost,
+            })
+            .collect();
+        meal_results.push(MealSectionResult { meal, items });
+    }
+
+    let item_count: usize = meal_results.iter().map(|m| m.items.len()).sum();
+    let imported = ImportSyncService::new(executor).import_daily_reports(vec![DailyReportResult {
+        report,
+        meals: meal_results,
+    }])?;
     registry.mark_imported(&package_id)?;
 
     Ok(ImportDailyReportPackageOutcome {

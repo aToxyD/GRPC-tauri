@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DailyReportResult } from '../../lib/types';
+  import type { DailyReportResult, MealType } from '../../lib/types';
   import { createEventDispatcher } from 'svelte';
   import AppDialog from '../../lib/components/ui/AppDialog.svelte';
   import AppTable from '../../lib/components/ui/AppTable.svelte';
@@ -8,6 +8,12 @@
   export let selectedReport: DailyReportResult;
 
   const dispatch = createEventDispatcher();
+
+  const MEAL_LABELS: Record<MealType, string> = {
+    breakfast: 'فطور',
+    lunch: 'غداء',
+    dinner: 'عشاء',
+  };
 
   function close() {
     dispatch('close');
@@ -18,56 +24,66 @@
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
   }
 </script>
 
 <AppDialog
   open={true}
-  title="تفاصيل التقرير"
+  title="تفاصيل التقرير اليومي"
   description={formatDate(selectedReport.report.date)}
   size="xl"
   on:close={close}
 >
-  <div class="grid grid-cols-4 gap-4 mb-6">
+  <div class="grid grid-cols-3 gap-4 mb-6 text-sm">
     <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-      <p class="text-sm text-gray-500 dark:text-gray-400">الموظفون</p>
-      <p class="text-lg font-bold text-gray-900 dark:text-white">{selectedReport.report.personnel_count}</p>
+      <p class="text-gray-500">المستفيدون</p>
+      <p class="text-lg font-bold">{selectedReport.report.total_daily_beneficiaries}</p>
     </div>
     <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-      <p class="text-sm text-gray-500 dark:text-gray-400">الضيوف</p>
-      <p class="text-lg font-bold text-gray-900 dark:text-white">{selectedReport.report.guest_count}</p>
+      <p class="text-gray-500">التكلفة</p>
+      <p class="text-lg font-bold text-civil-blue">{selectedReport.report.total_daily_cost.toFixed(2)} دج</p>
     </div>
     <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-      <p class="text-sm text-gray-500 dark:text-gray-400">التكلفة الإجمالية</p>
-      <p class="text-lg font-bold text-civil-blue">{selectedReport.report.total_meals_cost.toFixed(2)} دج</p>
-    </div>
-    <div class="text-center p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-      <p class="text-sm text-gray-500 dark:text-gray-400">المعدل/وجبة</p>
-      <p class="text-lg font-bold text-civil-blue">{selectedReport.report.actual_meal_rate.toFixed(2)} دج</p>
+      <p class="text-gray-500">المعدل اليومي</p>
+      <p class="text-lg font-bold text-civil-blue">{selectedReport.report.total_daily_average.toFixed(2)} دج</p>
     </div>
   </div>
 
-  <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3">المنتجات المستهلكة</h3>
-  
-  <AppTable empty={selectedReport.items.length === 0}>
-    <svelte:fragment slot="head">
-      <th class="table-header">المنتج</th>
-      <th class="table-header text-right">الكمية</th>
-      <th class="table-header text-right">سعر الوحدة</th>
-      <th class="table-header text-right">الإجمالي</th>
-    </svelte:fragment>
-
-    {#each selectedReport.items as item}
-      <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-        <td class="table-cell">{item.product_name}</td>
-        <td class="table-cell text-right">{item.quantity.toFixed(2)}</td>
-        <td class="table-cell text-right">{item.unit_price.toFixed(2)} دج</td>
-        <td class="table-cell text-right font-medium">{item.total_cost.toFixed(2)} دج</td>
-      </tr>
-    {/each}
-  </AppTable>
+  {#each selectedReport.meals as section}
+    <div class="mb-6 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+      <div class="px-4 py-2 bg-gray-50 dark:bg-gray-900 font-semibold text-gray-800 dark:text-gray-100">
+        {MEAL_LABELS[section.meal.meal_type]}
+      </div>
+      <div class="p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-4">
+        <div><span class="text-gray-500">24س/48ر:</span> {section.meal.staff_24h_count}</div>
+        <div><span class="text-gray-500">8 ساعات:</span> {section.meal.staff_8h_count}</div>
+        <div><span class="text-gray-500">محجوزون:</span> {section.meal.reservation_count}</div>
+        <div><span class="text-gray-500">مهمة:</span> {section.meal.mission_count}</div>
+        <div><span class="text-gray-500">ضيوف:</span> {section.meal.guest_count}</div>
+        <div><span class="text-gray-500">المستفيدون:</span> {section.meal.total_beneficiaries}</div>
+        <div><span class="text-gray-500">التكلفة:</span> {section.meal.total_meal_cost.toFixed(2)} دج</div>
+        <div><span class="text-gray-500">المعدل:</span> {section.meal.meal_average.toFixed(2)} دج</div>
+      </div>
+      <AppTable empty={section.items.length === 0}>
+        <svelte:fragment slot="head">
+          <th class="table-header">المنتج</th>
+          <th class="table-header text-right">الكمية</th>
+          <th class="table-header text-right">سعر الوحدة</th>
+          <th class="table-header text-right">الإجمالي</th>
+        </svelte:fragment>
+        {#each section.items as item}
+          <tr>
+            <td class="table-cell">{item.product_name}</td>
+            <td class="table-cell text-right">{item.quantity.toFixed(2)}</td>
+            <td class="table-cell text-right">{item.unit_price.toFixed(2)} دج</td>
+            <td class="table-cell text-right font-medium">{item.total_cost.toFixed(2)} دج</td>
+          </tr>
+        {/each}
+      </AppTable>
+    </div>
+  {/each}
 
   <svelte:fragment slot="actions">
     <AppButton variant="secondary" on:click={close}>إغلاق</AppButton>

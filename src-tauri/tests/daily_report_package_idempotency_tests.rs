@@ -13,7 +13,8 @@ use grpc_lib::db::ConnectionFactory;
 use grpc_lib::errors::{AppError, BusinessLogicError};
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
 use grpc_lib::models::{
-    DailyConsumptionSyncLine, DailyReportSyncSnapshot, NodeType, WilayaNodeConfiguration,
+    DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType,
+    NodeType, WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::{SettingsRepository, UnitRepository};
 
@@ -36,16 +37,26 @@ fn fixture_daily_package(
             snapshot: DailyReportSyncSnapshot {
                 report_id: "rep-1".into(),
                 date: NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
-                personnel_count: 8,
-                guest_count: 2,
-                total_meals_cost: 120.0,
-                actual_meal_rate: 12.0,
-                items: vec![DailyConsumptionSyncLine {
-                    product_id: "prod-1".into(),
-                    product_name: "Bread".into(),
-                    quantity: 1.0,
-                    unit_price: 20.0,
-                    total_cost: 20.0,
+                total_daily_cost: 120.0,
+                total_daily_average: 12.0,
+                total_daily_beneficiaries: 10,
+                meals: vec![MealSectionSyncSnapshot {
+                    meal_type: MealType::Breakfast,
+                    staff_24h_count: 5,
+                    staff_8h_count: 3,
+                    reservation_count: 0,
+                    mission_count: 0,
+                    guest_count: 2,
+                    total_beneficiaries: 10,
+                    total_meal_cost: 120.0,
+                    meal_average: 12.0,
+                    items: vec![DailyConsumptionSyncLine {
+                        product_id: "prod-1".into(),
+                        product_name: "Bread".into(),
+                        quantity: 1.0,
+                        unit_price: 20.0,
+                        total_cost: 20.0,
+                    }],
                 }],
             },
         },

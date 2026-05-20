@@ -336,11 +336,10 @@
             </svelte:fragment>
             <svelte:fragment slot="head">
               <th class="table-header">الشهر/السنة</th>
-              <th class="table-header">عدد التقارير</th>
-              <th class="table-header">الموظفون</th>
-              <th class="table-header">الضيوف</th>
+              <th class="table-header">عدد الأيام</th>
+              <th class="table-header">المستفيدون</th>
               <th class="table-header">القيمة الإجمالية</th>
-              <th class="table-header">المعدل/وجبة</th>
+              <th class="table-header">المعدل اليومي</th>
               <th class="table-header text-left">الإجراءات</th>
             </svelte:fragment>
 
@@ -348,10 +347,9 @@
               <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                 <td class="table-cell font-medium">{summary.month}/{summary.year}</td>
                 <td class="table-cell">{summary.report_count}</td>
-                <td class="table-cell">{summary.total_personnel}</td>
-                <td class="table-cell">{summary.total_guests}</td>
+                <td class="table-cell">{summary.total_beneficiaries}</td>
                 <td class="table-cell font-medium">{summary.total_consumption_value.toFixed(2)} دج</td>
-                <td class="table-cell">{summary.average_meal_rate.toFixed(2)} دج</td>
+                <td class="table-cell">{summary.daily_average.toFixed(2)} دج</td>
                 <td class="table-cell text-left">
                   <AppButton variant="ghost" size="sm" ariaLabel="عرض التفاصيل" on:click={() => viewMonthlySummary(summary)}>
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -421,10 +419,9 @@
             <svelte:fragment slot="head">
               <th class="table-header">التاريخ</th>
               <th class="table-header">الوحدة</th>
-              <th class="table-header">الموظفون</th>
-              <th class="table-header">الضيوف</th>
-              <th class="table-header">التكلفة الإجمالية</th>
-              <th class="table-header">المعدل/وجبة</th>
+              <th class="table-header">المستفيدون</th>
+              <th class="table-header">التكلفة اليومية</th>
+              <th class="table-header">المعدل اليومي</th>
               <th class="table-header text-left">الإجراءات</th>
             </svelte:fragment>
 
@@ -432,10 +429,9 @@
               <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                 <td class="table-cell font-medium">{formatDate(report.date)}</td>
                 <td class="table-cell">{report.unit_id || '-'}</td>
-                <td class="table-cell">{report.personnel_count}</td>
-                <td class="table-cell">{report.guest_count}</td>
-                <td class="table-cell font-medium">{report.total_meals_cost.toFixed(2)} دج</td>
-                <td class="table-cell">{report.actual_meal_rate.toFixed(2)} دج</td>
+                <td class="table-cell">{report.total_daily_beneficiaries}</td>
+                <td class="table-cell font-medium">{report.total_daily_cost.toFixed(2)} دج</td>
+                <td class="table-cell">{report.total_daily_average.toFixed(2)} دج</td>
                 <td class="table-cell text-left">
                   <AppButton variant="ghost" size="sm" ariaLabel="عرض التقرير" on:click={() => viewDetails(report)}>
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

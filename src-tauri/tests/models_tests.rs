@@ -33,24 +33,13 @@ fn test_product_calculations() {
     assert_eq!(total, 119.0);
 }
 
-/// Test daily report meal calculations
+/// Test meal section calculations
 #[test]
-fn test_daily_report_calculations() {
-    let report = DailyReport {
-        id: "R001".to_string(),
-        date: Utc::now().date_naive(),
-        personnel_count: 100,
-        guest_count: 20,
-        total_meals_cost: 5000.0,
-        actual_meal_rate: 41.67,
-        unit_id: Some("U001".to_string()),
-        fiscal_year: Utc::now().year(),
-        created_at: Utc::now(),
-    };
-
-    assert_eq!(report.total_meals(), 120);
-    assert!(report.has_consumption());
-    assert!(report.cost_per_meal().is_some());
+fn test_meal_consumption_calculations() {
+    let total = DailyReportMeal::compute_total_beneficiaries(50, 30, 10, 5, 20);
+    assert_eq!(total, 115);
+    let avg = DailyReportMeal::compute_meal_average(5000.0, total);
+    assert!((avg - 43.478).abs() < 0.01);
 }
 
 /// Test stock movement balance calculation

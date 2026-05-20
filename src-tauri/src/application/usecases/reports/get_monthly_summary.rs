@@ -21,11 +21,12 @@ pub fn execute<'a>(
     Ok(MonthlySummary {
         month: projection.month,
         year: projection.year,
-        total_personnel: projection.total_personnel,
-        total_guests: projection.total_guests,
-        total_meals: projection.total_meals,
+        total_beneficiaries: projection.total_beneficiaries,
         total_consumption_value: projection.total_cost,
-        average_meal_rate: projection.average_meal_rate,
+        breakfast_average: projection.breakfast_average,
+        lunch_average: projection.lunch_average,
+        dinner_average: projection.dinner_average,
+        daily_average: projection.daily_average,
         report_count: projection.report_count,
     })
 }

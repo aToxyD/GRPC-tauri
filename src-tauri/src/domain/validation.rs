@@ -223,9 +223,50 @@ pub fn validate_update_product_request(req: &UpdateProductRequest) -> Validation
     Ok(())
 }
 
-/// Validate daily consumption input
-pub fn validate_daily_consumption_input(input: &DailyConsumptionInput) -> ValidationResult {
-    // Validate date
+fn validate_meal_section_input(section: &MealSectionInput) -> ValidationResult {
+    let beneficiary_fields = [
+        ("staff_24h_count", section.staff_24h_count),
+        ("staff_8h_count", section.staff_8h_count),
+        ("reservation_count", section.reservation_count),
+        ("mission_count", section.mission_count),
+        ("guest_count", section.guest_count),
+    ];
+
+    for (field, value) in beneficiary_fields {
+        if value < 0 || value > 1000 {
+            return Err(AppError::Validation(ValidationError::OutOfRange {
+                field: field.to_string(),
+                value: value.to_string(),
+            }));
+        }
+    }
+
+    let has_items = section.items.iter().any(|i| i.quantity > 0.0);
+    let total = DailyReportMeal::compute_total_beneficiaries(
+        section.staff_24h_count,
+        section.staff_8h_count,
+        section.reservation_count,
+        section.mission_count,
+        section.guest_count,
+    );
+
+    if has_items && total < 1 {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: format!("beneficiaries_{}", section.meal_type.as_str()),
+        }));
+    }
+
+    for item in &section.items {
+        if item.quantity > 0.0 {
+            validate_consumption_item(item)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate full daily report input (one report, multiple meal sections)
+pub fn validate_daily_report_input(input: &DailyReportInput) -> ValidationResult {
     let today = Utc::now().date_naive();
     let one_year_ago = today - chrono::Duration::days(365);
 
@@ -240,34 +281,52 @@ pub fn validate_daily_consumption_input(input: &DailyConsumptionInput) -> Valida
         }));
     }
 
-    // Validate personnel_count
-    if input.personnel_count < 1 || input.personnel_count > 1000 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "personnel_count".to_string(),
-            value: input.personnel_count.to_string(),
-        }));
-    }
-
-    // Validate guest_count
-    if input.guest_count < 0 || input.guest_count > 500 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "guest_count".to_string(),
-            value: input.guest_count.to_string(),
-        }));
-    }
-
-    // Validate items
-    if input.items.is_empty() {
+    if input.meals.is_empty() {
         return Err(AppError::Validation(ValidationError::Required {
-            field: "items".to_string(),
+            field: "meals".to_string(),
         }));
     }
 
-    for item in &input.items {
-        validate_consumption_item(item)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut has_any_consumption = false;
+
+    for section in &input.meals {
+        if !seen.insert(section.meal_type) {
+            return Err(AppError::Validation(ValidationError::InvalidFormat {
+                field: "meal_type".to_string(),
+                message: "نوع الوجبة مكرر".to_string(),
+            }));
+        }
+        validate_meal_section_input(section)?;
+
+        let has_items = section.items.iter().any(|i| i.quantity > 0.0);
+        let total = DailyReportMeal::compute_total_beneficiaries(
+            section.staff_24h_count,
+            section.staff_8h_count,
+            section.reservation_count,
+            section.mission_count,
+            section.guest_count,
+        );
+        if has_items || total > 0 {
+            has_any_consumption = true;
+        }
+    }
+
+    if !has_any_consumption {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "consumption".to_string(),
+        }));
     }
 
     Ok(())
+}
+
+pub fn validate_meal_consumption_input(input: &MealSectionInput) -> ValidationResult {
+    validate_meal_section_input(input)
+}
+
+pub fn validate_daily_consumption_input(input: &DailyReportInput) -> ValidationResult {
+    validate_daily_report_input(input)
 }
 
 /// Validate consumption item input
@@ -329,6 +388,20 @@ pub fn validate_create_order_request(req: &CreateOrderRequest) -> ValidationResu
     }
 
     Ok(())
+}
+
+/// Validate draft order update (same rules as create + order id)
+pub fn validate_update_order_request(req: &UpdateOrderRequest) -> ValidationResult {
+    if req.id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "id".to_string(),
+        }));
+    }
+    validate_create_order_request(&CreateOrderRequest {
+        supplier_name: req.supplier_name.clone(),
+        reference_number: req.reference_number.clone(),
+        items: req.items.clone(),
+    })
 }
 
 /// Validate order item input
@@ -547,19 +620,19 @@ pub fn check_duplicate_daily_report(
 
 /// Business rule: Check if order is already confirmed
 pub fn check_order_already_confirmed(order: &SupplierOrder) -> ValidationResult {
-    match order.status {
-        OrderStatus::Confirmed => Err(AppError::BusinessLogic(
+    check_order_is_editable(order)
+}
+
+/// Only draft orders may be edited or deleted
+pub fn check_order_is_editable(order: &SupplierOrder) -> ValidationResult {
+    if order.status != OrderStatus::Draft {
+        return Err(AppError::BusinessLogic(
             BusinessLogicError::OrderAlreadyConfirmed {
                 order_id: order.id.clone(),
             },
-        )),
-        OrderStatus::Received => Err(AppError::BusinessLogic(
-            BusinessLogicError::OrderAlreadyConfirmed {
-                order_id: order.id.clone(),
-            },
-        )),
-        _ => Ok(()),
+        ));
     }
+    Ok(())
 }
 
 /// Validate order can be confirmed (has items)
@@ -955,17 +1028,19 @@ mod tests {
 
     #[test]
     fn test_validate_daily_consumption_input_edge_cases() {
-        // أعداد كبيرة جداً
-        let input = DailyConsumptionInput {
-            date: chrono::Utc::now().date_naive(),
-            personnel_count: 1_000_000,
+        let input = MealSectionInput {
+            meal_type: MealType::Breakfast,
+            staff_24h_count: 1_000_000,
+            staff_8h_count: 0,
+            reservation_count: 0,
+            mission_count: 0,
             guest_count: 0,
             items: vec![ConsumptionItemInput {
                 product_id: "test".to_string(),
                 quantity: 1.0,
             }],
         };
-        let result = validate_daily_consumption_input(&input);
+        let result = validate_meal_section_input(&input);
         assert!(result.is_err());
 
         // كمية استهلاك سالبة - هذا الاختبار للتوثيق فقط

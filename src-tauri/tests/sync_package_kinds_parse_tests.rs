@@ -15,7 +15,8 @@ use grpc_lib::infrastructure::sync::{
     read_daily_report_package_from_file, read_products_package_from_file,
 };
 use grpc_lib::models::{
-    DailyConsumptionSyncLine, DailyReportSyncSnapshot, Product, ProductExportRow,
+    DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType,
+    Product, ProductExportRow,
 };
 
 fn fixture_products_package() -> SyncPackage<ProductsExportDataset> {
@@ -70,16 +71,26 @@ fn fixture_daily_package() -> SyncPackage<DailyReportExportDataset> {
             snapshot: DailyReportSyncSnapshot {
                 report_id: "rep-1".into(),
                 date: NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
-                personnel_count: 10,
-                guest_count: 2,
-                total_meals_cost: 120.0,
-                actual_meal_rate: 10.0,
-                items: vec![DailyConsumptionSyncLine {
-                    product_id: "prod-1".into(),
-                    product_name: "Item A".into(),
-                    quantity: 1.0,
-                    unit_price: 10.0,
-                    total_cost: 10.0,
+                total_daily_cost: 120.0,
+                total_daily_average: 10.0,
+                total_daily_beneficiaries: 12,
+                meals: vec![MealSectionSyncSnapshot {
+                    meal_type: MealType::Breakfast,
+                    staff_24h_count: 5,
+                    staff_8h_count: 3,
+                    reservation_count: 1,
+                    mission_count: 1,
+                    guest_count: 2,
+                    total_beneficiaries: 12,
+                    total_meal_cost: 120.0,
+                    meal_average: 10.0,
+                    items: vec![DailyConsumptionSyncLine {
+                        product_id: "prod-1".into(),
+                        product_name: "Item A".into(),
+                        quantity: 1.0,
+                        unit_price: 10.0,
+                        total_cost: 10.0,
+                    }],
                 }],
             },
         },
@@ -124,7 +135,8 @@ fn daily_package_roundtrip_and_validation() {
     let decoded =
         read_daily_report_package_from_file(&file_path, &crypto_port).expect("read+decode");
     validate_daily_report_package_for_import(&decoded).expect("validate");
-    assert_eq!(decoded.payload.snapshot.items.len(), 1);
+    assert_eq!(decoded.payload.snapshot.meals.len(), 1);
+    assert_eq!(decoded.payload.snapshot.meals[0].items.len(), 1);
 }
 
 #[test]

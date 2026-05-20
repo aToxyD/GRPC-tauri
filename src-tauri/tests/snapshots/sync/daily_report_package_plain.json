@@ -9,17 +9,29 @@
     "snapshot": {
       "report_id": "rep-1",
       "date": "2026-02-10",
-      "personnel_count": 10,
-      "guest_count": 2,
-      "total_meals_cost": 120.0,
-      "actual_meal_rate": 10.0,
-      "items": [
+      "total_daily_cost": 120.0,
+      "total_daily_average": 10.0,
+      "total_daily_beneficiaries": 12,
+      "meals": [
         {
-          "product_id": "prod-1",
-          "product_name": "Item A",
-          "quantity": 1.0,
-          "unit_price": 10.0,
-          "total_cost": 10.0
+          "meal_type": "breakfast",
+          "staff_24h_count": 5,
+          "staff_8h_count": 3,
+          "reservation_count": 1,
+          "mission_count": 1,
+          "guest_count": 2,
+          "total_beneficiaries": 12,
+          "total_meal_cost": 120.0,
+          "meal_average": 10.0,
+          "items": [
+            {
+              "product_id": "prod-1",
+              "product_name": "Item A",
+              "quantity": 1.0,
+              "unit_price": 10.0,
+              "total_cost": 10.0
+            }
+          ]
         }
       ]
     }

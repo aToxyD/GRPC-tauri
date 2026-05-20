@@ -1,38 +1,80 @@
-//! Reports Repository Module
-//!
-//! Handles daily report and monthly report operations.
-//! ARCHITECTURE: SQL only — no cross-repo calls, no business logic.
+//! Reports Repository — daily report parent + meal sections + meal items
 
 use crate::errors::AppError;
-use crate::models::{DailyConsumptionInput, DailyConsumptionItem, DailyReport};
+use crate::models::{
+    DailyReport, DailyReportMeal, DailyReportMealItem, MealSectionInput, MealType, MonthlyReport,
+};
 use crate::repositories::executor::DbExecutor;
 use chrono::{NaiveDate, Utc};
 use rusqlite::params;
 use uuid::Uuid;
 
-/// Repository for report-related database operations
+const REPORT_SELECT: &str = "SELECT id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year FROM daily_reports";
+
+const MEAL_SELECT: &str = "SELECT id, daily_report_id, meal_type, staff_24h_count, staff_8h_count, reservation_count, mission_count, guest_count, total_beneficiaries, total_meal_cost, meal_average FROM daily_report_meals";
+
+fn map_report_row(row: &rusqlite::Row<'_>) -> Result<DailyReport, rusqlite::Error> {
+    let date_str: String = row.get(1)?;
+    let created_at_str: String = row.get(6)?;
+    let date = crate::errors::parse_naive_date(&date_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    Ok(DailyReport {
+        id: row.get(0)?,
+        date,
+        unit_id: row.get(2)?,
+        total_daily_cost: row.get(3)?,
+        total_daily_average: row.get(4)?,
+        total_daily_beneficiaries: row.get(5)?,
+        created_at,
+        fiscal_year: row.get(7)?,
+    })
+}
+
+fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Error> {
+    let meal_type_str: String = row.get(2)?;
+    let meal_type = MealType::from_str(&meal_type_str).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid meal_type"),
+        ))
+    })?;
+    Ok(DailyReportMeal {
+        id: row.get(0)?,
+        daily_report_id: row.get(1)?,
+        meal_type,
+        staff_24h_count: row.get(3)?,
+        staff_8h_count: row.get(4)?,
+        reservation_count: row.get(5)?,
+        mission_count: row.get(6)?,
+        guest_count: row.get(7)?,
+        total_beneficiaries: row.get(8)?,
+        total_meal_cost: row.get(9)?,
+        meal_average: row.get(10)?,
+    })
+}
+
 pub struct ReportRepository<'a> {
     executor: DbExecutor<'a>,
 }
 
 impl<'a> ReportRepository<'a> {
-    /// Create a new ReportRepository with the given executor
     pub fn new(executor: DbExecutor<'a>) -> Self {
         Self { executor }
     }
 
-    pub fn upsert_monthly_report_summary(
-        &self,
-        report: &crate::models::MonthlyReport,
-    ) -> Result<(), AppError> {
+    pub fn upsert_monthly_report_summary(&self, report: &MonthlyReport) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO monthly_reports (id, unit_id, report_year, report_month, total_personnel, total_guests, total_meals, total_consumption_value, average_meal_rate, report_count, imported_at, imported_by, file_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "INSERT INTO monthly_reports (id, unit_id, report_year, report_month, total_beneficiaries, total_consumption_value, breakfast_average, lunch_average, dinner_average, daily_average, report_count, imported_at, imported_by, file_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(unit_id, report_year, report_month) DO UPDATE SET
-                total_personnel = excluded.total_personnel,
-                total_guests = excluded.total_guests,
-                total_meals = excluded.total_meals,
+                total_beneficiaries = excluded.total_beneficiaries,
                 total_consumption_value = excluded.total_consumption_value,
-                average_meal_rate = excluded.average_meal_rate,
+                breakfast_average = excluded.breakfast_average,
+                lunch_average = excluded.lunch_average,
+                dinner_average = excluded.dinner_average,
+                daily_average = excluded.daily_average,
                 report_count = excluded.report_count,
                 imported_at = excluded.imported_at,
                 imported_by = excluded.imported_by,
@@ -42,11 +84,12 @@ impl<'a> ReportRepository<'a> {
                 report.unit_id,
                 report.report_year,
                 report.report_month,
-                report.total_personnel,
-                report.total_guests,
-                report.total_meals,
+                report.total_beneficiaries,
                 report.total_consumption_value,
-                report.average_meal_rate,
+                report.breakfast_average,
+                report.lunch_average,
+                report.dinner_average,
+                report.daily_average,
                 report.report_count,
                 report.imported_at.to_rfc3339(),
                 report.imported_by,
@@ -61,33 +104,32 @@ impl<'a> ReportRepository<'a> {
         unit_id: Option<&str>,
         year: Option<i32>,
         month: Option<i32>,
-    ) -> Result<Vec<crate::models::MonthlyReport>, AppError> {
+    ) -> Result<Vec<MonthlyReport>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT id, unit_id, report_year, report_month, total_personnel, total_guests, total_meals, total_consumption_value, average_meal_rate, report_count, imported_at, imported_by, file_hash
+            "SELECT id, unit_id, report_year, report_month, total_beneficiaries, total_consumption_value, breakfast_average, lunch_average, dinner_average, daily_average, report_count, imported_at, imported_by, file_hash
              FROM monthly_reports
-             WHERE (?1 IS NULL OR unit_id = ?1)
-               AND (?2 IS NULL OR report_year = ?2)
-               AND (?3 IS NULL OR report_month = ?3)
+             WHERE (?1 IS NULL OR unit_id = ?1) AND (?2 IS NULL OR report_year = ?2) AND (?3 IS NULL OR report_month = ?3)
              ORDER BY report_year DESC, report_month DESC",
             rusqlite::params![unit_id, year, month],
             |row| {
-                let imported_at_str: String = row.get(10)?;
+                let imported_at_str: String = row.get(11)?;
                 let imported_at = crate::errors::parse_datetime_rfc3339(&imported_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e)))?;
-                Ok(crate::models::MonthlyReport {
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e)))?;
+                Ok(MonthlyReport {
                     id: row.get(0)?,
                     unit_id: row.get(1)?,
                     report_year: row.get(2)?,
                     report_month: row.get(3)?,
-                    total_personnel: row.get(4)?,
-                    total_guests: row.get(5)?,
-                    total_meals: row.get(6)?,
-                    total_consumption_value: row.get(7)?,
-                    average_meal_rate: row.get(8)?,
-                    report_count: row.get(9)?,
+                    total_beneficiaries: row.get(4)?,
+                    total_consumption_value: row.get(5)?,
+                    breakfast_average: row.get(6)?,
+                    lunch_average: row.get(7)?,
+                    dinner_average: row.get(8)?,
+                    daily_average: row.get(9)?,
+                    report_count: row.get(10)?,
                     imported_at,
-                    imported_by: row.get(11)?,
-                    file_hash: row.get(12)?,
+                    imported_by: row.get(12)?,
+                    file_hash: row.get(13)?,
                 })
             },
         )?)
@@ -98,49 +140,36 @@ impl<'a> ReportRepository<'a> {
         unit_id: &str,
         year: i32,
         month: i32,
-    ) -> Result<Option<crate::models::MonthlyReport>, AppError> {
+    ) -> Result<Option<MonthlyReport>, AppError> {
         let result = self.executor.query_row_optional(
-            "SELECT id, unit_id, report_year, report_month, total_personnel, total_guests, total_meals, total_consumption_value, average_meal_rate, report_count, imported_at, imported_by, file_hash FROM monthly_reports WHERE unit_id = ?1 AND report_year = ?2 AND report_month = ?3",
+            "SELECT id, unit_id, report_year, report_month, total_beneficiaries, total_consumption_value, breakfast_average, lunch_average, dinner_average, daily_average, report_count, imported_at, imported_by, file_hash FROM monthly_reports WHERE unit_id = ?1 AND report_year = ?2 AND report_month = ?3",
             rusqlite::params![unit_id, year, month],
             |row| {
-                let imported_at_str: String = row.get(10)?;
+                let imported_at_str: String = row.get(11)?;
                 let imported_at = crate::errors::parse_datetime_rfc3339(&imported_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e)))?;
-                Ok(crate::models::MonthlyReport {
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e)))?;
+                Ok(MonthlyReport {
                     id: row.get(0)?,
                     unit_id: row.get(1)?,
                     report_year: row.get(2)?,
                     report_month: row.get(3)?,
-                    total_personnel: row.get(4)?,
-                    total_guests: row.get(5)?,
-                    total_meals: row.get(6)?,
-                    total_consumption_value: row.get(7)?,
-                    average_meal_rate: row.get(8)?,
-                    report_count: row.get(9)?,
+                    total_beneficiaries: row.get(4)?,
+                    total_consumption_value: row.get(5)?,
+                    breakfast_average: row.get(6)?,
+                    lunch_average: row.get(7)?,
+                    dinner_average: row.get(8)?,
+                    daily_average: row.get(9)?,
+                    report_count: row.get(10)?,
                     imported_at,
-                    imported_by: row.get(11)?,
-                    file_hash: row.get(12)?,
+                    imported_by: row.get(12)?,
+                    file_hash: row.get(13)?,
                 })
-            }
+            },
         )?;
         Ok(result)
     }
 
-    /// Check if a daily report exists for a specific date
-    pub fn daily_report_exists_for_date_global(&self, date: &str) -> Result<bool, AppError> {
-        let count: i64 = self.executor.query_row(
-            "SELECT COUNT(*) FROM daily_reports WHERE date = ?1",
-            [date],
-            |row| row.get(0),
-        )?;
-        Ok(count > 0)
-    }
-
-    pub fn daily_report_exists_for_date_unit(
-        &self,
-        date: &str,
-        unit_id: &str,
-    ) -> Result<bool, AppError> {
+    pub fn daily_report_exists_for_date_unit(&self, date: &str, unit_id: &str) -> Result<bool, AppError> {
         let count: i64 = self.executor.query_row(
             "SELECT COUNT(*) FROM daily_reports WHERE date = ?1 AND unit_id = ?2",
             [date, unit_id],
@@ -149,153 +178,133 @@ impl<'a> ReportRepository<'a> {
         Ok(count > 0)
     }
 
-    /// Insert the daily report header row. Returns the new report id.
-    /// Called by DailyReportService after it has computed total_cost and meal_rate.
-    pub fn insert_report_header(
-        &self,
-        input: &DailyConsumptionInput,
-        unit_id: Option<&str>,
-        total_cost: f64,
-        meal_rate: f64,
-        fiscal_year: i32,
-    ) -> Result<String, AppError> {
-        let id = Uuid::new_v4().to_string();
-        let now = Utc::now().to_rfc3339();
-        let date_str = input.date.to_string();
-        self.executor.execute(
-            "INSERT INTO daily_reports (id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![&id, &date_str, &input.personnel_count, &input.guest_count, &total_cost, &meal_rate, unit_id, &now, fiscal_year],
+    pub fn daily_report_exists_for_date_global(&self, date: &str) -> Result<bool, AppError> {
+        let count: i64 = self.executor.query_row(
+            "SELECT COUNT(*) FROM daily_reports WHERE date = ?1 AND unit_id IS NULL",
+            [date],
+            |row| row.get(0),
         )?;
-        Ok(id)
+        Ok(count > 0)
     }
 
-    /// Insert a single consumption item row.
-    /// Called by DailyReportService once per item after computing costs.
-    pub fn insert_consumption_item(
+    pub fn insert_daily_report_header(
         &self,
-        report_id: &str,
+        id: &str,
+        date_str: &str,
+        unit_id: Option<&str>,
+        total_daily_cost: f64,
+        total_daily_average: f64,
+        total_daily_beneficiaries: i32,
+        fiscal_year: i32,
+        now: &str,
+    ) -> Result<(), AppError> {
+        self.executor.execute(
+            "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, date_str, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, now, fiscal_year],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_meal_section(
+        &self,
+        meal_id: &str,
+        daily_report_id: &str,
+        section: &MealSectionInput,
+        total_beneficiaries: i32,
+        total_meal_cost: f64,
+        meal_average: f64,
+    ) -> Result<(), AppError> {
+        self.executor.execute(
+            "INSERT INTO daily_report_meals (id, daily_report_id, meal_type, staff_24h_count, staff_8h_count, reservation_count, mission_count, guest_count, total_beneficiaries, total_meal_cost, meal_average) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                meal_id,
+                daily_report_id,
+                section.meal_type.as_str(),
+                section.staff_24h_count,
+                section.staff_8h_count,
+                section.reservation_count,
+                section.mission_count,
+                section.guest_count,
+                total_beneficiaries,
+                total_meal_cost,
+                meal_average,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_meal_item(
+        &self,
+        item_id: &str,
+        meal_id: &str,
         product_id: &str,
         quantity: f64,
         unit_price: f64,
         total_cost: f64,
     ) -> Result<(), AppError> {
-        let item_id = Uuid::new_v4().to_string();
         self.executor.execute(
-            "INSERT INTO daily_consumption_items (id, daily_report_id, product_id, quantity, unit_price, total_cost) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![&item_id, report_id, product_id, &quantity, &unit_price, &total_cost],
+            "INSERT INTO daily_report_meal_items (id, meal_id, product_id, quantity, unit_price, total_cost) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![item_id, meal_id, product_id, quantity, unit_price, total_cost],
         )?;
         Ok(())
     }
 
-    /// Insert a raw daily report
-    pub fn insert_raw_daily_report(
-        &self,
-        id: &str,
-        report: &crate::models::DailyReport,
-        now: &str,
-    ) -> Result<(), AppError> {
-        self.executor.execute(
-            "INSERT INTO daily_reports (id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![id, &report.date.to_string(), &report.personnel_count, &report.guest_count, &report.total_meals_cost, &report.actual_meal_rate, &report.unit_id, now, report.fiscal_year],
-        )?;
-        Ok(())
-    }
-
-    /// Insert a raw consumption item
-    pub fn insert_raw_consumption_item(
-        &self,
-        report_id: &str,
-        item: &crate::models::DailyConsumptionItem,
-    ) -> Result<(), AppError> {
-        let item_id = Uuid::new_v4().to_string();
-        self.executor.execute(
-            "INSERT INTO daily_consumption_items (id, daily_report_id, product_id, quantity, unit_price, total_cost) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![&item_id, report_id, &item.product_id, &item.quantity, &item.unit_price, &item.total_cost],
-        )?;
-        Ok(())
-    }
-
-    /// Get daily report by ID
     pub fn get_daily_report(&self, report_id: &str) -> Result<Option<DailyReport>, AppError> {
-        let result = self
+        let sql = format!("{REPORT_SELECT} WHERE id = ?1");
+        Ok(self
             .executor
-            .query_row_optional(
-                "SELECT id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year FROM daily_reports WHERE id = ?1",
-                [report_id],
-                |row| {
-                    let date_str: String = row.get(1)?;
-                    let created_at_str: String = row.get(7)?;
-                    let date = crate::errors::parse_naive_date(&date_str)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
-                    let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e)))?;
-                    Ok(DailyReport {
-                        id: row.get(0)?,
-                        date,
-                        personnel_count: row.get(2)?,
-                        guest_count: row.get(3)?,
-                        total_meals_cost: row.get(4)?,
-                        actual_meal_rate: row.get(5)?,
-                        unit_id: row.get(6)?,
-                        created_at,
-                        fiscal_year: row.get(8)?,
-                    })
-                },
-            )?;
-        Ok(result)
+            .query_row_optional(&sql, [report_id], map_report_row)?)
     }
 
-    /// Get daily report with unit scope validation (IDOR prevention)
     pub fn get_daily_report_scoped(
         &self,
         report_id: &str,
         unit_id: &str,
     ) -> Result<Option<DailyReport>, AppError> {
-        let result = self
+        let sql = format!("{REPORT_SELECT} WHERE id = ?1 AND unit_id = ?2");
+        Ok(self
             .executor
-            .query_row_optional(
-                "SELECT id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year 
-                 FROM daily_reports 
-                 WHERE id = ?1 AND unit_id = ?2",
-                [report_id, unit_id],
-                |row| {
-                    let date_str: String = row.get(1)?;
-                    let created_at_str: String = row.get(7)?;
-                    let date = crate::errors::parse_naive_date(&date_str)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
-                    let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e)))?;
-                    Ok(DailyReport {
-                        id: row.get(0)?,
-                        date,
-                        personnel_count: row.get(2)?,
-                        guest_count: row.get(3)?,
-                        total_meals_cost: row.get(4)?,
-                        actual_meal_rate: row.get(5)?,
-                        unit_id: row.get(6)?,
-                        created_at,
-                        fiscal_year: row.get(8)?,
-                    })
-                },
-            )?;
-        Ok(result)
+            .query_row_optional(&sql, [report_id, unit_id], map_report_row)?)
     }
 
-    /// Get daily report items
-    pub fn get_daily_report_items(
+    pub fn get_daily_report_by_date(
         &self,
-        report_id: &str,
-    ) -> Result<Vec<DailyConsumptionItem>, AppError> {
+        date: &str,
+        unit_id: Option<&str>,
+    ) -> Result<Option<DailyReport>, AppError> {
+        let sql = match unit_id {
+            Some(_) => format!("{REPORT_SELECT} WHERE date = ?1 AND unit_id = ?2"),
+            None => format!("{REPORT_SELECT} WHERE date = ?1 AND unit_id IS NULL"),
+        };
+        Ok(match unit_id {
+            Some(uid) => self
+                .executor
+                .query_row_optional(&sql, rusqlite::params![date, uid], map_report_row)?,
+            None => self
+                .executor
+                .query_row_optional(&sql, rusqlite::params![date], map_report_row)?,
+        })
+    }
+
+    pub fn list_meals_for_report(&self, report_id: &str) -> Result<Vec<DailyReportMeal>, AppError> {
+        let sql = format!("{MEAL_SELECT} WHERE daily_report_id = ?1 ORDER BY meal_type ASC");
+        Ok(self
+            .executor
+            .query_all(&sql, [report_id], map_meal_row)?)
+    }
+
+    pub fn get_meal_items(&self, meal_id: &str) -> Result<Vec<DailyReportMealItem>, AppError> {
         Ok(self.executor.query_all(
-            r#"SELECT ci.id, ci.daily_report_id, ci.product_id, p.name, ci.quantity, ci.unit_price, ci.total_cost
-               FROM daily_consumption_items ci
-               JOIN products p ON ci.product_id = p.id
-               WHERE ci.daily_report_id = ?1"#,
-            [report_id],
+            r#"SELECT mi.id, mi.meal_id, mi.product_id, p.name, mi.quantity, mi.unit_price, mi.total_cost
+               FROM daily_report_meal_items mi
+               JOIN products p ON mi.product_id = p.id
+               WHERE mi.meal_id = ?1
+               ORDER BY mi.product_id ASC, mi.id ASC"#,
+            [meal_id],
             |row| {
-                Ok(DailyConsumptionItem {
+                Ok(DailyReportMealItem {
                     id: row.get(0)?,
-                    daily_report_id: row.get(1)?,
+                    meal_id: row.get(1)?,
                     product_id: row.get(2)?,
                     product_name: row.get(3)?,
                     quantity: row.get(4)?,
@@ -306,79 +315,41 @@ impl<'a> ReportRepository<'a> {
         )?)
     }
 
-    /// List daily reports with optional date filter
     pub fn list_daily_reports(
         &self,
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<DailyReport>, AppError> {
+        let sql = format!(
+            "{REPORT_SELECT} WHERE (?1 IS NULL OR date >= ?1) AND (?2 IS NULL OR date <= ?2) ORDER BY date DESC"
+        );
         Ok(self.executor.query_all(
-            "SELECT id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year
-             FROM daily_reports
-             WHERE (?1 IS NULL OR date >= ?1)
-               AND (?2 IS NULL OR date <= ?2)
-             ORDER BY date DESC",
+            &sql,
             rusqlite::params![start_date.map(|d| d.to_string()), end_date.map(|d| d.to_string())],
-            |row| {
-                let date_str: String = row.get(1)?;
-                let created_at_str: String = row.get(7)?;
-                let date = crate::errors::parse_naive_date(&date_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
-                let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e)))?;
-                Ok(DailyReport {
-                    id: row.get(0)?,
-                    date,
-                    personnel_count: row.get(2)?,
-                    guest_count: row.get(3)?,
-                    total_meals_cost: row.get(4)?,
-                    actual_meal_rate: row.get(5)?,
-                    unit_id: row.get(6)?,
-                    created_at,
-                    fiscal_year: row.get(8)?,
-                })
-            },
+            map_report_row,
         )?)
     }
 
-    /// List daily reports filtered by unit_id (for IDOR protection)
     pub fn list_daily_reports_scoped(
         &self,
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
         unit_id: &str,
     ) -> Result<Vec<DailyReport>, AppError> {
+        let sql = format!(
+            "{REPORT_SELECT} WHERE unit_id = ?1 AND (?2 IS NULL OR date >= ?2) AND (?3 IS NULL OR date <= ?3) ORDER BY date DESC"
+        );
         Ok(self.executor.query_all(
-            "SELECT id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year
-             FROM daily_reports
-             WHERE unit_id = ?1
-               AND (?2 IS NULL OR date >= ?2)
-               AND (?3 IS NULL OR date <= ?3)
-             ORDER BY date DESC",
-            rusqlite::params![unit_id, start_date.map(|d| d.to_string()), end_date.map(|d| d.to_string())],
-            |row| {
-                let date_str: String = row.get(1)?;
-                let created_at_str: String = row.get(7)?;
-                let date = crate::errors::parse_naive_date(&date_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
-                let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e)))?;
-                Ok(DailyReport {
-                    id: row.get(0)?,
-                    date,
-                    personnel_count: row.get(2)?,
-                    guest_count: row.get(3)?,
-                    total_meals_cost: row.get(4)?,
-                    actual_meal_rate: row.get(5)?,
-                    unit_id: row.get(6)?,
-                    created_at,
-                    fiscal_year: row.get(8)?,
-                })
-            },
+            &sql,
+            rusqlite::params![
+                unit_id,
+                start_date.map(|d| d.to_string()),
+                end_date.map(|d| d.to_string())
+            ],
+            map_report_row,
         )?)
     }
 
-    /// List daily reports for a specific month
     pub fn list_daily_reports_by_month(
         &self,
         year: i32,
@@ -386,10 +357,7 @@ impl<'a> ReportRepository<'a> {
         unit_id: Option<&str>,
     ) -> Result<Vec<DailyReport>, AppError> {
         crate::infrastructure::db::read::reports::list_daily_reports_by_month(
-            self.executor,
-            year,
-            month,
-            unit_id,
+            self.executor, year, month, unit_id,
         )
     }
 
@@ -409,10 +377,7 @@ impl<'a> ReportRepository<'a> {
         unit_id: Option<&str>,
     ) -> Result<u32, AppError> {
         crate::infrastructure::db::read::reports::count_daily_reports_by_month(
-            self.executor,
-            year,
-            month,
-            unit_id,
+            self.executor, year, month, unit_id,
         )
     }
 
@@ -422,19 +387,16 @@ impl<'a> ReportRepository<'a> {
         month: i32,
     ) -> Result<crate::models::WilayaReportSummary, AppError> {
         let projections = crate::infrastructure::db::read::reports::load_wilaya_reports_projection(
-            self.executor,
-            year,
-            month,
+            self.executor, year, month,
         )?;
         let reports = projections
             .into_iter()
             .map(|p| crate::models::WilayaUnitReport {
                 unit_id: p.unit_id,
                 unit_name: p.unit_name,
-                total_personnel: p.total_personnel,
-                total_guests: p.total_guests,
+                total_beneficiaries: p.total_beneficiaries,
                 total_cost: p.total_cost,
-                avg_meal_rate: p.avg_meal_rate,
+                daily_average: p.daily_average,
                 is_imported: p.is_imported,
             })
             .collect();
@@ -445,23 +407,93 @@ impl<'a> ReportRepository<'a> {
         })
     }
 
+    pub fn insert_raw_daily_report(
+        &self,
+        id: &str,
+        report: &DailyReport,
+        now: &str,
+    ) -> Result<(), AppError> {
+        self.insert_daily_report_header(
+            id,
+            &report.date.to_string(),
+            report.unit_id.as_deref(),
+            report.total_daily_cost,
+            report.total_daily_average,
+            report.total_daily_beneficiaries,
+            report.fiscal_year,
+            now,
+        )
+    }
+
+    pub fn insert_raw_meal(&self, meal: &DailyReportMeal) -> Result<(), AppError> {
+        self.executor.execute(
+            "INSERT INTO daily_report_meals (id, daily_report_id, meal_type, staff_24h_count, staff_8h_count, reservation_count, mission_count, guest_count, total_beneficiaries, total_meal_cost, meal_average) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                &meal.id,
+                &meal.daily_report_id,
+                meal.meal_type.as_str(),
+                meal.staff_24h_count,
+                meal.staff_8h_count,
+                meal.reservation_count,
+                meal.mission_count,
+                meal.guest_count,
+                meal.total_beneficiaries,
+                meal.total_meal_cost,
+                meal.meal_average,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_raw_meal_item(&self, item: &DailyReportMealItem) -> Result<(), AppError> {
+        self.insert_meal_item(
+            &item.id,
+            &item.meal_id,
+            &item.product_id,
+            item.quantity,
+            item.unit_price,
+            item.total_cost,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn insert_or_replace_raw_daily_report(
         &self,
         id: &str,
-        date_str: &str,
-        personnel_count: i32,
-        guest_count: i32,
-        total_meals_cost: f64,
-        actual_meal_rate: f64,
-        unit_id: &str,
+        report: &DailyReport,
         now: &str,
-        fiscal_year: i32,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT OR REPLACE INTO daily_reports (id, date, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![id, date_str, personnel_count, guest_count, total_meals_cost, actual_meal_rate, unit_id, now, fiscal_year],
+            "INSERT OR REPLACE INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                report.date.to_string(),
+                report.unit_id,
+                report.total_daily_cost,
+                report.total_daily_average,
+                report.total_daily_beneficiaries,
+                now,
+                report.fiscal_year,
+            ],
         )?;
         Ok(())
+    }
+
+    // Legacy stubs used by old code paths during transition
+    pub fn meal_report_exists_for_date_unit(
+        &self,
+        date: &str,
+        _meal_type: &str,
+        unit_id: &str,
+    ) -> Result<bool, AppError> {
+        self.daily_report_exists_for_date_unit(date, unit_id)
+    }
+
+    pub fn meal_report_exists_for_date_global(
+        &self,
+        date: &str,
+        _meal_type: &str,
+    ) -> Result<bool, AppError> {
+        self.daily_report_exists_for_date_global(date)
     }
 }

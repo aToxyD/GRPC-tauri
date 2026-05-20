@@ -1,3 +1,4 @@
+use crate::application::services::DailyReportService;
 use crate::application::usecases::reports::types::ReportScope;
 use crate::errors::{AppError, AppResult};
 use crate::models::DailyReportResult;
@@ -19,6 +20,7 @@ pub fn execute<'a>(
             .ok_or_else(|| AppError::Internal("Report not found or access denied".to_string()))?,
     };
 
-    let items = repo.get_daily_report_items(report_id)?;
-    Ok(DailyReportResult { report, items })
+    DailyReportService::new(executor)
+        .load_daily_report_result(&report.id)?
+        .ok_or_else(|| AppError::Internal("Report not found".to_string()))
 }

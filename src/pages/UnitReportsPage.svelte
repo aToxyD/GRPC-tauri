@@ -6,6 +6,7 @@
     getMonthlySummary, getSettings, saveFile
   } from '../lib/tauri';
   import type { DailyReport, DailyReportResult, MonthlySummary, Settings } from '../lib/types';
+  import DailyReportModal from '../components/reports/DailyReportModal.svelte';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
   import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
@@ -142,22 +143,30 @@
       {#if monthlySummary}
         <AppCard class="mb-6 bg-gradient-to-r from-blue-50/50 to-blue-100/30 dark:from-blue-900/10 dark:to-blue-900/5">
           <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">ملخص الشهر ({currentMonth}/{currentYear})</h2>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-              <p class="text-sm text-gray-500 dark:text-gray-400">الموظفون</p>
-              <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{monthlySummary.total_personnel}</p>
-            </div>
-            <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-              <p class="text-sm text-gray-500 dark:text-gray-400">الضيوف</p>
-              <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{monthlySummary.total_guests}</p>
+              <p class="text-sm text-gray-500 dark:text-gray-400">المستفيدون</p>
+              <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{monthlySummary.total_beneficiaries}</p>
             </div>
             <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
               <p class="text-sm text-gray-500 dark:text-gray-400">القيمة الإجمالية</p>
               <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{monthlySummary.total_consumption_value.toFixed(2)} دج</p>
             </div>
             <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-              <p class="text-sm text-gray-500 dark:text-gray-400">المعدل المتوسط</p>
-              <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{monthlySummary.average_meal_rate.toFixed(2)} دج</p>
+              <p class="text-sm text-gray-500 dark:text-gray-400">المعدل اليومي</p>
+              <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{monthlySummary.daily_average.toFixed(2)} دج</p>
+            </div>
+            <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+              <p class="text-sm text-gray-500 dark:text-gray-400">متوسط الفطور</p>
+              <p class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{monthlySummary.breakfast_average.toFixed(2)} دج</p>
+            </div>
+            <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+              <p class="text-sm text-gray-500 dark:text-gray-400">متوسط الغداء</p>
+              <p class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{monthlySummary.lunch_average.toFixed(2)} دج</p>
+            </div>
+            <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+              <p class="text-sm text-gray-500 dark:text-gray-400">متوسط العشاء</p>
+              <p class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{monthlySummary.dinner_average.toFixed(2)} دج</p>
             </div>
           </div>
         </AppCard>
@@ -186,20 +195,18 @@
           
           <svelte:fragment slot="head">
             <th class="table-header">التاريخ</th>
-            <th class="table-header">الموظفون</th>
-            <th class="table-header">الضيوف</th>
-            <th class="table-header">التكلفة الإجمالية</th>
-            <th class="table-header">المعدل/وجبة</th>
+            <th class="table-header">المستفيدون</th>
+            <th class="table-header">التكلفة اليومية</th>
+            <th class="table-header">المعدل اليومي</th>
             <th class="table-header text-left">الإجراءات</th>
           </svelte:fragment>
 
           {#each reports as report}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
               <td class="table-cell font-medium">{formatDate(report.date)}</td>
-              <td class="table-cell">{report.personnel_count}</td>
-              <td class="table-cell">{report.guest_count}</td>
-              <td class="table-cell font-medium">{report.total_meals_cost.toFixed(2)} دج</td>
-              <td class="table-cell">{report.actual_meal_rate.toFixed(2)} دج</td>
+              <td class="table-cell">{report.total_daily_beneficiaries}</td>
+              <td class="table-cell font-medium">{report.total_daily_cost.toFixed(2)} دج</td>
+              <td class="table-cell">{report.total_daily_average.toFixed(2)} دج</td>
               <td class="table-cell text-left space-x-2 space-x-reverse">
                 <AppButton variant="ghost" size="sm" class="text-civil-blue hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" on:click={() => viewDetails(report)} ariaLabel="معاينة التقرير">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -227,53 +234,6 @@
   </div>
 </Layout>
 
-<!-- Report Details Modal -->
-<AppDialog open={viewingDetails && selectedReport !== null} size="xl" title="تفاصيل التقرير" description={selectedReport ? formatDate(selectedReport.report.date) : ''} on:close={closeDetails}>
-  <div dir="rtl">
-    {#if selectedReport}
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div class="text-center p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-800">
-          <p class="text-sm text-gray-500 dark:text-gray-400">الموظفون</p>
-          <p class="text-xl font-bold text-gray-800 dark:text-gray-100 mt-1">{selectedReport.report.personnel_count}</p>
-        </div>
-        <div class="text-center p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-800">
-          <p class="text-sm text-gray-500 dark:text-gray-400">الضيوف</p>
-          <p class="text-xl font-bold text-gray-800 dark:text-gray-100 mt-1">{selectedReport.report.guest_count}</p>
-        </div>
-        <div class="text-center p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-800">
-          <p class="text-sm text-gray-500 dark:text-gray-400">التكلفة الإجمالية</p>
-          <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{selectedReport.report.total_meals_cost.toFixed(2)} دج</p>
-        </div>
-        <div class="text-center p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-800">
-          <p class="text-sm text-gray-500 dark:text-gray-400">المعدل/وجبة</p>
-          <p class="text-xl font-bold text-civil-blue dark:text-blue-400 mt-1">{selectedReport.report.actual_meal_rate.toFixed(2)} دج</p>
-        </div>
-      </div>
-      
-      <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-3 border-b border-gray-100 dark:border-gray-800 pb-2">المنتجات المستهلكة</h3>
-      <div class="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
-        <AppTable>
-          <svelte:fragment slot="head">
-            <th class="table-header">المنتج</th>
-            <th class="table-header text-right">الكمية</th>
-            <th class="table-header text-right">سعر الوحدة</th>
-            <th class="table-header text-right">الإجمالي</th>
-          </svelte:fragment>
-          
-          {#each selectedReport.items as item}
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors border-b last:border-b-0 border-gray-100 dark:border-gray-700">
-              <td class="table-cell">{item.product_name}</td>
-              <td class="table-cell text-right">{item.quantity.toFixed(2)}</td>
-              <td class="table-cell text-right text-gray-600 dark:text-gray-400">{item.unit_price.toFixed(2)} دج</td>
-              <td class="table-cell text-right font-medium text-gray-800 dark:text-gray-200">{item.total_cost.toFixed(2)} دج</td>
-            </tr>
-          {/each}
-        </AppTable>
-      </div>
-    {/if}
-  </div>
-
-  <svelte:fragment slot="actions">
-    <AppButton variant="secondary" on:click={closeDetails}>إغلاق</AppButton>
-  </svelte:fragment>
-</AppDialog>
+{#if viewingDetails && selectedReport}
+  <DailyReportModal selectedReport={selectedReport} on:close={closeDetails} />
+{/if}

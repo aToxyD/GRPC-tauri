@@ -1,10 +1,9 @@
-//! Protocol-agnostic read models for sync snapshots.
-//!
-//! These types track **interchange schema**, not domain invariants; they may evolve independently of
-//! `DailyReport` / aggregates in `report.rs`.
+//! Sync interchange models for daily reports (one report, meals[])
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+
+use crate::models::MealType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyConsumptionSyncLine {
@@ -16,23 +15,39 @@ pub struct DailyConsumptionSyncLine {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MealSectionSyncSnapshot {
+    pub meal_type: MealType,
+    pub staff_24h_count: i32,
+    pub staff_8h_count: i32,
+    pub reservation_count: i32,
+    pub mission_count: i32,
+    pub guest_count: i32,
+    pub total_beneficiaries: i32,
+    pub total_meal_cost: f64,
+    pub meal_average: f64,
+    pub items: Vec<DailyConsumptionSyncLine>,
+}
+
+/// One daily consumption report for sync (official operational document)
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyReportSyncSnapshot {
     pub report_id: String,
     pub date: NaiveDate,
-    pub personnel_count: i32,
-    pub guest_count: i32,
-    pub total_meals_cost: f64,
-    pub actual_meal_rate: f64,
-    pub items: Vec<DailyConsumptionSyncLine>,
+    pub total_daily_cost: f64,
+    pub total_daily_average: f64,
+    pub total_daily_beneficiaries: i32,
+    pub meals: Vec<MealSectionSyncSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyDetailSyncSnapshot {
     pub date: NaiveDate,
-    pub personnel_count: i32,
-    pub guest_count: i32,
-    pub total_meals_cost: f64,
-    pub actual_meal_rate: f64,
+    pub total_daily_beneficiaries: i32,
+    pub total_daily_cost: f64,
+    pub breakfast_average: f64,
+    pub lunch_average: f64,
+    pub dinner_average: f64,
+    pub daily_average: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
