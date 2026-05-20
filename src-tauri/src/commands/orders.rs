@@ -13,7 +13,7 @@ use crate::commands::guards::{authorize_command, require_maintenance_allows};
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::into_command_error;
-use crate::models::{CreateOrderRequest, SupplierOrder, SupplierOrderItem};
+use crate::models::{CreateOrderRequest, SupplierOrder, SupplierOrderItem, UpdateOrderRequest};
 use tauri::State;
 
 /// Create supplier order
@@ -70,6 +70,45 @@ pub fn confirm_order(state: State<AppState>, order_id: String) -> Result<(), Str
             &session.username,
             unit_id.as_deref(),
         )
+    })
+    .map_err(into_command_error)?;
+
+    Ok(())
+}
+
+/// Update a draft supplier order
+#[tauri::command]
+pub fn update_supplier_order(
+    state: State<AppState>,
+    request: UpdateOrderRequest,
+) -> Result<f64, String> {
+    let (session, _) =
+        authorize_command(&state, Action::ManageOrders, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+    let user_ctx = user_ctx_from_session(&session);
+
+    AuditTxService::execute_with_audit(db, AuditAction::UpdateOrder, &user_ctx, |tx| {
+        OrderService::new(tx.executor).update_supplier_order(&request)
+    })
+    .map_err(into_command_error)
+}
+
+/// Delete a draft supplier order
+#[tauri::command]
+pub fn delete_supplier_order(state: State<AppState>, order_id: String) -> Result<(), String> {
+    let (session, _) =
+        authorize_command(&state, Action::ManageOrders, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+    let user_ctx = user_ctx_from_session(&session);
+
+    AuditTxService::execute_with_audit(db, AuditAction::DeleteOrder, &user_ctx, |tx| {
+        OrderService::new(tx.executor).delete_supplier_order(&order_id)
     })
     .map_err(into_command_error)?;
 

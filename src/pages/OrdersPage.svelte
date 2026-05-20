@@ -1,7 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import { listSupplierOrders, createSupplierOrder, confirmOrder, listProducts, getSupplierOrderItems, showAsk } from '../lib/tauri';
+  import {
+    listSupplierOrders,
+    createSupplierOrder,
+    updateSupplierOrder,
+    deleteSupplierOrder,
+    confirmOrder,
+    listProducts,
+    getSupplierOrderItems,
+    showAsk,
+  } from '../lib/tauri';
   import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -22,46 +31,73 @@
   const loading = ordersOp.loading;
   const error = ordersOp.error;
 
-  let orders: SupplierOrder[] = [];
-  let products: Product[] = [];
-  let showModal = false;
-  let success = '';
-  let selectedOrder: SupplierOrder | null = null;
-  let orderItems: SupplierOrderItem[] = [];
+  let orders = $state<SupplierOrder[]>([]);
+  let products = $state<Product[]>([]);
+  let showModal = $state(false);
+  let editingOrderId = $state<string | null>(null);
+  let success = $state('');
+  let selectedOrder = $state<SupplierOrder | null>(null);
+  let orderItems = $state<SupplierOrderItem[]>([]);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Form fields
-  let supplierName = '';
-  let referenceNumber = '';
-  let orderProducts: { product: Product; quantity: string; unitPrice: string }[] = [];
+  let supplierName = $state('');
+  let referenceNumber = $state('');
+  let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
 
   onMount(async () => {
     loadData();
   });
 
+  /** تحديث القائمة دون تداخل مع ordersOp.run (تجنب الرفض عند busy) */
+  async function refreshList() {
+    const [nextOrders, nextProducts] = await Promise.all([
+      listSupplierOrders(),
+      listProducts(),
+    ]);
+    orders = nextOrders;
+    products = nextProducts;
+  }
+
   async function loadData() {
-    await ordersOp.run(async () => {
-      [orders, products] = await Promise.all([
-        listSupplierOrders(),
-        listProducts()
-      ]);
-    });
+    await ordersOp.run(refreshList);
   }
 
   function openCreateModal() {
+    editingOrderId = null;
     supplierName = '';
     referenceNumber = '';
-    orderProducts = products.map(p => ({ product: p, quantity: '', unitPrice: p.base_price.toString() }));
+    orderProducts = products.map((p) => ({ product: p, quantity: '' }));
     showModal = true;
     ordersOp.error.set(null);
   }
 
+  async function openEditModal(order: SupplierOrder) {
+    editingOrderId = order.id;
+    supplierName = order.supplier_name;
+    referenceNumber = order.reference_number || '';
+    showModal = true;
+    ordersOp.error.set(null);
+    try {
+      const items = await getSupplierOrderItems(order.id);
+      const qtyByProduct = Object.fromEntries(
+        items.map((i) => [i.product_id, String(i.quantity)])
+      );
+      orderProducts = products.map((p) => ({
+        product: p,
+        quantity: qtyByProduct[p.id] ?? '',
+      }));
+    } catch (e) {
+      ordersOp.error.set(formatErrorMessage(e));
+      closeModal();
+    }
+  }
+
   function closeModal() {
     showModal = false;
-    selectedOrder = null;
-    orderItems = [];
+    editingOrderId = null;
     ordersOp.error.set(null);
   }
 
@@ -72,11 +108,11 @@
     }
 
     const items: OrderItemInput[] = orderProducts
-      .filter(op => op.quantity && parseFloat(op.quantity) > 0)
-      .map(op => ({
+      .filter((op) => op.quantity && parseFloat(op.quantity) > 0)
+      .map((op) => ({
         product_id: op.product.id,
         quantity: parseFloat(op.quantity),
-        unit_price: parseFloat(op.unitPrice) || op.product.base_price
+        unit_price: op.product.base_price,
       }));
 
     if (items.length === 0) {
@@ -85,14 +121,41 @@
     }
 
     await ordersOp.run(async () => {
-      await createSupplierOrder({
-        supplier_name: supplierName,
-        reference_number: referenceNumber || null,
-        items
-      });
-      setSuccessWithTimeout('تم إنشاء الطلبية بنجاح');
+      if (editingOrderId) {
+        await updateSupplierOrder({
+          id: editingOrderId,
+          supplier_name: supplierName,
+          reference_number: referenceNumber || null,
+          items,
+        });
+        setSuccessWithTimeout('تم تحديث الطلبية بنجاح');
+      } else {
+        await createSupplierOrder({
+          supplier_name: supplierName,
+          reference_number: referenceNumber || null,
+          items,
+        });
+        setSuccessWithTimeout('تم إنشاء الطلبية بنجاح');
+      }
       closeModal();
-      await loadData();
+      await refreshList();
+    });
+  }
+
+  async function handleDelete(order: SupplierOrder) {
+    const yes = await showAsk(
+      `هل أنت متأكد من حذف طلبية «${order.supplier_name}»؟ لا يمكن التراجع عن هذا الإجراء.`,
+      { title: 'حذف الطلبية', kind: 'warning', okLabel: 'حذف', cancelLabel: 'إلغاء' }
+    );
+    if (!yes) return;
+
+    await ordersOp.run(async () => {
+      await deleteSupplierOrder(order.id);
+      setSuccessWithTimeout('تم حذف الطلبية بنجاح');
+      if (selectedOrder?.id === order.id) {
+        closeDetails();
+      }
+      await refreshList();
     });
   }
 
@@ -106,7 +169,7 @@
     await ordersOp.run(async () => {
       await confirmOrder(order.id);
       setSuccessWithTimeout('تم تأكيد الطلبية وتحديث المخزون');
-      await loadData();
+      await refreshList();
     });
   }
 
@@ -190,7 +253,7 @@
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
 
-        {#each orders as order}
+        {#each orders as order (order.id)}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{order.supplier_name}</td>
             <td class="table-cell">{order.reference_number || '-'}</td>
@@ -209,9 +272,19 @@
                 </svg>
               </AppButton>
               {#if order.status === 'Draft'}
+                <AppButton variant="ghost" size="sm" class="text-blue-600 hover:text-blue-800 dark:text-blue-400" on:click={() => openEditModal(order)} ariaLabel="تعديل الطلبية">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                </AppButton>
                 <AppButton variant="ghost" size="sm" class="text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400" on:click={() => handleConfirm(order)} ariaLabel="تأكيد (يحدث المخزون)">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </AppButton>
+                <AppButton variant="ghost" size="sm" class="text-red-600 hover:text-red-700 dark:text-red-400" on:click={() => handleDelete(order)} ariaLabel="حذف الطلبية">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                   </svg>
                 </AppButton>
               {/if}
@@ -224,7 +297,7 @@
 </Layout>
 
 <!-- Create Order Modal -->
-<AppDialog open={showModal} title="طلبية مورد جديدة" size="xl" on:close={closeModal}>
+<AppDialog open={showModal} title={editingOrderId ? 'تعديل الطلبية' : 'طلبية مورد جديدة'} size="xl" on:close={closeModal}>
   <div dir="rtl">
     {#if $error}
       <div class="mb-4">
@@ -249,10 +322,11 @@
 
     <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-4">المنتجات</h3>
     <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
-      {#each orderProducts as op}
+      {#each orderProducts as op (op.product.id)}
+        {@const qty = parseFloat(op.quantity) || 0}
+        {@const lineTotal = qty * op.product.base_price}
         <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
           <span class="flex-1 font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
-          <span class="text-xs text-gray-500 dark:text-gray-400">السعر: {op.product.base_price.toFixed(2)} دج</span>
           <div class="w-24">
             <AppInput
               id="qty-{op.product.id}"
@@ -262,14 +336,15 @@
               bind:value={op.quantity}
             />
           </div>
-          <div class="w-28">
-            <AppInput
-              id="price-{op.product.id}"
-              label=""
-              type="number"
-              placeholder="سعر الوحدة"
-              bind:value={op.unitPrice}
-            />
+          <div class="w-28 text-left text-sm text-gray-600 dark:text-gray-400 tabular-nums">
+            <span class="block text-xs text-gray-500 dark:text-gray-500 mb-0.5">سعر الوحدة</span>
+            <span class="font-medium">{op.product.base_price.toFixed(2)} دج</span>
+          </div>
+          <div class="w-28 text-left text-sm tabular-nums">
+            <span class="block text-xs text-gray-500 dark:text-gray-500 mb-0.5">الإجمالي</span>
+            <span class="font-medium text-gray-800 dark:text-gray-200">
+              {lineTotal > 0 ? `${lineTotal.toFixed(2)} دج` : '—'}
+            </span>
           </div>
         </div>
       {/each}
@@ -278,7 +353,9 @@
 
   <svelte:fragment slot="actions">
     <AppButton variant="secondary" on:click={closeModal}>إلغاء</AppButton>
-    <AppButton variant="primary" on:click={saveOrder}>إنشاء الطلبية</AppButton>
+    <AppButton variant="primary" on:click={saveOrder}>
+      {editingOrderId ? 'حفظ التعديلات' : 'إنشاء الطلبية'}
+    </AppButton>
   </svelte:fragment>
 </AppDialog>
 
@@ -327,6 +404,18 @@
   </div>
   
   <svelte:fragment slot="actions">
+    {#if selectedOrder?.status === 'Draft'}
+      <AppButton
+        variant="secondary"
+        on:click={() => {
+          const order = selectedOrder;
+          closeDetails();
+          if (order) openEditModal(order);
+        }}
+      >
+        تعديل
+      </AppButton>
+    {/if}
     <AppButton variant="secondary" on:click={closeDetails}>إغلاق</AppButton>
   </svelte:fragment>
 </AppDialog>

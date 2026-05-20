@@ -20,6 +20,7 @@ pub enum AuditAction {
     DeleteProduct,
     // Orders
     CreateOrder,
+    UpdateOrder,
     ConfirmOrder,
     DeleteOrder,
     // Daily Reports
@@ -80,6 +81,7 @@ impl AuditAction {
             AuditAction::UpdateProduct => "UpdateProduct",
             AuditAction::DeleteProduct => "DeleteProduct",
             AuditAction::CreateOrder => "CreateOrder",
+            AuditAction::UpdateOrder => "UpdateOrder",
             AuditAction::ConfirmOrder => "ConfirmOrder",
             AuditAction::DeleteOrder => "DeleteOrder",
             AuditAction::CreateDailyReport => "CreateDailyReport",
@@ -129,6 +131,7 @@ impl AuditAction {
             "UpdateProduct" => Some(AuditAction::UpdateProduct),
             "DeleteProduct" => Some(AuditAction::DeleteProduct),
             "CreateOrder" => Some(AuditAction::CreateOrder),
+            "UpdateOrder" => Some(AuditAction::UpdateOrder),
             "ConfirmOrder" => Some(AuditAction::ConfirmOrder),
             "DeleteOrder" => Some(AuditAction::DeleteOrder),
             "CreateDailyReport" => Some(AuditAction::CreateDailyReport),
@@ -179,6 +182,7 @@ impl AuditAction {
             AuditAction::UpdateProduct => "تحديث منتج",
             AuditAction::DeleteProduct => "حذف منتج",
             AuditAction::CreateOrder => "إنشاء طلبية",
+            AuditAction::UpdateOrder => "تحديث طلبية",
             AuditAction::ConfirmOrder => "تأكيد طلبية",
             AuditAction::DeleteOrder => "حذف طلبية",
             AuditAction::CreateDailyReport => "إنشاء تقرير يومي",
@@ -230,9 +234,10 @@ impl AuditAction {
             | AuditAction::UpdateProduct
             | AuditAction::DeleteProduct
             | AuditAction::ImportProducts => EntityType::Product,
-            AuditAction::CreateOrder | AuditAction::ConfirmOrder | AuditAction::DeleteOrder => {
-                EntityType::Order
-            }
+            AuditAction::CreateOrder
+            | AuditAction::UpdateOrder
+            | AuditAction::ConfirmOrder
+            | AuditAction::DeleteOrder => EntityType::Order,
             AuditAction::CreateDailyReport
             | AuditAction::UpdateDailyReport
             | AuditAction::DeleteDailyReport

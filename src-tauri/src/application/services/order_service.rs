@@ -3,8 +3,11 @@
 //! Business logic for supplier orders and order confirmation.
 //! SQL is delegated exclusively to OrderRepository (inventory movements via StockMovementService).
 
+use crate::domain::validation::{
+    check_order_is_editable, validate_create_order_request, validate_update_order_request,
+};
 use crate::errors::{AppError, BusinessLogicError};
-use crate::models::{CreateOrderRequest, NewStockMovement, StockMovementType};
+use crate::models::{CreateOrderRequest, NewStockMovement, StockMovementType, UpdateOrderRequest};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
 /// Service for supplier order business logic
@@ -22,6 +25,7 @@ impl<'a> OrderService<'a> {
         &self,
         req: &CreateOrderRequest,
     ) -> Result<(String, f64), AppError> {
+        validate_create_order_request(req)?;
         let total_amount: f64 = req.items.iter().map(|i| i.quantity * i.unit_price).sum();
         let repo = self.executor.orders();
 
@@ -38,6 +42,56 @@ impl<'a> OrderService<'a> {
         }
 
         Ok((id, total_amount))
+    }
+
+    pub fn update_supplier_order(&self, req: &UpdateOrderRequest) -> Result<f64, AppError> {
+        validate_update_order_request(req)?;
+
+        let repo = self.executor.orders();
+        let order = repo
+            .get_supplier_order(&req.id)?
+            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                resource: "طلبية".to_string(),
+                id: req.id.clone(),
+            }))?;
+        check_order_is_editable(&order)?;
+
+        let total_amount: f64 = req.items.iter().map(|i| i.quantity * i.unit_price).sum();
+
+        let updated = repo.update_supplier_order_header(
+            &req.id,
+            &req.supplier_name,
+            &req.reference_number,
+            total_amount,
+        )?;
+        if updated == 0 {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OrderAlreadyConfirmed {
+                    order_id: req.id.clone(),
+                },
+            ));
+        }
+        repo.delete_order_items(&req.id)?;
+
+        for item in &req.items {
+            let item_cost = item.quantity * item.unit_price;
+            let item_id = uuid::Uuid::new_v4().to_string();
+            repo.insert_order_item(&item_id, &req.id, item, item_cost)?;
+        }
+
+        Ok(total_amount)
+    }
+
+    pub fn delete_supplier_order(&self, order_id: &str) -> Result<(), AppError> {
+        let repo = self.executor.orders();
+        let order = repo
+            .get_supplier_order(order_id)?
+            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                resource: "طلبية".to_string(),
+                id: order_id.to_string(),
+            }))?;
+        check_order_is_editable(&order)?;
+        repo.delete_supplier_order(order_id)
     }
 
     /// Confirm an order atomically:

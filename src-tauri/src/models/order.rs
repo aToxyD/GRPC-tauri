@@ -97,6 +97,15 @@ pub struct CreateOrderRequest {
     pub items: Vec<OrderItemInput>,
 }
 
+/// Request to update a draft order (before confirmation)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateOrderRequest {
+    pub id: String,
+    pub supplier_name: String,
+    pub reference_number: Option<String>,
+    pub items: Vec<OrderItemInput>,
+}
+
 /// Input for a single order item
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderItemInput {

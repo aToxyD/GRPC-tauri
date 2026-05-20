@@ -95,6 +95,44 @@ impl<'a> OrderRepository<'a> {
         )?)
     }
 
+    pub fn update_supplier_order_header(
+        &self,
+        id: &str,
+        supplier_name: &str,
+        reference_number: &Option<String>,
+        total_amount: f64,
+    ) -> Result<usize, AppError> {
+        let n = self.executor.execute(
+            "UPDATE supplier_orders SET supplier_name = ?1, reference_number = ?2, total_amount = ?3 WHERE id = ?4 AND status = 'Draft'",
+            params![supplier_name, reference_number, total_amount, id],
+        )?;
+        Ok(n)
+    }
+
+    pub fn delete_order_items(&self, order_id: &str) -> Result<(), AppError> {
+        self.executor.execute(
+            "DELETE FROM supplier_order_items WHERE order_id = ?1",
+            [order_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_supplier_order(&self, order_id: &str) -> Result<(), AppError> {
+        let deleted = self.executor.execute(
+            "DELETE FROM supplier_orders WHERE id = ?1 AND status = 'Draft'",
+            [order_id],
+        )?;
+        if deleted == 0 {
+            return Err(AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::ResourceNotFound {
+                    resource: "طلبية".to_string(),
+                    id: order_id.to_string(),
+                },
+            ));
+        }
+        Ok(())
+    }
+
     /// Mark an order as Confirmed. Pure SQL — called by OrderService after movements are recorded.
     pub fn set_order_confirmed(&self, order_id: &str) -> Result<(), AppError> {
         self.executor.execute(
