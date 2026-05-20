@@ -175,7 +175,7 @@ release_integrity:
 
 runtime_e2e_governance:
   stage: e2e
-  image: mcr.microsoft.com/playwright:v1.45.0-jammy
+  image: mcr.microsoft.com/playwright:v1.60.0-jammy
   timeout: 30m
   retry:
     max: 1
