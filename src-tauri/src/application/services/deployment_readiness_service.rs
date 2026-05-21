@@ -181,17 +181,17 @@ impl<'a> DeploymentReadinessService<'a> {
         warnings: &mut Vec<String>,
     ) {
         let log_dir = resolve_log_dir();
-        let passed = match &log_dir {
-            None => false,
-            Some(dir) => dir.exists() && probe_dir_writable(dir),
-        };
-        let msg = match &log_dir {
-            None => "cannot resolve application log directory".to_string(),
-            Some(dir) if !dir.exists() => format!("logs directory missing: {}", dir.display()),
-            Some(dir) if !probe_dir_writable(dir) => {
-                format!("logs directory not writable: {}", dir.display())
+        let (passed, msg) = match &log_dir {
+            None => (false, "cannot resolve application log directory".to_string()),
+            Some(dir) => {
+                if !dir.exists() {
+                    (false, format!("logs directory missing: {}", dir.display()))
+                } else if !probe_dir_writable(dir) {
+                    (false, format!("logs directory not writable: {}", dir.display()))
+                } else {
+                    (true, format!("logs directory accessible: {}", dir.display()))
+                }
             }
-            Some(dir) => format!("logs directory accessible: {}", dir.display()),
         };
         Self::push_check(
             checks,
@@ -421,7 +421,8 @@ impl<'a> DeploymentReadinessService<'a> {
 }
 
 fn probe_dir_writable(dir: &Path) -> bool {
-    let probe = dir.join(".grpc_write_probe");
+    let random_id: u64 = rand::random();
+    let probe = dir.join(format!(".grpc_write_probe_{}", random_id));
     match fs::OpenOptions::new()
         .write(true)
         .create_new(true)
