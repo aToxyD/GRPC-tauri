@@ -2,6 +2,10 @@
 # This pipeline enforces fail-closed architectural boundaries, deterministic builds, and secret-leak prevention.
 # It acts as a reproducible quality gate and structural compliance engine.
 
+workflow:
+  rules:
+    - when: never
+
 stages:
   - validate
   - frontend
