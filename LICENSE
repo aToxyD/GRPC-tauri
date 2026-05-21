@@ -1,0 +1,124 @@
+END-USER LICENSE AGREEMENT (EULA)
+GRPC – Gestion des Restaurants de la Protection Civile
+Version 1.0.0
+
+IMPORTANT – READ CAREFULLY BEFORE INSTALLING, COPYING, OR USING THIS SOFTWARE.
+
+This End-User License Agreement ("Agreement") is a legal contract between you (either an individual or a single legal entity, hereinafter "User") and 1bxm ("Licensor") for the use of the GRPC software application and all associated documentation, source code, modules, and resources (collectively the "Software").
+
+By installing, copying, accessing, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to these terms, do not install or use the Software.
+
+─────────────────────────────────────────────────────────────────────────────
+1. GRANT OF LICENSE
+─────────────────────────────────────────────────────────────────────────────
+
+Subject to the terms and conditions of this Agreement, the Licensor grants the User a limited, non-exclusive, non-transferable, non-sublicensable license to:
+
+  a) Install and use the Software solely for internal operational purposes within
+     authorized civil protection institutions ("Authorized Use").
+
+  b) Access and review the Software's source code solely for the purpose of
+     security auditing, bug reporting, and integration validation within the
+     Authorized Use context.
+
+─────────────────────────────────────────────────────────────────────────────
+2. RESTRICTIONS
+─────────────────────────────────────────────────────────────────────────────
+
+The User shall NOT, without the express prior written consent of the Licensor:
+
+  a) Copy, reproduce, distribute, publish, or sublicense the Software or any
+     portion thereof to any third party.
+
+  b) Modify, adapt, translate, reverse engineer, decompile, disassemble, or
+     create derivative works based on the Software, in whole or in part.
+
+  c) Remove, alter, or obscure any proprietary notices, labels, or marks on the
+     Software, including copyright notices and this license text.
+
+  d) Use the Software for any commercial purpose, including selling, renting,
+     leasing, lending, or offering the Software as a service to third parties.
+
+  e) Transfer, assign, or delegate any rights granted under this Agreement to
+     any third party without the Licensor's prior written approval.
+
+  f) Use the Software in any manner that violates applicable local, national, or
+     international laws, regulations, or decrees.
+
+─────────────────────────────────────────────────────────────────────────────
+3. INTELLECTUAL PROPERTY
+─────────────────────────────────────────────────────────────────────────────
+
+The Software and all copies thereof are proprietary to the Licensor and title thereto remains in the Licensor. All applicable rights in all copyrights, trade secrets, patents, and other intellectual property rights in or associated with the Software are and will remain in the Licensor.
+
+This Agreement does not convey to the User an interest in or to the Software, but only a limited right of use revocable in accordance with the terms of this Agreement.
+
+─────────────────────────────────────────────────────────────────────────────
+4. DATA AND CONFIDENTIALITY
+─────────────────────────────────────────────────────────────────────────────
+
+The Software processes sensitive operational and fiscal data belonging to civil protection institutions. The User agrees to:
+
+  a) Maintain strict confidentiality of all data processed by the Software.
+
+  b) Implement and maintain appropriate technical and organizational security
+     measures to protect data from unauthorized access, disclosure, or loss.
+
+  c) Not export, transmit, or otherwise transfer any data processed by the
+     Software to unauthorized parties or systems.
+
+─────────────────────────────────────────────────────────────────────────────
+5. DISCLAIMER OF WARRANTIES
+─────────────────────────────────────────────────────────────────────────────
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. THE LICENSOR EXPRESSLY DISCLAIMS ALL WARRANTIES, EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING BUT NOT LIMITED TO ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL MEET THE USER'S REQUIREMENTS, THAT OPERATION OF THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR-FREE, OR THAT DEFECTS IN THE SOFTWARE WILL BE CORRECTED.
+
+─────────────────────────────────────────────────────────────────────────────
+6. LIMITATION OF LIABILITY
+─────────────────────────────────────────────────────────────────────────────
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR PUNITIVE DAMAGES (INCLUDING BUT NOT LIMITED TO PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, LOSS OF USE, LOSS OF DATA, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) ARISING OUT OF OR IN CONNECTION WITH THE USE OR INABILITY TO USE THE SOFTWARE, EVEN IF THE LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+─────────────────────────────────────────────────────────────────────────────
+7. TERMINATION
+─────────────────────────────────────────────────────────────────────────────
+
+This Agreement is effective until terminated. The Licensor may terminate this Agreement immediately and without notice if the User breaches any of the terms and conditions herein. Upon termination:
+
+  a) All rights granted under this Agreement shall immediately cease.
+
+  b) The User must destroy all copies of the Software in their possession,
+     custody, or control, including any backup copies.
+
+  c) Sections 3, 4, 5, 6, and 8 shall survive termination of this Agreement.
+
+─────────────────────────────────────────────────────────────────────────────
+8. GOVERNING LAW AND JURISDICTION
+─────────────────────────────────────────────────────────────────────────────
+
+This Agreement shall be governed by and construed in accordance with the applicable laws of the jurisdiction in which the Licensor operates. Any disputes arising under or in connection with this Agreement shall be subject to the exclusive jurisdiction of the competent courts of that jurisdiction.
+
+─────────────────────────────────────────────────────────────────────────────
+9. ENTIRE AGREEMENT
+─────────────────────────────────────────────────────────────────────────────
+
+This Agreement constitutes the entire agreement between the User and the Licensor concerning the Software and supersedes all prior or contemporaneous understandings, negotiations, representations, and agreements, whether written or oral, relating to the Software.
+
+If any provision of this Agreement is held to be unenforceable or invalid under applicable law, such provision shall be modified to the minimum extent necessary to make it enforceable, and the remaining provisions shall continue in full force and effect.
+
+─────────────────────────────────────────────────────────────────────────────
+10. AMENDMENTS
+─────────────────────────────────────────────────────────────────────────────
+
+The Licensor reserves the right to modify this Agreement at any time. Continued use of the Software following notification of any modifications constitutes acceptance of the revised Agreement.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Copyright © 2024–2025 1bxm. All rights reserved.
+
+For licensing inquiries or permissions beyond the scope of this Agreement,
+contact the Licensor directly.
+
+─────────────────────────────────────────────────────────────────────────────
