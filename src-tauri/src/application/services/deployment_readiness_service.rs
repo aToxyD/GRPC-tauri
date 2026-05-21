@@ -188,10 +188,7 @@ impl<'a> DeploymentReadinessService<'a> {
             ),
             Some(dir) => {
                 if !dir.exists() {
-                    (
-                        false,
-                        format!("logs directory missing: {}", dir.display()),
-                    )
+                    (false, format!("logs directory missing: {}", dir.display()))
                 } else if !probe_dir_writable(dir) {
                     (
                         false,
