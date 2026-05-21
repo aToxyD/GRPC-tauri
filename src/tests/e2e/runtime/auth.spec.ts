@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/tauriApp';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
 
 test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
+  test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
   test('rate limiter blocks access after 5 consecutive invalid login attempts', async ({ tauriApp }) => {
     const { page } = tauriApp;

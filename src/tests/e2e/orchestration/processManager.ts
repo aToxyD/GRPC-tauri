@@ -58,7 +58,8 @@ export class ProcessManager {
       throw new Error('Call prepareEnvironment() before starting process');
     }
 
-    const exePath = path.join(process.cwd(), 'src-tauri/target/debug/grpc.exe');
+    const binaryName = process.platform === 'win32' ? 'grpc.exe' : 'grpc';
+    const exePath = path.join(process.cwd(), 'src-tauri/target/debug', binaryName);
     if (!fs.existsSync(exePath)) {
       throw new Error(`Tauri binary not found at: ${exePath}. Run 'cargo build' inside 'src-tauri' first.`);
     }

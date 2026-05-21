@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/tauriApp';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
 
 test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
+  test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
   test('IPC commands enforce node boundaries and reject path traversal attempts', async ({ tauriApp }) => {
     const { page } = tauriApp;

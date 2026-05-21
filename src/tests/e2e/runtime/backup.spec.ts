@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/tauriApp';
 import fs from 'fs';
 
 test.describe('Backup & Restore Runtime Lifecycle Workflows', () => {
+  test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
   test('backup creation, WAL checkpointing, encryption, and listing', async ({ tauriApp }) => {
     const { page } = tauriApp;

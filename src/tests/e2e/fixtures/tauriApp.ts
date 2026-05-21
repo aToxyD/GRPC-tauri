@@ -1,16 +1,17 @@
 import { test as base, expect } from '@playwright/test';
 import { TauriDriver } from '../drivers/tauriDriver';
+import { ViteDriver } from '../drivers/viteDriver';
 
 type TauriAppFixtures = {
   tauriApp: {
-    driver: TauriDriver;
+    driver: TauriDriver | ViteDriver;
     page: import('@playwright/test').Page;
   };
 };
 
 export const test = base.extend<TauriAppFixtures>({
   tauriApp: async ({}, use) => {
-    const driver = new TauriDriver();
+    const driver = process.platform === 'win32' ? new TauriDriver() : new ViteDriver();
     const page = await driver.start();
     
     page.on('console', msg => {
