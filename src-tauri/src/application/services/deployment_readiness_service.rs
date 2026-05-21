@@ -182,14 +182,26 @@ impl<'a> DeploymentReadinessService<'a> {
     ) {
         let log_dir = resolve_log_dir();
         let (passed, msg) = match &log_dir {
-            None => (false, "cannot resolve application log directory".to_string()),
+            None => (
+                false,
+                "cannot resolve application log directory".to_string(),
+            ),
             Some(dir) => {
                 if !dir.exists() {
-                    (false, format!("logs directory missing: {}", dir.display()))
+                    (
+                        false,
+                        format!("logs directory missing: {}", dir.display()),
+                    )
                 } else if !probe_dir_writable(dir) {
-                    (false, format!("logs directory not writable: {}", dir.display()))
+                    (
+                        false,
+                        format!("logs directory not writable: {}", dir.display()),
+                    )
                 } else {
-                    (true, format!("logs directory accessible: {}", dir.display()))
+                    (
+                        true,
+                        format!("logs directory accessible: {}", dir.display()),
+                    )
                 }
             }
         };
