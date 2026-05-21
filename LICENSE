@@ -1,124 +1,112 @@
-END-USER LICENSE AGREEMENT (EULA)
-GRPC – Gestion des Restaurants de la Protection Civile
-Version 1.0.0
+اتفاقية ترخيص المستخدم النهائي (EULA)
+برنامج GRPC – نظام تسيير مطاعم قطاع الحماية المدنية
+الإصدار 1.0.0
 
-IMPORTANT – READ CAREFULLY BEFORE INSTALLING, COPYING, OR USING THIS SOFTWARE.
+هام - اقرأ بعناية قبل التثبيت أو النسخ أو الاستخدام.
 
-This End-User License Agreement ("Agreement") is a legal contract between you (either an individual or a single legal entity, hereinafter "User") and 1bxm ("Licensor") for the use of the GRPC software application and all associated documentation, source code, modules, and resources (collectively the "Software").
+تعتبر اتفاقية ترخيص المستخدم النهائي هذه ("الاتفاقية") عقدًا قانونيًا بينك (إما بصفتك فردًا أو كيانًا قانونيًا واحدًا، ويشار إليه فيما يلي باسم "المستخدم") وبين 1bxm ("المرخِّص") لاستخدام تطبيق برنامج GRPC وجميع الوثائق والرموز البرمجية والمكونات والموارد المرتبطة به (يُشار إليها مجتمعة باسم "البرنامج").
 
-By installing, copying, accessing, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to these terms, do not install or use the Software.
-
-─────────────────────────────────────────────────────────────────────────────
-1. GRANT OF LICENSE
-─────────────────────────────────────────────────────────────────────────────
-
-Subject to the terms and conditions of this Agreement, the Licensor grants the User a limited, non-exclusive, non-transferable, non-sublicensable license to:
-
-  a) Install and use the Software solely for internal operational purposes within
-     authorized civil protection institutions ("Authorized Use").
-
-  b) Access and review the Software's source code solely for the purpose of
-     security auditing, bug reporting, and integration validation within the
-     Authorized Use context.
+من خلال تثبيت البرنامج أو نسخه أو الوصول إليه أو استخدامه بأي شكل آخر، فإنك توافق على الالتزام بشروط هذه الاتفاقية. إذا كنت لا توافق على هذه الشروط، فلا تقم بتثبيت البرنامج أو استخدامه.
 
 ─────────────────────────────────────────────────────────────────────────────
-2. RESTRICTIONS
+1. منح الترخيص
 ─────────────────────────────────────────────────────────────────────────────
 
-The User shall NOT, without the express prior written consent of the Licensor:
+بموجب شروط وأحكام هذه الاتفاقية، يمنح المرخِّص المستخدم ترخيصًا محدودًا وغير حصري وغير قابل للتحويل وغير قابل للترخيص من الباطن من أجل:
 
-  a) Copy, reproduce, distribute, publish, or sublicense the Software or any
-     portion thereof to any third party.
+  أ) تثبيت واستخدام البرنامج فقط للأغراض التشغيلية الداخلية داخل مؤسسات الحماية المدنية المصرح لها ("الاستخدام المصرح به").
 
-  b) Modify, adapt, translate, reverse engineer, decompile, disassemble, or
-     create derivative works based on the Software, in whole or in part.
-
-  c) Remove, alter, or obscure any proprietary notices, labels, or marks on the
-     Software, including copyright notices and this license text.
-
-  d) Use the Software for any commercial purpose, including selling, renting,
-     leasing, lending, or offering the Software as a service to third parties.
-
-  e) Transfer, assign, or delegate any rights granted under this Agreement to
-     any third party without the Licensor's prior written approval.
-
-  f) Use the Software in any manner that violates applicable local, national, or
-     international laws, regulations, or decrees.
+  ب) الوصول إلى الرمز البرمجي للمصدر (Source Code) ومراجعته فقط لغرض تدقيق الأمان، والإبلاغ عن الأخطاء، والتحقق من تكامل النظام ضمن سياق الاستخدام المصرح به.
 
 ─────────────────────────────────────────────────────────────────────────────
-3. INTELLECTUAL PROPERTY
+2. القيود
 ─────────────────────────────────────────────────────────────────────────────
 
-The Software and all copies thereof are proprietary to the Licensor and title thereto remains in the Licensor. All applicable rights in all copyrights, trade secrets, patents, and other intellectual property rights in or associated with the Software are and will remain in the Licensor.
+لا يجوز للمستخدم، بدون موافقة خطية مسبقة وصريحة من المرخِّص:
 
-This Agreement does not convey to the User an interest in or to the Software, but only a limited right of use revocable in accordance with the terms of this Agreement.
+  أ) نسخ أو إعادة إنتاج أو توزيع أو نشر أو ترخيص البرنامج من الباطن أو أي جزء منه لأي طرف ثالث.
 
-─────────────────────────────────────────────────────────────────────────────
-4. DATA AND CONFIDENTIALITY
-─────────────────────────────────────────────────────────────────────────────
+  ب) تعديل أو تكييف أو ترجمة أو هندسة عكسية أو فك تجميع أو تفكيك أو إنشاء أعمال مشتقة بناءً على البرنامج، كليًا أو جزئيًا.
 
-The Software processes sensitive operational and fiscal data belonging to civil protection institutions. The User agrees to:
+  ج) إزالة أو تغيير أو إخفاء أي إشعارات أو ملصقات أو علامات ملكية على البرنامج، بما في ذلك إشعارات حقوق النشر ونص هذا الترخيص.
 
-  a) Maintain strict confidentiality of all data processed by the Software.
+  د) استخدام البرنامج لأي غرض تجاري، بما في ذلك بيع أو تأجير أو إعارة أو تقديم البرنامج كخدمة لأطراف ثالثة.
 
-  b) Implement and maintain appropriate technical and organizational security
-     measures to protect data from unauthorized access, disclosure, or loss.
+  هـ) نقل أو التنازل عن أو تفويض أي حقوق ممنوحة بموجب هذه الاتفاقية لأي طرف ثالث دون موافقة خطية مسبقة من المرخِّص.
 
-  c) Not export, transmit, or otherwise transfer any data processed by the
-     Software to unauthorized parties or systems.
+  و) استخدام البرنامج بأي طريقة تنتهك القوانين أو اللوائح أو القرارات المحلية أو الوطنية أو الدولية المعمول بها.
 
 ─────────────────────────────────────────────────────────────────────────────
-5. DISCLAIMER OF WARRANTIES
+3. الملكية الفكرية
 ─────────────────────────────────────────────────────────────────────────────
 
-THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. THE LICENSOR EXPRESSLY DISCLAIMS ALL WARRANTIES, EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING BUT NOT LIMITED TO ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+إن البرنامج وجميع النسخ المأخوذة منه مملوكة للمرخِّص وتظل ملكيتها له. جميع الحقوق المعمول بها في جميع حقوق النشر والأسرار التجارية وبراءات الاختراع وحقوق الملكية الفكرية الأخرى في البرنامج أو المرتبطة به هي وتظل ملكًا للمرخِّص.
 
-THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL MEET THE USER'S REQUIREMENTS, THAT OPERATION OF THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR-FREE, OR THAT DEFECTS IN THE SOFTWARE WILL BE CORRECTED.
-
-─────────────────────────────────────────────────────────────────────────────
-6. LIMITATION OF LIABILITY
-─────────────────────────────────────────────────────────────────────────────
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR PUNITIVE DAMAGES (INCLUDING BUT NOT LIMITED TO PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, LOSS OF USE, LOSS OF DATA, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) ARISING OUT OF OR IN CONNECTION WITH THE USE OR INABILITY TO USE THE SOFTWARE, EVEN IF THE LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+لا تنقل هذه الاتفاقية للمستخدم أي مصلحة في البرنامج أو ملكية له، بل فقط حق استخدام محدود قابل للإلغاء وفقًا لشروط هذه الاتفاقية.
 
 ─────────────────────────────────────────────────────────────────────────────
-7. TERMINATION
+4. البيانات والسرية
 ─────────────────────────────────────────────────────────────────────────────
 
-This Agreement is effective until terminated. The Licensor may terminate this Agreement immediately and without notice if the User breaches any of the terms and conditions herein. Upon termination:
+يقوم البرنامج بمعالجة البيانات التشغيلية والمالية الحساسة التابعة لمؤسسات الحماية المدنية. يوافق المستخدم على:
 
-  a) All rights granted under this Agreement shall immediately cease.
+  أ) الحفاظ على السرية التامة لجميع البيانات التي تتم معالجتها بواسطة البرنامج.
 
-  b) The User must destroy all copies of the Software in their possession,
-     custody, or control, including any backup copies.
+  ب) تنفيذ وصيانة التدابير الأمنية الفنية والتنظيمية المناسبة لحماية البيانات من الوصول غير المصرح به أو الكشف عنها أو فقدانها.
 
-  c) Sections 3, 4, 5, 6, and 8 shall survive termination of this Agreement.
-
-─────────────────────────────────────────────────────────────────────────────
-8. GOVERNING LAW AND JURISDICTION
-─────────────────────────────────────────────────────────────────────────────
-
-This Agreement shall be governed by and construed in accordance with the applicable laws of the jurisdiction in which the Licensor operates. Any disputes arising under or in connection with this Agreement shall be subject to the exclusive jurisdiction of the competent courts of that jurisdiction.
+  ج) عدم تصدير أو نقل أو نقل البيانات التي تتم معالجتها بواسطة البرنامج إلى أطراف أو أنظمة غير مصرح لها.
 
 ─────────────────────────────────────────────────────────────────────────────
-9. ENTIRE AGREEMENT
+5. إخلاء المسؤولية عن الضمانات
 ─────────────────────────────────────────────────────────────────────────────
 
-This Agreement constitutes the entire agreement between the User and the Licensor concerning the Software and supersedes all prior or contemporaneous understandings, negotiations, representations, and agreements, whether written or oral, relating to the Software.
+يتم تقديم البرنامج "كما هو" دون أي ضمان من أي نوع. يخلي المرخِّص مسؤوليته صراحةً من جميع الضمانات، الصريحة أو الضمنية أو القانونية أو غير ذلك، بما في ذلك على سبيل المثال لا الحصر أي ضمانات ضمنية لقابلية التسويق، والملاءمة لغرض معين، والملكية، وعدم الانتهاك.
 
-If any provision of this Agreement is held to be unenforceable or invalid under applicable law, such provision shall be modified to the minimum extent necessary to make it enforceable, and the remaining provisions shall continue in full force and effect.
+لا يضمن المرخِّص أن البرنامج سيلبي متطلبات المستخدم، أو أن تشغيل البرنامج سيكون دون انقطاع أو خاليًا من الأخطاء، أو أنه سيتم تصحيح العيوب في البرنامج.
 
 ─────────────────────────────────────────────────────────────────────────────
-10. AMENDMENTS
+6. تحديد المسؤولية
 ─────────────────────────────────────────────────────────────────────────────
 
-The Licensor reserves the right to modify this Agreement at any time. Continued use of the Software following notification of any modifications constitutes acceptance of the revised Agreement.
+إلى أقصى حد يسمح به القانون المعمول به، لا يتحمل المرخِّص في أي حال من الأحوال المسؤولية عن أي أضرار غير مباشرة أو عرضية أو خاصة أو تحذيرية أو تبعية أو تأديبية (بما في ذلك على سبيل المثال لا الحصر شراء سلع أو خدمات بديلة، أو فقدان الاستخدام، أو فقدان البيانات، أو خسارة الأرباح، أو انقطاع الأعمال) الناشئة بأي شكل من الأشكال عن أو فيما يتعلق باستخدام أو عدم القدرة على استخدام البرنامج، حتى لو تم إخطار المرخِّص بإمكانية حدوث مثل هذه الأضرار.
+
+─────────────────────────────────────────────────────────────────────────────
+7. الإنهاء
+─────────────────────────────────────────────────────────────────────────────
+
+هذه الاتفاقية سارية المفعول حتى يتم إنهاؤها. يجوز للمرخِّص إنهاء هذه الاتفاقية فورًا ودون إشعار في حال خرق المستخدم لأي من الشروط والأحكام الواردة هنا. عند الإنهاء:
+
+  أ) تتوقف فورًا جميع الحقوق الممنوحة بموجب هذه الاتفاقية.
+
+  ب) يجب على المستخدم تدمير جميع نسخ البرنامج الموجودة في حوزته أو عهدته أو تحت سيطرته، بما في ذلك أي نسخ احتياطية.
+
+  ج) تظل الأقسام 3 و 4 و 5 و 6 و 8 سارية المفعول بعد إنهاء هذه الاتفاقية.
+
+─────────────────────────────────────────────────────────────────────────────
+8. القانون الحاكم والاختصاص القضائي
+─────────────────────────────────────────────────────────────────────────────
+
+تخضع هذه الاتفاقية وتُفسر وفقًا للقوانين المعمول بها في الولاية القضائية التي يعمل فيها المرخِّص. وتخضع أي نزاعات تنشأ بموجب هذه الاتفاقية أو تتعلق بها للاختصاص القضائي الحصري للمحاكم المختصة في تلك الولاية القضائية.
+
+─────────────────────────────────────────────────────────────────────────────
+9. الاتفاقية الكاملة
+─────────────────────────────────────────────────────────────────────────────
+
+تشكل هذه الاتفاقية كامل الاتفاق بين المستخدم والمرخِّص فيما يتعلق بالبرنامج وتحل محل جميع التفاهمات والمفاوضات والتمثيلات والاتفاقيات السابقة أو المعاصرة، سواء كانت مكتوبة أو شفهية، المتعلقة بالبرنامج.
+
+إذا تبين أن أي حكم من أحكام هذه الاتفاقية غير قابل للتنفيذ أو غير صالح بموجب القانون المعمول به، فسيتم تعديل هذا الحكم إلى الحد الأدنى اللازم لجعله قابلًا للتنفيذ، وتظل الأحكام المتبقية سارية المفعول والتأثير الكامل.
+
+─────────────────────────────────────────────────────────────────────────────
+10. التعديلات
+─────────────────────────────────────────────────────────────────────────────
+
+يحتفظ المرخِّص بالحق في تعديل هذه الاتفاقية في أي وقت. ويشكل الاستمرار في استخدام البرنامج بعد الإخطار بأي تعديلات قبولًا للاتفاقية المعدلة.
 
 ─────────────────────────────────────────────────────────────────────────────
 
-Copyright © 2024–2025 1bxm. All rights reserved.
+حقوق النشر © 2024–2025 لـ 1bxm. جميع الحقوق محفوظة.
 
-For licensing inquiries or permissions beyond the scope of this Agreement,
-contact the Licensor directly.
+للاستفسارات المتعلقة بالترخيص أو الحصول على أذونات تتجاوز نطاق هذه الاتفاقية،
+يرجى الاتصال بالمرخِّص مباشرة.
 
 ─────────────────────────────────────────────────────────────────────────────
