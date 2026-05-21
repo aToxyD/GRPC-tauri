@@ -4,6 +4,7 @@ const steps = [
   { name: "Architectural Checks", cmd: "bun", args: ["run", "check:arch"] },
   { name: "Svelte Type & Diagnostics Checks", cmd: "bun", args: ["run", "check"] },
   { name: "Frontend Unit & Integration Tests", cmd: "bun", args: ["run", "test"] },
+  { name: "Build Tauri Binary", cmd: "cargo", args: ["build", "--manifest-path", "src-tauri/Cargo.toml"] },
   { name: "End-to-End Tests", cmd: "bun", args: ["run", "test:e2e"] }
 ];
 
