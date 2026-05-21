@@ -185,7 +185,9 @@ runtime_e2e_governance:
   before_script:
     - npm install -g bun
     - bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
-    - apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+    - apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev curl
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - export PATH="$HOME/.cargo/bin:$PATH"
     - cd src-tauri
     - cargo build
     - cd ..
