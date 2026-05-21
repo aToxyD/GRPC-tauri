@@ -22,6 +22,8 @@
   import AppLoadingState from "../lib/components/ui/AppLoadingState.svelte";
   import AppEmptyState from "../lib/components/ui/AppEmptyState.svelte";
   import AppPageHeader from "../lib/components/ui/AppPageHeader.svelte";
+  import AppDialog from "../lib/components/ui/AppDialog.svelte";
+  import AppInput from "../lib/components/ui/AppInput.svelte";
 
   const scope = createRuntimeScope();
   onDestroy(() => scope.dispose());
@@ -35,6 +37,10 @@
 
   const restoreBackupOp = createOperationGuard({ scope });
   const restoring = restoreBackupOp.loading;
+
+  let showRestoreModal = false;
+  let restoreBackupPath = '';
+  let restoreConfirmationInput = '';
 
   let backups: BackupInfo[] = [];
   let settings: Settings | null = null;
@@ -83,33 +89,23 @@
       return;
     }
 
-    const confirmed = await showAsk(
-      "سيتم مسح جميع البيانات السابقة في عملية الإستعادة و إستبدالها ببيانات النسخة الجديدة، ستتم عملية الإستعادة وإعادة تشغيل التطبيق. هل تريد الإستمرار؟",
-      {
-        title: "تحذير: استعادة النسخة الاحتياطية",
-        kind: "warning",
-        okLabel: "نعم",
-        cancelLabel: "لا",
-      },
-    );
+    restoreBackupPath = backupPath;
+    restoreConfirmationInput = '';
+    showRestoreModal = true;
+  }
 
-    if (!confirmed) {
-      return;
-    }
-
-    const typed = window.prompt(
-      'للتأكيد اكتب RESTORE بالأحرف اللاتينية الكبيرة ثم اضغط موافق:',
-      '',
-    );
-    if (typed?.trim() !== 'RESTORE') {
+  async function executeRestoreBackup() {
+    if (restoreConfirmationInput.trim() !== 'RESTORE') {
       backupsOp.error.set('تم إلغاء الاستعادة: التأكيد المكتوب غير صحيح.');
       return;
     }
 
+    showRestoreModal = false;
+
     await restoreBackupOp.guard(async () => {
       try {
         const { token } = await issueOperationExecutionToken({ operation: 'restore' });
-        await restoreBackup(backupPath, typed.trim(), token);
+        await restoreBackup(restoreBackupPath, restoreConfirmationInput.trim(), token);
       } catch (err) {
         backupsOp.error.set(formatErrorMessage(err));
       }
@@ -283,6 +279,50 @@
         </AppAlert>
       </div>
     </div>
+
+    <!-- نافذة تأكيد استعادة النسخة الاحتياطية المخصصة -->
+    <AppDialog
+      open={showRestoreModal}
+      title="تحذير: استعادة النسخة الاحتياطية"
+      destructive={true}
+      on:close={() => { showRestoreModal = false; restoreBackupPath = ''; restoreConfirmationInput = ''; }}
+    >
+      <div class="space-y-4">
+        <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+          سيتم مسح جميع البيانات الحالية في عملية الاستعادة واستبدالها ببيانات النسخة الجديدة. ستتم عملية الاستعادة وإعادة تشغيل التطبيق تلقائياً. هل تريد الاستمرار؟
+        </p>
+        
+        <AppAlert intent="danger" title="تنبيه هام جداً:">
+          هذا الإجراء تشغيلي حساس ولا يمكن التراجع عنه بعد تنفيذه.
+        </AppAlert>
+
+        <AppInput
+          id="restore-confirm"
+          label="لتأكيد الاستعادة، يرجى كتابة الرمز التالي بالأحرف اللاتينية الكبيرة: RESTORE"
+          bind:value={restoreConfirmationInput}
+          placeholder="RESTORE"
+          autocomplete="off"
+        />
+      </div>
+      
+      <svelte:fragment slot="actions">
+        <AppButton 
+          variant="secondary" 
+          disabled={$restoring}
+          on:click={() => { showRestoreModal = false; restoreBackupPath = ''; restoreConfirmationInput = ''; }}
+        >
+          إلغاء
+        </AppButton>
+        <AppButton 
+          variant="danger"
+          loading={$restoring}
+          disabled={restoreConfirmationInput.trim() !== 'RESTORE' || $restoring}
+          on:click={executeRestoreBackup}
+        >
+          تأكيد الاستعادة وإعادة التشغيل
+        </AppButton>
+      </svelte:fragment>
+    </AppDialog>
   </Layout>
 {:else}
   <AppLoadingState />
