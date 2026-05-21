@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+env:
+  BUN_CACHE_DIR: .bun-cache
+  CARGO_HOME: src-tauri/.cargo
+
+jobs:
+  secrets-scanning:
+    name: Secrets scanning
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run secret scanning
+        run: bun run scripts/check_secrets.ts
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Build frontend
+        run: bun run build
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+          retention-days: 1
+
+  frontend-governance:
+    name: Frontend governance
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Run frontend checks
+        run: bun run check
+      - name: Run Vitest
+        run: bun x vitest run
+
+  backend-governance:
+    name: Backend governance
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.94
+    needs: frontend-build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
+      - name: Install Rust tools and dependencies
+        run: |
+          rustup component add rustfmt clippy
+          apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Cargo fmt check
+        run: cargo fmt --check
+        working-directory: src-tauri
+      - name: Cargo clippy
+        run: cargo clippy -- -D warnings
+        working-directory: src-tauri
+      - name: Cargo check
+        run: cargo check
+        working-directory: src-tauri
+      - name: Cargo test
+        run: cargo test --verbose
+        working-directory: src-tauri
+
+  architectural-governance:
+    name: Architectural governance
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Run architecture checks
+        run: bun run check:arch
+
+  bun-dependency-audit:
+    name: Bun dependency audit
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9-alpine
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run bun audit
+        run: bun audit
+
+  cargo-dependency-audit:
+    name: Cargo dependency audit
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.94
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+        working-directory: src-tauri
+      - name: Run cargo audit
+        run: cargo audit --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429
+        working-directory: src-tauri
+
+  documentation-governance:
+    name: Documentation governance
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Run documentation governance
+        run: bun run scripts/check_docs_governance.ts
+
+  release-integrity:
+    name: Release integrity
+    runs-on: ubuntu-latest
+    container:
+      image: oven/bun:1.3.9-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Run release integrity check
+        run: bun run scripts/check_release_integrity.ts
+
+  runtime-e2e-governance:
+    name: Runtime E2E governance
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-jammy
+    needs: frontend-build
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
+      - name: Install bun
+        run: npm install -g bun
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Install runtime packages
+        run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev curl
+      - name: Install rustup
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - name: Add cargo to PATH
+        run: echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+      - name: Build src-tauri
+        run: cd src-tauri && cargo build
+      - name: Run Playwright E2E tests
+        run: |
+          export TEST_SECURE_TEMP_DIR="$(mktemp -d)"
+          bun run test:e2e
+          rm -rf "$TEST_SECURE_TEMP_DIR"
