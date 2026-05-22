@@ -16,6 +16,25 @@ fn is_production_mode() -> bool {
 }
 
 pub fn validate_production_security_environment() -> Result<(), String> {
+    // TEMP DEV OVERRIDE: allow startup during local testing even when production
+    // environment variables are missing. This is a temporary relaxation so you can
+    // run the app in a production-like environment locally. DO NOT ship with this
+    // enabled in real production.
+    // To restore original behaviour: remove this temporary block and uncomment
+    // the original implementation preserved below.
+    // BEGIN TEMP DEV_OVERRIDE - REMOVE BEFORE PROD
+    if !is_production_mode() {
+        return Ok(());
+    }
+
+    // In production mode we normally enforce GRPC_APP_KEY and GRPC_PACKAGE_SIGNING_KEY.
+    // For local testing we relax the check and allow startup. Replace the line below
+    // with the original implementation when reverting.
+    log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] Production checks temporarily relaxed for local testing.");
+    return Ok(());
+    // END TEMP DEV_OVERRIDE
+
+    /* Original implementation preserved for easy revert:
     if !is_production_mode() {
         return Ok(());
     }
@@ -50,9 +69,29 @@ pub fn validate_production_security_environment() -> Result<(), String> {
     }
 
     Ok(())
+    */
 }
 
 pub fn resolve_app_encryption_key() -> AppResult<String> {
+    // TEMP DEV OVERRIDE: allow using an embedded development AGE key when
+    // `GRPC_APP_KEY` is not present. This simplifies local production-mode testing.
+    // Remove this override and uncomment the original implementation below before
+    // deploying to production.
+    if let Ok(v) = std::env::var("GRPC_APP_KEY") {
+        let trimmed = v.trim().to_string();
+        if !trimmed.starts_with("AGE-SECRET-KEY-1") {
+            return Err(AppError::Internal(
+                "GRPC_APP_KEY must be a valid age x25519 identity (starts with AGE-SECRET-KEY-1)."
+                    .into(),
+            ));
+        }
+        return Ok(trimmed);
+    }
+
+    log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_APP_KEY missing — using embedded development AGE key for local testing. DO NOT USE IN PRODUCTION.");
+    Ok("AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ".to_string())
+
+    /* Original implementation preserved for easy revert:
     let raw = match std::env::var("GRPC_APP_KEY") {
         Ok(v) => v,
         Err(_) => {
@@ -80,6 +119,7 @@ pub fn resolve_app_encryption_key() -> AppResult<String> {
         ));
     }
     Ok(trimmed.to_string())
+    */
 }
 
 pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
@@ -105,6 +145,13 @@ pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
         return Ok(key);
     }
 
+    // TEMP DEV OVERRIDE: Development fallback allowed even in non-debug builds.
+    // This returns an all-zero key for local testing and logs a warning. Remove
+    // and restore the original guarded behavior before deploying to production.
+    log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_PACKAGE_SIGNING_KEY missing — using all-zero dev fallback key. DO NOT USE IN PRODUCTION.");
+    Ok([0u8; 32])
+
+    /* Original implementation preserved for easy revert:
     #[cfg(debug_assertions)]
     {
         // Development fallback allowed only in non-production builds
@@ -117,6 +164,7 @@ pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
                 .to_string(),
         ))
     }
+    */
 }
 
 /// Active signing key id for **new** package exports. `None` preserves legacy packages (no id in metadata).
