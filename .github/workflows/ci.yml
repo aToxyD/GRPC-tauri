@@ -177,7 +177,9 @@ jobs:
       - name: Install rustup
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - name: Add cargo to PATH
-        run: echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        run: |
+          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/${CARGO_HOME}/bin" >> $GITHUB_PATH
       - name: Build src-tauri
         run: cd src-tauri && cargo build
       - name: Run Playwright E2E tests
