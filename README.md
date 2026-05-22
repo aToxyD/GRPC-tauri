@@ -123,3 +123,4 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -
 
 ---
 *هذا النظام أداة هندسية مصممة للصيانة والاستقرار، وليس للاستخدام في السحابة العامة أو التوسع اللانهائي.*
+
