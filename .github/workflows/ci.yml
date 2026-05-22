@@ -59,7 +59,7 @@ jobs:
     name: Backend governance
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:ci-latest
+      image: ghcr.io/atoxyd/grpc-tauri:ci-latest
     needs: frontend-build
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +71,7 @@ jobs:
       - name: Install Rust tools and dependencies
         run: |
           rustup component add rustfmt clippy
-          apt-get update && apt-get install -y curl libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+          apt-get update && apt-get install -y build-essential curl libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Install Bun
         run: |
           curl -fsSL https://bun.sh/install | bash
@@ -173,7 +173,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
       - name: Install runtime packages
-        run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev curl
+        run: apt-get update && apt-get install -y build-essential libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev curl
       - name: Install rustup
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - name: Add cargo to PATH
