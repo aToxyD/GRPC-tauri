@@ -44,6 +44,11 @@ jobs:
           toolchain: stable
           profile: minimal
           components: cargo
+      - name: Fix macOS DMG bundle script permissions
+        if: runner.os == 'macOS'
+        run: |
+          find src-tauri/target/release/bundle -name "*.sh" -type f -exec chmod +x {} \;
+        shell: bash
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
         run: |
@@ -62,6 +67,8 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all release artifacts
         uses: actions/download-artifact@v4
