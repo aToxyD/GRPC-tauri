@@ -59,7 +59,7 @@ jobs:
     name: Backend governance
     runs-on: ubuntu-latest
     container:
-      image: rust:1.94
+      image: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:ci-latest
     needs: frontend-build
     steps:
       - uses: actions/checkout@v4
