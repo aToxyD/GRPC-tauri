@@ -74,19 +74,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release-packages
+          # copy only the 3 files we want (if present)
+          find release-artifacts -type f -name 'GRPC_1.0.0_amd64.deb' -exec cp {} release-packages/ \; || true
+          find release-artifacts -type f -name 'GRPC_1.0.0_x64-setup.exe' -exec cp {} release-packages/ \; || true
+          find release-artifacts -type f -name 'GRPC_1.0.0_aarch64.dmg' -exec cp {} release-packages/ \; || true
+        shell: bash
       - name: Create GitHub release and upload assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ${{ github.event.inputs.tag || github.ref_name }}
           files: |
-            release-artifacts/**/*.deb
-            release-artifacts/**/*.rpm
-            release-artifacts/**/*.msi
-            release-artifacts/**/*.exe
-            release-artifacts/**/*.dmg
-            release-artifacts/**/*.tar.gz
-            release-artifacts/**/*.app
-            release-artifacts/**/*.zip
+            release-packages/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
