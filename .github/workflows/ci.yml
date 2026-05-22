@@ -71,7 +71,15 @@ jobs:
       - name: Install Rust tools and dependencies
         run: |
           rustup component add rustfmt clippy
-          apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+          apt-get update && apt-get install -y curl libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "${HOME}/.bun/bin" >> $GITHUB_PATH
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Build frontend
+        run: bun run build
       - name: Cargo fmt check
         run: cargo fmt --check
         working-directory: src-tauri
