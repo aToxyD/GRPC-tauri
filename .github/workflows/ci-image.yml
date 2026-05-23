@@ -22,9 +22,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set lowercased repository names
+        id: repo_names
+        run: |
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner_lower=${OWNER_LOWER}" >> $GITHUB_OUTPUT
+          echo "repo_lower=${REPO_LOWER}" >> $GITHUB_OUTPUT
+        shell: bash
       - name: Build and push image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ toLower(github.repository_owner) }}/${{ toLower(github.event.repository.name) }}:ci-latest
+          tags: ghcr.io/${{ steps.repo_names.outputs.owner_lower }}/${{ steps.repo_names.outputs.repo_lower }}:ci-latest
