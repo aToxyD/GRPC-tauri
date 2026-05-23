@@ -29,6 +29,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Update version in config files
+        run: |
+          TAG_VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          echo "Updating configuration files to version: $TAG_VERSION"
+          
+          # Update tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            conf.version = '$TAG_VERSION';
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2), 'utf8');
+          "
+          
+          # Update Cargo.toml
+          node -e "
+            const fs = require('fs');
+            let cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
+            cargo = cargo.replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"$TAG_VERSION\"');
+            fs.writeFileSync('src-tauri/Cargo.toml', cargo, 'utf8');
+          "
+        shell: bash
       - name: Install Bun
         run: npm install -g bun
         shell: bash
@@ -77,10 +99,14 @@ jobs:
       - name: Prepare release artifacts
         run: |
           mkdir -p release-packages
+          TAG_VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          echo "Target version: $TAG_VERSION"
+          
           # copy only the 3 files we want (if present)
-          find release-artifacts -type f -name 'GRPC_1.0.0_amd64.deb' -exec cp {} release-packages/ \; || true
-          find release-artifacts -type f -name 'GRPC_1.0.0_x64-setup.exe' -exec cp {} release-packages/ \; || true
-          find release-artifacts -type f -name 'GRPC_1.0.0_aarch64.dmg' -exec cp {} release-packages/ \; || true
+          find release-artifacts -type f -name "GRPC_${TAG_VERSION}_amd64.deb" -exec cp {} release-packages/ \; || true
+          find release-artifacts -type f -name "GRPC_${TAG_VERSION}_x64-setup.exe" -exec cp {} release-packages/ \; || true
+          find release-artifacts -type f -name "GRPC_${TAG_VERSION}_aarch64.dmg" -exec cp {} release-packages/ \; || true
         shell: bash
       - name: Create GitHub release and upload assets
         uses: softprops/action-gh-release@v1
