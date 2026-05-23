@@ -62,7 +62,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
-          path: .
+          path: dist
 
       - name: Cargo fmt check
         run: cargo fmt --check
@@ -151,7 +151,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
-          path: .
+          path: dist
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
       - name: Install dependencies

@@ -1115,15 +1115,17 @@ fn test_unit_cost_tracking_in_stock_movements() {
     let _in_id = stock_service.record_stock_movement(&in_mov).unwrap();
 
     // Verify stored IN movement unit_cost
-    let movements_in = stock_service.get_stock_movements(
-        &StockMovementFilters {
-            product_id: Some(product_id.clone()),
-            movement_type: Some("IN".to_string()),
-            ..Default::default()
-        },
-        0,
-        10,
-    ).unwrap();
+    let movements_in = stock_service
+        .get_stock_movements(
+            &StockMovementFilters {
+                product_id: Some(product_id.clone()),
+                movement_type: Some("IN".to_string()),
+                ..Default::default()
+            },
+            0,
+            10,
+        )
+        .unwrap();
     assert_eq!(movements_in.movements[0].unit_cost, Some(150.5));
 
     // 2. OPENING movement stores unit_cost
@@ -1142,15 +1144,17 @@ fn test_unit_cost_tracking_in_stock_movements() {
     let _open_id = stock_service.record_stock_movement(&open_mov).unwrap();
 
     // Verify stored OPENING movement unit_cost
-    let movements_open = stock_service.get_stock_movements(
-        &StockMovementFilters {
-            product_id: Some(product_id.clone()),
-            movement_type: Some("OPENING".to_string()),
-            ..Default::default()
-        },
-        0,
-        10,
-    ).unwrap();
+    let movements_open = stock_service
+        .get_stock_movements(
+            &StockMovementFilters {
+                product_id: Some(product_id.clone()),
+                movement_type: Some("OPENING".to_string()),
+                ..Default::default()
+            },
+            0,
+            10,
+        )
+        .unwrap();
     assert_eq!(movements_open.movements[0].unit_cost, Some(120.0));
 
     // 3. OUT movement handles NULL safely
@@ -1169,15 +1173,17 @@ fn test_unit_cost_tracking_in_stock_movements() {
     let _out_id = stock_service.record_stock_movement(&out_mov).unwrap();
 
     // Verify stored OUT movement unit_cost
-    let movements_out = stock_service.get_stock_movements(
-        &StockMovementFilters {
-            product_id: Some(product_id.clone()),
-            movement_type: Some("OUT".to_string()),
-            ..Default::default()
-        },
-        0,
-        10,
-    ).unwrap();
+    let movements_out = stock_service
+        .get_stock_movements(
+            &StockMovementFilters {
+                product_id: Some(product_id.clone()),
+                movement_type: Some("OUT".to_string()),
+                ..Default::default()
+            },
+            0,
+            10,
+        )
+        .unwrap();
     assert_eq!(movements_out.movements[0].unit_cost, None);
 
     // 4. Serialization roundtrip
@@ -1187,38 +1193,53 @@ fn test_unit_cost_tracking_in_stock_movements() {
     assert_eq!(deserialized.unit_cost, Some(150.5));
 
     // 5. Sync export/import preserves unit_cost
-    let movements_to_sync = stock_service.get_stock_movements_in_range(
-        "2020-01-01T00:00:00Z",
-        "2100-01-01T00:00:00Z",
-    ).unwrap();
-    
+    let movements_to_sync = stock_service
+        .get_stock_movements_in_range("2020-01-01T00:00:00Z", "2100-01-01T00:00:00Z")
+        .unwrap();
+
     // Create import sync service and run import on a clean/separate unit db
     let (sync_db, sync_unit_id) = setup_test_db_with_unit();
     create_test_product(&sync_db, "prod_cost_test", "Acquisition Cost Product");
     let sync_executor = sync_db.executor();
     let sync_svc = grpc_lib::application::services::ImportSyncService::new(sync_executor);
-    
+
     // Import the movements
-    sync_svc.import_stock_movements(movements_to_sync, Some(&sync_unit_id)).unwrap();
+    sync_svc
+        .import_stock_movements(movements_to_sync, Some(&sync_unit_id))
+        .unwrap();
 
     // Verify after import
-    let imported_movements = grpc_lib::application::services::StockMovementService::new(sync_executor)
-        .get_stock_movements(
-            &StockMovementFilters {
-                product_id: Some("prod_cost_test".to_string()),
-                ..Default::default()
-            },
-            0,
-            10,
-        ).unwrap();
-    
-    let imported_in = imported_movements.movements.iter().find(|m| m.movement_type == StockMovementType::In).unwrap();
+    let imported_movements =
+        grpc_lib::application::services::StockMovementService::new(sync_executor)
+            .get_stock_movements(
+                &StockMovementFilters {
+                    product_id: Some("prod_cost_test".to_string()),
+                    ..Default::default()
+                },
+                0,
+                10,
+            )
+            .unwrap();
+
+    let imported_in = imported_movements
+        .movements
+        .iter()
+        .find(|m| m.movement_type == StockMovementType::In)
+        .unwrap();
     assert_eq!(imported_in.unit_cost, Some(150.5));
-    
-    let imported_open = imported_movements.movements.iter().find(|m| m.movement_type == StockMovementType::Opening).unwrap();
+
+    let imported_open = imported_movements
+        .movements
+        .iter()
+        .find(|m| m.movement_type == StockMovementType::Opening)
+        .unwrap();
     assert_eq!(imported_open.unit_cost, Some(120.0));
 
-    let imported_out = imported_movements.movements.iter().find(|m| m.movement_type == StockMovementType::Out).unwrap();
+    let imported_out = imported_movements
+        .movements
+        .iter()
+        .find(|m| m.movement_type == StockMovementType::Out)
+        .unwrap();
     assert_eq!(imported_out.unit_cost, None);
 
     // 6. Legacy NULL values remain valid
@@ -1230,14 +1251,20 @@ fn test_unit_cost_tracking_in_stock_movements() {
         rusqlite::params!["legacy-id-1", product_id, Some(&unit_id)],
     ).unwrap();
 
-    let legacy_movement = stock_service.get_stock_movements(
-        &StockMovementFilters {
-            product_id: Some(product_id.clone()),
-            movement_type: Some("IN".to_string()),
-            ..Default::default()
-        },
-        0,
-        10,
-    ).unwrap().movements.into_iter().find(|m| m.id == "legacy-id-1").unwrap();
+    let legacy_movement = stock_service
+        .get_stock_movements(
+            &StockMovementFilters {
+                product_id: Some(product_id.clone()),
+                movement_type: Some("IN".to_string()),
+                ..Default::default()
+            },
+            0,
+            10,
+        )
+        .unwrap()
+        .movements
+        .into_iter()
+        .find(|m| m.id == "legacy-id-1")
+        .unwrap();
     assert_eq!(legacy_movement.unit_cost, None);
 }
