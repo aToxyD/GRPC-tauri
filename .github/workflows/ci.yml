@@ -6,7 +6,6 @@ on:
 env:
   BUN_CACHE_DIR: .bun-cache
   CARGO_HOME: src-tauri/.cargo
-  CI_IMAGE: ghcr.io/atoxyd/grpc-tauri:ci-latest
 
 jobs:
   secrets-scanning:
@@ -55,7 +54,7 @@ jobs:
     name: Backend governance
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CI_IMAGE }}
+      image: ghcr.io/atoxyd/grpc-tauri:ci-latest
     needs: frontend-build
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +104,7 @@ jobs:
     name: Cargo dependency audit
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CI_IMAGE }}
+      image: ghcr.io/atoxyd/grpc-tauri:ci-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo-audit
@@ -143,7 +142,7 @@ jobs:
     name: Runtime E2E governance
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CI_IMAGE }}
+      image: ghcr.io/atoxyd/grpc-tauri:ci-latest
     needs: frontend-build
     if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
