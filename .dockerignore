@@ -1,0 +1,8 @@
+.git
+.github
+node_modules
+dist
+src-tauri/target
+src-tauri/.cargo
+.bun-cache
+*.log

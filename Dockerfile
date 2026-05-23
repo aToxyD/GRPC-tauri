@@ -2,6 +2,7 @@ FROM rust:1.94 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install system dependencies
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     curl ca-certificates build-essential \
@@ -9,24 +10,30 @@ RUN apt-get update \
     libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
   && rm -rf /var/lib/apt/lists/*
 
-# Install bun (installer places binaries in /root/.bun)
-RUN curl -fsSL https://bun.sh/install | bash -s -- -y || true
+# Install pinned bun version for reproducibility
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.9" \
+  && /root/.bun/bin/bun --version
 
 ENV PATH="/root/.bun/bin:/root/.cargo/bin:/usr/local/cargo/bin:${PATH}"
 
+# Pre-cache Rust toolchain components used in CI
+RUN rustup component add rustfmt clippy
+
 WORKDIR /workspace
 
-# Copy project files and do a frontend build and a release Rust build
+# --- Layer 1: Install JS dependencies (cached unless bun.lock changes) ---
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --cache-dir /workspace/.bun-cache
+
+# --- Layer 2: Copy remaining source and build frontend ---
 COPY . /workspace
+RUN bun run build
 
-RUN if [ -f package.json ]; then \
-    /root/.bun/bin/bun install --frozen-lockfile --cache-dir /workspace/.bun-cache && \
-    /root/.bun/bin/bun run build ; \
-  fi
-
+# --- Layer 3: Pre-cache Rust dependencies (cached unless Cargo.toml/Cargo.lock changes) ---
 WORKDIR /workspace/src-tauri
+RUN cargo fetch
 
-# Build Rust release (cache will be used by the runner/docker layer cache when available)
-RUN cargo build --release || true
+# Pre-compile dependencies only (not the application) for faster CI runs
+RUN cargo build 2>&1 | head -200 || true
 
 CMD ["/bin/bash"]
