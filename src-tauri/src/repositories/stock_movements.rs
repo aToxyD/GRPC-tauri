@@ -35,14 +35,15 @@ impl<'a> StockMovementRepository<'a> {
         self.executor.execute(
             "INSERT INTO stock_movements 
              (id, product_id, movement_type, quantity, balance_before, balance_after, 
-              reference_type, reference_id, notes, timestamp, user_id, username, unit_id, fiscal_year)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+              reference_type, reference_id, notes, timestamp, user_id, username, unit_id, fiscal_year, unit_cost)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET
                  quantity = excluded.quantity,
                  balance_before = excluded.balance_before,
                  balance_after = excluded.balance_after,
                  notes = excluded.notes,
-                 timestamp = excluded.timestamp",
+                 timestamp = excluded.timestamp,
+                 unit_cost = excluded.unit_cost",
             rusqlite::params![
                 id,
                 &movement.product_id,
@@ -58,6 +59,7 @@ impl<'a> StockMovementRepository<'a> {
                 &movement.username,
                 movement.unit_id.as_deref(),
                 fiscal_year,
+                movement.unit_cost,
             ],
         )?;
         Ok(())
@@ -94,7 +96,7 @@ impl<'a> StockMovementRepository<'a> {
         Ok(self.executor.query_all(
             r#"SELECT sm.id, sm.product_id, p.name as product_name, sm.movement_type,
                       sm.quantity, sm.balance_before, sm.balance_after, sm.reference_type,
-                      sm.reference_id, sm.notes, sm.timestamp, sm.user_id, sm.username, sm.unit_id, sm.fiscal_year
+                      sm.reference_id, sm.notes, sm.timestamp, sm.user_id, sm.username, sm.unit_id, sm.fiscal_year, sm.unit_cost
                FROM stock_movements sm
                LEFT JOIN products p ON sm.product_id = p.id
                WHERE (?1 IS NULL OR sm.product_id = ?1)
@@ -134,6 +136,7 @@ impl<'a> StockMovementRepository<'a> {
                     username: row.get(12)?,
                     unit_id: row.get(13)?,
                     fiscal_year: row.get(14)?,
+                    unit_cost: row.get(15)?,
                 })
             },
         )?)
@@ -147,8 +150,8 @@ impl<'a> StockMovementRepository<'a> {
                 "INSERT OR IGNORE INTO stock_movements
              (id, product_id, movement_type, quantity,
               balance_before, balance_after, reference_type,
-              reference_id, notes, timestamp, user_id, username, unit_id, fiscal_year)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              reference_id, notes, timestamp, user_id, username, unit_id, fiscal_year, unit_cost)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 rusqlite::params![
                     movement.id,
                     movement.product_id,
@@ -164,6 +167,7 @@ impl<'a> StockMovementRepository<'a> {
                     movement.username,
                     movement.unit_id,
                     movement.fiscal_year,
+                    movement.unit_cost,
                 ],
             )
             .map_err(AppError::from)?;
@@ -198,7 +202,7 @@ impl<'a> StockMovementRepository<'a> {
         Ok(self.executor.query_all(
             r#"SELECT sm.id, sm.product_id, p.name as product_name, sm.movement_type,
                       sm.quantity, sm.balance_before, sm.balance_after, sm.reference_type,
-                      sm.reference_id, sm.notes, sm.timestamp, sm.user_id, sm.username, sm.unit_id, sm.fiscal_year
+                      sm.reference_id, sm.notes, sm.timestamp, sm.user_id, sm.username, sm.unit_id, sm.fiscal_year, sm.unit_cost
                FROM stock_movements sm
                LEFT JOIN products p ON sm.product_id = p.id
                WHERE sm.timestamp >= ?1 AND sm.timestamp <= ?2
@@ -221,6 +225,7 @@ impl<'a> StockMovementRepository<'a> {
                     username: row.get(12)?,
                     unit_id: row.get(13)?,
                     fiscal_year: row.get(14)?,
+                    unit_cost: row.get(15)?,
                 })
             },
         )?)
@@ -239,7 +244,7 @@ impl<'a> StockMovementRepository<'a> {
             .query_iter(
                 r#"SELECT sm.id, sm.product_id, p.name as product_name, sm.movement_type,
                       sm.quantity, sm.balance_before, sm.balance_after, sm.reference_type,
-                      sm.reference_id, sm.notes, sm.timestamp, sm.user_id, sm.username, sm.unit_id, sm.fiscal_year
+                      sm.reference_id, sm.notes, sm.timestamp, sm.user_id, sm.username, sm.unit_id, sm.fiscal_year, sm.unit_cost
                FROM stock_movements sm
                LEFT JOIN products p ON sm.product_id = p.id
                WHERE (?1 IS NULL OR sm.product_id = ?1)
@@ -276,6 +281,7 @@ impl<'a> StockMovementRepository<'a> {
                         username: row.get(12)?,
                         unit_id: row.get(13)?,
                         fiscal_year: row.get(14)?,
+                        unit_cost: row.get(15)?,
                     })
                 },
                 consumer,

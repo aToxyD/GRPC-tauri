@@ -124,11 +124,11 @@ impl<'a> OrderService<'a> {
             ));
         }
 
-        // 2. Fetch items (product_id, quantity, product_name)
+        // 2. Fetch items (product_id, quantity, product_name, unit_price)
         let items = repo.get_order_items_for_confirmation(order_id)?;
 
         // 3. Record IN movement for each item
-        for (product_id, quantity, product_name) in &items {
+        for (product_id, quantity, product_name, unit_price) in &items {
             let movement = NewStockMovement {
                 product_id: product_id.clone(),
                 movement_type: StockMovementType::In,
@@ -142,6 +142,7 @@ impl<'a> OrderService<'a> {
                 user_id: user_id.to_string(),
                 username: username.to_string(),
                 unit_id: unit_id.map(|u| u.to_string()),
+                unit_cost: Some(*unit_price),
             };
             stock_repo.record_stock_movement(&movement)?;
         }

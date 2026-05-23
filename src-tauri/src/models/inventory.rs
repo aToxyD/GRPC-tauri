@@ -69,6 +69,8 @@ pub struct StockMovement {
     #[serde(default)]
     pub unit_id: Option<String>,
     pub fiscal_year: Option<i32>,
+    #[serde(default)]
+    pub unit_cost: Option<f64>,
 }
 
 impl StockMovement {
@@ -98,6 +100,8 @@ pub struct NewStockMovement {
     pub user_id: String,
     pub username: String,
     pub unit_id: Option<String>,
+    #[serde(default)]
+    pub unit_cost: Option<f64>,
 }
 
 /// فلاتر البحث في حركات المخزون
@@ -158,6 +162,7 @@ pub struct StockMovementDbRow {
     pub username: String,
     pub unit_id: Option<String>,
     pub fiscal_year: Option<i32>,
+    pub unit_cost: Option<f64>,
 }
 
 /// ملخص مخزون منتج

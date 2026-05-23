@@ -375,6 +375,7 @@
               <th class="table-header">المنتج</th>
               <th class="table-header">نوع الحركة</th>
               <th class="table-header">الكمية</th>
+              <th class="table-header">تكلفة الاستحواذ</th>
               <th class="table-header">الرصيد بعد</th>
               <th class="table-header text-left">الإجراءات</th>
             </svelte:fragment>
@@ -395,6 +396,9 @@
                   {/if}
                 </td>
                 <td class="table-cell">{movement.quantity.toFixed(2)}</td>
+                <td class="table-cell">
+                  {movement.unit_cost !== null && movement.unit_cost !== undefined ? movement.unit_cost.toFixed(2) + " دج" : "-"}
+                </td>
                 <td class="table-cell">{movement.balance_after.toFixed(2)}</td>
                 <td class="table-cell text-left">
                   <AppButton variant="ghost" size="sm" ariaLabel="عرض التفاصيل" on:click={() => viewStockMovement(movement)}>

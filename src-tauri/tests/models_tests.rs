@@ -61,6 +61,7 @@ fn test_stock_movement_balance() {
         username: "admin".to_string(),
         unit_id: None,
         fiscal_year: Some(2024),
+        unit_cost: None,
     };
 
     assert_eq!(movement.stock_change(), 50.0);

@@ -521,6 +521,7 @@
               <th class="table-header">المنتج</th>
               <th class="table-header">نوع الحركة</th>
               <th class="table-header">الكمية</th>
+              <th class="table-header">تكلفة الاستحواذ</th>
               <th class="table-header">الرصيد قبل</th>
               <th class="table-header">الرصيد بعد</th>
               <th class="table-header">المرجع</th>
@@ -539,6 +540,9 @@
                 </td>
                 <td class="table-cell font-medium {qtyColor}">
                   {movement.movement_type === "OUT" ? "-" : "+"}{movement.quantity.toFixed(2)}
+                </td>
+                <td class="table-cell text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {movement.unit_cost !== null && movement.unit_cost !== undefined ? movement.unit_cost.toFixed(2) + " د.ج" : "-"}
                 </td>
                 <td class="table-cell text-gray-500 dark:text-gray-400">{movement.balance_before.toFixed(2)}</td>
                 <td class="table-cell text-gray-500 dark:text-gray-400">{movement.balance_after.toFixed(2)}</td>

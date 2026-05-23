@@ -63,6 +63,7 @@ fn test_fiscal_lifecycle_sim() {
         user_id: user_id.to_string(),
         username: username.to_string(),
         unit_id: Some("test-unit".to_string()),
+        unit_cost: None,
     };
     stock_service
         .record_stock_movement(&movement)

@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
     fiscal_year INTEGER,
+    unit_cost REAL CHECK (unit_cost >= 0),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
     CHECK (movement_type != 'IN' OR unit_id IS NOT NULL)
 );

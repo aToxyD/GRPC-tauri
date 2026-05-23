@@ -501,6 +501,7 @@ export interface StockMovement {
   user_id: string;
   username: string;
   unit_id: string | null;
+  unit_cost?: number | null;
 }
 
 export interface StockMovementFilters {

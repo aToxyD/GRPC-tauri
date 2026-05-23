@@ -73,14 +73,14 @@ impl<'a> OrderRepository<'a> {
         Ok(())
     }
 
-    /// Fetch order items for confirmation (product_id, quantity, product_name).
+    /// Fetch order items for confirmation (product_id, quantity, product_name, unit_price).
     /// Pure SQL — used by OrderService to orchestrate stock movements.
     pub fn get_order_items_for_confirmation(
         &self,
         order_id: &str,
-    ) -> Result<Vec<(String, f64, String)>, AppError> {
+    ) -> Result<Vec<(String, f64, String, f64)>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT soi.product_id, soi.quantity, p.name
+            "SELECT soi.product_id, soi.quantity, p.name, soi.unit_price
              FROM supplier_order_items soi
              JOIN products p ON soi.product_id = p.id
              WHERE soi.order_id = ?1",
@@ -90,6 +90,7 @@ impl<'a> OrderRepository<'a> {
                     row.get::<_, String>(0)?,
                     row.get::<_, f64>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, f64>(3)?,
                 ))
             },
         )?)

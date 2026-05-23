@@ -170,6 +170,7 @@ impl<'a> DailyReportService<'a> {
                 user_id: user_id.to_string(),
                 username: username.to_string(),
                 unit_id: unit_id.map(|u| u.to_string()),
+                unit_cost: None,
             };
             stock_repo.record_stock_movement(&movement)?;
         }

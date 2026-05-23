@@ -67,6 +67,12 @@
         <p class="text-lg font-bold text-gray-900 dark:text-white">{movement.unit_id}</p>
       </div>
     {/if}
+    {#if movement.unit_cost !== null && movement.unit_cost !== undefined}
+      <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <p class="text-sm text-gray-500 dark:text-gray-400">تكلفة الاستحواذ</p>
+        <p class="text-lg font-bold text-civil-blue">{movement.unit_cost.toFixed(2)} دج</p>
+      </div>
+    {/if}
   </div>
 
   {#if movement.notes}

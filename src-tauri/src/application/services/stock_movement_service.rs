@@ -190,5 +190,6 @@ pub fn db_row_to_stock_movement(
         username: r.username,
         unit_id: r.unit_id,
         fiscal_year: r.fiscal_year,
+        unit_cost: r.unit_cost,
     })
 }
