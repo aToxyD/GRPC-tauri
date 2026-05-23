@@ -69,7 +69,10 @@ impl<'a> ProductRepository<'a> {
         &self,
         record: &crate::models::ProductSyncRecord,
     ) -> Result<(), AppError> {
-        self.executor.execute(
+        // Use INSERT OR REPLACE to handle both new and existing products
+        // This will delete the old row if it exists, which may fail with FK constraints
+        // If that fails, try UPDATE instead
+        let result = self.executor.execute(
             "INSERT OR REPLACE INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at, node_id, deleted) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
@@ -84,8 +87,32 @@ impl<'a> ProductRepository<'a> {
                 &record.node_id,
                 &record.deleted
             ],
-        )?;
-        Ok(())
+        );
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(rusqlite::Error::SqliteFailure(err, _))
+                if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                // FK constraint failed, try UPDATE instead
+                self.executor.execute(
+                    "UPDATE products SET name = ?1, base_price = ?2, tva = ?3, supplier_name = ?4, year = ?5, updated_at = ?6, node_id = ?7, deleted = ?8 WHERE id = ?9",
+                    rusqlite::params![
+                        &record.name,
+                        &record.base_price,
+                        &record.tva,
+                        &record.supplier_name,
+                        &record.year,
+                        &record.updated_at,
+                        &record.node_id,
+                        &record.deleted,
+                        &record.id
+                    ],
+                )?;
+                Ok(())
+            }
+            Err(e) => Err(AppError::Sqlite(e)),
+        }
     }
 
     /// Update an existing product
@@ -129,30 +156,8 @@ impl<'a> ProductRepository<'a> {
         Ok(result)
     }
 
-    /// List products for a specific year
-    pub fn list_products(&self, year: i32) -> Result<Vec<Product>, AppError> {
-        Ok(self.executor.query_all(
-            "SELECT id, name, base_price, tva, supplier_name, year, created_at FROM products WHERE year = ?1 ORDER BY name",
-            [year],
-            |row| {
-                let created_at_str: String = row.get(6)?;
-                let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?;
-                Ok(Product {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    base_price: row.get(2)?,
-                    tva: row.get(3)?,
-                    supplier_name: row.get(4)?,
-                    year: row.get(5)?,
-                    created_at,
-                })
-            },
-        )?)
-    }
-
     /// List all products (across all years)
-    pub fn list_all_products(&self) -> Result<Vec<Product>, AppError> {
+    pub fn list_products(&self) -> Result<Vec<Product>, AppError> {
         Ok(self.executor.query_all(
             "SELECT id, name, base_price, tva, supplier_name, year, created_at FROM products ORDER BY year DESC, name",
             [],

@@ -192,16 +192,19 @@ impl<'a> ImportSyncService<'a> {
                 imported_count += 1;
             }
 
-            let stock_exists = inventory_repo.stock_exists_for_product(&record.id)?;
+            // Only create stock if product is not deleted
+            if record.deleted == 0 {
+                let stock_exists = inventory_repo.stock_exists_for_product(&record.id)?;
 
-            if !stock_exists && record.deleted == 0 {
-                let stock_id = uuid::Uuid::new_v4().to_string();
-                inventory_repo.insert_empty_stock(
-                    &stock_id,
-                    &record.id,
-                    &record.updated_at,
-                    &record.node_id,
-                )?;
+                if !stock_exists {
+                    let stock_id = uuid::Uuid::new_v4().to_string();
+                    inventory_repo.insert_empty_stock(
+                        &stock_id,
+                        &record.id,
+                        &record.updated_at,
+                        &record.node_id,
+                    )?;
+                }
             }
         }
 

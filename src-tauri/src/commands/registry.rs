@@ -17,7 +17,6 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::delete_product,
         commands::get_product,
         commands::list_products,
-        commands::list_all_products,
         // Units
         commands::create_unit,
         commands::update_unit,

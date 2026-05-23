@@ -106,10 +106,6 @@ export async function listProducts(): Promise<Product[]> {
   return await safeInvoke('list_products');
 }
 
-export async function listAllProducts(): Promise<Product[]> {
-  return await safeInvoke('list_all_products');
-}
-
 // Units
 export async function createUnit(request: CreateUnitRequest, wilayaCode: string): Promise<Unit> {
   return await safeInvoke('create_unit', { request, wilayaCode });

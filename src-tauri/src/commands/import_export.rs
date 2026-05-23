@@ -461,11 +461,8 @@ pub fn export_products_excel(
     let db = db_ref_or_command_error(guard.as_ref())?;
     let executor = db.executor();
 
-    let settings = SettingsService::new(executor)
-        .get_settings()
-        .map_err(|e| e.to_string())?;
     let products = ProductService::new(executor)
-        .list_products(settings.current_year)
+        .list_products()
         .map_err(|e| e.to_string())?;
 
     use crate::domain::ports::export::ExcelPort;

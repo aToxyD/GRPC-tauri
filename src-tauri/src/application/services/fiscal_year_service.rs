@@ -77,7 +77,7 @@ impl<'a> FiscalYearService<'a> {
         let now = chrono::Utc::now().to_rfc3339();
 
         // ── 1. Snapshot ending inventory for every product ────────────────
-        let products = self.executor.products().list_all_products()?;
+        let products = self.executor.products().list_products()?;
         let mut snapshot_count: usize = 0;
 
         for product in &products {

@@ -110,34 +110,9 @@ pub fn get_product(state: State<AppState>, product_id: String) -> Result<Option<
         .map_err(into_command_error)
 }
 
-/// List all products
-#[tauri::command]
-pub fn list_products(state: State<AppState>, year: Option<i32>) -> Result<Vec<Product>, String> {
-    let (_session, _settings) =
-        authorize_command(&state, Action::ReadProducts, None).map_err(into_command_error)?;
-    state.touch_session();
-
-    let guard = state.get_db().map_err(into_command_error)?;
-    let db = db_ref_or_command_error(guard.as_ref())?;
-
-    let year = match year {
-        Some(y) => y,
-        None => {
-            let settings = SettingsService::new(db.executor())
-                .get_settings()
-                .map_err(into_command_error)?;
-            settings.current_year
-        }
-    };
-
-    ProductService::new(db.executor())
-        .list_products(year)
-        .map_err(into_command_error)
-}
-
 /// List all products (unfiltered)
 #[tauri::command]
-pub fn list_all_products(state: State<AppState>) -> Result<Vec<Product>, String> {
+pub fn list_products(state: State<AppState>) -> Result<Vec<Product>, String> {
     let (_session, _settings) =
         authorize_command(&state, Action::ReadProducts, None).map_err(into_command_error)?;
     state.touch_session();
@@ -146,7 +121,7 @@ pub fn list_all_products(state: State<AppState>) -> Result<Vec<Product>, String>
     let db = db_ref_or_command_error(guard.as_ref())?;
 
     ProductService::new(db.executor())
-        .list_all_products()
+        .list_products()
         .map_err(into_command_error)
 }
 

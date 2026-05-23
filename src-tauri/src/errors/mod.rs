@@ -281,6 +281,10 @@ pub enum BusinessLogicError {
     /// عملية مرفوضة أثناء وضع الصيانة التشغيلية
     #[error("Operation blocked by maintenance mode ({state}): {operation}")]
     MaintenanceModeBlocked { state: String, operation: String },
+
+    /// السعر مغلق للسنة المالية النشطة
+    #[error("Price locked for active fiscal year {fiscal_year}")]
+    PriceLockedForActiveFiscalYear { fiscal_year: i32 },
 }
 
 /// أخطاء المصادقة
@@ -535,6 +539,16 @@ impl AppError {
                 code: "MAINTENANCE_MODE_BLOCKED".to_string(),
                 message: format!(
                     "العملية ({operation}) غير متاحة أثناء وضع الصيانة ({state})."
+                ),
+                details: None,
+            },
+            AppError::BusinessLogic(BusinessLogicError::PriceLockedForActiveFiscalYear {
+                fiscal_year,
+            }) => UserError {
+                code: "PRICE_LOCKED".to_string(),
+                message: format!(
+                    "السعر مغلق للسنة المالية النشطة {}. لا يمكن تعديل الأسعار أثناء السنة المالية المفتوحة.",
+                    fiscal_year
                 ),
                 details: None,
             },

@@ -23,7 +23,7 @@ impl<'a> StockMovementService<'a> {
     /// تسجيل حركة مخزون جديدة
     pub fn record_stock_movement(&self, movement: &NewStockMovement) -> Result<String, AppError> {
         let now = chrono::Utc::now().to_rfc3339();
-        let fiscal_year = chrono::Utc::now().year();
+        let fiscal_year = self.executor.settings().get_current_year()?;
 
         // 1. Fiscal Guard
         crate::application::services::FiscalYearService::new(self.executor)

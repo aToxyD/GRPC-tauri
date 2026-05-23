@@ -71,7 +71,7 @@ impl<'a> InventoryRepository<'a> {
         node_id: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO inventory_stocks (id, product_id, quantity, last_updated, updated_at, node_id, deleted) 
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, last_updated, updated_at, node_id, deleted) 
              VALUES (?1, ?2, 0, ?3, ?3, ?4, 0)",
             rusqlite::params![stock_id, product_id, updated_at, node_id],
         )?;

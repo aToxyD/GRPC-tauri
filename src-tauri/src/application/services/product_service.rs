@@ -1,4 +1,4 @@
-use crate::errors::{AppError, ValidationError};
+use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::{CreateProductRequest, UpdateProductRequest};
 use crate::repositories::executor::DbExecutor;
 use crate::repositories::RepositoryProvider;
@@ -49,7 +49,42 @@ impl<'a> ProductService<'a> {
     pub fn update_product(&self, req: &UpdateProductRequest) -> Result<(), AppError> {
         let repo = self.executor.products();
 
+        // Get current product to check if price is being changed
+        let current_product = repo.get_product(&req.id)?.ok_or_else(|| {
+            AppError::Validation(ValidationError::Required {
+                field: "product_id".to_string(),
+            })
+        })?;
+
+        // Check if price is being modified
+        if (current_product.base_price - req.base_price).abs() > f64::EPSILON {
+            // Price change detected - validate against fiscal year locking
+            self.validate_price_modification_allowed(&current_product.year)?;
+        }
+
         repo.update_product(req)?;
+
+        Ok(())
+    }
+
+    /// Validate that price modification is allowed for the given fiscal year.
+    /// Price changes are NOT allowed during an active synchronized fiscal year.
+    fn validate_price_modification_allowed(&self, product_year: &i32) -> Result<(), AppError> {
+        let fiscal_status = self
+            .executor
+            .fiscal_year_status()
+            .get_by_year(*product_year)?;
+
+        if let Some(status) = fiscal_status {
+            // If the fiscal year is open (active), price changes are forbidden
+            if status.status == "open" {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceLockedForActiveFiscalYear {
+                        fiscal_year: *product_year,
+                    },
+                ));
+            }
+        }
 
         Ok(())
     }
@@ -66,11 +101,7 @@ impl<'a> ProductService<'a> {
         self.executor.products().get_product(id)
     }
 
-    pub fn list_products(&self, year: i32) -> Result<Vec<crate::models::Product>, AppError> {
-        self.executor.products().list_products(year)
-    }
-
-    pub fn list_all_products(&self) -> Result<Vec<crate::models::Product>, AppError> {
-        self.executor.products().list_all_products()
+    pub fn list_products(&self) -> Result<Vec<crate::models::Product>, AppError> {
+        self.executor.products().list_products()
     }
 }

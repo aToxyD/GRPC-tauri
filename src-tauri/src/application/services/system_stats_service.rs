@@ -43,7 +43,7 @@ impl SystemStatsService {
         let backup_count = Self::compute_backup_count();
         let last_backup = Self::compute_last_backup();
 
-        let total_products = executor.products().list_all_products()?.len() as u32;
+        let total_products = executor.products().list_products()?.len() as u32;
 
         let report_repo = executor.reports();
         let daily_reports = match effective_unit_id.as_deref() {

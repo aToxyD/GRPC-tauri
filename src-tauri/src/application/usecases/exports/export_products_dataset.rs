@@ -7,7 +7,7 @@ pub fn execute<'a>(
     _input: ExportProductsInput,
 ) -> AppResult<ProductsExportDataset> {
     let product_repo = ProductRepository::new(executor);
-    let products = product_repo.list_all_products()?;
+    let products = product_repo.list_products()?;
 
     let mut product_rows = Vec::with_capacity(products.len());
     for p in products {
