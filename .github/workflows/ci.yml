@@ -6,6 +6,7 @@ on:
 env:
   BUN_CACHE_DIR: .bun-cache
   CARGO_HOME: src-tauri/.cargo
+  CI_IMAGE: ghcr.io/atoxyd/grpc-tauri:ci-latest
 
 jobs:
   secrets-scanning:
@@ -54,7 +55,7 @@ jobs:
     name: Backend governance
     runs-on: ubuntu-latest
     container:
-      image: rust:1.94
+      image: ${{ env.CI_IMAGE }}
     needs: frontend-build
     steps:
       - uses: actions/checkout@v4
@@ -63,10 +64,6 @@ jobs:
         with:
           name: frontend-dist
           path: .
-      - name: Install Rust tools and dependencies
-        run: |
-          rustup component add rustfmt clippy
-          apt-get update && apt-get install -y build-essential curl libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Cargo fmt check
         run: cargo fmt --check
@@ -108,7 +105,7 @@ jobs:
     name: Cargo dependency audit
     runs-on: ubuntu-latest
     container:
-      image: rust:1.94
+      image: ${{ env.CI_IMAGE }}
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo-audit
@@ -146,7 +143,7 @@ jobs:
     name: Runtime E2E governance
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-jammy
+      image: ${{ env.CI_IMAGE }}
     needs: frontend-build
     if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
@@ -156,19 +153,10 @@ jobs:
         with:
           name: frontend-dist
           path: .
-      - name: Install bun
-        run: npm install -g bun
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
       - name: Install dependencies
         run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
-      - name: Install runtime packages
-        run: apt-get update && apt-get install -y build-essential libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev curl
-
-      - name: Install rustup
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - name: Add cargo to PATH
-        run: |
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-          echo "${GITHUB_WORKSPACE}/${CARGO_HOME}/bin" >> $GITHUB_PATH
       - name: Build src-tauri
         run: cd src-tauri && cargo build
       - name: Run Playwright E2E tests
