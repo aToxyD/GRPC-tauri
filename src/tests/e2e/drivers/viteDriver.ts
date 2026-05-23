@@ -34,8 +34,15 @@ export class ViteDriver {
     // a rejected Promise that the app catches internally.
     await this.context.addInitScript(() => {
       (window as any).__TAURI_INTERNALS__ = {
-        invoke: (_cmd: string, _args?: unknown, _options?: unknown): Promise<unknown> =>
-          Promise.reject(new Error(`[ViteDriver] No Tauri backend available: ${_cmd}`)),
+        invoke: (_cmd: string, _args?: unknown, _options?: unknown): Promise<unknown> => {
+          // Return a sensible default for is_configured so the login page
+          // renders correctly (false = unconfigured = show login form).
+          // All other commands still reject so tests can verify graceful error handling.
+          if (_cmd === 'is_configured') {
+            return Promise.resolve(false);
+          }
+          return Promise.reject(new Error(`[ViteDriver] No Tauri backend available: ${_cmd}`));
+        },
 
         // Minimal transformCallback shim required by some Tauri plugin internals
         transformCallback: (callback: Function, once?: boolean): number => {

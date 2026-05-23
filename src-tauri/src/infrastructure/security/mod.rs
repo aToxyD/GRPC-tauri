@@ -31,7 +31,7 @@ pub fn validate_production_security_environment() -> Result<(), String> {
     // For local testing we relax the check and allow startup. Replace the line below
     // with the original implementation when reverting.
     log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] Production checks temporarily relaxed for local testing.");
-    return Ok(());
+    Ok(())
     // END TEMP DEV_OVERRIDE
 
     /* Original implementation preserved for easy revert:
