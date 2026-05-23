@@ -37,10 +37,17 @@ export class ViteDriver {
         invoke: (_cmd: string, _args?: unknown, _options?: unknown): Promise<unknown> => {
           // Return a sensible default for is_configured so the login page
           // renders correctly (false = unconfigured = show login form).
-          // All other commands still reject so tests can verify graceful error handling.
           if (_cmd === 'is_configured') {
             return Promise.resolve(false);
           }
+          // Mock window API plugin calls to avoid console error noise and promise rejection logs in E2E tests.
+          if (_cmd.startsWith('plugin:window|')) {
+            if (_cmd.includes('is_maximized') || _cmd.includes('is_minimized') || _cmd.includes('is_resizable')) {
+              return Promise.resolve(false);
+            }
+            return Promise.resolve();
+          }
+          // All other commands still reject so tests can verify graceful error handling.
           return Promise.reject(new Error(`[ViteDriver] No Tauri backend available: ${_cmd}`));
         },
 
