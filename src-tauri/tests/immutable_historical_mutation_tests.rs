@@ -143,6 +143,7 @@ fn case_d_rejects_deleting_opening_snapshots_for_archived_year() {
         .opening_balances()
         .create_snapshot(
             grpc_lib::repositories::opening_balances::CreateSnapshotParams {
+                id: &uuid::Uuid::new_v4().to_string(),
                 product_id: "p-new",
                 fiscal_year: 2017,
                 quantity: 1.0,

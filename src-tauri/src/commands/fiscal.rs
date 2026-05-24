@@ -60,7 +60,7 @@ pub fn close_fiscal_year(
     let snapshot_count = db
         .with_transaction(|tx_executor| {
             let count = crate::application::services::FiscalYearService::new(tx_executor)
-                .close_year(year, next_year, &user_id, &username)?;
+                .close_year(year, next_year, &user_id, &username, None)?;
 
             // NEW: Automatically register the package for export via service (Architectural integrity)
             crate::application::services::FiscalClosurePackageService::new(tx_executor)

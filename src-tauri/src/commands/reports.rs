@@ -94,16 +94,9 @@ pub fn get_monthly_summary(
     let settings_svc = SettingsService::new(executor);
 
     // Get effective unit ID
-    let effective_unit_id = {
-        let settings = settings_svc.get_settings().map_err(into_command_error)?;
-        if settings.node_type == crate::models::NodeType::Unit {
-            settings_svc
-                .get_current_unit_id()
-                .map_err(into_command_error)?
-        } else {
-            None
-        }
-    };
+    let effective_unit_id = settings_svc
+        .get_current_unit_id()
+        .map_err(into_command_error)?;
 
     crate::application::usecases::reports::get_monthly_summary::execute(
         executor,
@@ -134,16 +127,9 @@ pub fn create_daily_report(
     let settings_svc = SettingsService::new(executor);
 
     // Get effective unit ID
-    let effective_unit_id = {
-        let settings = settings_svc.get_settings().map_err(into_command_error)?;
-        if settings.node_type == crate::models::NodeType::Unit {
-            settings_svc
-                .get_current_unit_id()
-                .map_err(into_command_error)?
-        } else {
-            None
-        }
-    };
+    let effective_unit_id = settings_svc
+        .get_current_unit_id()
+        .map_err(into_command_error)?;
 
     let user_ctx = user_ctx_from_session(&session);
 
@@ -247,16 +233,10 @@ pub fn get_daily_consumption(
     let executor = db.executor();
     let settings_svc = SettingsService::new(executor);
 
-    let effective_unit_id = {
-        let settings = settings_svc.get_settings().map_err(into_command_error)?;
-        if settings.node_type == crate::models::NodeType::Unit {
-            settings_svc
-                .get_current_unit_id()
-                .map_err(into_command_error)?
-        } else {
-            None
-        }
-    };
+    // Get effective unit ID
+    let effective_unit_id = settings_svc
+        .get_current_unit_id()
+        .map_err(into_command_error)?;
 
     DailyReportService::new(executor)
         .get_daily_consumption_view(&date, effective_unit_id.as_deref())

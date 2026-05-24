@@ -37,7 +37,7 @@ fn test_fiscal_lifecycle_sim() {
     // 1. Initial State: Year should be open by default (via migration or manual seed)
     // Let's seed it to be sure
     fiscal_service
-        .close_year(current_year - 1, current_year, &user_id, username)
+        .close_year(current_year - 1, current_year, &user_id, username, None)
         .ok(); // ignore if fails
 
     // 2. Create some products and stock
@@ -95,7 +95,7 @@ fn test_fiscal_lifecycle_sim() {
 
     // 4. ATOMIC CLOSE
     fiscal_service
-        .close_year(current_year, next_year, &user_id, username)
+        .close_year(current_year, next_year, &user_id, username, None)
         .expect("Atomic close should succeed");
 
     // 5. POST-CLOSE GUARDS

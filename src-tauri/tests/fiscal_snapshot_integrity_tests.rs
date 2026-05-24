@@ -20,7 +20,9 @@ const USERNAME: &str = "system";
 fn close(state: &grpc_lib::commands::AppState) -> Result<usize, grpc_lib::errors::AppError> {
     let mut guard = state.db.lock().unwrap();
     let db = guard.as_mut().unwrap();
-    db.with_transaction(|tx| FiscalYearService::new(tx).close_year(YEAR, NEXT, USER_ID, USERNAME))
+    db.with_transaction(|tx| {
+        FiscalYearService::new(tx).close_year(YEAR, NEXT, USER_ID, USERNAME, None)
+    })
 }
 
 // ── Case A: Normal carry-forward with positive stock ─────────────────────────

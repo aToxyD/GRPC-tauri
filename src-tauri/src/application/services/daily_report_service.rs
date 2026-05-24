@@ -89,7 +89,6 @@ impl<'a> DailyReportService<'a> {
         // This order ensures InsufficientStock aborts before any ledger write.
         struct ProductConsumption {
             movement_id: String,
-            weighted_unit_cost: f64,
             portions: Vec<crate::models::ConsumedLayerPortion>,
         }
         let mut consumption_map: HashMap<String, ProductConsumption> = HashMap::new();
@@ -101,19 +100,7 @@ impl<'a> DailyReportService<'a> {
                 .unwrap_or_default();
 
             // Step A: consume FIFO (fails fast with InsufficientStock if needed)
-            let portions = fifo_repo.consume_fifo(
-                unit_id_str,
-                product_id,
-                *quantity,
-                // movement_id not yet known — pass a placeholder; we'll create
-                // the actual movement next and store consumption records then.
-                // To keep the FK intact we create the movement FIRST, then
-                // record consumptions referencing it.
-                // So the actual order is: create movement → record consumptions.
-                // We'll do a two-step approach inside the loop below.
-                "PENDING", // placeholder — overwritten immediately
-                &now,
-            );
+            let portions = fifo_repo.consume_fifo(unit_id_str, product_id, *quantity);
 
             // Step B: if FIFO fails → abort entirely (transaction rolls back)
             let portions = portions?;
@@ -145,7 +132,6 @@ impl<'a> DailyReportService<'a> {
                 product_id.clone(),
                 ProductConsumption {
                     movement_id,
-                    weighted_unit_cost,
                     portions,
                 },
             );
@@ -186,21 +172,34 @@ impl<'a> DailyReportService<'a> {
                     ))
                 })?;
 
-                // Attribute cost proportionally (item.qty / total_qty * total_cost)
-                let item_total = item.quantity * cons.weighted_unit_cost;
-                total_cost += item_total;
+                // NEW — one line per FIFO layer, each at its real unit_cost
+                let total_qty_for_product =
+                    *stock_by_product.get(&item.product_id).ok_or_else(|| {
+                        AppError::Internal(format!(
+                            "Product {} not found in stock_by_product",
+                            item.product_id
+                        ))
+                    })?;
 
-                // Record the first matching layer_id for this product as the
-                // primary layer reference on the meal item line
-                let layer_id = cons.portions.first().map(|p| p.layer_id.clone());
+                for portion in &cons.portions {
+                    let ratio = if total_qty_for_product > 0.0 {
+                        item.quantity / total_qty_for_product
+                    } else {
+                        0.0
+                    };
+                    let portion_qty_in_meal = portion.quantity * ratio;
+                    let portion_cost_in_meal = portion.total_cost * ratio;
 
-                item_costs.push((
-                    item.product_id.clone(),
-                    item.quantity,
-                    cons.weighted_unit_cost,
-                    item_total,
-                    layer_id,
-                ));
+                    total_cost += portion_cost_in_meal;
+
+                    item_costs.push((
+                        item.product_id.clone(),
+                        portion_qty_in_meal,
+                        portion.unit_cost, // real layer price
+                        portion_cost_in_meal,
+                        Some(portion.layer_id.clone()), // direct layer reference
+                    ));
+                }
             }
 
             let total_beneficiaries = DailyReportMeal::compute_total_beneficiaries(

@@ -318,7 +318,13 @@ pub fn close_fiscal_year_confirmed(
         .map_err(into_command_error)?;
 
     let snapshot_count = match db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(request.year, request.next_year, &user_id, &username)
+        FiscalYearService::new(tx).close_year(
+            request.year,
+            request.next_year,
+            &user_id,
+            &username,
+            None,
+        )
     }) {
         Ok(v) => v,
         Err(e) => {

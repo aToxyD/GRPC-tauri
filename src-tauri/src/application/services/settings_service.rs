@@ -73,7 +73,38 @@ impl<'a> SettingsService<'a> {
         if settings.node_type != NodeType::Unit {
             return Ok(None);
         }
-        Ok(settings.unit_name)
+
+        // Resolve canonical units.id from settings.unit_name and wilaya_code
+        let unit_name = settings.unit_name.as_deref();
+        let wilaya_code = settings.wilaya_code.as_deref();
+
+        if let (Some(name), Some(wc)) = (unit_name, wilaya_code) {
+            match self
+                .executor
+                .units()
+                .find_unit_id_by_name_and_wilaya(name, wc)?
+            {
+                Some(id) => {
+                    log::info!(
+                        target: "grpc::settings",
+                        "Resolved canonical unit_id={} for unit_name={} wilaya={}",
+                        id, name, wc
+                    );
+                    Ok(Some(id))
+                }
+                None => {
+                    // Fallback to unit_name if not found in units table
+                    log::warn!(
+                        target: "grpc::settings",
+                        "Unit not found in units table for name={} wilaya={}, falling back to unit_name as unit_id",
+                        name, wc
+                    );
+                    Ok(settings.unit_name.clone())
+                }
+            }
+        } else {
+            Ok(settings.unit_name.clone())
+        }
     }
 
     pub fn configure_wilaya(

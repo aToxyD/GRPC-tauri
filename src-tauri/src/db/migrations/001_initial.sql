@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS fifo_stock_layers (
         REFERENCES units(id) ON DELETE RESTRICT,
     product_id TEXT NOT NULL
         REFERENCES products(id) ON DELETE RESTRICT,
-    source_type TEXT NOT NULL CHECK(source_type IN ('ORDER')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('ORDER', 'OPENING')),
     source_id TEXT,
     unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
     qty_original REAL NOT NULL CHECK(qty_original > 0),

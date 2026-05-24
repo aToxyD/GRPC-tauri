@@ -9,6 +9,7 @@ pub struct OpeningBalanceRepository<'a> {
 }
 
 pub struct CreateSnapshotParams<'a> {
+    pub id: &'a str,
     pub product_id: &'a str,
     pub fiscal_year: i32,
     pub quantity: f64,
@@ -33,7 +34,6 @@ impl<'a> OpeningBalanceRepository<'a> {
             crate::application::services::FiscalHistoricalGuard::new(self.executor)
                 .assert_year_not_archived(from)?;
         }
-        let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
         self.executor
@@ -43,7 +43,7 @@ impl<'a> OpeningBalanceRepository<'a> {
               snapshot_reason, carried_from_year, created_at, created_by) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
-                    id,
+                    params.id,
                     params.product_id,
                     params.fiscal_year,
                     params.quantity,

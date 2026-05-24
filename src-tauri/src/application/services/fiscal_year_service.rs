@@ -52,6 +52,7 @@ impl<'a> FiscalYearService<'a> {
         next_year: i32,
         user_id: &str,
         username: &str,
+        unit_id: Option<&str>,
     ) -> Result<usize, AppError> {
         let t0 = std::time::Instant::now();
 
@@ -92,8 +93,11 @@ impl<'a> FiscalYearService<'a> {
                 product.base_price
             };
 
+            let snapshot_id = uuid::Uuid::new_v4().to_string();
+
             self.executor.opening_balances().create_snapshot(
                 crate::repositories::opening_balances::CreateSnapshotParams {
+                    id: &snapshot_id,
                     product_id: &product.id,
                     fiscal_year: next_year,
                     quantity,
@@ -104,6 +108,15 @@ impl<'a> FiscalYearService<'a> {
                     created_by: username,
                 },
             )?;
+
+            // Carry over FIFO layers to new year for units
+            if let Some(unit_id_str) = unit_id {
+                self.executor.fifo_layers().carry_over_to_new_year(
+                    unit_id_str,
+                    &product.id,
+                    &snapshot_id,
+                )?;
+            }
 
             snapshot_count += 1;
 
@@ -365,7 +378,7 @@ mod consistency_tests {
             .unwrap();
 
         db.with_transaction(|tx| {
-            FiscalYearService::new(tx).close_year(2024, 2025, "system", "admin")
+            FiscalYearService::new(tx).close_year(2024, 2025, "system", "admin", None)
         })
         .unwrap();
 

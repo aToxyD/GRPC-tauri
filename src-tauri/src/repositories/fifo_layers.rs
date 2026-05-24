@@ -55,15 +55,11 @@ impl<'a> FifoLayerRepository<'a> {
 
     /// Consume `quantity` units from the oldest available FIFO layers for a given
     /// unit+product pair. Returns the list of layer portions consumed.
-    ///
-    /// The `movement_id` must already exist in `stock_movements` (FK constraint).
     pub fn consume_fifo(
         &self,
         unit_id: &str,
         product_id: &str,
         quantity: f64,
-        movement_id: &str,
-        consumed_at: &str,
     ) -> AppResult<Vec<ConsumedLayerPortion>> {
         // Fetch all active layers ordered by received_at ASC, id ASC (stable FIFO)
         let layer_iter = self
@@ -131,15 +127,8 @@ impl<'a> FifoLayerRepository<'a> {
                 )
                 .map_err(AppError::from)?;
 
-            // Record the consumption against the movement
-            self.create_consumption_record(
-                unit_id,
-                movement_id,
-                &id,
-                consumed_qty,
-                unit_cost,
-                consumed_at,
-            )?;
+            // Note: Consumption records are created by the caller (e.g., daily_report_service)
+            // after the stock movement is created, to satisfy FK constraints.
 
             consumed_portions.push(ConsumedLayerPortion {
                 layer_id: id,
@@ -165,6 +154,12 @@ impl<'a> FifoLayerRepository<'a> {
     ) -> AppResult<()> {
         let id = Uuid::new_v4().to_string();
         let total_cost = quantity * unit_cost;
+
+        log::info!(
+            target: "grpc::fifo",
+            "Creating consumption record: unit_id={}, movement_id={}, layer_id={}",
+            unit_id, movement_id, layer_id
+        );
 
         self.executor
             .execute(
@@ -238,6 +233,31 @@ impl<'a> FifoLayerRepository<'a> {
             )
             .map_err(AppError::from)?;
         Ok(total)
+    }
+
+    /// Transitions all remaining FIFO layers for a given unit+product pair
+    /// to the new fiscal year. Each layer retains its original unit_cost and
+    /// received_at (preserving FIFO order across year boundaries).
+    pub fn carry_over_to_new_year(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+        snapshot_id: &str,
+    ) -> AppResult<()> {
+        self.executor
+            .execute(
+                r#"
+                UPDATE fifo_stock_layers
+                SET source_type = 'OPENING',
+                    source_id   = ?1
+                WHERE unit_id       = ?2
+                  AND product_id    = ?3
+                  AND qty_remaining > 0
+                "#,
+                params![snapshot_id, unit_id, product_id],
+            )
+            .map_err(AppError::from)?;
+        Ok(())
     }
 
     /// Returns the global total remaining quantity and total value for a specific product across all units.

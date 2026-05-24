@@ -529,6 +529,7 @@ impl<'a> FiscalClosurePackageService<'a> {
                 pkg.opened_year,
                 applying_user_id,
                 applying_username,
+                None,
             )?;
 
         // ── 5: Audit event ────────────────────────────────────────────────────

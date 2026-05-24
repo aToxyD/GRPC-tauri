@@ -53,9 +53,12 @@ pub fn confirm_order(state: State<AppState>, order_id: String) -> Result<(), Str
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    // Get unit_id for UNIT nodes
+    // Get unit_id for UNIT nodes - resolve canonical units.id via settings service
     let unit_id = if matches!(settings.node_type, crate::models::NodeType::Unit) {
-        settings.unit_name.clone()
+        let settings_svc = crate::application::services::SettingsService::new(db.executor());
+        settings_svc
+            .get_current_unit_id()
+            .map_err(into_command_error)?
     } else {
         None
     };

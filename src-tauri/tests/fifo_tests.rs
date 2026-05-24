@@ -122,10 +122,8 @@ fn test_fifo_order_oldest_consumed_first() {
         "2024-01-01T00:00:00Z",
     );
 
-    let movement_id = insert_dummy_movement(&db, &unit_id, &product_id);
-    let now = chrono::Utc::now().to_rfc3339();
     let portions = FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 30.0, &movement_id, &now)
+        .consume_fifo(&unit_id, &product_id, 30.0)
         .unwrap();
 
     // The 500-cost (Jan) layer should be consumed first
@@ -156,10 +154,8 @@ fn test_partial_consumption_across_two_layers() {
         "2024-02-01T00:00:00Z",
     );
 
-    let movement_id = insert_dummy_movement(&db, &unit_id, &product_id);
-    let now = chrono::Utc::now().to_rfc3339();
     let portions = FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 30.0, &movement_id, &now)
+        .consume_fifo(&unit_id, &product_id, 30.0)
         .unwrap();
 
     // First layer fully exhausted (20), second partially consumed (10)
@@ -201,10 +197,8 @@ fn test_full_exhaustion_removes_layer_from_active() {
         "2024-01-01T00:00:00Z",
     );
 
-    let movement_id = insert_dummy_movement(&db, &unit_id, &product_id);
-    let now = chrono::Utc::now().to_rfc3339();
     FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 100.0, &movement_id, &now)
+        .consume_fifo(&unit_id, &product_id, 100.0)
         .unwrap();
 
     let remaining = FifoLayerRepository::new(db.executor())
@@ -226,15 +220,7 @@ fn test_insufficient_stock_returns_error() {
         "2024-01-01T00:00:00Z",
     );
 
-    let movement_id = insert_dummy_movement(&db, &unit_id, &product_id);
-    let now = chrono::Utc::now().to_rfc3339();
-    let result = FifoLayerRepository::new(db.executor()).consume_fifo(
-        &unit_id,
-        &product_id,
-        999.0,
-        &movement_id,
-        &now,
-    );
+    let result = FifoLayerRepository::new(db.executor()).consume_fifo(&unit_id, &product_id, 999.0);
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -267,14 +253,7 @@ fn test_cross_unit_isolation() {
     );
 
     // Unit B tries to consume
-    let movement_id = insert_dummy_movement(&db, &unit_b, &product_id);
-    let result = FifoLayerRepository::new(db.executor()).consume_fifo(
-        &unit_b,
-        &product_id,
-        10.0,
-        &movement_id,
-        &now,
-    );
+    let result = FifoLayerRepository::new(db.executor()).consume_fifo(&unit_b, &product_id, 10.0);
 
     assert!(
         result.is_err(),
@@ -305,10 +284,8 @@ fn test_inventory_value_reflects_fifo_layers() {
     );
 
     // Partially consume from first layer
-    let movement_id = insert_dummy_movement(&db, &unit_id, &product_id);
-    let now = chrono::Utc::now().to_rfc3339();
     FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 30.0, &movement_id, &now)
+        .consume_fifo(&unit_id, &product_id, 30.0)
         .unwrap();
 
     // Expected: (100-30)*500 + 50*600 = 35000 + 30000 = 65000
@@ -368,10 +345,24 @@ fn test_consumption_history_recorded() {
     );
 
     let movement_id = insert_dummy_movement(&db, &unit_id, &product_id);
-    let now = chrono::Utc::now().to_rfc3339();
-    FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 20.0, &movement_id, &now)
+    let portions = FifoLayerRepository::new(db.executor())
+        .consume_fifo(&unit_id, &product_id, 20.0)
         .unwrap();
+
+    // Manually create consumption records (simulating what daily_report_service does)
+    let now = chrono::Utc::now().to_rfc3339();
+    for portion in &portions {
+        FifoLayerRepository::new(db.executor())
+            .create_consumption_record(
+                &unit_id,
+                &movement_id,
+                &portion.layer_id,
+                portion.quantity,
+                portion.unit_cost,
+                &now,
+            )
+            .unwrap();
+    }
 
     let history = FifoLayerRepository::new(db.executor())
         .get_consumption_history(&movement_id)
@@ -396,17 +387,42 @@ fn test_two_movements_have_independent_histories() {
         "2024-01-01T00:00:00Z",
     );
 
-    let now = chrono::Utc::now().to_rfc3339();
-
     let mv1 = insert_dummy_movement(&db, &unit_id, &product_id);
-    FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 10.0, &mv1, &now)
+    let portions1 = FifoLayerRepository::new(db.executor())
+        .consume_fifo(&unit_id, &product_id, 10.0)
         .unwrap();
 
     let mv2 = insert_dummy_movement(&db, &unit_id, &product_id);
-    FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 15.0, &mv2, &now)
+    let portions2 = FifoLayerRepository::new(db.executor())
+        .consume_fifo(&unit_id, &product_id, 15.0)
         .unwrap();
+
+    // Manually create consumption records (simulating what daily_report_service does)
+    let now = chrono::Utc::now().to_rfc3339();
+    for portion in &portions1 {
+        FifoLayerRepository::new(db.executor())
+            .create_consumption_record(
+                &unit_id,
+                &mv1,
+                &portion.layer_id,
+                portion.quantity,
+                portion.unit_cost,
+                &now,
+            )
+            .unwrap();
+    }
+    for portion in &portions2 {
+        FifoLayerRepository::new(db.executor())
+            .create_consumption_record(
+                &unit_id,
+                &mv2,
+                &portion.layer_id,
+                portion.quantity,
+                portion.unit_cost,
+                &now,
+            )
+            .unwrap();
+    }
 
     let h1 = FifoLayerRepository::new(db.executor())
         .get_consumption_history(&mv1)
