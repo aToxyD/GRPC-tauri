@@ -145,6 +145,47 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     CHECK (movement_type != 'IN' OR unit_id IS NOT NULL)
 );
 
+CREATE TABLE IF NOT EXISTS fifo_stock_layers (
+    id TEXT PRIMARY KEY,
+    unit_id TEXT NOT NULL
+        REFERENCES units(id) ON DELETE RESTRICT,
+    product_id TEXT NOT NULL
+        REFERENCES products(id) ON DELETE RESTRICT,
+    source_type TEXT NOT NULL CHECK(source_type IN ('ORDER')),
+    source_id TEXT,
+    unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
+    qty_original REAL NOT NULL CHECK(qty_original > 0),
+    qty_remaining REAL NOT NULL CHECK(qty_remaining >= 0),
+    received_at TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    CHECK(qty_remaining <= qty_original)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_layer_consumptions (
+    id TEXT PRIMARY KEY,
+    unit_id TEXT NOT NULL
+        REFERENCES units(id) ON DELETE RESTRICT,
+    movement_id TEXT NOT NULL
+        REFERENCES stock_movements(id),
+    layer_id TEXT NOT NULL
+        REFERENCES fifo_stock_layers(id),
+    quantity REAL NOT NULL CHECK(quantity > 0),
+    unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
+    total_cost REAL NOT NULL CHECK(total_cost >= 0),
+    consumed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reference_price_snapshots (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL
+        REFERENCES products(id) ON DELETE RESTRICT,
+    fiscal_year INTEGER NOT NULL,
+    reference_price REAL NOT NULL CHECK(reference_price >= 0),
+    approved_by TEXT NOT NULL,
+    approved_at TEXT NOT NULL,
+    UNIQUE(product_id, fiscal_year)
+);
+
 -- =============================================================================
 -- 4. OPERATIONAL DOCUMENTS (ORDERS & CONSUMPTION)
 -- =============================================================================
@@ -189,6 +230,7 @@ CREATE TABLE IF NOT EXISTS daily_report_meal_items (
     quantity REAL NOT NULL CHECK (quantity > 0),
     unit_price REAL NOT NULL CHECK (unit_price >= 0),
     total_cost REAL NOT NULL,
+    fifo_layer_id TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
@@ -498,11 +540,16 @@ CREATE INDEX IF NOT EXISTS idx_stock_product_unit_time ON stock_movements(produc
 CREATE INDEX IF NOT EXISTS idx_stock_unit_type_time ON stock_movements(unit_id, movement_type, timestamp);
 CREATE INDEX IF NOT EXISTS idx_stock_in_partial ON stock_movements(unit_id, timestamp) WHERE movement_type='IN';
 CREATE INDEX IF NOT EXISTS idx_stock_movements_fiscal_year ON stock_movements(fiscal_year);
+CREATE INDEX IF NOT EXISTS idx_fifo_active ON fifo_stock_layers(unit_id, product_id, received_at ASC, id ASC) WHERE qty_remaining > 0;
+CREATE INDEX IF NOT EXISTS idx_fifo_source ON fifo_stock_layers(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_layer_consumptions_layer ON inventory_layer_consumptions(layer_id);
+CREATE INDEX IF NOT EXISTS idx_layer_consumptions_movement ON inventory_layer_consumptions(movement_id);
 
 -- Snapshots
 CREATE INDEX IF NOT EXISTS idx_opening_balance_snapshots_product ON opening_balance_snapshots(product_id);
 CREATE INDEX IF NOT EXISTS idx_opening_balance_snapshots_fiscal_year ON opening_balance_snapshots(fiscal_year);
 CREATE INDEX IF NOT EXISTS idx_report_generation_metadata_year ON report_generation_metadata(fiscal_year);
+CREATE INDEX IF NOT EXISTS idx_ref_price_year ON reference_price_snapshots(fiscal_year);
 
 -- Sync Support
 CREATE INDEX IF NOT EXISTS idx_products_sync ON products(updated_at, node_id, deleted) WHERE deleted = 0;

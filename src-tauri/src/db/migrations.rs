@@ -14,11 +14,6 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Initial schema creation (including Observability)",
             include_str!("migrations/001_initial.sql"),
         ),
-        (
-            2,
-            "FIFO Inventory Accounting",
-            include_str!("migrations/002_fifo.sql"),
-        ),
     ]
 }
 
