@@ -5,25 +5,38 @@
   import type { MealType } from '../../lib/types';
   import type { ConsumptionProductRow } from './types';
 
-  export let mealId: MealType;
-  export let quantities: Record<string, string>;
-  export let rows: ConsumptionProductRow[] = [];
-  export let disabled = false;
-  /** FIFO unit cost and line total per product (from backend preview). */
-  export let fifoCosts: Record<string, { unitCost: number; lineTotal: number }> = {};
-  export let isPreview = true;
+  type FifoCostRow = { unitCost: number; lineTotal: number };
 
-  function lineTotal(productId: string): number {
-    const fifo = fifoCosts[productId];
-    if (fifo) return fifo.lineTotal;
-    const qty = parseFloat(quantities[productId] ?? '') || 0;
-    return qty > 0 ? 0 : 0;
+  let {
+    mealId,
+    quantities = $bindable<Record<string, string>>({}),
+    rows = [],
+    disabled = false,
+    fifoCosts = {},
+    isPreview = true,
+  }: {
+    mealId: MealType;
+    quantities?: Record<string, string>;
+    rows?: ConsumptionProductRow[];
+    disabled?: boolean;
+    fifoCosts?: Record<string, FifoCostRow>;
+    isPreview?: boolean;
+  } = $props();
+
+  function fifoFor(productId: string): FifoCostRow | undefined {
+    return fifoCosts[productId];
   }
 
-  function unitCostDisplay(productId: string): string {
-    const fifo = fifoCosts[productId];
-    if (fifo && fifo.unitCost > 0) return fifo.unitCost.toFixed(2);
-    return '—';
+  function unitCostLabel(productId: string): string {
+    const fifo = fifoFor(productId);
+    if (!fifo || fifo.lineTotal <= 0) return '—';
+    return `${fifo.unitCost.toFixed(2)} دج`;
+  }
+
+  function lineTotalLabel(productId: string): string {
+    const fifo = fifoFor(productId);
+    if (!fifo || fifo.lineTotal <= 0) return '—';
+    return `${fifo.lineTotal.toFixed(2)} دج`;
   }
 </script>
 
@@ -47,7 +60,6 @@
 
       {#each rows as row (row.product.id)}
         {@const qty = quantities[row.product.id] ?? ''}
-        {@const total = lineTotal(row.product.id)}
         <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
           <td class="table-cell">
             <span class="font-medium block text-gray-800 dark:text-gray-200">{row.product.name}</span>
@@ -70,10 +82,10 @@
             />
           </td>
           <td class="table-cell text-right text-gray-600 dark:text-gray-400 tabular-nums">
-            {unitCostDisplay(row.product.id)}{#if fifoCosts[row.product.id]} دج{/if}
+            {unitCostLabel(row.product.id)}
           </td>
           <td class="table-cell text-right font-medium tabular-nums">
-            {total > 0 ? `${total.toFixed(2)} دج` : '—'}
+            {lineTotalLabel(row.product.id)}
           </td>
         </tr>
       {/each}

@@ -5,6 +5,7 @@ import type {
   DailyFifoConsumptionPreview,
   MealFifoPreview,
   MealType,
+  ProductFifoPreview,
 } from '../../lib/types';
 import type { BeneficiaryFields, MealFormState, MealPreview } from './types';
 import { MEAL_OPTIONS } from './types';
@@ -50,15 +51,46 @@ export function mealPreviewFromFifo(form: MealFormState, fifoMeal?: MealFifoPrev
   return { totalBeneficiaries, totalCost, mealAverage };
 }
 
+/** Meal-level product lines from IPC (snake_case or camelCase). */
+function mealProductPreviews(fifoMeal: MealFifoPreview): ProductFifoPreview[] {
+  const raw = fifoMeal as MealFifoPreview & { productPreviews?: ProductFifoPreview[] };
+  return raw.product_previews ?? raw.productPreviews ?? [];
+}
+
+/**
+ * Per-product FIFO costs for the active meal table.
+ * Uses meal product_previews when present; otherwise allocates from daily totals
+ * (same aggregation as execution) so row columns match the meal summary.
+ */
 export function productFifoCostsForMeal(
-  fifoMeal?: MealFifoPreview | null
+  fifoMeal: MealFifoPreview | null | undefined,
+  form: MealFormState,
+  dailyProductLayers?: ProductFifoPreview[]
 ): Record<string, { unitCost: number; lineTotal: number }> {
   const map: Record<string, { unitCost: number; lineTotal: number }> = {};
-  if (!fifoMeal) return map;
-  for (const p of fifoMeal.product_previews) {
-    const unitCost = p.quantity > 0 ? p.predicted_fifo_cost / p.quantity : 0;
-    map[p.product_id] = { unitCost, lineTotal: p.predicted_fifo_cost };
+
+  if (fifoMeal) {
+    for (const p of mealProductPreviews(fifoMeal)) {
+      if (p.quantity <= 0) continue;
+      const unitCost = p.predicted_fifo_cost / p.quantity;
+      map[p.product_id] = { unitCost, lineTotal: p.predicted_fifo_cost };
+    }
+    if (Object.keys(map).length > 0) return map;
   }
+
+  for (const item of mealItemsFromForm(form)) {
+    const daily = dailyProductLayers?.find((d) => d.product_id === item.product_id);
+    if (!daily || daily.quantity <= 0) continue;
+    const lineTotal =
+      Math.abs(daily.quantity - item.quantity) < 1e-9
+        ? daily.predicted_fifo_cost
+        : daily.predicted_fifo_cost * (item.quantity / daily.quantity);
+    map[item.product_id] = {
+      unitCost: lineTotal / item.quantity,
+      lineTotal,
+    };
+  }
+
   return map;
 }
 

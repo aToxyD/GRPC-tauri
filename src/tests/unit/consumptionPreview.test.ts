@@ -5,6 +5,7 @@ import {
   dailySummaryFromFormsAndFifo,
   mealPreviewFromFifo,
   parseBeneficiaryCounts,
+  productFifoCostsForMeal,
 } from '../../components/consumption/preview';
 import { emptyMealForms, emptyMealState } from '../../components/consumption/types';
 import type { DailyFifoConsumptionPreview } from '../../lib/types';
@@ -34,6 +35,23 @@ describe('consumption preview', () => {
     });
     expect(preview.totalCost).toBe(100);
     expect(preview.mealAverage).toBe(10);
+  });
+
+  it('builds per-row FIFO costs from daily layers when meal product_previews missing', () => {
+    const form = emptyMealState();
+    form.quantities.p1 = '2';
+
+    const costs = productFifoCostsForMeal(null, form, [
+      {
+        product_id: 'p1',
+        quantity: 4,
+        predicted_fifo_cost: 40,
+        predicted_consumption_layers: [],
+      },
+    ]);
+
+    expect(costs.p1.lineTotal).toBe(20);
+    expect(costs.p1.unitCost).toBe(10);
   });
 
   it('merges FIFO preview with beneficiary counts for daily summary', () => {

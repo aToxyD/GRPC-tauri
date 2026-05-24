@@ -30,7 +30,7 @@
     bind:quantities={form.quantities}
     rows={productRows}
     {disabled}
-    {fifoCosts}
+    fifoCosts={fifoCosts}
     {isPreview}
   />
 

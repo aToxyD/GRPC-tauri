@@ -97,7 +97,13 @@
     mealPreviewFromFifo(mealForms[activeMeal], activeFifoMeal)
   );
 
-  let activeMealFifoCosts = $derived(productFifoCostsForMeal(activeFifoMeal));
+  let activeMealFifoCosts = $derived(
+    productFifoCostsForMeal(
+      activeFifoMeal,
+      mealForms[activeMeal],
+      fifoPreview?.predicted_consumption_layers
+    )
+  );
 
   let activeMealLabel = $derived(
     MEAL_OPTIONS.find((m) => m.id === activeMeal)?.label ?? activeMeal
@@ -208,7 +214,10 @@
   }
 
   $effect(() => {
-    mealForms;
+    for (const meal of MEAL_OPTIONS) {
+      mealForms[meal.id].quantities;
+      parseBeneficiaryCounts(mealForms[meal.id].beneficiaries);
+    }
     date;
     if (!reportLocked) {
       void refreshFifoPreview();
