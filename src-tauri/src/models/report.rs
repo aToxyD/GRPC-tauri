@@ -4,8 +4,6 @@ use chrono::Datelike;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::models::product::Product;
-
 /// Meal type (section within a daily report)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -138,12 +136,6 @@ pub struct DailyReportInput {
 pub struct ConsumptionItemInput {
     pub product_id: String,
     pub quantity: f64,
-}
-
-impl ConsumptionItemInput {
-    pub fn calculate_cost(&self, product: &Product) -> f64 {
-        self.quantity * product.base_price
-    }
 }
 
 /// Meal section with items (read model)

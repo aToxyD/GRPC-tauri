@@ -9,7 +9,8 @@ import type {
   User, Product, CreateProductRequest, UpdateProductRequest,
   Unit, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem, UpdateOrderRequest,
   CreateOrderRequest, MealConsumption, MealConsumptionInput, MealConsumptionItem,
-  DailyReportResult, DailyReportInput, DailyConsumptionView, StockCheckResult, MonthlySummary, DailyReport,
+  DailyReportResult, DailyReportInput, DailyConsumptionView, DailyFifoConsumptionPreview,
+  StockCheckResult, MonthlySummary, DailyReport,
   MealType,
   ConsumptionItemInput, OrderItemInput,
   BackupInfo, LoginMetrics, SystemMetrics, Notification, ProgressInfo,
@@ -178,6 +179,13 @@ export async function createOrder(request: CreateOrderRequest): Promise<{ orderI
 // Daily Reports
 export async function createDailyReport(input: DailyReportInput, unitId?: string): Promise<DailyReportResult> {
   return await safeInvoke('create_daily_report', { input, unitId });
+}
+
+/** FIFO dry-run preview — same engine as daily report execution. */
+export async function previewDailyConsumptionFifo(
+  input: DailyReportInput
+): Promise<DailyFifoConsumptionPreview> {
+  return await safeInvoke('preview_daily_consumption_fifo', { input });
 }
 
 /** @deprecated Use createDailyReport */

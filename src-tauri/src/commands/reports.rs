@@ -14,12 +14,13 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError};
 use crate::models::{
-    DailyConsumptionView, DailyReport, DailyReportInput, DailyReportResult, MonthlySummary,
-    WilayaReportList,
+    DailyConsumptionView, DailyFifoConsumptionPreview, DailyReport, DailyReportInput,
+    DailyReportResult, MonthlySummary, WilayaReportList,
 };
 
 use crate::application::services::{
-    AuditTxService, DailyReportService, ReportCalculationService, SettingsService,
+    AuditTxService, DailyReportService, FifoPreviewService, ReportCalculationService,
+    SettingsService,
 };
 use chrono::NaiveDate;
 use tauri::State;
@@ -105,6 +106,38 @@ pub fn get_monthly_summary(
         effective_unit_id.as_deref(),
     )
     .map_err(into_command_error)
+}
+
+/// FIFO dry-run preview for daily consumption (same engine as execution).
+#[tauri::command]
+pub fn preview_daily_consumption_fifo(
+    state: State<AppState>,
+    input: DailyReportInput,
+) -> Result<DailyFifoConsumptionPreview, String> {
+    let (_session, _settings) =
+        authorize_command(&state, Action::ReadDailyReports, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    let executor = db.executor();
+    let settings_svc = SettingsService::new(executor);
+    let unit_id = settings_svc
+        .get_current_unit_id()
+        .map_err(into_command_error)?;
+
+    let unit_id = unit_id.ok_or_else(|| {
+        into_command_error(AppError::BusinessLogic(
+            crate::errors::BusinessLogicError::OperationNotPermitted {
+                message: "unit_id is required for FIFO preview".to_string(),
+            },
+        ))
+    })?;
+
+    FifoPreviewService::new(executor)
+        .preview_daily_report(&input, &unit_id)
+        .map_err(into_command_error)
 }
 
 /// Create daily report with atomic stock update

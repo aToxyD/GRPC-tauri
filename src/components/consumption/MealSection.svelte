@@ -13,6 +13,7 @@
   export let productRows: ConsumptionProductRow[] = [];
   export let disabled = false;
   export let isPreview = true;
+  export let fifoCosts: Record<string, { unitCost: number; lineTotal: number }> = {};
 </script>
 
 <AppCard>
@@ -24,7 +25,14 @@
   <BeneficiaryInputs idPrefix={mealId} bind:beneficiaries={form.beneficiaries} {disabled} />
 
   <h3 class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3 mt-6">المنتجات المستهلكة</h3>
-  <MealProductsTable {mealId} bind:quantities={form.quantities} rows={productRows} {disabled} />
+  <MealProductsTable
+    {mealId}
+    bind:quantities={form.quantities}
+    rows={productRows}
+    {disabled}
+    {fifoCosts}
+    {isPreview}
+  />
 
   <div class="mt-4">
     <MealSummaryCard {preview} {isPreview} />

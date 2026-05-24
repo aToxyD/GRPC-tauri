@@ -231,6 +231,33 @@ export interface ConsumptionItemInput {
   quantity: number;
 }
 
+export interface ConsumedLayerPortion {
+  layer_id: string;
+  quantity: number;
+  unit_cost: number;
+  total_cost: number;
+}
+
+export interface ProductFifoPreview {
+  product_id: string;
+  quantity: number;
+  predicted_fifo_cost: number;
+  predicted_consumption_layers: ConsumedLayerPortion[];
+}
+
+export interface MealFifoPreview {
+  meal_type: string;
+  predicted_fifo_cost: number;
+  product_previews: ProductFifoPreview[];
+}
+
+export interface DailyFifoConsumptionPreview {
+  predicted_fifo_cost: number;
+  predicted_consumption_layers: ProductFifoPreview[];
+  predicted_remaining_inventory_value: number;
+  meal_previews: MealFifoPreview[];
+}
+
 // Summary Types
 export interface MonthlySummary {
   month: number;

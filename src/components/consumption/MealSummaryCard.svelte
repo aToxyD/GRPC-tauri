@@ -15,7 +15,7 @@
   </div>
   <div>
     <span class="text-gray-500 dark:text-gray-400 block">
-      التكلفة{#if isPreview} (معاينة){/if}
+      {isPreview ? 'تكلفة FIFO المتوقعة' : 'التكلفة'}
     </span>
     <span class="font-bold">{formatAmount(preview.totalCost)}</span>
   </div>

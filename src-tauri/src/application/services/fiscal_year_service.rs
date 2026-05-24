@@ -87,10 +87,11 @@ impl<'a> FiscalYearService<'a> {
                 .fifo_layers()
                 .get_global_quantity_and_value_for_product(&product.id)?;
 
+            // Weighted average FIFO unit cost; zero when no layers remain.
             let unit_cost = if quantity > 0.0 {
                 total_value / quantity
             } else {
-                product.base_price
+                0.0
             };
 
             let snapshot_id = uuid::Uuid::new_v4().to_string();
@@ -157,18 +158,18 @@ impl<'a> FiscalYearService<'a> {
             year, next_year, user_id
         );
 
-        let mut total_inventory_value: f64 = 0.0;
-        for p in &products {
-            let qty = match self.executor.inventory().get_stock(&p.id) {
-                Ok(Some(s)) => s.quantity,
-                Ok(None) => 0.0,
-                Err(e) => {
-                    log::error!(target: "grpc::fiscal", "Failed to get stock for audit calculation (product_id={}): {}", p.id, e);
-                    0.0
-                }
-            };
-            total_inventory_value += qty * p.base_price;
-        }
+        let total_inventory_value: f64 = self
+            .executor
+            .inventory()
+            .get_total_inventory_value()
+            .unwrap_or_else(|e| {
+                log::error!(
+                    target: "grpc::fiscal",
+                    "Failed to compute FIFO inventory value for audit: {}",
+                    e
+                );
+                0.0
+            });
 
         // ── 4. Audit record ───────────────────────────────────────────────
         crate::application::services::AuditService::new(self.executor).log_success(

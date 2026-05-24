@@ -1,4 +1,5 @@
-use crate::errors::{AppError, AppResult, BusinessLogicError};
+use crate::domain::fifo_engine::{simulate_fifo_consumption, FifoLayerRow};
+use crate::errors::{AppError, AppResult};
 use crate::models::{ConsumedLayerPortion, FifoStockLayer, InventoryLayerConsumption};
 use crate::repositories::executor::DbExecutor;
 use rusqlite::params;
@@ -82,40 +83,11 @@ impl<'a> FifoLayerRepository<'a> {
             )
             .map_err(AppError::from)?;
 
-        let mut available_layers = Vec::new();
-        let mut total_available = 0.0;
+        let available_layers: Vec<FifoLayerRow> = layer_iter;
 
-        for (id, unit_cost, qty_remaining) in layer_iter {
-            total_available += qty_remaining;
-            available_layers.push((id, unit_cost, qty_remaining));
-        }
+        let consumed_portions = simulate_fifo_consumption(product_id, &available_layers, quantity)?;
 
-        if total_available < quantity {
-            return Err(AppError::BusinessLogic(
-                BusinessLogicError::InsufficientStock(format!(
-                    "Insufficient stock for product {}. Requested: {}, Available: {}",
-                    product_id, quantity, total_available
-                )),
-            ));
-        }
-
-        let mut remaining_to_consume = quantity;
-        let mut consumed_portions = Vec::new();
-
-        for (id, unit_cost, qty_remaining) in available_layers {
-            if remaining_to_consume <= 0.0 {
-                break;
-            }
-
-            let consumed_qty = if qty_remaining >= remaining_to_consume {
-                remaining_to_consume
-            } else {
-                qty_remaining
-            };
-
-            let total_cost = consumed_qty * unit_cost;
-
-            // Decrement layer quantity
+        for portion in &consumed_portions {
             self.executor
                 .execute(
                     r#"
@@ -123,21 +95,9 @@ impl<'a> FifoLayerRepository<'a> {
                 SET qty_remaining = qty_remaining - ?1
                 WHERE id = ?2
                 "#,
-                    params![consumed_qty, id],
+                    params![portion.quantity, portion.layer_id],
                 )
                 .map_err(AppError::from)?;
-
-            // Note: Consumption records are created by the caller (e.g., daily_report_service)
-            // after the stock movement is created, to satisfy FK constraints.
-
-            consumed_portions.push(ConsumedLayerPortion {
-                layer_id: id,
-                quantity: consumed_qty,
-                unit_cost,
-                total_cost,
-            });
-
-            remaining_to_consume -= consumed_qty;
         }
 
         Ok(consumed_portions)
@@ -278,6 +238,45 @@ impl<'a> FifoLayerRepository<'a> {
             )
             .map_err(AppError::from)?;
         Ok(result)
+    }
+
+    /// Fetch active layers for simulation (read-only, ordered FIFO).
+    pub fn fetch_active_layers(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+    ) -> AppResult<Vec<FifoLayerRow>> {
+        let layer_iter = self
+            .executor
+            .query_all(
+                r#"
+            SELECT id, unit_cost, qty_remaining
+            FROM fifo_stock_layers
+            WHERE unit_id = ?1 AND product_id = ?2 AND qty_remaining > 0
+            ORDER BY received_at ASC, id ASC
+            "#,
+                params![unit_id, product_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, f64>(1)?,
+                        row.get::<_, f64>(2)?,
+                    ))
+                },
+            )
+            .map_err(AppError::from)?;
+        Ok(layer_iter)
+    }
+
+    /// Simulate FIFO consumption without mutating layers (preview / dry-run).
+    pub fn preview_consume_fifo(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+        quantity: f64,
+    ) -> AppResult<Vec<ConsumedLayerPortion>> {
+        let layers = self.fetch_active_layers(unit_id, product_id)?;
+        simulate_fifo_consumption(product_id, &layers, quantity)
     }
 
     /// Returns the FIFO inventory value for a unit (remaining qty * unit cost).

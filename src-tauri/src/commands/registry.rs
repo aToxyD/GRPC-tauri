@@ -39,6 +39,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_supplier_order_items,
         commands::list_supplier_orders,
         // Daily Reports
+        commands::preview_daily_consumption_fifo,
         commands::create_daily_report,
         commands::get_daily_report,
         commands::list_daily_reports,

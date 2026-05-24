@@ -9,10 +9,21 @@
   export let quantities: Record<string, string>;
   export let rows: ConsumptionProductRow[] = [];
   export let disabled = false;
+  /** FIFO unit cost and line total per product (from backend preview). */
+  export let fifoCosts: Record<string, { unitCost: number; lineTotal: number }> = {};
+  export let isPreview = true;
 
-  function lineTotal(productId: string, unitPrice: number): number {
+  function lineTotal(productId: string): number {
+    const fifo = fifoCosts[productId];
+    if (fifo) return fifo.lineTotal;
     const qty = parseFloat(quantities[productId] ?? '') || 0;
-    return qty * unitPrice;
+    return qty > 0 ? 0 : 0;
+  }
+
+  function unitCostDisplay(productId: string): string {
+    const fifo = fifoCosts[productId];
+    if (fifo && fifo.unitCost > 0) return fifo.unitCost.toFixed(2);
+    return '—';
   }
 </script>
 
@@ -28,13 +39,15 @@
       <svelte:fragment slot="head">
         <th class="table-header">المنتج</th>
         <th class="table-header text-right w-28">الكمية</th>
-        <th class="table-header text-right w-32">سعر الوحدة</th>
-        <th class="table-header text-right w-32">الإجمالي</th>
+        <th class="table-header text-right w-36">
+          {isPreview ? 'تكلفة الوحدة (FIFO)' : 'تكلفة الوحدة'}
+        </th>
+        <th class="table-header text-right w-32">الإجمالي (FIFO)</th>
       </svelte:fragment>
 
       {#each rows as row (row.product.id)}
         {@const qty = quantities[row.product.id] ?? ''}
-        {@const total = lineTotal(row.product.id, row.product.base_price)}
+        {@const total = lineTotal(row.product.id)}
         <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
           <td class="table-cell">
             <span class="font-medium block text-gray-800 dark:text-gray-200">{row.product.name}</span>
@@ -57,7 +70,7 @@
             />
           </td>
           <td class="table-cell text-right text-gray-600 dark:text-gray-400 tabular-nums">
-            {row.product.base_price.toFixed(2)} دج
+            {unitCostDisplay(row.product.id)}{#if fifoCosts[row.product.id]} دج{/if}
           </td>
           <td class="table-cell text-right font-medium tabular-nums">
             {total > 0 ? `${total.toFixed(2)} دج` : '—'}

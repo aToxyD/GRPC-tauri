@@ -7,12 +7,14 @@
     checkStockAvailability,
     getSettings,
     getDailyConsumption,
+    previewDailyConsumptionFifo,
   } from '../lib/tauri';
   import type {
     Product,
     Settings,
     MealType,
     DailyConsumptionView,
+    DailyFifoConsumptionPreview,
     MealSectionInput,
   } from '../lib/types';
   import Layout from '../components/Layout.svelte';
@@ -30,11 +32,12 @@
   import MealTabs from '../components/consumption/MealTabs.svelte';
   import MealSection from '../components/consumption/MealSection.svelte';
   import {
-    computeDailySummary,
-    computeMealPreview,
+    dailySummaryFromFormsAndFifo,
     hasAnyConsumption,
     mealItemsFromForm,
+    mealPreviewFromFifo,
     parseBeneficiaryCounts,
+    productFifoCostsForMeal,
     summaryFromSaved,
   } from '../components/consumption/preview';
   import {
@@ -59,15 +62,42 @@
   let activeMeal = $state<MealType>('breakfast');
   let mealForms = $state<Record<MealType, MealFormState>>(emptyMealForms());
   let consumptionItems = $state<ConsumptionProductRow[]>([]);
+  let fifoPreview = $state<DailyFifoConsumptionPreview | null>(null);
+  let fifoPreviewLoading = $state(false);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m), 5000);
   onDestroy(() => scope.dispose());
 
   let displaySummary = $derived(
-    dailyView ? summaryFromSaved(dailyView) : computeDailySummary(mealForms, products)
+    dailyView
+      ? summaryFromSaved(dailyView)
+      : fifoPreview
+        ? dailySummaryFromFormsAndFifo(mealForms, fifoPreview)
+        : {
+            breakfast_beneficiaries: 0,
+            lunch_beneficiaries: 0,
+            dinner_beneficiaries: 0,
+            breakfast_cost: 0,
+            lunch_cost: 0,
+            dinner_cost: 0,
+            breakfast_average: 0,
+            lunch_average: 0,
+            dinner_average: 0,
+            total_daily_beneficiaries: 0,
+            total_daily_cost: 0,
+            daily_average: 0,
+          }
   );
 
-  let activeMealPreview = $derived(computeMealPreview(mealForms[activeMeal], products));
+  let activeFifoMeal = $derived(
+    fifoPreview?.meal_previews.find((m) => m.meal_type === activeMeal) ?? null
+  );
+
+  let activeMealPreview = $derived(
+    mealPreviewFromFifo(mealForms[activeMeal], activeFifoMeal)
+  );
+
+  let activeMealFifoCosts = $derived(productFifoCostsForMeal(activeFifoMeal));
 
   let activeMealLabel = $derived(
     MEAL_OPTIONS.find((m) => m.id === activeMeal)?.label ?? activeMeal
@@ -158,6 +188,32 @@
       };
     });
   }
+
+  async function refreshFifoPreview() {
+    if (reportLocked || !date || !hasAnyConsumption(mealForms)) {
+      fifoPreview = null;
+      return;
+    }
+    fifoPreviewLoading = true;
+    try {
+      fifoPreview = await previewDailyConsumptionFifo({
+        date,
+        meals: buildMealInputs(),
+      });
+    } catch {
+      fifoPreview = null;
+    } finally {
+      fifoPreviewLoading = false;
+    }
+  }
+
+  $effect(() => {
+    mealForms;
+    date;
+    if (!reportLocked) {
+      void refreshFifoPreview();
+    }
+  });
 
   async function submitDailyReport() {
     if (!date) {
@@ -252,9 +308,13 @@
               form={mealForms[activeMeal]}
               preview={activeMealPreview}
               productRows={consumptionItems}
+              fifoCosts={activeMealFifoCosts}
               disabled={reportLocked}
               isPreview={!dailyView}
             />
+            {#if fifoPreviewLoading && !dailyView}
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">جاري حساب تكلفة FIFO...</p>
+            {/if}
           </div>
         </div>
 
