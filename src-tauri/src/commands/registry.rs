@@ -27,6 +27,9 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_stock,
         commands::get_all_stocks,
         commands::check_stock_availability,
+        commands::get_fifo_layers,
+        commands::get_fifo_consumption_history,
+        commands::get_total_inventory_value,
         // Orders
         commands::create_supplier_order,
         commands::update_supplier_order,

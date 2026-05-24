@@ -242,6 +242,7 @@ impl<'a> ReportRepository<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_meal_item(
         &self,
         item_id: &str,
@@ -250,10 +251,11 @@ impl<'a> ReportRepository<'a> {
         quantity: f64,
         unit_price: f64,
         total_cost: f64,
+        fifo_layer_id: Option<&str>,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO daily_report_meal_items (id, meal_id, product_id, quantity, unit_price, total_cost) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![item_id, meal_id, product_id, quantity, unit_price, total_cost],
+            "INSERT INTO daily_report_meal_items (id, meal_id, product_id, quantity, unit_price, total_cost, fifo_layer_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![item_id, meal_id, product_id, quantity, unit_price, total_cost, fifo_layer_id],
         )?;
         Ok(())
     }
@@ -305,7 +307,7 @@ impl<'a> ReportRepository<'a> {
 
     pub fn get_meal_items(&self, meal_id: &str) -> Result<Vec<DailyReportMealItem>, AppError> {
         Ok(self.executor.query_all(
-            r#"SELECT mi.id, mi.meal_id, mi.product_id, p.name, mi.quantity, mi.unit_price, mi.total_cost
+            r#"SELECT mi.id, mi.meal_id, mi.product_id, p.name, mi.quantity, mi.unit_price, mi.total_cost, mi.fifo_layer_id
                FROM daily_report_meal_items mi
                JOIN products p ON mi.product_id = p.id
                WHERE mi.meal_id = ?1
@@ -320,6 +322,7 @@ impl<'a> ReportRepository<'a> {
                     quantity: row.get(4)?,
                     unit_price: row.get(5)?,
                     total_cost: row.get(6)?,
+                    fifo_layer_id: row.get(7)?,
                 })
             },
         )?)
@@ -474,6 +477,7 @@ impl<'a> ReportRepository<'a> {
             item.quantity,
             item.unit_price,
             item.total_cost,
+            item.fifo_layer_id.as_deref(),
         )
     }
 

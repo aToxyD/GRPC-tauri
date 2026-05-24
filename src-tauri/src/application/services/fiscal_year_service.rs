@@ -81,22 +81,16 @@ impl<'a> FiscalYearService<'a> {
         let mut snapshot_count: usize = 0;
 
         for product in &products {
-            let stock = self.executor.inventory().get_stock(&product.id)?;
-            let quantity = match stock {
-                Some(s) => s.quantity,
-                None => {
-                    log::warn!(
-                        target: "grpc::fiscal",
-                        "[FISCAL_SNAPSHOT_WARN] product_id={} has no stock record — \
-                         defaulting quantity to 0.0",
-                        product.id
-                    );
-                    0.0
-                }
-            };
+            let (quantity, total_value): (f64, f64) = self
+                .executor
+                .fifo_layers()
+                .get_global_quantity_and_value_for_product(&product.id)?;
 
-            let unit_cost = product.base_price;
-            let total_value = quantity * unit_cost;
+            let unit_cost = if quantity > 0.0 {
+                total_value / quantity
+            } else {
+                product.base_price
+            };
 
             self.executor.opening_balances().create_snapshot(
                 crate::repositories::opening_balances::CreateSnapshotParams {

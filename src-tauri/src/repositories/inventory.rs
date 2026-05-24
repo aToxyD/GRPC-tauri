@@ -412,10 +412,9 @@ impl<'a> InventoryRepository<'a> {
             .executor
             .query_row(
                 r#"
-                SELECT COALESCE(SUM(s.quantity * p.base_price), 0)
-                FROM inventory_stocks s
-                JOIN products p ON p.id = s.product_id
-                WHERE s.deleted = 0 AND p.deleted = 0
+                SELECT COALESCE(SUM(qty_remaining * unit_cost), 0)
+                FROM fifo_stock_layers
+                WHERE qty_remaining > 0
                 "#,
                 [],
                 |r| r.get(0),

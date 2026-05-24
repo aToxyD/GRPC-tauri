@@ -52,6 +52,12 @@ fn test_fiscal_lifecycle_sim() {
         rusqlite::params!["stock-1", product_id, Utc::now().to_rfc3339()],
     ).unwrap();
 
+    // Create test unit
+    executor.execute(
+        "INSERT INTO units (id, code, name, wilaya_code, created_at) VALUES (?1, 'TU', 'Test Unit', '00', ?2)",
+        rusqlite::params!["test-unit", Utc::now().to_rfc3339()],
+    ).unwrap();
+
     // 3. Record movement in OPEN year
     let movement = NewStockMovement {
         product_id: product_id.to_string(),
@@ -73,6 +79,20 @@ fn test_fiscal_lifecycle_sim() {
     let stock = executor.inventory().get_stock(product_id).unwrap().unwrap();
     assert_eq!(stock.quantity, 50.0);
 
+    executor
+        .fifo_layers()
+        .create_layer(
+            "test-unit",
+            product_id,
+            "ORDER",
+            None,
+            100.0,
+            50.0,
+            &Utc::now().to_rfc3339(),
+            username,
+        )
+        .expect("Should create FIFO layer");
+
     // 4. ATOMIC CLOSE
     fiscal_service
         .close_year(current_year, next_year, &user_id, username)
@@ -83,7 +103,10 @@ fn test_fiscal_lifecycle_sim() {
     // Stock movements should use the current fiscal year from settings (next_year)
     // which is now open, so this should succeed
     let result = stock_service.record_stock_movement(&movement);
-    assert!(result.is_ok(), "Should allow write in new open year (next_year)");
+    assert!(
+        result.is_ok(),
+        "Should allow write in new open year (next_year)"
+    );
 
     // Verify stock increased
     let stock = executor.inventory().get_stock(product_id).unwrap().unwrap();

@@ -77,6 +77,7 @@ pub struct DailyReportMealItem {
     pub quantity: f64,
     pub unit_price: f64,
     pub total_cost: f64,
+    pub fifo_layer_id: Option<String>,
 }
 
 pub struct BeneficiaryCounts {

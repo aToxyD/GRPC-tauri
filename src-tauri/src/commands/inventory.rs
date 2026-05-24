@@ -15,8 +15,8 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::into_command_error;
 use crate::models::{
-    ComputeSnapshotResult, StockMovementFilters, StockMovementResponse, StockSummary,
-    UnitInventoryView, XlsxExportResult,
+    ComputeSnapshotResult, FifoStockLayer, InventoryLayerConsumption, StockMovementFilters,
+    StockMovementResponse, StockSummary, UnitInventoryView, XlsxExportResult,
 };
 
 use tauri::State;
@@ -303,4 +303,50 @@ pub fn verify_inventory_integrity(
         Ok(report)
     })
     .map_err(crate::errors::into_command_error)
+}
+
+#[tauri::command]
+pub fn get_fifo_layers(
+    state: State<AppState>,
+    unit_id: String,
+    product_id: String,
+) -> Result<Vec<FifoStockLayer>, String> {
+    let (_session, _settings) =
+        authorize_command(&state, Action::ReadInventory, None).map_err(into_command_error)?;
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    StockLevelService::new(db.executor())
+        .get_remaining_layers(&unit_id, &product_id)
+        .map_err(|e: crate::errors::AppError| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_fifo_consumption_history(
+    state: State<AppState>,
+    movement_id: String,
+) -> Result<Vec<InventoryLayerConsumption>, String> {
+    let (_session, _settings) =
+        authorize_command(&state, Action::ReadInventory, None).map_err(into_command_error)?;
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    StockLevelService::new(db.executor())
+        .get_consumption_history(&movement_id)
+        .map_err(|e: crate::errors::AppError| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_total_inventory_value(state: State<AppState>) -> Result<f64, String> {
+    let (_session, _settings) =
+        authorize_command(&state, Action::ReadInventory, None).map_err(into_command_error)?;
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    StockLevelService::new(db.executor())
+        .get_total_inventory_value()
+        .map_err(|e: crate::errors::AppError| e.to_string())
 }

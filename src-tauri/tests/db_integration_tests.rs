@@ -189,6 +189,7 @@ fn test_opening_is_last_balance_before_month_unit_scoped() {
             quantity: 10.0,
             unit_price: 100.0,
             total_cost: 1000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -233,6 +234,7 @@ fn test_opening_is_last_balance_before_month_unit_scoped() {
             quantity: 5.0,
             unit_price: 100.0,
             total_cost: 500.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -292,6 +294,7 @@ fn test_opening_correct_when_in_precedes_first_out_in_month() {
             quantity: 20.0,
             unit_price: 100.0,
             total_cost: 2000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -367,6 +370,7 @@ fn test_new_product_first_month_no_false_anomaly() {
             quantity: 30.0,
             unit_price: 100.0,
             total_cost: 3000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -443,6 +447,7 @@ fn test_product_with_consumption_but_no_prior_stock_triggers_anomaly() {
             quantity: 10.0,
             unit_price: 100.0,
             total_cost: 1000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -517,6 +522,7 @@ fn test_total_in_includes_order_without_consumption_link() {
             quantity: 10.0,
             unit_price: 100.0,
             total_cost: 1000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -587,6 +593,7 @@ fn test_property_computed_closing_never_negative() {
             quantity: 20.0,
             unit_price: 100.0,
             total_cost: 2000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -658,6 +665,7 @@ fn test_property_formula_is_deterministic() {
             quantity: 30.0,
             unit_price: 100.0,
             total_cost: 3000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -761,6 +769,7 @@ fn test_opening_does_not_leak_other_units_balance() {
             quantity: 20.0,
             unit_price: 100.0,
             total_cost: 2000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -803,6 +812,7 @@ fn test_opening_does_not_leak_other_units_balance() {
             quantity: 10.0,
             unit_price: 100.0,
             total_cost: 1000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -856,6 +866,7 @@ fn test_in_for_correct_unit_is_counted() {
             quantity: 10.0,
             unit_price: 100.0,
             total_cost: 1000.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 
@@ -927,6 +938,7 @@ fn test_in_not_double_counted_across_units() {
             quantity: 5.0,
             unit_price: 100.0,
             total_cost: 500.0,
+            fifo_layer_id: None,
         })
         .unwrap();
     report_repo
@@ -938,6 +950,7 @@ fn test_in_not_double_counted_across_units() {
             quantity: 5.0,
             unit_price: 100.0,
             total_cost: 500.0,
+            fifo_layer_id: None,
         })
         .unwrap();
 

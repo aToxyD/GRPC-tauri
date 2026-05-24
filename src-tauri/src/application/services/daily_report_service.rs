@@ -16,7 +16,7 @@ type ComputedMeal = (
     i32,
     f64,
     f64,
-    Vec<(String, f64, f64, f64)>,
+    Vec<(String, f64, f64, f64, Option<String>)>,
 );
 
 pub struct DailyReportService<'a> {
@@ -56,6 +56,12 @@ impl<'a> DailyReportService<'a> {
             ));
         }
 
+        let unit_id_str = unit_id.ok_or_else(|| {
+            AppError::BusinessLogic(crate::errors::BusinessLogicError::OperationNotPermitted {
+                message: "unit_id is required to create a daily report".to_string(),
+            })
+        })?;
+
         let fiscal_year = input.date.year();
         crate::application::services::FiscalYearService::new(self.executor)
             .assert_fiscal_year_open(fiscal_year)?;
@@ -63,32 +69,137 @@ impl<'a> DailyReportService<'a> {
         let product_repo = self.executor.products();
         let report_repo = self.executor.reports();
         let stock_repo = crate::application::services::StockMovementService::new(self.executor);
+        let fifo_repo = self.executor.fifo_layers();
         let now = chrono::Utc::now().to_rfc3339();
         let report_id = Uuid::new_v4().to_string();
 
+        // ── Phase 1: aggregate total quantity per product across all meals ───
+        let mut stock_by_product: HashMap<String, f64> = HashMap::new();
+        for section in &input.meals {
+            for item in &section.items {
+                if item.quantity > 0.0 {
+                    *stock_by_product
+                        .entry(item.product_id.clone())
+                        .or_insert(0.0) += item.quantity;
+                }
+            }
+        }
+
+        // ── Phase 2: FIFO consumption first, then OUT movement ───────────────
+        // This order ensures InsufficientStock aborts before any ledger write.
+        struct ProductConsumption {
+            movement_id: String,
+            weighted_unit_cost: f64,
+            portions: Vec<crate::models::ConsumedLayerPortion>,
+        }
+        let mut consumption_map: HashMap<String, ProductConsumption> = HashMap::new();
+
+        for (product_id, quantity) in &stock_by_product {
+            let product_name = product_repo
+                .get_product(product_id)?
+                .map(|p| p.name)
+                .unwrap_or_default();
+
+            // Step A: consume FIFO (fails fast with InsufficientStock if needed)
+            let portions = fifo_repo.consume_fifo(
+                unit_id_str,
+                product_id,
+                *quantity,
+                // movement_id not yet known — pass a placeholder; we'll create
+                // the actual movement next and store consumption records then.
+                // To keep the FK intact we create the movement FIRST, then
+                // record consumptions referencing it.
+                // So the actual order is: create movement → record consumptions.
+                // We'll do a two-step approach inside the loop below.
+                "PENDING", // placeholder — overwritten immediately
+                &now,
+            );
+
+            // Step B: if FIFO fails → abort entirely (transaction rolls back)
+            let portions = portions?;
+
+            // Step C: create OUT movement with weighted-average FIFO cost
+            let total_qty: f64 = portions.iter().map(|p| p.quantity).sum();
+            let total_cost: f64 = portions.iter().map(|p| p.total_cost).sum();
+            let weighted_unit_cost = if total_qty > 0.0 {
+                total_cost / total_qty
+            } else {
+                0.0
+            };
+
+            let movement = NewStockMovement {
+                product_id: product_id.clone(),
+                movement_type: StockMovementType::Out,
+                quantity: *quantity,
+                reference_type: Some("Consumption".to_string()),
+                reference_id: Some(report_id.clone()),
+                notes: Some(format!("استهلاك يومي - {} - {}", date_str, product_name)),
+                user_id: user_id.to_string(),
+                username: username.to_string(),
+                unit_id: unit_id.map(|u| u.to_string()),
+                unit_cost: Some(weighted_unit_cost),
+            };
+            let movement_id = stock_repo.record_stock_movement(&movement)?;
+
+            consumption_map.insert(
+                product_id.clone(),
+                ProductConsumption {
+                    movement_id,
+                    weighted_unit_cost,
+                    portions,
+                },
+            );
+        }
+
+        // ── Phase 3: record inventory_layer_consumptions for each movement ───
+        // (must happen after movement exists for FK to pass)
+        for (product_id, cons) in &consumption_map {
+            for portion in &cons.portions {
+                fifo_repo.create_consumption_record(
+                    unit_id_str,
+                    &cons.movement_id,
+                    &portion.layer_id,
+                    portion.quantity,
+                    portion.unit_cost,
+                    &now,
+                )?;
+            }
+            let _ = product_id; // used implicitly via consumption_map key
+        }
+
+        // ── Phase 4: compute meal totals and persist ─────────────────────────
         let mut computed_meals: Vec<ComputedMeal> = Vec::new();
 
         for section in &input.meals {
-            let mut item_costs: Vec<(String, f64, f64, f64)> = Vec::new();
+            let mut item_costs: Vec<(String, f64, f64, f64, Option<String>)> = Vec::new();
             let mut total_cost = 0.0f64;
 
             for item in &section.items {
                 if item.quantity <= 0.0 {
                     continue;
                 }
-                let product = product_repo.get_product(&item.product_id)?.ok_or_else(|| {
-                    AppError::BusinessLogic(crate::errors::BusinessLogicError::ResourceNotFound {
-                        resource: "Product".to_string(),
-                        id: item.product_id.clone(),
-                    })
+
+                let cons = consumption_map.get(&item.product_id).ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "No consumption record for product {}",
+                        item.product_id
+                    ))
                 })?;
-                let item_cost = item.quantity * product.base_price;
-                total_cost += item_cost;
+
+                // Attribute cost proportionally (item.qty / total_qty * total_cost)
+                let item_total = item.quantity * cons.weighted_unit_cost;
+                total_cost += item_total;
+
+                // Record the first matching layer_id for this product as the
+                // primary layer reference on the meal item line
+                let layer_id = cons.portions.first().map(|p| p.layer_id.clone());
+
                 item_costs.push((
                     item.product_id.clone(),
                     item.quantity,
-                    product.base_price,
-                    item_cost,
+                    cons.weighted_unit_cost,
+                    item_total,
+                    layer_id,
                 ));
             }
 
@@ -126,8 +237,6 @@ impl<'a> DailyReportService<'a> {
             &now,
         )?;
 
-        let mut stock_by_product: HashMap<String, f64> = HashMap::new();
-
         for (section, total_beneficiaries, total_cost, meal_average, item_costs) in computed_meals {
             let meal_id = Uuid::new_v4().to_string();
             report_repo.insert_meal_section(
@@ -139,7 +248,7 @@ impl<'a> DailyReportService<'a> {
                 meal_average,
             )?;
 
-            for (product_id, quantity, unit_price, item_cost) in item_costs {
+            for (product_id, quantity, unit_price, item_cost, layer_id) in item_costs {
                 let item_id = Uuid::new_v4().to_string();
                 report_repo.insert_meal_item(
                     &item_id,
@@ -148,31 +257,9 @@ impl<'a> DailyReportService<'a> {
                     quantity,
                     unit_price,
                     item_cost,
+                    layer_id.as_deref(),
                 )?;
-
-                *stock_by_product.entry(product_id.clone()).or_insert(0.0) += quantity;
             }
-        }
-
-        for (product_id, quantity) in stock_by_product {
-            let product_name = product_repo
-                .get_product(&product_id)?
-                .map(|p| p.name)
-                .unwrap_or_default();
-
-            let movement = NewStockMovement {
-                product_id: product_id.clone(),
-                movement_type: StockMovementType::Out,
-                quantity,
-                reference_type: Some("Consumption".to_string()),
-                reference_id: Some(report_id.clone()),
-                notes: Some(format!("استهلاك يومي - {} - {}", date_str, product_name)),
-                user_id: user_id.to_string(),
-                username: username.to_string(),
-                unit_id: unit_id.map(|u| u.to_string()),
-                unit_cost: None,
-            };
-            stock_repo.record_stock_movement(&movement)?;
         }
 
         Ok(report_id)

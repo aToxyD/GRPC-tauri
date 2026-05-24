@@ -7,6 +7,7 @@
 pub mod anomaly;
 pub mod audit;
 pub mod executor;
+pub mod fifo_layers;
 pub mod fiscal_package_registry;
 pub mod fiscal_snapshots;
 pub mod fiscal_transitions;
@@ -32,6 +33,7 @@ pub mod users;
 pub use anomaly::AnomalyRepository;
 pub use audit::AuditRepository;
 pub use executor::{DbExecutor, ExecutorProvider};
+pub use fifo_layers::FifoLayerRepository;
 pub use fiscal_package_registry::{FiscalPackageRegistryEntry, FiscalPackageRegistryRepository};
 pub use fiscal_snapshots::FiscalSnapshotRepository;
 pub use fiscal_transitions::FiscalTransitionRepository;
@@ -74,6 +76,7 @@ impl crate::architecture::Repository for SessionRepository<'_> {}
 impl crate::architecture::Repository for TelemetryRepository<'_> {}
 impl crate::architecture::Repository for TimelineRepository<'_> {}
 impl crate::architecture::Repository for FiscalPackageRegistryRepository<'_> {}
+impl crate::architecture::Repository for FifoLayerRepository<'_> {}
 
 /// Centralized provider for repositories to avoid manual construction in the service layer.
 /// This satisfies Rule 17 of the architectural integrity check.
@@ -101,6 +104,7 @@ pub trait RepositoryProvider<'a> {
     fn telemetry(&self) -> TelemetryRepository<'a>;
     fn timeline(&self) -> TimelineRepository<'a>;
     fn fiscal_package_registry(&self) -> FiscalPackageRegistryRepository<'a>;
+    fn fifo_layers(&self) -> FifoLayerRepository<'a>;
 }
 
 impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
@@ -172,5 +176,8 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn fiscal_package_registry(&self) -> FiscalPackageRegistryRepository<'a> {
         FiscalPackageRegistryRepository::new(*self)
+    }
+    fn fifo_layers(&self) -> FifoLayerRepository<'a> {
+        FifoLayerRepository::new(*self)
     }
 }

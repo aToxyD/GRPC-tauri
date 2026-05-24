@@ -105,6 +105,7 @@ impl<'a> ImportSyncService<'a> {
                                 item.quantity,
                                 item.unit_price,
                                 item.total_cost,
+                                None,
                             )?;
                         }
                     }

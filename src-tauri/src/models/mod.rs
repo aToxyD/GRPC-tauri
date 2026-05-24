@@ -18,6 +18,9 @@ pub use inventory::*;
 // Re-export order models
 pub use order::*;
 
+pub use fifo::*;
+
+// Re-export fiscal year models
 pub use fiscal_year::*;
 
 // Re-export product models
@@ -38,6 +41,7 @@ pub use user::*;
 // Sub-modules
 pub mod audit;
 pub mod dto;
+pub mod fifo;
 pub mod fiscal_year;
 pub mod inventory;
 pub mod order;

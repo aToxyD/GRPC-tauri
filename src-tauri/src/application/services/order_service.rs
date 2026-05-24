@@ -110,6 +110,14 @@ impl<'a> OrderService<'a> {
     ) -> Result<(), AppError> {
         let repo = self.executor.orders();
         let stock_repo = crate::application::services::StockMovementService::new(self.executor);
+        let fifo_repo = self.executor.fifo_layers();
+        let status_repo = self.executor.fiscal_year_status();
+
+        let unit_id_str = unit_id.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                message: "unit_id is required to confirm an order".to_string(),
+            })
+        })?;
 
         // 1. Guard: check order status
         let order = repo
@@ -127,7 +135,19 @@ impl<'a> OrderService<'a> {
         // 2. Fetch items (product_id, quantity, product_name, unit_price)
         let items = repo.get_order_items_for_confirmation(order_id)?;
 
-        // 3. Record IN movement for each item
+        // 3. Resolve active fiscal year and guard it is still open
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let active_fy = match order.fiscal_year {
+            Some(fy) => fy,
+            None => status_repo.get_open_year()?.ok_or_else(|| {
+                AppError::Internal("No open fiscal year found for order confirmation".to_string())
+            })?,
+        };
+
+        crate::application::services::FiscalYearService::new(self.executor)
+            .assert_fiscal_year_open(active_fy)?;
+
         for (product_id, quantity, product_name, unit_price) in &items {
             let movement = NewStockMovement {
                 product_id: product_id.clone(),
@@ -145,6 +165,17 @@ impl<'a> OrderService<'a> {
                 unit_cost: Some(*unit_price),
             };
             stock_repo.record_stock_movement(&movement)?;
+
+            fifo_repo.create_layer(
+                unit_id_str,
+                product_id,
+                "ORDER",
+                Some(order_id),
+                *unit_price,
+                *quantity,
+                &now,
+                user_id,
+            )?;
         }
 
         // 4. Mark order confirmed

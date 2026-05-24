@@ -112,6 +112,33 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
             params![quantity, now, product_id],
         )
         .expect("update inventory_stocks quantity");
+
+    let unit_cost: f64 = db
+        .get_connection()
+        .query_row(
+            "SELECT base_price FROM products WHERE id = ?1",
+            params![product_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+
+    // Create a dummy unit if not exists
+    db.get_connection()
+        .execute(
+            "INSERT OR IGNORE INTO units (id, code, name, wilaya_code, created_at) VALUES ('test-unit', 'TU', 'Test Unit', '00', ?1)",
+            params![now],
+        )
+        .expect("insert dummy unit");
+
+    if quantity > 0.0 {
+        db.get_connection()
+            .execute(
+                "INSERT INTO fifo_stock_layers (id, unit_id, product_id, source_type, source_id, unit_cost, qty_original, qty_remaining, received_at, created_by)
+                 VALUES (?1, 'test-unit', ?2, 'ORDER', 'test-source', ?3, ?4, ?4, ?5, 'system')",
+                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity, now],
+            )
+            .expect("insert fifo stock layer");
+    }
 }
 
 /// Seed a fiscal year row as 'open'.

@@ -128,11 +128,12 @@ pub fn execute(
             .map(|i| DailyReportMealItem {
                 id: uuid::Uuid::new_v4().to_string(),
                 meal_id: meal_id.clone(),
-                product_id: i.product_id,
-                product_name: i.product_name,
+                product_id: i.product_id.clone(),
+                product_name: i.product_name.clone(),
                 quantity: i.quantity,
                 unit_price: i.unit_price,
                 total_cost: i.total_cost,
+                fifo_layer_id: None,
             })
             .collect();
         meal_results.push(MealSectionResult { meal, items });

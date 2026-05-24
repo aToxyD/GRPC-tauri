@@ -72,4 +72,27 @@ impl<'a> StockLevelService<'a> {
         }
         Ok(results)
     }
+
+    pub fn get_total_inventory_value(&self) -> Result<f64, AppError> {
+        self.executor.inventory().get_total_inventory_value()
+    }
+
+    pub fn get_remaining_layers(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+    ) -> Result<Vec<crate::models::FifoStockLayer>, AppError> {
+        self.executor
+            .fifo_layers()
+            .get_remaining_layers(unit_id, product_id)
+    }
+
+    pub fn get_consumption_history(
+        &self,
+        movement_id: &str,
+    ) -> Result<Vec<crate::models::InventoryLayerConsumption>, AppError> {
+        self.executor
+            .fifo_layers()
+            .get_consumption_history(movement_id)
+    }
 }
