@@ -170,12 +170,13 @@ impl<'a> FifoPreviewService<'a> {
                 ))
             })?;
 
-            let total_qty_for_product = *stock_by_product.get(&item.product_id).ok_or_else(|| {
-                AppError::Internal(format!(
-                    "Product {} not found in daily stock aggregate",
-                    item.product_id
-                ))
-            })?;
+            let total_qty_for_product =
+                *stock_by_product.get(&item.product_id).ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Product {} not found in daily stock aggregate",
+                        item.product_id
+                    ))
+                })?;
 
             let mut item_cost = 0.0f64;
             let mut item_portions = Vec::new();
