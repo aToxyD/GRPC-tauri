@@ -52,7 +52,7 @@ impl<'a> FiscalYearService<'a> {
         next_year: i32,
         user_id: &str,
         username: &str,
-        unit_id: Option<&str>,
+        _unit_id: Option<&str>,
     ) -> Result<usize, AppError> {
         let t0 = std::time::Instant::now();
 
@@ -61,6 +61,21 @@ impl<'a> FiscalYearService<'a> {
             "[FISCAL_CLOSE_START] year={} next_year={} user_id={}",
             year, next_year, user_id
         );
+
+        // ── Integrity gate ────────────────────────────────────────────────
+        let integrity_report =
+            crate::application::services::IntegrityService::new(self.executor).run()?;
+        if integrity_report.status == crate::application::services::IntegrityStatus::Critical {
+            return Err(AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "لا يمكن إغلاق السنة المالية {} لأن فحص التكامل وجد {} مشكلة حرجة. قم بتشغيل فحص التكامل من الإعدادات وقم بمعالجتها أولاً.",
+                        year,
+                        integrity_report.findings.iter().filter(|f| f.severity == crate::application::services::IntegrityFindingSeverity::Critical).count(),
+                    ),
+                },
+            ));
+        }
 
         // ── Explicit idempotency guard ────────────────────────────────────
         self.assert_not_already_closed(year)?;
@@ -109,15 +124,6 @@ impl<'a> FiscalYearService<'a> {
                     created_by: username,
                 },
             )?;
-
-            // Carry over FIFO layers to new year for units
-            if let Some(unit_id_str) = unit_id {
-                self.executor.fifo_layers().carry_over_to_new_year(
-                    unit_id_str,
-                    &product.id,
-                    &snapshot_id,
-                )?;
-            }
 
             snapshot_count += 1;
 

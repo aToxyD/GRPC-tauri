@@ -195,31 +195,6 @@ impl<'a> FifoLayerRepository<'a> {
         Ok(total)
     }
 
-    /// Transitions all remaining FIFO layers for a given unit+product pair
-    /// to the new fiscal year. Each layer retains its original unit_cost and
-    /// received_at (preserving FIFO order across year boundaries).
-    pub fn carry_over_to_new_year(
-        &self,
-        unit_id: &str,
-        product_id: &str,
-        snapshot_id: &str,
-    ) -> AppResult<()> {
-        self.executor
-            .execute(
-                r#"
-                UPDATE fifo_stock_layers
-                SET source_type = 'OPENING',
-                    source_id   = ?1
-                WHERE unit_id       = ?2
-                  AND product_id    = ?3
-                  AND qty_remaining > 0
-                "#,
-                params![snapshot_id, unit_id, product_id],
-            )
-            .map_err(AppError::from)?;
-        Ok(())
-    }
-
     /// Returns the global total remaining quantity and total value for a specific product across all units.
     pub fn get_global_quantity_and_value_for_product(
         &self,

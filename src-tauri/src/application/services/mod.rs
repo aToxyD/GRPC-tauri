@@ -99,6 +99,7 @@ pub mod fiscal_timeline_service;
 pub mod fiscal_transition_history_service;
 pub mod import_reproducibility_service;
 pub mod integrity_attempt_recorder;
+pub mod integrity_service;
 pub mod operation_execution_guard;
 pub mod operational_anomaly_service;
 pub mod operational_consistency_verifier;
@@ -149,6 +150,10 @@ pub use fiscal_transition_history_service::{
 };
 pub use integrity_attempt_recorder::{
     IntegrityAttemptRecorder, VerificationOutcome, VerificationType,
+};
+pub use integrity_service::{
+    FindingSeverity as IntegrityFindingSeverity, IntegrityFinding, IntegrityReport,
+    IntegrityService, IntegrityStatus,
 };
 pub use operation_execution_guard::{GuardedOperation, OperationExecutionGuard};
 pub use operational_anomaly_service::{

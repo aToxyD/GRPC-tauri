@@ -96,6 +96,24 @@ fn get_layer_consumption_sum(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
     .unwrap_or(0.0)
 }
 
+/// Get the sum of total_cost from inventory_layer_consumptions across ALL movements
+/// for a given product within a report (meal-level FIFO creates multiple movements).
+fn get_layer_consumption_sum_for_report(
+    ex: DbExecutor<'_>,
+    report_id: &str,
+    product_id: &str,
+) -> f64 {
+    ex.query_row(
+        "SELECT COALESCE(SUM(ilc.total_cost), 0.0)
+         FROM inventory_layer_consumptions ilc
+         JOIN stock_movements sm ON ilc.movement_id = sm.id
+         WHERE sm.reference_id = ?1 AND sm.product_id = ?2",
+        rusqlite::params![report_id, product_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0.0)
+}
+
 /// Get the sum of total_cost from daily_report_meal_items for a report and product
 fn get_meal_item_sum(ex: DbExecutor<'_>, report_id: &str, product_id: &str) -> f64 {
     ex.query_row(
@@ -123,6 +141,59 @@ fn current_test_date_and_year() -> (NaiveDate, i32) {
     let date = Utc::now().date_naive();
     let year = date.year();
     (date, year)
+}
+
+/// Assert that inventory_stocks.quantity matches SUM(fifo_stock_layers.qty_remaining)
+/// for every given product. Uses tolerance 1e-6.
+fn assert_inventory_fifo_consistency(ex: DbExecutor<'_>, unit_id: &str, products: &[&str]) {
+    for &product_id in products {
+        let fifo_qty: f64 = ex
+            .query_row(
+                "SELECT COALESCE(SUM(qty_remaining), 0.0)
+                 FROM fifo_stock_layers
+                 WHERE unit_id = ?1 AND product_id = ?2",
+                rusqlite::params![unit_id, product_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        let stock_qty: f64 = ex
+            .query_row(
+                "SELECT COALESCE(quantity, 0.0) FROM inventory_stocks WHERE product_id = ?1",
+                rusqlite::params![product_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        let diff = (fifo_qty - stock_qty).abs();
+        assert!(
+            diff < 1e-6,
+            "Inventory-FIFO mismatch for product {}: fifo_qty_remaining={}, stock_qty={}, diff={}",
+            product_id,
+            fifo_qty,
+            stock_qty,
+            diff
+        );
+    }
+}
+
+/// Sync inventory_stocks.quantity to match FIFO layer quantities before a test.
+/// This ensures both tracking systems start consistent.
+fn sync_inventory_from_fifo(ex: DbExecutor<'_>, unit_id: &str, product_id: &str) {
+    let fifo_qty: f64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(qty_remaining), 0.0)
+             FROM fifo_stock_layers
+             WHERE unit_id = ?1 AND product_id = ?2",
+            rusqlite::params![unit_id, product_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+    ex.execute(
+        "UPDATE inventory_stocks SET quantity = ?1 WHERE product_id = ?2",
+        rusqlite::params![fifo_qty, product_id],
+    )
+    .expect("sync inventory failed");
 }
 
 // ── Test Scenarios ───────────────────────────────────────────────────────────
@@ -158,6 +229,7 @@ fn test_scenario_a_single_layer_full_consumption() {
             "2024-01-10T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -207,6 +279,7 @@ fn test_scenario_a_single_layer_full_consumption() {
         "Expected meal_sum 50000, got {}",
         meal_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product_id]);
 }
 
 /// Scenario B: Single layer, partial consumption
@@ -240,6 +313,7 @@ fn test_scenario_b_single_layer_partial_consumption() {
             "2024-01-10T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -289,6 +363,7 @@ fn test_scenario_b_single_layer_partial_consumption() {
         "Expected meal_sum 15000, got {}",
         meal_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product_id]);
 }
 
 /// Scenario C: Two layers, one meal
@@ -330,6 +405,7 @@ fn test_scenario_c_two_layers_one_meal() {
             "2024-01-11T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -379,6 +455,7 @@ fn test_scenario_c_two_layers_one_meal() {
         "Expected meal_sum 16000, got {}",
         meal_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product_id]);
 }
 
 /// Scenario D: Two layers, two meals
@@ -419,6 +496,7 @@ fn test_scenario_d_two_layers_two_meals() {
             "2024-01-11T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -445,10 +523,9 @@ fn test_scenario_d_two_layers_two_meals() {
     )
     .expect("create_daily_report failed");
 
-    // Verify
+    // Verify — meal-level FIFO creates one movement per meal item (two movements).
     let ex = db.executor();
-    let movement_id = get_movement_id_for_product(ex, &report_id, &product_id);
-    let layer_sum = get_layer_consumption_sum(ex, &movement_id);
+    let layer_sum = get_layer_consumption_sum_for_report(ex, &report_id, &product_id);
     let meal_sum = get_meal_item_sum(ex, &report_id, &product_id);
 
     let diff = (layer_sum - meal_sum).abs();
@@ -460,7 +537,7 @@ fn test_scenario_d_two_layers_two_meals() {
         diff
     );
 
-    // Expected: 20*500 + 10*600 = 10000 + 6000 = 16000
+    // Total across both meals: 10*500 + 10*500 + 10*600 = 5000 + 5000 + 6000 = 16000
     assert!(
         (layer_sum - 16000.0).abs() < 0.01,
         "Expected layer_sum 16000, got {}",
@@ -471,6 +548,7 @@ fn test_scenario_d_two_layers_two_meals() {
         "Expected meal_sum 16000, got {}",
         meal_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product_id]);
 }
 
 /// Scenario E: Three layers, one meal
@@ -520,6 +598,7 @@ fn test_scenario_e_three_layers_one_meal() {
             "2024-01-10T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -569,6 +648,7 @@ fn test_scenario_e_three_layers_one_meal() {
         "Expected meal_sum 44000, got {}",
         meal_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product_id]);
 }
 
 /// Scenario F: Two products with multiple layers across 3 meals
@@ -621,6 +701,8 @@ fn test_scenario_f_two_products_multiple_layers_three_meals() {
             "2024-01-10T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product1_id);
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product2_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -654,10 +736,9 @@ fn test_scenario_f_two_products_multiple_layers_three_meals() {
     )
     .expect("create_daily_report failed");
 
-    // Verify Product 1
+    // Verify Product 1 (meal-level FIFO — 3 movements for P1 across meals)
     let ex = db.executor();
-    let movement1_id = get_movement_id_for_product(ex, &report_id, &product1_id);
-    let layer1_sum = get_layer_consumption_sum(ex, &movement1_id);
+    let layer1_sum = get_layer_consumption_sum_for_report(ex, &report_id, &product1_id);
     let meal1_sum = get_meal_item_sum(ex, &report_id, &product1_id);
 
     let diff1 = (layer1_sum - meal1_sum).abs();
@@ -669,7 +750,8 @@ fn test_scenario_f_two_products_multiple_layers_three_meals() {
         diff1
     );
 
-    // Expected P1: 20*500 + 15*600 = 10000 + 9000 = 19000
+    // Expected P1: 10*500 + 10*500 + 10*600 + 5*600 = 5000 + 5000 + 6000 + 3000 = 19000
+    // Breakfast=10@500, Lunch=10@500+10@600, Dinner=5@600
     assert!(
         (layer1_sum - 19000.0).abs() < 0.01,
         "Expected P1 layer_sum 19000, got {}",
@@ -681,9 +763,8 @@ fn test_scenario_f_two_products_multiple_layers_three_meals() {
         meal1_sum
     );
 
-    // Verify Product 2
-    let movement2_id = get_movement_id_for_product(ex, &report_id, &product2_id);
-    let layer2_sum = get_layer_consumption_sum(ex, &movement2_id);
+    // Verify Product 2 (2 movements for P2 across meals)
+    let layer2_sum = get_layer_consumption_sum_for_report(ex, &report_id, &product2_id);
     let meal2_sum = get_meal_item_sum(ex, &report_id, &product2_id);
 
     let diff2 = (layer2_sum - meal2_sum).abs();
@@ -695,7 +776,7 @@ fn test_scenario_f_two_products_multiple_layers_three_meals() {
         diff2
     );
 
-    // Expected P2: 50*300 = 15000
+    // Expected P2: 20*300 + 30*300 = 6000 + 9000 = 15000
     assert!(
         (layer2_sum - 15000.0).abs() < 0.01,
         "Expected P2 layer_sum 15000, got {}",
@@ -706,6 +787,7 @@ fn test_scenario_f_two_products_multiple_layers_three_meals() {
         "Expected P2 meal_sum 15000, got {}",
         meal2_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product1_id, &product2_id]);
 }
 
 /// Scenario G: Fractional quantities
@@ -739,6 +821,7 @@ fn test_scenario_g_fractional_quantities() {
             "2024-01-10T08:00:00Z",
         );
     }
+    sync_inventory_from_fifo(db.executor(), &unit_id, &product_id);
 
     // Execute daily report creation
     let input = DailyReportInput {
@@ -765,10 +848,9 @@ fn test_scenario_g_fractional_quantities() {
     )
     .expect("create_daily_report failed");
 
-    // Verify
+    // Verify (meal-level FIFO — 2 movements for P1 across meals)
     let ex = db.executor();
-    let movement_id = get_movement_id_for_product(ex, &report_id, &product_id);
-    let layer_sum = get_layer_consumption_sum(ex, &movement_id);
+    let layer_sum = get_layer_consumption_sum_for_report(ex, &report_id, &product_id);
     let meal_sum = get_meal_item_sum(ex, &report_id, &product_id);
 
     let diff = (layer_sum - meal_sum).abs();
@@ -794,4 +876,5 @@ fn test_scenario_g_fractional_quantities() {
         expected,
         meal_sum
     );
+    assert_inventory_fifo_consistency(ex, &unit_id, &[&product_id]);
 }

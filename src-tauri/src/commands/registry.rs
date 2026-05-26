@@ -142,6 +142,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_advanced_diagnostics_bundle,
         commands::verify_deployment_readiness,
         commands::verify_operational_consistency,
+        commands::verify_integrity,
         commands::get_system_maintenance_state,
         commands::list_operational_sessions,
     ]

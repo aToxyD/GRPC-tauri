@@ -74,6 +74,15 @@ impl<'a> StockLevelService<'a> {
     }
 
     pub fn get_total_inventory_value(&self) -> Result<f64, AppError> {
+        let settings = self.executor.settings().get_settings_row()?;
+        if settings.node_type != crate::models::NodeType::Wilaya {
+            return Err(AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::OperationNotPermitted {
+                    message: "get_total_inventory_value is only available on WILAYA nodes"
+                        .to_string(),
+                },
+            ));
+        }
         self.executor.inventory().get_total_inventory_value()
     }
 

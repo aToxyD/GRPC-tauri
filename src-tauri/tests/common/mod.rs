@@ -141,7 +141,7 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
     }
 }
 
-/// Seed a fiscal year row as 'open'.
+/// Seed a fiscal year row as 'open' and sync settings.current_year.
 #[allow(dead_code)]
 pub fn seed_fiscal_year_open(state: &grpc_lib::commands::AppState, year: i32) {
     use rusqlite::params;
@@ -154,6 +154,12 @@ pub fn seed_fiscal_year_open(state: &grpc_lib::commands::AppState, year: i32) {
             params![year, now],
         )
         .expect("seed fiscal_year_status open");
+    db.get_connection()
+        .execute(
+            "UPDATE settings SET current_year = ?1 WHERE id = 1",
+            params![year],
+        )
+        .expect("sync settings.current_year");
 }
 
 /// Clear all fiscal year status rows.

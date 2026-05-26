@@ -10,6 +10,7 @@ pub mod common;
 pub mod fiscal;
 pub mod guards;
 pub mod import_export;
+pub mod integrity;
 pub mod inventory;
 pub mod observability;
 pub mod operational;
@@ -54,6 +55,9 @@ pub use backup::*;
 
 // Re-export import/export commands (including __cmd__ generated wrappers)
 pub use import_export::*;
+
+// Re-export integrity commands
+pub use integrity::*;
 
 // Re-export audit commands (including __cmd__ generated wrappers)
 pub use audit_cmds::*;

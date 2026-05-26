@@ -113,43 +113,300 @@ fn fiscal_close_zero_stock_never_uses_base_price() {
     assert_eq!(snap.total_value, 0.0);
 }
 
-#[test]
-fn preview_matches_actual_consumption_cost() {
-    let db = ConnectionFactory::new_for_test().unwrap();
-    let (unit_id, product_id) = setup_unit_product_layers(&db, 30.0, 10.0);
+// ── Multi-layer setup for preview vs actual matching ─────────────────────────
+
+fn setup_two_layers(db: &grpc_lib::db::Database) -> (String, String) {
+    let ex = db.executor();
     let now = chrono::Utc::now().to_rfc3339();
+    let unit_id = Uuid::new_v4().to_string();
+    let product_id = Uuid::new_v4().to_string();
+
+    ex.execute(
+        "INSERT INTO units (id, code, name, wilaya_code, created_at) VALUES (?1,'U','U','01',?2)",
+        rusqlite::params![unit_id, now],
+    )
+    .unwrap();
+    ex.execute(
+        "INSERT OR IGNORE INTO fiscal_year_status (year, status, opened_at) VALUES (2025,'open',?1)",
+        rusqlite::params![now],
+    )
+    .unwrap();
+    ex.execute(
+        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,'P',0.0,0.0,2025,?2)",
+        rusqlite::params![product_id, now],
+    )
+    .unwrap();
+    ex.execute(
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)
+         VALUES (?1, ?2, 30.0, 'unit', ?3, ?3)",
+        rusqlite::params![format!("s-{}", product_id), product_id, now],
+    )
+    .unwrap();
+
+    let fifo = FifoLayerRepository::new(ex);
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        500.0,
+        10.0,
+        "2024-01-01T08:00:00Z",
+        "system",
+    )
+    .unwrap();
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        800.0,
+        20.0,
+        "2024-01-02T08:00:00Z",
+        "system",
+    )
+    .unwrap();
+
+    (unit_id, product_id)
+}
+
+#[test]
+fn preview_matches_actual_multi_meal_layer_allocation() {
+    let db = ConnectionFactory::new_for_test().unwrap();
+    let (unit_id, product_id) = setup_two_layers(&db);
 
     let input = DailyReportInput {
         date: chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
-        meals: vec![MealSectionInput {
-            meal_type: MealType::Lunch,
-            staff_24h_count: 5,
-            staff_8h_count: 0,
-            reservation_count: 0,
-            mission_count: 0,
-            guest_count: 0,
-            items: vec![ConsumptionItemInput {
-                product_id: product_id.clone(),
-                quantity: 3.0,
-            }],
-        }],
+        meals: vec![
+            MealSectionInput {
+                meal_type: MealType::Breakfast,
+                staff_24h_count: 5,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 0,
+                items: vec![ConsumptionItemInput {
+                    product_id: product_id.clone(),
+                    quantity: 10.0,
+                }],
+            },
+            MealSectionInput {
+                meal_type: MealType::Lunch,
+                staff_24h_count: 5,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 0,
+                items: vec![ConsumptionItemInput {
+                    product_id: product_id.clone(),
+                    quantity: 10.0,
+                }],
+            },
+        ],
     };
 
-    let preview_cost = FifoPreviewService::new(db.executor())
+    let preview = FifoPreviewService::new(db.executor())
         .preview_daily_report(&input, &unit_id)
-        .unwrap()
-        .predicted_fifo_cost;
-
-    // Simulate actual consumption (same engine path as daily report phase 2)
-    let portions = FifoLayerRepository::new(db.executor())
-        .consume_fifo(&unit_id, &product_id, 3.0)
         .unwrap();
-    let actual_cost: f64 = portions.iter().map(|p| p.total_cost).sum();
 
-    assert!((preview_cost - actual_cost).abs() < 1e-9);
-    assert!((actual_cost - 90.0).abs() < 1e-9);
+    // Breakfast → oldest layer (10@500) = 5000
+    let bf = preview
+        .meal_previews
+        .iter()
+        .find(|m| m.meal_type == "breakfast")
+        .unwrap();
+    assert!(
+        (bf.predicted_fifo_cost - 5000.0).abs() < 0.001,
+        "Breakfast preview should be 5000, got {}",
+        bf.predicted_fifo_cost
+    );
 
-    let _ = now;
+    // Lunch → next layer (10@800) = 8000
+    let lch = preview
+        .meal_previews
+        .iter()
+        .find(|m| m.meal_type == "lunch")
+        .unwrap();
+    assert!(
+        (lch.predicted_fifo_cost - 8000.0).abs() < 0.001,
+        "Lunch preview should be 8000, got {}",
+        lch.predicted_fifo_cost
+    );
+
+    // Total = 13000
+    assert!(
+        (preview.predicted_fifo_cost - 13000.0).abs() < 0.001,
+        "Total should be 13000, got {}",
+        preview.predicted_fifo_cost
+    );
+
+    // Verify layer-level detail for breakfast (single portion from layer A)
+    let bf_product = &bf.product_previews[0];
+    assert_eq!(
+        bf_product.predicted_consumption_layers.len(),
+        1,
+        "Breakfast should consume exactly 1 layer portion"
+    );
+    assert!(
+        (bf_product.predicted_consumption_layers[0].quantity - 10.0).abs() < 0.001,
+        "Breakfast portion qty should be 10, got {}",
+        bf_product.predicted_consumption_layers[0].quantity
+    );
+    assert!(
+        (bf_product.predicted_consumption_layers[0].unit_cost - 500.0).abs() < 0.001,
+        "Breakfast portion unit_cost should be 500, got {}",
+        bf_product.predicted_consumption_layers[0].unit_cost
+    );
+    assert!(
+        (bf_product.predicted_consumption_layers[0].total_cost - 5000.0).abs() < 0.001,
+        "Breakfast portion total_cost should be 5000, got {}",
+        bf_product.predicted_consumption_layers[0].total_cost
+    );
+
+    // Verify layer-level detail for lunch (single portion from layer B)
+    let lch_product = &lch.product_previews[0];
+    assert_eq!(
+        lch_product.predicted_consumption_layers.len(),
+        1,
+        "Lunch should consume exactly 1 layer portion"
+    );
+    assert!(
+        (lch_product.predicted_consumption_layers[0].quantity - 10.0).abs() < 0.001,
+        "Lunch portion qty should be 10, got {}",
+        lch_product.predicted_consumption_layers[0].quantity
+    );
+    assert!(
+        (lch_product.predicted_consumption_layers[0].unit_cost - 800.0).abs() < 0.001,
+        "Lunch portion unit_cost should be 800, got {}",
+        lch_product.predicted_consumption_layers[0].unit_cost
+    );
+    assert!(
+        (lch_product.predicted_consumption_layers[0].total_cost - 8000.0).abs() < 0.001,
+        "Lunch portion total_cost should be 8000, got {}",
+        lch_product.predicted_consumption_layers[0].total_cost
+    );
+
+    // Breakfast and Lunch must NOT share the same layer
+    assert_ne!(
+        bf_product.predicted_consumption_layers[0].layer_id,
+        lch_product.predicted_consumption_layers[0].layer_id,
+        "Breakfast and Lunch must consume different layers"
+    );
+}
+
+#[test]
+fn preview_order_independence_matches_saved() {
+    let db = ConnectionFactory::new_for_test().unwrap();
+    let (unit_id, product_id) = setup_two_layers(&db);
+
+    // Case A: [Breakfast, Lunch] (natural order)
+    let input_a = DailyReportInput {
+        date: chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
+        meals: vec![
+            MealSectionInput {
+                meal_type: MealType::Breakfast,
+                staff_24h_count: 5,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 0,
+                items: vec![ConsumptionItemInput {
+                    product_id: product_id.clone(),
+                    quantity: 10.0,
+                }],
+            },
+            MealSectionInput {
+                meal_type: MealType::Lunch,
+                staff_24h_count: 5,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 0,
+                items: vec![ConsumptionItemInput {
+                    product_id: product_id.clone(),
+                    quantity: 10.0,
+                }],
+            },
+        ],
+    };
+
+    // Case B: [Lunch, Breakfast] (reversed order)
+    let input_b = DailyReportInput {
+        date: chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
+        meals: vec![
+            MealSectionInput {
+                meal_type: MealType::Lunch,
+                staff_24h_count: 5,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 0,
+                items: vec![ConsumptionItemInput {
+                    product_id: product_id.clone(),
+                    quantity: 10.0,
+                }],
+            },
+            MealSectionInput {
+                meal_type: MealType::Breakfast,
+                staff_24h_count: 5,
+                staff_8h_count: 0,
+                reservation_count: 0,
+                mission_count: 0,
+                guest_count: 0,
+                items: vec![ConsumptionItemInput {
+                    product_id: product_id.clone(),
+                    quantity: 10.0,
+                }],
+            },
+        ],
+    };
+
+    let svc = FifoPreviewService::new(db.executor());
+    let preview_a = svc.preview_daily_report(&input_a, &unit_id).unwrap();
+    let preview_b = svc.preview_daily_report(&input_b, &unit_id).unwrap();
+
+    // Both payload orders must produce identical per-meal costs
+    let bf_a = preview_a
+        .meal_previews
+        .iter()
+        .find(|m| m.meal_type == "breakfast")
+        .unwrap();
+    let bf_b = preview_b
+        .meal_previews
+        .iter()
+        .find(|m| m.meal_type == "breakfast")
+        .unwrap();
+    assert!(
+        (bf_a.predicted_fifo_cost - bf_b.predicted_fifo_cost).abs() < 0.001,
+        "Breakfast cost differs by payload order: {} vs {}",
+        bf_a.predicted_fifo_cost,
+        bf_b.predicted_fifo_cost
+    );
+
+    let lch_a = preview_a
+        .meal_previews
+        .iter()
+        .find(|m| m.meal_type == "lunch")
+        .unwrap();
+    let lch_b = preview_b
+        .meal_previews
+        .iter()
+        .find(|m| m.meal_type == "lunch")
+        .unwrap();
+    assert!(
+        (lch_a.predicted_fifo_cost - lch_b.predicted_fifo_cost).abs() < 0.001,
+        "Lunch cost differs by payload order: {} vs {}",
+        lch_a.predicted_fifo_cost,
+        lch_b.predicted_fifo_cost
+    );
+
+    // Total must also match
+    assert!(
+        (preview_a.predicted_fifo_cost - preview_b.predicted_fifo_cost).abs() < 0.001,
+        "Total cost differs by payload order: {} vs {}",
+        preview_a.predicted_fifo_cost,
+        preview_b.predicted_fifo_cost
+    );
 }
 
 #[test]
