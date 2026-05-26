@@ -1,12 +1,12 @@
 [package]
 name = "grpc"
-version = "1.0.0"
+version = "1.0.1"
 description = "GRPC - Gestion des Restaurants de la Protection Civile"
 authors = ["1bxm"]
 license-file = "../LICENSE"
 repository = ""
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.94.0"
 
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }
