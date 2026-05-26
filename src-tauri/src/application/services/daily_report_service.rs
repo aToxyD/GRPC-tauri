@@ -4,6 +4,7 @@
 //! Breakfast consumes FIFO layers first, then Lunch, then Dinner.
 //! Each meal item's cost reflects authentic FIFO layer portions.
 
+use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
 use crate::models::{
@@ -12,6 +13,7 @@ use crate::models::{
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::Datelike;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct DailyReportService<'a> {
@@ -68,20 +70,16 @@ impl<'a> DailyReportService<'a> {
         let now = chrono::Utc::now().to_rfc3339();
         let report_id = Uuid::new_v4().to_string();
 
-        // ── Phase 1: FIFO consumption at MEAL LEVEL ─────────────────────────
-        // Meals are processed in operational order regardless of payload order.
-        // Daily reports are entered once at the end of the day, but FIFO allocation
-        // must follow the real-world sequence: Breakfast → Lunch → Dinner.
-        // Each meal item produces authentic FIFO layer portions with real costs.
+        // ── Phase 1: FIFO consumption via shared engine ─────────────────────
+        // The engine handles meal ordering (Breakfast → Lunch → Dinner)
+        // and delegates actual consumption to the injected callback.
         // No ratio-based redistribution. No weighted-average across meals.
 
-        let mut meals = input.meals.clone();
-        meals.sort_by_key(|m| match m.meal_type {
-            MealType::Breakfast => 0u8,
-            MealType::Lunch => 1,
-            MealType::Dinner => 2,
-        });
+        let computation = compute_meal_fifo_costs(&input.meals, |pid, qty| {
+            fifo_repo.consume_fifo(unit_id_str, pid, qty)
+        })?;
 
+        // ── Phase 2: create movements and consumption records ────────────
         struct MealComputed {
             section: MealSectionInput,
             beneficiaries: i32,
@@ -91,43 +89,43 @@ impl<'a> DailyReportService<'a> {
         }
         let mut computed_meals: Vec<MealComputed> = Vec::new();
 
-        for section in &meals {
+        let section_by_type: HashMap<MealType, &MealSectionInput> = input
+            .meals
+            .iter()
+            .map(|s| (s.meal_type, s))
+            .collect();
+
+        for computed_meal in &computation.meals {
+            let section = *section_by_type.get(&computed_meal.meal_type).ok_or_else(|| {
+                AppError::Internal(format!(
+                    "Missing section for {:?}",
+                    computed_meal.meal_type
+                ))
+            })?;
+
             let mut item_costs: Vec<(String, f64, f64, f64, Option<String>)> = Vec::new();
-            let mut meal_cost = 0.0f64;
 
-            for item in &section.items {
-                if item.quantity <= 0.0 {
-                    continue;
-                }
-
+            for product in &computed_meal.products {
                 let product_name = product_repo
-                    .get_product(&item.product_id)?
+                    .get_product(&product.product_id)?
                     .map(|p| p.name)
                     .unwrap_or_default();
 
-                // Step A: consume FIFO for THIS meal item (fails fast)
-                let portions =
-                    fifo_repo.consume_fifo(unit_id_str, &item.product_id, item.quantity)?;
-
-                // Step B: compute cost from authentic FIFO portions
-                let total_qty: f64 = portions.iter().map(|p| p.quantity).sum();
-                let item_cost: f64 = portions.iter().map(|p| p.total_cost).sum();
-                let weighted_unit_cost = if total_qty > 0.0 {
-                    item_cost / total_qty
+                let weighted_unit_cost = if product.quantity > 0.0 {
+                    product.total_cost / product.quantity
                 } else {
                     0.0
                 };
 
-                // Step C: create one OUT movement per meal item
                 let movement = NewStockMovement {
-                    product_id: item.product_id.clone(),
+                    product_id: product.product_id.clone(),
                     movement_type: StockMovementType::Out,
-                    quantity: item.quantity,
+                    quantity: product.quantity,
                     reference_type: Some("Consumption".to_string()),
                     reference_id: Some(report_id.clone()),
                     notes: Some(format!(
                         "استهلاك يومي - {} - {:?} - {}",
-                        date_str, section.meal_type, product_name
+                        date_str, computed_meal.meal_type, product_name
                     )),
                     user_id: user_id.to_string(),
                     username: username.to_string(),
@@ -136,8 +134,7 @@ impl<'a> DailyReportService<'a> {
                 };
                 let movement_id = stock_repo.record_stock_movement(&movement)?;
 
-                // Step D: persist each FIFO layer portion consumed by this meal
-                for portion in &portions {
+                for portion in &product.portions {
                     fifo_repo.create_consumption_record(
                         unit_id_str,
                         &movement_id,
@@ -147,15 +144,13 @@ impl<'a> DailyReportService<'a> {
                         &now,
                     )?;
                     item_costs.push((
-                        item.product_id.clone(),
+                        product.product_id.clone(),
                         portion.quantity,
                         portion.unit_cost,
                         portion.total_cost,
                         Some(portion.layer_id.clone()),
                     ));
                 }
-
-                meal_cost += item_cost;
             }
 
             let beneficiaries = DailyReportMeal::compute_total_beneficiaries(
@@ -165,12 +160,13 @@ impl<'a> DailyReportService<'a> {
                 section.mission_count,
                 section.guest_count,
             );
-            let average = DailyReportMeal::compute_meal_average(meal_cost, beneficiaries);
+            let average =
+                DailyReportMeal::compute_meal_average(computed_meal.total_cost, beneficiaries);
 
             computed_meals.push(MealComputed {
                 section: section.clone(),
                 beneficiaries,
-                total_cost: meal_cost,
+                total_cost: computed_meal.total_cost,
                 average,
                 item_costs,
             });

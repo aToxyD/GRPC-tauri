@@ -2,11 +2,12 @@
 
 use crate::domain::accounting::InventoryValue;
 use crate::domain::fifo_engine::{simulate_fifo_consumption, FifoLayerRow};
+use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
 use crate::models::{
     ConsumedLayerPortion, ConsumptionItemInput, DailyFifoConsumptionPreview, DailyReportInput,
-    MealFifoPreview, MealType, ProductFifoPreview,
+    MealFifoPreview, ProductFifoPreview,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use std::collections::HashMap;
@@ -49,8 +50,7 @@ impl<'a> FifoPreviewService<'a> {
     }
 
     /// Preview a full daily report — simulates meal-level FIFO matching `create_daily_report`.
-    /// Meals are processed in operational order (Breakfast → Lunch → Dinner),
-    /// consuming layers sequentially per meal item using a local in-memory layer state.
+    /// Uses the shared engine so preview and save always allocate identically.
     pub fn preview_daily_report(
         &self,
         input: &DailyReportInput,
@@ -77,68 +77,51 @@ impl<'a> FifoPreviewService<'a> {
             remaining_layers.insert(pid.to_string(), layers);
         }
 
-        // Sort meals to operational order (match create_daily_report)
-        let mut meals = input.meals.clone();
-        meals.sort_by_key(|m| match m.meal_type {
-            MealType::Breakfast => 0u8,
-            MealType::Lunch => 1,
-            MealType::Dinner => 2,
-        });
-
-        // Track aggregated per-product consumption for daily view
-        let mut total_consumed: HashMap<String, f64> = HashMap::new();
-        let mut total_portions: HashMap<String, Vec<ConsumedLayerPortion>> = HashMap::new();
-        let mut total_cost = 0.0f64;
-        let mut meal_previews = Vec::new();
-
-        for section in &meals {
-            let mut meal_cost = 0.0f64;
-            let mut product_previews = Vec::new();
-
-            for item in &section.items {
-                if item.quantity <= 0.0 {
-                    continue;
-                }
-
-                let layers = remaining_layers.get_mut(&item.product_id).ok_or_else(|| {
-                    AppError::Internal(format!("No active layers for product {}", item.product_id))
-                })?;
-
-                let portions = simulate_fifo_consumption(&item.product_id, layers, item.quantity)?;
-
-                // Deduct consumed quantities from the in-memory layer state
-                for portion in &portions {
-                    for (lid, _, qty) in layers.iter_mut() {
-                        if *lid == portion.layer_id {
-                            *qty -= portion.quantity;
-                            break;
-                        }
+        // Use the shared engine with an in-memory simulation callback.
+        // This guarantees the same allocation as create_daily_report.
+        let computation = compute_meal_fifo_costs(&input.meals, |pid, qty| {
+            let layers = remaining_layers.get_mut(pid).ok_or_else(|| {
+                AppError::Internal(format!("No active layers for product {}", pid))
+            })?;
+            let portions = simulate_fifo_consumption(pid, layers, qty)?;
+            for portion in &portions {
+                for (lid, _, qty) in layers.iter_mut() {
+                    if *lid == portion.layer_id {
+                        *qty -= portion.quantity;
+                        break;
                     }
                 }
-                // Remove exhausted layers so subsequent meals don't see zero-qty entries
-                layers.retain(|(_, _, qty)| *qty > 0.0);
+            }
+            layers.retain(|(_, _, qty)| *qty > 0.0);
+            Ok(portions)
+        })?;
 
-                let item_cost: f64 = portions.iter().map(|p| p.total_cost).sum();
-                meal_cost += item_cost;
+        // Build meal-level previews from the engine result
+        let mut meal_previews = Vec::new();
+        let mut total_consumed: HashMap<String, f64> = HashMap::new();
+        let mut total_portions: HashMap<String, Vec<ConsumedLayerPortion>> = HashMap::new();
 
-                *total_consumed.entry(item.product_id.clone()).or_insert(0.0) += item.quantity;
+        for computed_meal in &computation.meals {
+            let mut product_previews = Vec::new();
+
+            for product in &computed_meal.products {
+                *total_consumed.entry(product.product_id.clone()).or_insert(0.0) += product.quantity;
                 total_portions
-                    .entry(item.product_id.clone())
+                    .entry(product.product_id.clone())
                     .or_default()
-                    .extend(portions.clone());
+                    .extend(product.portions.clone());
 
                 product_previews.push(ProductFifoPreview {
-                    product_id: item.product_id.clone(),
-                    quantity: item.quantity,
-                    predicted_fifo_cost: item_cost,
-                    predicted_consumption_layers: portions,
+                    product_id: product.product_id.clone(),
+                    quantity: product.quantity,
+                    predicted_fifo_cost: product.total_cost,
+                    predicted_consumption_layers: product.portions.clone(),
                 });
             }
 
-            total_cost += meal_cost;
             meal_previews.push(MealFifoPreview {
-                meal_type: section.meal_type.as_str().to_string(),
-                predicted_fifo_cost: meal_cost,
+                meal_type: computed_meal.meal_type.as_str().to_string(),
+                predicted_fifo_cost: computed_meal.total_cost,
                 product_previews,
             });
         }
@@ -164,7 +147,7 @@ impl<'a> FifoPreviewService<'a> {
         let remaining_value = self.remaining_value_after_preview(unit_id, &product_previews)?;
 
         Ok(DailyFifoConsumptionPreview {
-            predicted_fifo_cost: total_cost,
+            predicted_fifo_cost: computation.total_cost,
             predicted_consumption_layers: product_previews,
             predicted_remaining_inventory_value: remaining_value.value(),
             meal_previews,
