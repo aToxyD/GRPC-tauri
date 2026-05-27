@@ -101,10 +101,7 @@
   function getSourceLabel(sourceType: string | null): string {
     switch (sourceType?.toUpperCase()) {
       case "OPENING": return "مخزون إبتدائي";
-      case "ORDER":
-      case "PURCHASE": return "طلبية";
-      case "TRANSFER_IN": return "تحويل وارد";
-      case "IMPORT": return "ترحيل";
+      case "ORDER": return "طلبية";
       default: return sourceType || "-";
     }
   }
