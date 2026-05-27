@@ -223,7 +223,9 @@ pub type MealConsumptionInput = MealSectionInput;
 pub type MealConsumptionResult = MealSectionResult;
 pub type DailyConsumptionInput = DailyReportInput;
 
-/// Monthly summary of consumption
+/// Monthly (or full fiscal-year) summary of consumption
+///
+/// When `month` is 0, the summary covers the entire fiscal year (Jan 1 – Dec 31).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlySummary {
     pub month: i32,

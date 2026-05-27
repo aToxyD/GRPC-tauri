@@ -9,6 +9,18 @@ pub fn execute<'a>(
     filters: DailyReportFilters,
 ) -> AppResult<Vec<DailyReport>> {
     let repo = ReportRepository::new(executor);
+
+    // Fiscal year filter (Unit scope only; Wilaya ignores it)
+    if let ReportScope::Unit(unit_id) = &scope {
+        if filters.fiscal_year.is_some() {
+            return repo.list_daily_reports_by_fiscal_year(
+                filters.fiscal_year,
+                filters.month,
+                unit_id.as_str(),
+            );
+        }
+    }
+
     match scope {
         ReportScope::Global => repo.list_daily_reports(filters.start_date, filters.end_date),
         ReportScope::Unit(unit_id) => {

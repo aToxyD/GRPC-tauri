@@ -64,6 +64,9 @@
   let lowStockCount = $derived(
     summary.filter((p) => p.current_quantity < 10).length,
   );
+  let outOfStockCount = $derived(
+    summary.filter((p) => p.current_quantity === 0).length,
+  );
 
   // Section 4: Movements
   let movements: StockMovement[] = $state([]);
@@ -97,7 +100,7 @@
 
   function getSourceLabel(sourceType: string | null): string {
     switch (sourceType?.toUpperCase()) {
-      case "OPENING": return "رصيد افتتاحي";
+      case "OPENING": return "مخزون إبتدائي";
       case "ORDER":
       case "PURCHASE": return "طلبية";
       case "TRANSFER_IN": return "تحويل وارد";
@@ -475,6 +478,21 @@
           </div>
         </AppCard>
 
+        <AppCard class="border-r-4 border-rose-500" padding="sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500 dark:text-gray-400">منتجات نفذت</p>
+              <p class="text-2xl font-bold text-rose-600 dark:text-rose-400">
+                {outOfStockCount.toLocaleString("ar-DZ")}
+              </p>
+            </div>
+            <div class="w-12 h-12 bg-rose-100 dark:bg-rose-900/50 rounded-lg flex items-center justify-center">
+              <svg class="w-6 h-6 text-rose-600 dark:text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+              </svg>
+            </div>
+          </div>
+        </AppCard>
 
       </div>
     {/if}
@@ -562,7 +580,7 @@
                           <th class="px-3 py-1 text-right">المصدر</th>
                           <th class="px-3 py-1 text-right">التاريخ</th>
                           <th class="px-3 py-1 text-right">الكمية</th>
-                          <th class="px-3 py-1 text-right">تكلفة الوحدة</th>
+                          <th class="px-3 py-1 text-right">السعر</th>
                           <th class="px-3 py-1 text-right">القيمة</th>
                         </tr>
                       </thead>
@@ -617,7 +635,7 @@
                 <option value="">كل الأنواع</option>
                 <option value="IN">دخول مخزون</option>
                 <option value="OUT">خروج مخزون</option>
-                <option value="OPENING">رصيد افتتاحي</option>
+                <option value="OPENING">مخزون إبتدائي</option>
               </AppSelect>
 
               <AppInput
@@ -657,7 +675,7 @@
               <th class="table-header">المنتج</th>
               <th class="table-header">نوع الحركة</th>
               <th class="table-header">الكمية</th>
-              <th class="table-header">تكلفة الاستحواذ</th>
+              <th class="table-header">السعر</th>
               <th class="table-header">الرصيد قبل</th>
               <th class="table-header">الرصيد بعد</th>
               <th class="table-header">المرجع</th>

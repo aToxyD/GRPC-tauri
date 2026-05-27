@@ -198,8 +198,12 @@ export async function getDailyReport(reportId: string): Promise<DailyReportResul
   return await safeInvoke('get_daily_report', { reportId });
 }
 
-export async function listDailyReports(startDate?: string, endDate?: string): Promise<DailyReport[]> {
-  return await safeInvoke('list_daily_reports', { startDate, endDate });
+export async function listDailyReports(startDate?: string, endDate?: string, fiscalYear?: number, month?: number): Promise<DailyReport[]> {
+  return await safeInvoke('list_daily_reports', { startDate, endDate, fiscalYear, month });
+}
+
+export async function listFiscalYears(): Promise<number[]> {
+  return await safeInvoke('list_fiscal_years');
 }
 
 export type ReportType = 'daily' | 'monthly' | 'stock';
@@ -245,7 +249,7 @@ export async function calculateProductPriceWithTva(basePrice: number, tva: numbe
   return await safeInvoke('calculate_product_price_with_tva', { basePrice, tva });
 }
 
-export async function getMonthlySummary(year: number, month: number): Promise<MonthlySummary> {
+export async function getMonthlySummary(year: number, month?: number): Promise<MonthlySummary> {
   return await safeInvoke('get_monthly_summary', { year, month });
 }
 

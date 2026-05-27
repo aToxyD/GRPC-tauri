@@ -1,6 +1,6 @@
 //! Reports Repository — daily report parent + meal sections + meal items
 
-use crate::errors::AppError;
+use crate::errors::{AppError, ValidationError};
 use crate::models::{
     DailyReport, DailyReportMeal, DailyReportMealItem, MealSectionInput, MealType, MonthlyReport,
 };
@@ -363,6 +363,49 @@ impl<'a> ReportRepository<'a> {
                 end_date.map(|d| d.to_string())
             ],
             map_report_row,
+        )?)
+    }
+
+    /// List daily reports filtered by fiscal_year and optional month.
+    /// When month is Some, filters by that month (1..=12).
+    /// When month is None, returns all months in the fiscal year.
+    /// Validates that month is in 1..=12 range.
+    pub fn list_daily_reports_by_fiscal_year(
+        &self,
+        fiscal_year: Option<i32>,
+        month: Option<u32>,
+        unit_id: &str,
+    ) -> Result<Vec<DailyReport>, AppError> {
+        if let Some(m) = month {
+            if !(1..=12).contains(&m) {
+                return Err(AppError::Validation(ValidationError::OutOfRange {
+                    field: "month".to_string(),
+                    value: m.to_string(),
+                }));
+            }
+        }
+        let sql = format!(
+            "{} WHERE unit_id = ?1 AND (?2 IS NULL OR fiscal_year = ?2) AND (?3 IS NULL OR CAST(strftime('%m', date) AS INTEGER) = ?3) ORDER BY date DESC",
+            REPORT_SELECT
+        );
+        Ok(self.executor.query_all(
+            &sql,
+            rusqlite::params![unit_id, fiscal_year, month.map(|m| m as i64)],
+            map_report_row,
+        )?)
+    }
+
+    /// Returns all distinct fiscal years available across
+    /// daily_reports and fiscal_year_status, sorted descending.
+    pub fn list_available_fiscal_years(&self) -> Result<Vec<i32>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT DISTINCT year FROM (
+                SELECT fiscal_year AS year FROM daily_reports
+                UNION ALL
+                SELECT year FROM fiscal_year_status
+            ) ORDER BY year DESC",
+            [],
+            |row| row.get(0),
         )?)
     }
 

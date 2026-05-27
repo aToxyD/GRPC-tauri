@@ -47,6 +47,24 @@ pub struct WilayaReportProjection {
     pub is_imported: bool,
 }
 
+/// Returns the full calendar-year window for a given fiscal year.
+/// Fiscal years are calendar-aligned (Jan 1 – Dec 31).
+pub fn fiscal_year_window(year: i32) -> Result<MonthlyWindow, AppError> {
+    let start = NaiveDate::from_ymd_opt(year, 1, 1).ok_or_else(|| {
+        AppError::Validation(ValidationError::OutOfRange {
+            field: "year".to_string(),
+            value: year.to_string(),
+        })
+    })?;
+    let end = NaiveDate::from_ymd_opt(year, 12, 31).ok_or_else(|| {
+        AppError::Validation(ValidationError::OutOfRange {
+            field: "year".to_string(),
+            value: year.to_string(),
+        })
+    })?;
+    Ok(MonthlyWindow { start, end })
+}
+
 pub fn monthly_window(year: i32, month: u32) -> Result<MonthlyWindow, AppError> {
     let start = NaiveDate::from_ymd_opt(year, month, 1).ok_or_else(|| {
         AppError::Validation(ValidationError::OutOfRange {

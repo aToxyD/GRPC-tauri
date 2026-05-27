@@ -43,6 +43,11 @@ pub struct Settings {
     pub node_type: NodeType,
     pub unit_name: Option<String>,
     pub unit_code: Option<String>,
+    /// The currently open fiscal year.
+    ///
+    /// This is set atomically during `close_year()` and reflects the single
+    /// fiscal year that can receive new inventory movements and daily reports.
+    /// Access via `SettingsService::get_settings()` or `FiscalYearStatusRepository::get_open_year()`.
     pub current_year: i32,
     pub wilaya_code: Option<String>,
     pub wilaya_name: Option<String>,

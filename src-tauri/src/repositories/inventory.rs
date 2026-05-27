@@ -131,8 +131,15 @@ impl<'a> InventoryRepository<'a> {
         Ok(())
     }
 
-    /// Get stock summary for all products
-    pub fn get_stock_summary(&self) -> Result<Vec<StockSummary>, AppError> {
+    /// Get stock summary for all products.
+    ///
+    /// When `fiscal_year` is `Some`, movement-based statistics (total_in,
+    /// total_out, movement_count) are scoped to that fiscal year only.
+    /// `current_quantity` is always the real inventory stock, unfiltered.
+    pub fn get_stock_summary(
+        &self,
+        fiscal_year: Option<i32>,
+    ) -> Result<Vec<StockSummary>, AppError> {
         let sql = r#"
             SELECT
                 p.id as product_id,
@@ -152,12 +159,13 @@ impl<'a> InventoryRepository<'a> {
                     MAX(timestamp) as last_movement,
                     COUNT(*) as movement_count
                 FROM stock_movements
+                WHERE (?1 IS NULL OR fiscal_year = ?1)
                 GROUP BY product_id
             ) sm ON p.id = sm.product_id
             ORDER BY p.name
         "#;
 
-        Ok(self.executor.query_all(sql, [], |row| {
+        Ok(self.executor.query_all(sql, [fiscal_year], |row| {
             Ok(StockSummary {
                 product_id: row.get(0)?,
                 product_name: row.get(1)?,

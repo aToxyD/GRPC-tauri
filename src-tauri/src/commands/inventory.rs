@@ -41,18 +41,25 @@ pub fn get_stock_movements(
         .map_err(into_command_error)
 }
 
-/// Get stock summary
+/// Get stock summary with automatic fiscal-year scoping for movement statistics.
+///
+/// For Unit nodes, the open fiscal year is resolved automatically via
+/// `StockLevelService::get_stock_summary_scoped()`. Movement-based statistics
+/// (total_in, total_out, movement_count) are scoped to that year.
+/// `current_quantity` always reflects the real inventory stock.
+/// Wilaya nodes see the unfiltered summary (all years).
 #[tauri::command]
 pub fn get_stock_summary(state: State<AppState>) -> Result<Vec<StockSummary>, String> {
-    let (_session, _settings) =
+    let (_session, settings) =
         authorize_command(&state, Action::ReadInventory, None).map_err(into_command_error)?;
     state.touch_session();
 
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;
 
+    let unit_node = matches!(settings.node_type, crate::models::NodeType::Unit);
     StockLevelService::new(db.executor())
-        .get_stock_summary()
+        .get_stock_summary_scoped(unit_node)
         .map_err(into_command_error)
 }
 

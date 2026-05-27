@@ -44,6 +44,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::create_daily_report,
         commands::get_daily_report,
         commands::list_daily_reports,
+        commands::list_fiscal_years,
         commands::list_wilaya_reports,
         // Calculations
         commands::calculate_meal_cost,

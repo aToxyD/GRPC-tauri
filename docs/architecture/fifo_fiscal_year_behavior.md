@@ -1,62 +1,57 @@
-# FIFO Layer Fiscal-Year Behaviour
+# FIFO & Fiscal Year Behavior
 
-## Decision
+## Overview
 
-Remaining inventory is not copied into new FIFO layers during fiscal-year close.
+FIFO stock layers and fiscal years are tightly coupled. This document explains how fiscal-year boundaries affect inventory accounting, report filtering, and data retention.
 
-Instead, the existing layer is retained and reclassified:
+## Core Principle: Reclassification, Not Deletion
 
-```
-ORDER -> OPENING
-```
+When a fiscal year is closed, **no historical records are deleted or modified**. The single mutation is a **reclassification** of the `source_type` column on `fifo_stock_layers`:
 
-## Rationale
+| Before close | After close | Meaning |
+|---|---|---|
+| `ORDER` (quantity remaining > 0) | `OPENING` | Carried forward as opening balance |
+| `ORDER` (quantity remaining = 0) | Unchanged | Fully consumed — nothing to carry |
 
-- Avoid duplicate FIFO layers across multiple year closes.
-- Preserve FIFO ordering (same `received_at`, same `id`).
-- Preserve original `received_at` date for chronological accuracy.
-- Preserve consumption history and cost basis.
-- Simplify the inventory model — one physical layer, one truth.
-- No display hacks needed: the database itself stores the correct accounting state.
+This means:
+- The same FIFO layer record persists across year boundaries.
+- `origin_fiscal_year` preserves the year in which the layer was originally created.
+- `received_at` is never altered.
+- No data is moved, copied, or deleted.
 
-## What changes at year close
+This is implemented in `FiscalYearService::close_year()`.
 
-```sql
-UPDATE fifo_stock_layers
-SET source_type = 'OPENING'
-WHERE source_type = 'ORDER' AND qty_remaining > 0;
-```
+## Fiscal Year Scoping for Reports
 
-## What stays the same
+### Stock Summary (`get_stock_summary`)
 
-| Field | Behaviour |
-|---|---|
-| `id` | unchanged |
-| `unit_id` | unchanged |
-| `product_id` | unchanged |
-| `unit_cost` | unchanged |
-| `qty_remaining` | unchanged (only decreased by FIFO consumption) |
-| `received_at` | unchanged |
-| `origin_fiscal_year` | unchanged — preserves the original entry year |
+For UNIT nodes, the open fiscal year is automatically resolved from `FiscalYearStatusRepository::get_open_year()`. The `WHERE` clause on `stock_movements.fiscal_year` scopes only the **movement aggregates** (`total_in`, `total_out`, `movement_count`). The `current_quantity` field always reflects the **real inventory stock** (unfiltered).
 
-## Consequence
+### Daily Reports (`list_daily_reports`)
 
-`source_type` represents the **current accounting classification** of the layer, not necessarily its historical origin.
+The `fiscal_year` and optional `month` filters take priority over `start_date`/`end_date` when supplied. Month filtering uses `CAST(strftime('%m', date) AS INTEGER)` since there is no dedicated `month` column on `daily_reports`. Invalid month values (outside 1–12) are rejected before SQL execution.
 
-The historical origin is preserved in `origin_fiscal_year`.
+### Monthly Summary (`get_monthly_summary`)
 
-## Audit trail
+When `month` is `None` (or 0 in the frontend), the summary covers the full calendar year (Jan 1 – Dec 31) via `fiscal_year_window()`.
 
-A complete chain is maintained:
+## Data Model
 
-- `origin_fiscal_year` → tells you when the stock was originally booked
-- `source_type = 'OPENING'` → tells you it is now opening balance
-- `opening_balance_snapshots` → aggregated accounting summaries per product per year
-- `inventory_layer_consumptions` → per-movement consumption records
+- `stock_movements.fiscal_year` — populated at insert time from `input.date.year()` (always set)
+- `daily_reports.fiscal_year` — populated at insert time from `input.date.year()` (always set)
+- `fifo_stock_layers.origin_fiscal_year` — the year in which the layer was created (immutable)
+- `fifo_stock_layers.source_type` — current accounting classification (`ORDER` or `OPENING`)
+- `settings.current_year` — the open fiscal year, updated atomically during `close_year()`
 
-## Related files
+## Year List
 
-- `src-tauri/src/models/fifo.rs` — `FifoStockLayer.source_type` documentation
-- `src-tauri/src/repositories/fifo_layers.rs` — `reclassify_active_order_to_opening()`
-- `src-tauri/src/application/services/fiscal_year_service.rs` — `close_year()` reclassify step
-- `src-tauri/src/db/migrations/002_origin_fiscal_year.sql` — schema migration
+`ReportRepository::list_available_fiscal_years()` returns distinct years from both `daily_reports.fiscal_year` and `fiscal_year_status.year`, sorted descending. This ensures all years with data or status entries are available for filter dropdowns.
+
+## Key Invariants
+
+1. `current_quantity` is never filtered by fiscal year — it always represents real stock.
+2. Wilaya nodes always see unfiltered data (no fiscal-year scoping).
+3. Unit nodes default to the open fiscal year for stock summary; no filter = no date filter for reports.
+4. Fiscal-year and month filters override `start_date`/`end_date` when both are supplied.
+5. Month must be in 1..=12 or the request is rejected with `ValidationError::OutOfRange`.
+6. Fiscal-year close does not delete or duplicate any records — only reclassifies `source_type`.

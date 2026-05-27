@@ -77,12 +77,14 @@ pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> Result<f64
     ))
 }
 
-/// Get monthly summary
+/// Get monthly summary (or full fiscal-year aggregate when month is None).
+///
+/// When `month` is `None`, the summary covers the entire fiscal year (Jan 1 – Dec 31).
 #[tauri::command]
 pub fn get_monthly_summary(
     state: State<AppState>,
     year: i32,
-    month: i32,
+    month: Option<i32>,
 ) -> Result<MonthlySummary, String> {
     let (_session, _) =
         authorize_command(&state, Action::ReadMonthlySummary, None).map_err(into_command_error)?;
@@ -207,12 +209,17 @@ pub fn get_daily_report(
         .map_err(into_command_error)
 }
 
-/// List daily reports
+/// List daily reports, optionally filtered by fiscal_year and month.
+///
+/// When `fiscal_year` or `month` are supplied, they take priority over
+/// `start_date`/`end_date` (the date range is derived from the fiscal year).
 #[tauri::command]
 pub fn list_daily_reports(
     state: State<AppState>,
     start_date: Option<String>,
     end_date: Option<String>,
+    fiscal_year: Option<i32>,
+    month: Option<u32>,
 ) -> Result<Vec<DailyReport>, String> {
     let (_session, _) =
         authorize_command(&state, Action::ReadDailyReports, None).map_err(into_command_error)?;
@@ -245,6 +252,8 @@ pub fn list_daily_reports(
     let filters = DailyReportFilters {
         start_date: start,
         end_date: end,
+        fiscal_year,
+        month,
     };
     crate::application::usecases::reports::list_daily_reports::execute(executor, scope, filters)
         .map_err(into_command_error)
@@ -306,7 +315,23 @@ pub fn get_report_data(
     month: i32,
     year: i32,
 ) -> Result<MonthlySummary, String> {
-    get_monthly_summary(state, year, month)
+    get_monthly_summary(state, year, Some(month))
+}
+
+/// List all distinct fiscal years available across daily_reports and
+/// fiscal_year_status, sorted descending.
+#[tauri::command]
+pub fn list_fiscal_years(state: State<AppState>) -> Result<Vec<i32>, String> {
+    let (_session, _) =
+        authorize_command(&state, Action::ReadDailyReports, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    DailyReportService::new(db.executor())
+        .list_available_fiscal_years()
+        .map_err(into_command_error)
 }
 
 /// Generate reports (no-op stub)

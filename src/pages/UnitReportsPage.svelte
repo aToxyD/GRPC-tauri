@@ -3,7 +3,7 @@
   import { formatErrorMessage } from '../lib/errors';
   import {
     listDailyReports, getDailyReport, exportDailyReportPackage, exportMonthlySummaryPackage,
-    getMonthlySummary, getSettings, saveFile
+    getMonthlySummary, getSettings, saveFile, listFiscalYears
   } from '../lib/tauri';
   import type { DailyReport, DailyReportResult, MonthlySummary, Settings } from '../lib/types';
   import DailyReportModal from '../components/reports/DailyReportModal.svelte';
@@ -34,10 +34,33 @@
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
-  // Monthly summary
+  // Fiscal year / month filtering
+  let fiscalYears: number[] = [];
+  let selectedYear: number = new Date().getFullYear();
+  let selectedMonth: number = 0; // 0 = all months (full fiscal year)
   let currentMonth = new Date().getMonth() + 1;
   let currentYear = new Date().getFullYear();
   let monthlySummary: MonthlySummary | null = null;
+
+  function selectedMonthApi(): number | undefined {
+    return selectedMonth > 0 ? selectedMonth : undefined;
+  }
+
+  const MONTH_OPTIONS = [
+    { value: 0, label: 'الكل (السنة المالية)' },
+    { value: 1, label: 'جانفي' },
+    { value: 2, label: 'فيفري' },
+    { value: 3, label: 'مارس' },
+    { value: 4, label: 'أفريل' },
+    { value: 5, label: 'ماي' },
+    { value: 6, label: 'جوان' },
+    { value: 7, label: 'جويلية' },
+    { value: 8, label: 'أوت' },
+    { value: 9, label: 'سبتمبر' },
+    { value: 10, label: 'أكتوبر' },
+    { value: 11, label: 'نوفمبر' },
+    { value: 12, label: 'ديسمبر' },
+  ] as const;
 
   onMount(async () => {
     await loadData();
@@ -46,15 +69,30 @@
   async function loadData() {
     await reportsOp.run(async () => {
       settings = await getSettings();
+      fiscalYears = await listFiscalYears();
 
       if (settings) {
-        currentYear = settings.current_year;
-        [reports, monthlySummary] = await Promise.all([
-          listDailyReports(),
-          getMonthlySummary(currentYear, currentMonth)
-        ]);
+        selectedYear = settings.current_year || fiscalYears[0] || new Date().getFullYear();
+        currentYear = selectedYear;
       }
+      await loadFilteredDataInner();
     });
+  }
+
+  async function loadFilteredDataInner() {
+    const apiMonth = selectedMonthApi();
+    [reports, monthlySummary] = await Promise.all([
+      listDailyReports(undefined, undefined, selectedYear, apiMonth),
+      getMonthlySummary(selectedYear, apiMonth)
+    ]);
+  }
+
+  async function loadFilteredData() {
+    await reportsOp.run(loadFilteredDataInner);
+  }
+
+  function applyFilter() {
+    loadFilteredData();
   }
 
   async function viewDetails(report: DailyReport) {
@@ -88,15 +126,17 @@
   }
 
   async function exportMonthly() {
+    const label = selectedMonth ? `شهري_${selectedMonth}` : 'سنوي';
     const filePath = await saveFile({
       filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
-      defaultPath: `تقرير_الإستهلاك_الشهري_${settings?.unit_code || 'UNIT'}_${currentYear}_${currentMonth}.sync`
+      defaultPath: `تقرير_${label}_${settings?.unit_code || 'UNIT'}_${selectedYear}.sync`
     });
     if (filePath) {
       await reportsOp.run(async () => {
-        const result = await exportMonthlySummaryPackage(currentYear, currentMonth, filePath);
+        const exportMonth = selectedMonthApi() ?? 1;
+        const result = await exportMonthlySummaryPackage(selectedYear, exportMonth, filePath);
         if (result.success) {
-          setSuccessWithTimeout(`تم تصدير التقرير الشهري: ${result.record_count} سجل`);
+          setSuccessWithTimeout(`تم تصدير التقرير: ${result.record_count} سجل`);
         }
       });
     }
@@ -114,6 +154,35 @@
 
 <Layout nodeType="UNIT" title="التقارير والتصدير" subtitle="عرض وتصدير تقارير الاستهلاك">
   <div dir="rtl">
+    <!-- Fiscal Year / Month Filter Bar -->
+    {#if fiscalYears.length > 0}
+      <div class="mb-6 flex flex-wrap gap-4 items-end bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+        <div>
+          <label class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">السنة المالية</label>
+          <select
+            class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            bind:value={selectedYear}
+          >
+            {#each fiscalYears as y}
+              <option value={y}>{y}</option>
+            {/each}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">الشهر</label>
+          <select
+            class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            bind:value={selectedMonth}
+          >
+            {#each MONTH_OPTIONS as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+        <AppButton variant="primary" on:click={applyFilter}>تطبيق</AppButton>
+      </div>
+    {/if}
+
     <!-- Export Button -->
     <div class="mb-8 flex justify-end">
       <AppButton variant="primary" on:click={exportMonthly} ariaLabel="تصدير حزمة المزامنة (.sync) - هذا هو مسار المزامنة الرسمي بين العقد">
@@ -142,7 +211,7 @@
       <!-- Monthly Summary Card -->
       {#if monthlySummary}
         <AppCard class="mb-6 bg-gradient-to-r from-blue-50/50 to-blue-100/30 dark:from-blue-900/10 dark:to-blue-900/5">
-          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">ملخص الشهر ({currentMonth}/{currentYear})</h2>
+          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">ملخص {selectedMonth ? `الشهر ${selectedMonth}` : 'السنة المالية'} ({selectedYear})</h2>
           <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div class="text-center p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
               <p class="text-sm text-gray-500 dark:text-gray-400">المستفيدون</p>

@@ -17,8 +17,31 @@ impl<'a> StockLevelService<'a> {
         Self { executor }
     }
 
-    pub fn get_stock_summary(&self) -> Result<Vec<StockSummary>, AppError> {
-        self.executor.inventory().get_stock_summary()
+    /// Get stock summary, optionally scoped to a specific fiscal year.
+    ///
+    /// When `fiscal_year` is `Some`, movement statistics (total_in, total_out,
+    /// movement_count) include only movements belonging to that fiscal year.
+    /// The `current_quantity` field always reflects the real inventory stock.
+    pub fn get_stock_summary(
+        &self,
+        fiscal_year: Option<i32>,
+    ) -> Result<Vec<StockSummary>, AppError> {
+        self.executor.inventory().get_stock_summary(fiscal_year)
+    }
+
+    /// Get stock summary with automatic fiscal-year scoping for Unit nodes.
+    ///
+    /// For Unit nodes (`unit_node = true`), the open fiscal year is resolved
+    /// from `FiscalYearStatusRepository` and movement statistics are scoped.
+    /// For Wilaya nodes (`unit_node = false`), no fiscal-year filter is applied.
+    /// `current_quantity` always reflects the real inventory stock.
+    pub fn get_stock_summary_scoped(&self, unit_node: bool) -> Result<Vec<StockSummary>, AppError> {
+        let fiscal_year = if unit_node {
+            self.executor.fiscal_year_status().get_open_year()?
+        } else {
+            None
+        };
+        self.get_stock_summary(fiscal_year)
     }
 
     pub fn get_stock(&self, product_id: &str) -> Result<Option<InventoryStock>, AppError> {

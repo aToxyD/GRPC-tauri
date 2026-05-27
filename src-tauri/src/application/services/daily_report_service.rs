@@ -37,6 +37,12 @@ impl<'a> DailyReportService<'a> {
         }
     }
 
+    /// Returns all distinct fiscal years available across
+    /// daily_reports and fiscal_year_status, sorted descending.
+    pub fn list_available_fiscal_years(&self) -> Result<Vec<i32>, AppError> {
+        self.executor.reports().list_available_fiscal_years()
+    }
+
     pub fn create_daily_report(
         &self,
         input: &DailyReportInput,
