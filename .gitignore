@@ -40,3 +40,8 @@ playwright-report/
 test-results/
 *.db
 backups/
+
+# OpenCode
+.opencode/
+
+AGENTS.md
