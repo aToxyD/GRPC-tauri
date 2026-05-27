@@ -5,7 +5,9 @@
 //! with a simulated consume callback (no database needed).
 
 use grpc_lib::domain::meal_cost_engine::compute_meal_fifo_costs;
-use grpc_lib::domain::meal_cost_engine::{ComputedMealCost, ComputedProductCost, MealCostComputation};
+use grpc_lib::domain::meal_cost_engine::{
+    ComputedMealCost, ComputedProductCost, MealCostComputation,
+};
 use grpc_lib::models::{ConsumedLayerPortion, ConsumptionItemInput, MealSectionInput, MealType};
 
 // ── test helpers ──────────────────────────────────────────────────────────────
@@ -105,7 +107,12 @@ fn assert_product_cost(product: &ComputedProductCost, expected_cost: f64) {
     );
 }
 
-fn assert_portion(portion: &ConsumedLayerPortion, expected_layer: &str, expected_qty: f64, expected_cost: f64) {
+fn assert_portion(
+    portion: &ConsumedLayerPortion,
+    expected_layer: &str,
+    expected_qty: f64,
+    expected_cost: f64,
+) {
     assert_eq!(portion.layer_id, expected_layer);
     assert!((portion.quantity - expected_qty).abs() < 0.001);
     assert!((portion.unit_cost * portion.quantity - portion.total_cost).abs() < 0.001);
@@ -119,10 +126,9 @@ fn single_product_single_layer() {
     let mut stack = vec![layer("L1", 500.0, 100.0)];
 
     let meals = vec![make_meal(MealType::Lunch, vec![("P1", 30.0)])];
-    let comp = compute_meal_fifo_costs(&meals, |pid, qty| {
-        consume_from_layers(&mut stack, pid, qty)
-    })
-    .unwrap();
+    let comp =
+        compute_meal_fifo_costs(&meals, |pid, qty| consume_from_layers(&mut stack, pid, qty))
+            .unwrap();
 
     assert_eq!(comp.meals.len(), 1);
     assert_meal_cost(&comp.meals[0], 15000.0);
@@ -138,10 +144,9 @@ fn single_product_multi_layer() {
     let mut stack = vec![layer("L1", 500.0, 20.0), layer("L2", 800.0, 50.0)];
 
     let meals = vec![make_meal(MealType::Lunch, vec![("P1", 30.0)])];
-    let comp = compute_meal_fifo_costs(&meals, |pid, qty| {
-        consume_from_layers(&mut stack, pid, qty)
-    })
-    .unwrap();
+    let comp =
+        compute_meal_fifo_costs(&meals, |pid, qty| consume_from_layers(&mut stack, pid, qty))
+            .unwrap();
 
     // 20 from L1 (20*500=10000) + 10 from L2 (10*800=8000) = 18000
     assert_eq!(comp.meals.len(), 1);
@@ -166,10 +171,9 @@ fn multi_meal_split() {
         make_meal(MealType::Breakfast, vec![("P1", 10.0)]),
         make_meal(MealType::Lunch, vec![("P1", 10.0)]),
     ];
-    let comp = compute_meal_fifo_costs(&meals, |pid, qty| {
-        consume_from_layers(&mut stack, pid, qty)
-    })
-    .unwrap();
+    let comp =
+        compute_meal_fifo_costs(&meals, |pid, qty| consume_from_layers(&mut stack, pid, qty))
+            .unwrap();
 
     assert_eq!(comp.meals.len(), 2);
 
@@ -197,12 +201,10 @@ fn multi_product() {
         MealType::Dinner,
         vec![("P1", 10.0), ("P2", 10.0)],
     )];
-    let comp = compute_meal_fifo_costs(&meals, |pid, qty| {
-        match pid {
-            "P1" => consume_from_layers(&mut stack_p1, pid, qty),
-            "P2" => consume_from_layers(&mut stack_p2, pid, qty),
-            _ => panic!("unexpected product"),
-        }
+    let comp = compute_meal_fifo_costs(&meals, |pid, qty| match pid {
+        "P1" => consume_from_layers(&mut stack_p1, pid, qty),
+        "P2" => consume_from_layers(&mut stack_p2, pid, qty),
+        _ => panic!("unexpected product"),
     })
     .unwrap();
 
@@ -253,9 +255,8 @@ fn insufficient_stock() {
     let mut stack = vec![layer("L1", 100.0, 5.0)];
     let meals = vec![make_meal(MealType::Lunch, vec![("P1", 10.0)])];
 
-    let result = compute_meal_fifo_costs(&meals, |pid, qty| {
-        consume_from_layers(&mut stack, pid, qty)
-    });
+    let result =
+        compute_meal_fifo_costs(&meals, |pid, qty| consume_from_layers(&mut stack, pid, qty));
 
     match result {
         Err(grpc_lib::errors::AppError::BusinessLogic(
@@ -282,10 +283,9 @@ fn preview_and_save_allocate_layers_identically() {
         make_meal(MealType::Breakfast, vec![("P1", 10.0)]),
         make_meal(MealType::Lunch, vec![("P1", 10.0)]),
     ];
-    let comp = compute_meal_fifo_costs(&meals, |pid, qty| {
-        consume_from_layers(&mut stack, pid, qty)
-    })
-    .unwrap();
+    let comp =
+        compute_meal_fifo_costs(&meals, |pid, qty| consume_from_layers(&mut stack, pid, qty))
+            .unwrap();
 
     assert_eq!(comp.meals.len(), 2);
 

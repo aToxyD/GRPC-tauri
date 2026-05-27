@@ -8,11 +8,18 @@ use crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use rusqlite::{params, Connection};
 
 fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
-    vec![(
-        1,
-        "Initial schema creation (including Observability)",
-        include_str!("migrations/001_initial.sql"),
-    )]
+    vec![
+        (
+            1,
+            "Initial schema creation (including Observability)",
+            include_str!("migrations/001_initial.sql"),
+        ),
+        (
+            2,
+            "Add origin_fiscal_year to fifo_stock_layers for carry-forward audit",
+            include_str!("migrations/002_origin_fiscal_year.sql"),
+        ),
+    ]
 }
 
 /// Latest schema version expected after all embedded migrations have run.

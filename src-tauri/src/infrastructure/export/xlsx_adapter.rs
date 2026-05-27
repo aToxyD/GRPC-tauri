@@ -63,7 +63,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         let num_fmt = self.number_format();
@@ -77,27 +77,25 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, (idx + 1) as u32, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, &p.name, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, p.base_price, &num_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, p.tva, &num_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 4, p.supplier_name.as_deref().unwrap_or(""), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 5, p.year as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 
     fn export_daily_reports(&self, reports: &[DailyReport]) -> io::Result<Vec<u8>> {
@@ -111,7 +109,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         for (idx, r) in reports.iter().enumerate() {
@@ -124,21 +122,19 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, r.date.to_string(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, r.total_daily_beneficiaries as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, r.total_daily_cost, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, r.total_daily_average, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 
     fn export_monthly_summary(&self, summaries: &[MonthlySummary]) -> io::Result<Vec<u8>> {
@@ -161,7 +157,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         for (idx, s) in summaries.iter().enumerate() {
@@ -174,33 +170,31 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, s.year as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, s.month as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, s.total_beneficiaries as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, s.total_consumption_value, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 4, s.breakfast_average, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 5, s.lunch_average, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 6, s.dinner_average, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 7, s.daily_average, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 
     fn export_wilaya_monthly_status(&self, summary: &WilayaReportSummary) -> io::Result<Vec<u8>> {
@@ -220,7 +214,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         for (idx, r) in summary.reports.iter().enumerate() {
@@ -233,24 +227,22 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, &r.unit_name, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, &r.unit_id, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, r.total_beneficiaries as f64, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, r.total_cost, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 4, r.daily_average, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 
     fn export_unit_inventory(&self, view: &UnitInventoryView) -> io::Result<Vec<u8>> {
@@ -270,7 +262,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         for (idx, item) in view.items.iter().enumerate() {
@@ -283,24 +275,22 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, &item.product_name, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, item.opening_stock, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, item.total_in, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, item.total_out, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 4, item.computed_closing, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 
     fn export_stock_movements(&self, movements: &[StockMovement]) -> io::Result<Vec<u8>> {
@@ -321,7 +311,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         for (idx, m) in movements.iter().enumerate() {
@@ -334,27 +324,25 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, m.timestamp.to_string(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, m.product_name.as_deref().unwrap_or(""), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, m.movement_type.as_str(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, m.quantity, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 4, m.balance_before, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 5, m.balance_after, &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 
     fn export_audit_log(&self, entries: &[AuditEntry]) -> io::Result<Vec<u8>> {
@@ -375,7 +363,7 @@ impl ExcelPort for XlsxAdapter {
         for (col, h) in headers.iter().enumerate() {
             worksheet
                 .write_with_format(0, col as u16, *h, &header_fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         for (idx, e) in entries.iter().enumerate() {
@@ -388,26 +376,24 @@ impl ExcelPort for XlsxAdapter {
 
             worksheet
                 .write_with_format(row, 0, e.timestamp.clone(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 1, e.username.clone(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 2, e.action_display.clone(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 3, e.entity_type_display.clone(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 4, e.entity_name.as_deref().unwrap_or(""), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 5, e.status.as_str(), &fmt)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
-        workbook
-            .save_to_buffer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        workbook.save_to_buffer().map_err(io::Error::other)
     }
 }

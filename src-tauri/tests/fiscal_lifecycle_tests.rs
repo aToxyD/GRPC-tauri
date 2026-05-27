@@ -90,6 +90,7 @@ fn test_fiscal_lifecycle_sim() {
             50.0,
             &Utc::now().to_rfc3339(),
             username,
+            2025,
         )
         .expect("Should create FIFO layer");
 

@@ -15,8 +15,8 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::into_command_error;
 use crate::models::{
-    ComputeSnapshotResult, FifoStockLayer, InventoryLayerConsumption, StockMovementFilters,
-    StockMovementResponse, StockSummary, UnitInventoryView, XlsxExportResult,
+    ComputeSnapshotResult, FifoStockLayer, InventoryLayerConsumption, InventoryStockPageView,
+    StockMovementFilters, StockMovementResponse, StockSummary, UnitInventoryView, XlsxExportResult,
 };
 
 use tauri::State;
@@ -336,6 +336,31 @@ pub fn get_fifo_consumption_history(
     StockLevelService::new(db.executor())
         .get_consumption_history(&movement_id)
         .map_err(|e: crate::errors::AppError| e.to_string())
+}
+
+/// Full FIFO inventory view for the UNIT StockPage.
+/// Auto-resolves the unit_id from settings (no client-supplied unit_id needed).
+#[tauri::command]
+pub fn get_inventory_fifo_view(state: State<AppState>) -> Result<InventoryStockPageView, String> {
+    let (_session, settings) =
+        authorize_command(&state, Action::ReadInventory, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    if !settings.is_unit() {
+        return Err("هذه الميزة متاحة فقط للعقد UNIT".to_string());
+    }
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    let unit_id = crate::application::services::SettingsService::new(db.executor())
+        .get_current_unit_id()
+        .map_err(into_command_error)?
+        .ok_or_else(|| "لا يوجد معرف وحدة للمستخدم الحالي".to_string())?;
+
+    StockLevelService::new(db.executor())
+        .get_inventory_fifo_view(&unit_id)
+        .map_err(into_command_error)
 }
 
 #[tauri::command]

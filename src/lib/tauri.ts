@@ -7,8 +7,8 @@ import { telemetry } from './telemetry';
 import type {
   LoginRequest, LoginResponse, Settings, NodeConfiguration,
   User, Product, CreateProductRequest, UpdateProductRequest,
-  Unit, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem, UpdateOrderRequest,
-  CreateOrderRequest, MealConsumption, MealConsumptionInput, MealConsumptionItem,
+  Unit, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem, CreateOrderRequest, UpdateOrderRequest,
+  MealConsumption, MealConsumptionInput, MealConsumptionItem,
   DailyReportResult, DailyReportInput, DailyConsumptionView, DailyFifoConsumptionPreview,
   StockCheckResult, MonthlySummary, DailyReport,
   MealType,
@@ -24,6 +24,7 @@ import type {
   FiscalClosurePreview, FiscalClosureApplyResult, FiscalYearStatus,
   FiscalTransitionHistoryEntry, FiscalPackageRegistryEntry,
   BuildInfo, TelemetryEvent,
+  InventoryStockPageView,
 } from './types';
 
 async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -441,6 +442,11 @@ export async function exportStockMovementsExcel(
   return await safeInvoke('export_stock_movements_excel', {
     productId, filePath
   });
+}
+
+// FIFO Inventory View (Phase 2)
+export async function getInventoryFifoView(): Promise<InventoryStockPageView> {
+  return await safeInvoke('get_inventory_fifo_view');
 }
 
 // Unit Monthly Inventory Snapshots

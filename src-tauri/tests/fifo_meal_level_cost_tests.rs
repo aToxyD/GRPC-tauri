@@ -45,6 +45,7 @@ fn add_layer(
         qty,
         received_at,
         "system",
+        2025,
     )
     .expect("create_layer failed")
 }

@@ -134,7 +134,30 @@ impl<'a> FiscalYearService<'a> {
             );
         }
 
-        // ── 2. Lock old year ──────────────────────────────────────────────
+        // ── 2. Reclassify remaining ORDER stock as OPENING ──────────────
+        //
+        // This system intentionally does NOT create replacement FIFO layers.
+        // The existing layer record remains the same FIFO entity (same id,
+        // unit_cost, qty_remaining history and received_at date).
+        //
+        // After fiscal-year close, any remaining quantity is considered an
+        // opening balance for the next fiscal year; therefore the accounting
+        // classification changes from ORDER to OPENING.
+        // origin_fiscal_year preserves the original year of entry so the
+        // audit trail is never lost.
+        let reclassified = self
+            .executor
+            .fifo_layers()
+            .reclassify_active_order_to_opening()?;
+        if reclassified > 0 {
+            log::info!(
+                target: "grpc::fiscal",
+                "[FISCAL_RECLASSIFIED] {} layers reclassified from ORDER to OPENING",
+                reclassified
+            );
+        }
+
+        // ── 3. Lock old year ──────────────────────────────────────────────
         self.executor.fiscal_year_status().update_status(
             year,
             "closed",
@@ -190,6 +213,7 @@ impl<'a> FiscalYearService<'a> {
                 "closed_year":   year,
                 "opened_year":   next_year,
                 "snapshot_count": snapshot_count,
+                "reclassified_count": reclassified,
                 "total_inventory_value": total_inventory_value,
                 "timestamp":     now,
             })),
@@ -200,8 +224,8 @@ impl<'a> FiscalYearService<'a> {
         let duration_ms = t0.elapsed().as_millis();
         log::info!(
             target: "grpc::fiscal",
-            "[FISCAL_CLOSE_SUCCESS] year={} next_year={} snapshot_count={} duration_ms={}",
-            year, next_year, snapshot_count, duration_ms
+            "[FISCAL_CLOSE_SUCCESS] year={} next_year={} snapshot_count={} reclassified={} duration_ms={}",
+            year, next_year, snapshot_count, reclassified, duration_ms
         );
 
         Ok(snapshot_count)

@@ -14,6 +14,7 @@
     getSettings,
     openFile,
     saveFile,
+    getInventoryFifoView,
   } from "../lib/tauri";
   import { showSuccess, showError } from "../lib/notifications";
   import type {
@@ -24,6 +25,8 @@
     StockMovementResponse,
     StockMovementType,
     Settings,
+    InventoryStockPageView,
+    InventoryProductView,
   } from "../lib/types";
   import Layout from "../components/Layout.svelte";
 
@@ -39,6 +42,7 @@
 
   const scope = createRuntimeScope();
   const summaryOp = createOperation({ scope });
+  const fifoOp = createOperation({ scope });
   const movementsOp = createOperation({ scope });
   const setImportSuccessTransient = createTransientMessage(
     scope,
@@ -47,6 +51,7 @@
   onDestroy(() => scope.dispose());
 
   const summaryLoading = summaryOp.loading;
+  const fifoLoading = fifoOp.loading;
   const movementsLoading = movementsOp.loading;
 
   // Section 2 & 3: Summary
@@ -82,6 +87,25 @@
   // Fallback stocks
   let stocks: InventoryStock[] = $state([]);
 
+  // Section 2.5: FIFO Inventory View
+  let fifoView: InventoryStockPageView | null = $state(null);
+  let expandedProductId: string | null = $state(null);
+
+  function toggleFifoLayers(productId: string) {
+    expandedProductId = expandedProductId === productId ? null : productId;
+  }
+
+  function getSourceLabel(sourceType: string | null): string {
+    switch (sourceType?.toUpperCase()) {
+      case "OPENING": return "رصيد افتتاحي";
+      case "ORDER":
+      case "PURCHASE": return "طلبية";
+      case "TRANSFER_IN": return "تحويل وارد";
+      case "IMPORT": return "ترحيل";
+      default: return sourceType || "-";
+    }
+  }
+
   onMount(async () => {
     try {
       settings = await getSettings();
@@ -89,6 +113,7 @@
       console.error("Failed to load settings", e);
     }
     await loadSummary();
+    await loadFifoView();
   });
 
   async function loadSummary() {
@@ -102,6 +127,16 @@
         } catch (e2) {
           showError("خطأ في التحميل الاحتياطي: " + formatErrorMessage(e2));
         }
+      }
+    });
+  }
+
+  async function loadFifoView() {
+    await fifoOp.run(async () => {
+      try {
+        fifoView = await getInventoryFifoView();
+      } catch (e) {
+        console.error("Failed to load FIFO view", e);
       }
     });
   }
@@ -389,6 +424,61 @@
       </AppCard>
     </div>
 
+    <!-- SECTION 2.5: FIFO Inventory Cards -->
+    {#if fifoView}
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <AppCard class="border-r-4 border-purple-500" padding="sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500 dark:text-gray-400">قيمة المخزون (FIFO)</p>
+              <p class="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                {fifoView.total_inventory_value.toLocaleString("ar-DZ", { maximumFractionDigits: 2 }) + " د.ج"}
+              </p>
+            </div>
+            <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex items-center justify-center">
+              <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+          </div>
+        </AppCard>
+
+        <AppCard class="border-r-4 border-indigo-500" padding="sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500 dark:text-gray-400">عدد المنتجات</p>
+              <p class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                {fifoView.total_products.toLocaleString("ar-DZ")}
+              </p>
+            </div>
+            <div class="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg flex items-center justify-center">
+              <svg class="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+              </svg>
+            </div>
+          </div>
+        </AppCard>
+
+        <AppCard class="border-r-4 border-teal-500" padding="sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500 dark:text-gray-400">الطبقات النشطة</p>
+              <p class="text-2xl font-bold text-teal-600 dark:text-teal-400">
+                {fifoView.total_active_layers.toLocaleString("ar-DZ")}
+              </p>
+            </div>
+            <div class="w-12 h-12 bg-teal-100 dark:bg-teal-900/50 rounded-lg flex items-center justify-center">
+              <svg class="w-6 h-6 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+              </svg>
+            </div>
+          </div>
+        </AppCard>
+
+
+      </div>
+    {/if}
+
     <!-- SECTION 3: Stock Table -->
     <div class="mb-8">
       <AppCard padding="none">
@@ -411,6 +501,8 @@
           <svelte:fragment slot="head">
             <th class="table-header">المنتج</th>
             <th class="table-header">الكمية الحالية</th>
+            <th class="table-header">قيمة المخزون</th>
+            <th class="table-header">الطبقات</th>
             <th class="table-header">إجمالي الدخول</th>
             <th class="table-header">إجمالي الخروج</th>
             <th class="table-header">عدد الحركات</th>
@@ -422,10 +514,24 @@
           {#each summary as product}
             {@const status = getStatusBadge(product.current_quantity)}
             {@const isHighlighted = highlightedProductId === product.product_id}
+            {@const fp = fifoView?.products.find(p => p.product_id === product.product_id)}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {isHighlighted ? 'bg-blue-50 dark:bg-blue-900/20' : ''}">
               <td class="table-cell font-medium">{product.product_name}</td>
               <td class="table-cell {product.current_quantity < 10 ? 'text-red-700 dark:text-red-400 font-bold' : ''}">
                 {product.current_quantity.toFixed(2)}
+              </td>
+              <td class="table-cell text-sm font-medium text-purple-700 dark:text-purple-400">
+                {fp ? fp.total_value.toFixed(2) + " د.ج" : "-"}
+              </td>
+              <td class="table-cell">
+                {#if fp && fp.layer_count > 0}
+                  <AppButton variant="ghost" size="sm" class="text-teal-600 hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-300 underline" on:click={() => toggleFifoLayers(product.product_id)}>
+                    {fp.layer_count} {fp.layer_count > 1 ? "طبقات" : "طبقة"}
+                    {expandedProductId === product.product_id ? "▲" : "▼"}
+                  </AppButton>
+                {:else}
+                  <span class="text-gray-400">0</span>
+                {/if}
               </td>
               <td class="table-cell text-green-600 dark:text-green-400">
                 {product.total_in.toFixed(2)}
@@ -446,6 +552,36 @@
                 </AppButton>
               </td>
             </tr>
+            {#if fp && expandedProductId === product.product_id && fp.layers.length > 0}
+              <tr class="bg-gray-50 dark:bg-gray-800/50">
+                <td colspan="10" class="p-0">
+                  <div class="px-6 py-3">
+                    <table class="w-full text-sm">
+                      <thead>
+                        <tr class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          <th class="px-3 py-1 text-right">المصدر</th>
+                          <th class="px-3 py-1 text-right">التاريخ</th>
+                          <th class="px-3 py-1 text-right">الكمية</th>
+                          <th class="px-3 py-1 text-right">تكلفة الوحدة</th>
+                          <th class="px-3 py-1 text-right">القيمة</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each fp.layers as layer}
+                          <tr class="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/30">
+                            <td class="px-3 py-1 text-right font-medium">{getSourceLabel(layer.source_type)}</td>
+                            <td class="px-3 py-1 text-right text-gray-600 dark:text-gray-400">{formatDate(layer.received_at)}</td>
+                            <td class="px-3 py-1 text-right">{layer.qty_remaining.toFixed(2)}</td>
+                            <td class="px-3 py-1 text-right">{layer.unit_cost.toFixed(2) + " د.ج"}</td>
+                            <td class="px-3 py-1 text-right font-medium text-purple-700 dark:text-purple-400">{layer.layer_value.toFixed(2) + " د.ج"}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            {/if}
           {/each}
         </AppTable>
       </AppCard>

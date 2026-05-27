@@ -80,6 +80,7 @@ fn add_layer(
         qty,
         received_at,
         "system",
+        YEAR_N,
     )
     .expect("create_layer failed");
 }

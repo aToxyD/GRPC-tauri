@@ -96,6 +96,80 @@ impl<'a> StockLevelService<'a> {
             .get_remaining_layers(unit_id, product_id)
     }
 
+    /// Full inventory FIFO view for the UNIT StockPage.
+    pub fn get_inventory_fifo_view(
+        &self,
+        unit_id: &str,
+    ) -> Result<crate::models::InventoryStockPageView, AppError> {
+        use crate::models::{InventoryLayerView, InventoryProductView, InventoryStockPageView};
+        use std::collections::HashMap;
+
+        let rows = self
+            .executor
+            .fifo_layers()
+            .get_inventory_fifo_view(unit_id)?;
+
+        let mut product_map: HashMap<
+            String,
+            (String, Vec<InventoryLayerView>, f64, Option<String>),
+        > = HashMap::new();
+
+        for row in rows {
+            let entry = product_map
+                .entry(row.product_id)
+                .or_insert_with(|| (row.product_name, Vec::new(), 0.0, None));
+
+            let received_at = row.received_at;
+            entry.1.push(InventoryLayerView {
+                layer_id: row.layer_id,
+                source_type: Some(row.source_type),
+                received_at: received_at.clone(),
+                qty_remaining: row.qty_remaining,
+                unit_cost: row.unit_cost,
+                layer_value: row.qty_remaining * row.unit_cost,
+            });
+            entry.2 += row.qty_remaining;
+
+            match &entry.3 {
+                None => entry.3 = Some(received_at),
+                Some(old) => {
+                    if received_at < *old {
+                        entry.3 = Some(received_at);
+                    }
+                }
+            }
+        }
+
+        let mut products = Vec::new();
+        let mut total_value = 0.0f64;
+        let mut total_layers = 0usize;
+
+        for (_pid, (pname, layers, total_qty, oldest)) in product_map {
+            let product_value: f64 = layers.iter().map(|l| l.layer_value).sum();
+            total_value += product_value;
+            let layer_count = layers.len();
+            total_layers += layer_count;
+            products.push(InventoryProductView {
+                product_id: _pid,
+                product_name: pname,
+                total_quantity: total_qty,
+                total_value: product_value,
+                oldest_layer_date: oldest,
+                layer_count,
+                layers,
+            });
+        }
+
+        products.sort_by(|a, b| a.product_name.cmp(&b.product_name));
+
+        Ok(InventoryStockPageView {
+            total_inventory_value: total_value,
+            total_products: products.len(),
+            total_active_layers: total_layers,
+            products,
+        })
+    }
+
     pub fn get_consumption_history(
         &self,
         movement_id: &str,

@@ -89,19 +89,15 @@ impl<'a> DailyReportService<'a> {
         }
         let mut computed_meals: Vec<MealComputed> = Vec::new();
 
-        let section_by_type: HashMap<MealType, &MealSectionInput> = input
-            .meals
-            .iter()
-            .map(|s| (s.meal_type, s))
-            .collect();
+        let section_by_type: HashMap<MealType, &MealSectionInput> =
+            input.meals.iter().map(|s| (s.meal_type, s)).collect();
 
         for computed_meal in &computation.meals {
-            let section = *section_by_type.get(&computed_meal.meal_type).ok_or_else(|| {
-                AppError::Internal(format!(
-                    "Missing section for {:?}",
-                    computed_meal.meal_type
-                ))
-            })?;
+            let section = *section_by_type
+                .get(&computed_meal.meal_type)
+                .ok_or_else(|| {
+                    AppError::Internal(format!("Missing section for {:?}", computed_meal.meal_type))
+                })?;
 
             let mut item_costs: Vec<(String, f64, f64, f64, Option<String>)> = Vec::new();
 

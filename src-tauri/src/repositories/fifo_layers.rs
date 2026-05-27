@@ -5,6 +5,17 @@ use crate::repositories::executor::DbExecutor;
 use rusqlite::params;
 use uuid::Uuid;
 
+/// Internal row returned by get_inventory_fifo_view query.
+pub(crate) struct InventoryFifoLayerRow {
+    pub layer_id: String,
+    pub product_id: String,
+    pub product_name: String,
+    pub source_type: String,
+    pub received_at: String,
+    pub qty_remaining: f64,
+    pub unit_cost: f64,
+}
+
 pub struct FifoLayerRepository<'a> {
     executor: DbExecutor<'a>,
 }
@@ -25,6 +36,7 @@ impl<'a> FifoLayerRepository<'a> {
         qty_original: f64,
         received_at: &str,
         created_by: &str,
+        origin_fiscal_year: i32,
     ) -> AppResult<String> {
         let id = Uuid::new_v4().to_string();
 
@@ -33,8 +45,9 @@ impl<'a> FifoLayerRepository<'a> {
                 r#"
             INSERT INTO fifo_stock_layers (
                 id, unit_id, product_id, source_type, source_id,
-                unit_cost, qty_original, qty_remaining, received_at, created_by
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                unit_cost, qty_original, qty_remaining, received_at, created_by,
+                origin_fiscal_year
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
                 params![
                     id,
@@ -46,12 +59,28 @@ impl<'a> FifoLayerRepository<'a> {
                     qty_original,
                     qty_original, // qty_remaining starts equal to qty_original
                     received_at,
-                    created_by
+                    created_by,
+                    origin_fiscal_year
                 ],
             )
             .map_err(AppError::from)?;
 
         Ok(id)
+    }
+
+    /// Reclassify all remaining ORDER stock as OPENING (called at year close).
+    /// Returns the number of layers reclassified.
+    pub fn reclassify_active_order_to_opening(&self) -> AppResult<usize> {
+        let affected = self
+            .executor
+            .execute(
+                "UPDATE fifo_stock_layers
+                 SET source_type = 'OPENING'
+                 WHERE source_type = 'ORDER' AND qty_remaining > 0",
+                [],
+            )
+            .map_err(AppError::from)?;
+        Ok(affected)
     }
 
     /// Consume `quantity` units from the oldest available FIFO layers for a given
@@ -154,7 +183,8 @@ impl<'a> FifoLayerRepository<'a> {
             .query_all(
                 r#"
             SELECT id, unit_id, product_id, source_type, source_id,
-                   unit_cost, qty_original, qty_remaining, received_at, created_by
+                   unit_cost, qty_original, qty_remaining, received_at, created_by,
+                   origin_fiscal_year
             FROM fifo_stock_layers
             WHERE unit_id = ?1 AND product_id = ?2
             ORDER BY received_at ASC, id ASC
@@ -172,6 +202,7 @@ impl<'a> FifoLayerRepository<'a> {
                         qty_remaining: row.get(7)?,
                         received_at: row.get(8)?,
                         created_by: row.get(9)?,
+                        origin_fiscal_year: row.get(10)?,
                     })
                 },
             )
@@ -281,7 +312,8 @@ impl<'a> FifoLayerRepository<'a> {
             .query_all(
                 r#"
             SELECT id, unit_id, product_id, source_type, source_id,
-                   unit_cost, qty_original, qty_remaining, received_at, created_by
+                   unit_cost, qty_original, qty_remaining, received_at, created_by,
+                   origin_fiscal_year
             FROM fifo_stock_layers
             WHERE unit_id = ?1 AND product_id = ?2 AND qty_remaining > 0
             ORDER BY received_at ASC, id ASC
@@ -299,6 +331,38 @@ impl<'a> FifoLayerRepository<'a> {
                         qty_remaining: row.get(7)?,
                         received_at: row.get(8)?,
                         created_by: row.get(9)?,
+                        origin_fiscal_year: row.get(10)?,
+                    })
+                },
+            )
+            .map_err(AppError::from)
+    }
+
+    /// Returns all active FIFO layers grouped by product for the inventory page view.
+    pub(crate) fn get_inventory_fifo_view(
+        &self,
+        unit_id: &str,
+    ) -> AppResult<Vec<InventoryFifoLayerRow>> {
+        self.executor
+            .query_all(
+                r#"
+            SELECT f.id, f.product_id, p.name, f.source_type,
+                   f.received_at, f.qty_remaining, f.unit_cost
+            FROM fifo_stock_layers f
+            JOIN products p ON f.product_id = p.id
+            WHERE f.unit_id = ?1 AND f.qty_remaining > 0
+            ORDER BY p.name COLLATE NOCASE, f.received_at ASC, f.id ASC
+            "#,
+                params![unit_id],
+                |row| {
+                    Ok(InventoryFifoLayerRow {
+                        layer_id: row.get(0)?,
+                        product_id: row.get(1)?,
+                        product_name: row.get(2)?,
+                        source_type: row.get(3)?,
+                        received_at: row.get(4)?,
+                        qty_remaining: row.get(5)?,
+                        unit_cost: row.get(6)?,
                     })
                 },
             )

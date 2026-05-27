@@ -133,9 +133,9 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
     if quantity > 0.0 {
         db.get_connection()
             .execute(
-                "INSERT INTO fifo_stock_layers (id, unit_id, product_id, source_type, source_id, unit_cost, qty_original, qty_remaining, received_at, created_by)
-                 VALUES (?1, 'test-unit', ?2, 'ORDER', 'test-source', ?3, ?4, ?4, ?5, 'system')",
-                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity, now],
+                "INSERT INTO fifo_stock_layers (id, unit_id, product_id, source_type, source_id, unit_cost, qty_original, qty_remaining, received_at, created_by, origin_fiscal_year)
+                 VALUES (?1, 'test-unit', ?2, 'ORDER', 'test-source', ?3, ?4, ?4, ?5, 'system', ?6)",
+                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity, now, 2025],
             )
             .expect("insert fifo stock layer");
     }

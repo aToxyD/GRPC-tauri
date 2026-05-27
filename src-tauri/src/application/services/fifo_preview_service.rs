@@ -105,7 +105,9 @@ impl<'a> FifoPreviewService<'a> {
             let mut product_previews = Vec::new();
 
             for product in &computed_meal.products {
-                *total_consumed.entry(product.product_id.clone()).or_insert(0.0) += product.quantity;
+                *total_consumed
+                    .entry(product.product_id.clone())
+                    .or_insert(0.0) += product.quantity;
                 total_portions
                     .entry(product.product_id.clone())
                     .or_default()

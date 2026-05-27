@@ -614,6 +614,34 @@ export interface WilayaReportList {
   data: DailyReport[] | MonthlySummary[] | StockMovement[];
 }
 
+// ─── FIFO Inventory View Types (Phase 2) ──────────────────────────────────────
+
+export interface InventoryLayerView {
+  layer_id: string;
+  source_type: string | null;
+  received_at: string;
+  qty_remaining: number;
+  unit_cost: number;
+  layer_value: number;
+}
+
+export interface InventoryProductView {
+  product_id: string;
+  product_name: string;
+  total_quantity: number;
+  total_value: number;
+  oldest_layer_date: string | null;
+  layer_count: number;
+  layers: InventoryLayerView[];
+}
+
+export interface InventoryStockPageView {
+  products: InventoryProductView[];
+  total_inventory_value: number;
+  total_products: number;
+  total_active_layers: number;
+}
+
 // ─── Observability Types ──────────────────────────────────────────────────────
 
 export interface AuditChainStatus {

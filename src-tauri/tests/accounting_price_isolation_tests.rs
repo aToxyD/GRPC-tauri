@@ -50,6 +50,7 @@ fn setup_unit_product_layers(
             qty,
             &now,
             "system",
+            2025,
         )
         .unwrap();
 
@@ -153,6 +154,7 @@ fn setup_two_layers(db: &grpc_lib::db::Database) -> (String, String) {
         10.0,
         "2024-01-01T08:00:00Z",
         "system",
+        2025,
     )
     .unwrap();
     fifo.create_layer(
@@ -164,6 +166,7 @@ fn setup_two_layers(db: &grpc_lib::db::Database) -> (String, String) {
         20.0,
         "2024-01-02T08:00:00Z",
         "system",
+        2025,
     )
     .unwrap();
 
@@ -459,6 +462,7 @@ fn fifo_consumes_oldest_layer_first_by_received_at_then_id() {
             5.0,
             "2024-01-01T00:00:00Z",
             "system",
+            2025,
         )
         .unwrap();
     repo.create_layer(
@@ -470,6 +474,7 @@ fn fifo_consumes_oldest_layer_first_by_received_at_then_id() {
         5.0,
         "2024-02-01T00:00:00Z",
         "system",
+        2025,
     )
     .unwrap();
 

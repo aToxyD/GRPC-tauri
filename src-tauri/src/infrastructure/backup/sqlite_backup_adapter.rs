@@ -209,12 +209,7 @@ impl SqliteBackupAdapter {
 
         // B. Check temp file size
         let temp_size = fs::metadata(temp_path)
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Cannot get temp file size: {}", e),
-                )
-            })?
+            .map_err(|e| io::Error::other(format!("Cannot get temp file size: {}", e)))?
             .len();
 
         // Get source database page count to determine minimum valid size
@@ -436,9 +431,8 @@ impl SqliteBackupAdapter {
     fn write_journal(&self, j: &RestoreJournalV1) -> io::Result<()> {
         let tmp = self.journal_path().with_extension("restore.journal.tmp");
         // ADR-0017: journal is small; to_vec_pretty is acceptable here (not on the hot path).
-        let json = serde_json::to_vec_pretty(j).map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("journal serialize: {}", e))
-        })?;
+        let json = serde_json::to_vec_pretty(j)
+            .map_err(|e| io::Error::other(format!("journal serialize: {}", e)))?;
         let mut f = fs::File::create(&tmp)?;
         f.write_all(&json)?;
         f.sync_all()?;
@@ -478,30 +472,18 @@ impl BackupPort for SqliteBackupAdapter {
 
         {
             let mut dest = rusqlite::Connection::open(&temp_db_path).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to open temporary staging DB: {}", e),
-                )
+                io::Error::other(format!("Failed to open temporary staging DB: {}", e))
             })?;
 
-            let backup = Backup::new(src, &mut dest).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Backup initialization failed: {}", e),
-                )
-            })?;
+            let backup = Backup::new(src, &mut dest)
+                .map_err(|e| io::Error::other(format!("Backup initialization failed: {}", e)))?;
 
             // Incremental copy: 100 pages at a time to stay responsive.
             loop {
                 match backup.step(100) {
                     Ok(rusqlite::backup::StepResult::Done) => break,
                     Ok(rusqlite::backup::StepResult::More) | Ok(_) => continue,
-                    Err(e) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Backup step failed: {}", e),
-                        ))
-                    }
+                    Err(e) => return Err(io::Error::other(format!("Backup step failed: {}", e))),
                 }
             }
         }
@@ -522,16 +504,13 @@ impl BackupPort for SqliteBackupAdapter {
                 .encrypt_stream(&mut reader, &mut output_writer)
                 .map_err(|e| {
                     let _ = fs::remove_file(&backup_path);
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("age encryption failed: {}", e),
-                    )
+                    io::Error::other(format!("age encryption failed: {}", e))
                 })?;
 
             output_writer.flush()?;
             output_writer
                 .into_inner()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("flush: {}", e)))?
+                .map_err(|e| io::Error::other(format!("flush: {}", e)))?
                 .sync_all()?;
         }
 
@@ -547,12 +526,7 @@ impl BackupPort for SqliteBackupAdapter {
             &self.db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
-        .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to open DB for backup: {}", e),
-            )
-        })?;
+        .map_err(|e| io::Error::other(format!("Failed to open DB for backup: {}", e)))?;
 
         self.create_backup_from_conn(&src)
     }
@@ -661,12 +635,9 @@ impl BackupPort for SqliteBackupAdapter {
 
         // ── Step 3: persist the tempfile (stops auto-delete on Drop) ──────
         // This converts the NamedTempFile into a plain PathBuf.
-        let (_, candidate_path) = temp_candidate.keep().map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to persist temp candidate: {}", e),
-            )
-        })?;
+        let (_, candidate_path) = temp_candidate
+            .keep()
+            .map_err(|e| io::Error::other(format!("Failed to persist temp candidate: {}", e)))?;
 
         // ── Step 4: write crash-recovery journal ──────────────────────────
         self.write_journal(&RestoreJournalV1 {
@@ -684,10 +655,7 @@ impl BackupPort for SqliteBackupAdapter {
             fs::rename(&self.db_path, &rollback_path).map_err(|e| {
                 let _ = fs::remove_file(&candidate_path);
                 self.clear_journal();
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("failed to move live DB to rollback: {}", e),
-                )
+                io::Error::other(format!("failed to move live DB to rollback: {}", e))
             })?;
         }
 
@@ -697,10 +665,7 @@ impl BackupPort for SqliteBackupAdapter {
             }
             let _ = fs::remove_file(&candidate_path);
             self.clear_journal();
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Atomic swap failed: {}", e),
-            ));
+            return Err(io::Error::other(format!("Atomic swap failed: {}", e)));
         }
 
         if rollback_path.exists() {
@@ -716,13 +681,13 @@ impl BackupPort for SqliteBackupAdapter {
         crate::infrastructure::db::integrity::verify_file_integrity(
             temp_candidate.path().to_str().unwrap_or(""),
         )
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+        .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn get_backup_max_archived_year(&self, backup_path: &Path) -> io::Result<Option<i32>> {
         let temp_candidate = self.decrypt_to_temp_file(backup_path)?;
         crate::infrastructure::db::metadata::get_max_archived_year_in_file(temp_candidate.path())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 }
 
@@ -735,10 +700,10 @@ impl SqliteBackupAdapter {
             .suffix(".sqlite_tmp")
             .tempfile_in(&db_dir)
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to create secure temp file for decryption: {}", e),
-                )
+                io::Error::other(format!(
+                    "Failed to create secure temp file for decryption: {}",
+                    e
+                ))
             })?;
 
         {
@@ -754,11 +719,11 @@ impl SqliteBackupAdapter {
                 })?;
             output_writer
                 .flush()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("flush: {}", e)))?;
+                .map_err(|e| io::Error::other(format!("flush: {}", e)))?;
             temp_file
                 .as_file()
                 .sync_all()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("fsync temp: {}", e)))?;
+                .map_err(|e| io::Error::other(format!("fsync temp: {}", e)))?;
         }
 
         Ok(TempSqliteFile::new(temp_file))
@@ -782,7 +747,7 @@ pub fn recover_interrupted_restore_and_orphans(
     // The journal file is naturally small (contains a few paths), so fs::read is acceptable.
     let raw = fs::read(&journal).map_err(|e| {
         // [arch:allow-memory-unsafe]
-        io::Error::new(io::ErrorKind::Other, format!("restore journal read: {}", e))
+        io::Error::other(format!("restore journal read: {}", e))
     })?;
 
     match serde_json::from_slice::<RestoreJournalV1>(&raw) {
@@ -795,17 +760,17 @@ pub fn recover_interrupted_restore_and_orphans(
                         let _ = fs::remove_file(&parsed.rollback_path);
                     }
                     fs::rename(db_path, &parsed.rollback_path).map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("recovery: failed to move live DB to rollback: {}", e),
-                        )
+                        io::Error::other(format!(
+                            "recovery: failed to move live DB to rollback: {}",
+                            e
+                        ))
                     })?;
                     if let Err(e) = fs::rename(&parsed.candidate_path, db_path) {
                         let _ = fs::rename(&parsed.rollback_path, db_path);
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("recovery: failed to promote candidate to live: {}", e),
-                        ));
+                        return Err(io::Error::other(format!(
+                            "recovery: failed to promote candidate to live: {}",
+                            e
+                        )));
                     }
                     if parsed.rollback_path.exists() {
                         let _ = fs::remove_file(&parsed.rollback_path);
