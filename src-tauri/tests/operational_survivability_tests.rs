@@ -1,7 +1,7 @@
 //! Operational survivability integration tests (replaces placeholders).
 
 use grpc_lib::application::services::{
-    FiscalHistoricalGuard, FiscalYearService, SystemIntegrityState,
+    FiscalClosingService, FiscalHistoricalGuard, SystemIntegrityState,
 };
 use grpc_lib::db::ConnectionFactory;
 use tempfile::tempdir;
@@ -64,7 +64,7 @@ fn archive_service_marks_closed_year_immutable() {
             |r| r.get(0),
         )
         .unwrap();
-    db.with_transaction(|tx| FiscalYearService::new(tx).archive_year(2012, &admin_id, "admin"))
+    db.with_transaction(|tx| FiscalClosingService::new(tx).archive_year(2012, &admin_id, "admin"))
         .unwrap();
 
     let archived: i32 = db

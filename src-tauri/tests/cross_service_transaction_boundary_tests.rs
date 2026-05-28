@@ -1,7 +1,7 @@
 //! Cross-service transaction boundary tests — real SQLite, explicit failure injection.
 
 use grpc_lib::application::services::{
-    FiscalExportSnapshot, FiscalExportSnapshotService, FiscalYearService, OperationalAnomalyService,
+    FiscalClosingService, FiscalExportSnapshot, FiscalExportSnapshotService, OperationalAnomalyService,
 };
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::repositories::RepositoryProvider;

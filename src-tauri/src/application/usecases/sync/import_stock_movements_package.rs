@@ -1,6 +1,6 @@
 //! Apply decrypted stock movements interchange package on Wilaya node.
 
-use crate::application::services::ImportSyncService;
+use crate::application::services::SyncImportExecutionService;
 use crate::application::sync::{source_id_allowed_for_unit, ImportedPackageRegistry, SyncPackage};
 use crate::application::usecases::exports::types::StockMovementsExportDataset;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
@@ -87,7 +87,7 @@ pub fn execute(
     }
 
     // 5. Perform import
-    let movement_count = ImportSyncService::new(executor)
+    let movement_count = SyncImportExecutionService::new(executor)
         .import_stock_movements(input.package.payload.movements, Some(unit_trim))?;
 
     // 6. Mark as imported

@@ -145,7 +145,7 @@ impl<'a> OrderService<'a> {
             })?,
         };
 
-        crate::application::services::FiscalYearService::new(self.executor)
+        crate::application::services::FiscalValidationService::new(self.executor)
             .assert_fiscal_year_open(active_fy)?;
 
         for (product_id, quantity, product_name, unit_price) in &items {

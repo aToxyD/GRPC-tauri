@@ -12,14 +12,14 @@
 //! ## Unit side
 //! - Preview a package file without mutating any state.
 //! - Apply a validated package by delegating to the existing
-//!   `FiscalYearService::close_year`, wrapped in a transaction.
+//!   `FiscalClosingService::close_year`, wrapped in a transaction.
 //!   Replay protection via `applied_fiscal_transitions` (UNIQUE constraint).
 //!
 //! # Hard constraints (inherited from system design)
 //! - No distributed transactions.
 //! - No network connections.
 //! - No background workers.
-//! - `FiscalYearService::close_year` is the single source of truth for the
+//! - `FiscalClosingService::close_year` is the single source of truth for the
 //!   carry-forward logic — this service does NOT duplicate it.
 
 use crate::errors::{AppError, BusinessLogicError};
@@ -163,7 +163,7 @@ impl<'a> FiscalClosurePackageService<'a> {
     /// Build a signed fiscal closure package after a successful `close_year`.
     ///
     /// Called on the Wilaya node only.  Does NOT perform the closure itself —
-    /// that must have already succeeded via `FiscalYearService::close_year`.
+    /// that must have already succeeded via `FiscalClosingService::close_year`.
     pub fn build_closure_package(
         closure_authority_node_id: &str,
         closure_authority_username: &str,
@@ -522,8 +522,8 @@ impl<'a> FiscalClosurePackageService<'a> {
                 }
             })?;
 
-        // ── 4: Delegate carry-forward to existing FiscalYearService ──────────
-        let snapshot_count = crate::application::services::FiscalYearService::new(self.executor)
+        // ── 4: Delegate carry-forward to FiscalClosingService ────────────────
+        let snapshot_count = crate::application::services::FiscalClosingService::new(self.executor)
             .close_year(
                 pkg.closed_year,
                 pkg.opened_year,

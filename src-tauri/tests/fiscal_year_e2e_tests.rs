@@ -1,6 +1,6 @@
 use chrono::{NaiveDate, Utc};
 use grpc_lib::application::services::{
-    AuditTxService, DailyReportService, FiscalYearService, UserContext,
+    AuditTxService, DailyReportService, FiscalClosingService, UserContext,
 };
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::audit::AuditAction;

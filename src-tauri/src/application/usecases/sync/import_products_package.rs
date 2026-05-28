@@ -1,6 +1,6 @@
 //! Apply a decrypted products interchange package (Wilaya → Unit).
 
-use crate::application::services::ImportSyncService;
+use crate::application::services::SyncImportExecutionService;
 use crate::application::sync::{
     products_source_allowed_for_unit, validate_products_package_for_import,
     ImportedPackageRegistry, SyncPackage,
@@ -81,7 +81,7 @@ pub fn execute(
         .collect();
 
     let (imported, updated, skipped) =
-        ImportSyncService::new(executor).import_products_sync(&records, 0, "unused")?;
+        SyncImportExecutionService::new(executor).import_products_sync(&records, 0, "unused")?;
     registry.mark_imported(&package_id)?;
 
     Ok(ImportProductsPackageOutcome {

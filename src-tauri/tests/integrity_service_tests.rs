@@ -1,6 +1,6 @@
 use chrono::{Datelike, Utc};
 use grpc_lib::application::services::{
-    AuditTxService, DailyReportService, FiscalYearService, IntegrityService, IntegrityStatus,
+    AuditTxService, DailyReportService, FiscalClosingService, IntegrityService, IntegrityStatus,
     UserContext,
 };
 use grpc_lib::db::ConnectionFactory;
@@ -534,7 +534,7 @@ fn test_integrity_gate_blocks_close_year_on_critical() {
 
     // close_year must fail
     let result = db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(year, next_year, "system", "admin", None)
+        FiscalClosingService::new(tx).close_year(year, next_year, "system", "admin", None)
     });
     assert!(
         result.is_err(),
@@ -595,7 +595,7 @@ fn test_integrity_gate_allows_close_year_when_clean() {
 
     // close_year should succeed
     let result = db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(year, next_year, "system", "admin", Some(&unit_id))
+        FiscalClosingService::new(tx).close_year(year, next_year, "system", "admin", Some(&unit_id))
     });
     assert!(
         result.is_ok(),

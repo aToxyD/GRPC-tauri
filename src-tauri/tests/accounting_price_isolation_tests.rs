@@ -3,7 +3,7 @@
 mod common;
 
 use common::{create_test_product, create_test_state, seed_fiscal_year_open, set_test_stock};
-use grpc_lib::application::services::{DailyReportService, FifoPreviewService, FiscalYearService};
+use grpc_lib::application::services::{DailyReportService, FifoPreviewService, FiscalClosingService};
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::models::{ConsumptionItemInput, DailyReportInput, MealSectionInput, MealType};
 use grpc_lib::repositories::{FifoLayerRepository, RepositoryProvider};

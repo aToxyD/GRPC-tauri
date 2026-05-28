@@ -11,7 +11,7 @@
 mod common;
 
 use chrono::{Datelike, Utc};
-use grpc_lib::application::services::{FiscalYearService, StockMovementService};
+use grpc_lib::application::services::{FiscalClosingService, StockMovementService};
 use grpc_lib::models::{NewStockMovement, StockMovementType};
 use grpc_lib::repositories::RepositoryProvider;
 

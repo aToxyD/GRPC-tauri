@@ -66,7 +66,7 @@ impl<'a> DailyReportService<'a> {
         })?;
 
         let fiscal_year = input.date.year();
-        crate::application::services::FiscalYearService::new(self.executor)
+        crate::application::services::FiscalValidationService::new(self.executor)
             .assert_fiscal_year_open(fiscal_year)?;
 
         let product_repo = self.executor.products();

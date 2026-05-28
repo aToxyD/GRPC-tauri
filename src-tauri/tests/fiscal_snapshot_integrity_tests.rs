@@ -9,7 +9,7 @@ use common::{
     clear_fiscal_status, create_test_product, create_test_state, seed_fiscal_year_open,
     set_test_stock,
 };
-use grpc_lib::application::services::FiscalYearService;
+use grpc_lib::application::services::FiscalClosingService;
 use grpc_lib::repositories::RepositoryProvider;
 
 const YEAR: i32 = 2025;

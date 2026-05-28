@@ -3,7 +3,10 @@ pub mod audit_service;
 pub mod audit_tx_service;
 pub mod daily_report_service;
 pub mod fifo_preview_service;
+pub mod fiscal_closing_service;
 pub mod fiscal_scope;
+pub mod fiscal_reporting_service;
+pub mod fiscal_validation_service;
 pub mod fiscal_year_service;
 pub mod import_sync_service;
 pub mod inventory_snapshot_service;
@@ -27,6 +30,9 @@ pub use audit_service::AuditService;
 pub use audit_tx_service::AuditTxService;
 pub use daily_report_service::DailyReportService;
 pub use fifo_preview_service::FifoPreviewService;
+pub use fiscal_closing_service::FiscalClosingService;
+pub use fiscal_reporting_service::FiscalReportingService;
+pub use fiscal_validation_service::FiscalValidationService;
 pub use fiscal_year_service::FiscalYearService;
 pub use import_sync_service::ImportSyncService;
 pub use inventory_snapshot_service::InventorySnapshotService;
@@ -39,6 +45,11 @@ pub use settings_service::SettingsService;
 pub use stock_level_service::StockLevelService;
 pub use stock_movement_service::StockMovementService;
 pub use sync_conflict_service::SyncConflictService;
+pub mod sync_import_execution_service;
+pub mod sync_import_validation_service;
+pub use sync_import_execution_service::SyncImportExecutionService;
+pub use sync_import_validation_service::SyncImportValidationService;
+pub use sync_import_validation_service::is_incoming_newer;
 pub use system_diagnostics_service::SystemDiagnosticsService;
 pub use system_health_service::SystemHealthService;
 pub use system_stats_service::SystemStatsService;
@@ -64,7 +75,6 @@ impl UserContext {
 }
 
 // Markers
-impl crate::architecture::Service for ImportSyncService<'_> {}
 impl crate::architecture::Service for NodePackageService<'_> {}
 impl crate::architecture::Service for StockLevelService<'_> {}
 impl crate::architecture::Service for StockMovementService<'_> {}

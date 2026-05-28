@@ -12,7 +12,7 @@
 use crate::application::authz::Action;
 use crate::application::services::{
     CriticalOperation, FiscalOperationalSnapshot, FiscalOperationalSnapshotService,
-    FiscalTimelineEvent, FiscalTimelineQuery, FiscalTimelineService, FiscalYearService,
+    FiscalClosingService, FiscalTimelineEvent, FiscalTimelineQuery, FiscalTimelineService,
     GuardedOperation, IntegrityAttemptRecorder, OperationExecutionGuard, OperationalAnalysisReport,
     OperationalAnomalyService, OperationalRecommendation, OperationalRecommendationService,
     OperatorSafetyService, VerificationOutcome, VerificationType,
@@ -318,7 +318,7 @@ pub fn close_fiscal_year_confirmed(
         .map_err(into_command_error)?;
 
     let snapshot_count = match db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(
+        FiscalClosingService::new(tx).close_year(
             request.year,
             request.next_year,
             &user_id,
@@ -433,7 +433,7 @@ pub fn archive_fiscal_year_confirmed(
         .map_err(into_command_error)?;
 
     if let Err(e) = db.with_transaction(|tx| {
-        FiscalYearService::new(tx).archive_year(request.year, &user_id, &username)
+        FiscalClosingService::new(tx).archive_year(request.year, &user_id, &username)
     }) {
         let _ = state.maintenance.set(SystemMaintenanceState::Normal);
         return Err(into_command_error(e));

@@ -1,6 +1,6 @@
 //! Recovery determinism — same corruption/orphan state → same outcome every run.
 
-use grpc_lib::application::services::fiscal_year_service::validate_fiscal_state;
+use grpc_lib::application::services::fiscal_validation_service::validate_fiscal_state;
 use grpc_lib::application::services::SystemIntegrityState;
 use grpc_lib::application::services::{BackupIntegrityService, OperationExecutionGuard};
 use grpc_lib::db::ConnectionFactory;

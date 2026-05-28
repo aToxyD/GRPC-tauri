@@ -2,7 +2,7 @@
 
 use chrono::Utc;
 
-use crate::application::services::ImportSyncService;
+use crate::application::services::SyncImportExecutionService;
 use crate::application::sync::{
     source_id_allowed_for_unit, validate_daily_report_package_for_import, ImportedPackageRegistry,
     SyncPackage,
@@ -141,7 +141,7 @@ pub fn execute(
 
     let item_count: usize = meal_results.iter().map(|m| m.items.len()).sum();
     let imported =
-        ImportSyncService::new(executor).import_daily_reports(vec![DailyReportResult {
+        SyncImportExecutionService::new(executor).import_daily_reports(vec![DailyReportResult {
             report,
             meals: meal_results,
         }])?;

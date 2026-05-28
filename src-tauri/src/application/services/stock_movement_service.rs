@@ -26,7 +26,7 @@ impl<'a> StockMovementService<'a> {
         let fiscal_year = self.executor.settings().get_current_year()?;
 
         // 1. Fiscal Guard
-        crate::application::services::FiscalYearService::new(self.executor)
+        crate::application::services::FiscalValidationService::new(self.executor)
             .assert_fiscal_year_open(fiscal_year)?;
 
         let inventory_repo = self.executor.inventory();
@@ -64,7 +64,7 @@ impl<'a> StockMovementService<'a> {
             "FISCAL FALLBACK: raw stock movement fiscal_year inferred from timestamp year={}",
             fiscal_year
         );
-        crate::application::services::FiscalYearService::new(self.executor)
+        crate::application::services::FiscalValidationService::new(self.executor)
             .assert_fiscal_year_open(fiscal_year)?;
 
         let product_repo = self.executor.products();

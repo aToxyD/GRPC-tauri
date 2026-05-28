@@ -1,7 +1,7 @@
 //! Fiscal lifecycle commands — Admin + Wilaya only.
 
 use crate::application::authz::Action;
-use crate::application::services::FiscalYearService;
+use crate::application::services::FiscalReportingService;
 use crate::commands::common::db_mut_or_command_error;
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
@@ -59,7 +59,7 @@ pub fn close_fiscal_year(
 
     let snapshot_count = db
         .with_transaction(|tx_executor| {
-            let count = crate::application::services::FiscalYearService::new(tx_executor)
+            let count = crate::application::services::FiscalClosingService::new(tx_executor)
                 .close_year(year, next_year, &user_id, &username, None)?;
 
             // NEW: Automatically register the package for export via service (Architectural integrity)
@@ -99,7 +99,7 @@ pub fn get_fiscal_year_status(
         into_command_error(crate::errors::AppError::Internal("DB unavailable".into()))
     })?;
 
-    FiscalYearService::new(db.executor())
+    FiscalReportingService::new(db.executor())
         .get_status(year)
         .map_err(into_command_error)
 }

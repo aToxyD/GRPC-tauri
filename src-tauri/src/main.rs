@@ -98,7 +98,7 @@ fn main() {
 
     // ── Fiscal state validation (startup guard) ─────────────────────────────
     if let Err(msg) =
-        grpc_lib::application::services::fiscal_year_service::validate_fiscal_state(&db)
+        grpc_lib::application::services::fiscal_validation_service::validate_fiscal_state(&db)
     {
         log::error!(target: "grpc::fiscal", "STARTUP ABORTED — {}", msg);
         eprintln!("STARTUP ABORTED: {}", msg);
