@@ -1,5 +1,5 @@
 use chrono::{Datelike, Utc};
-use grpc_lib::application::services::ImportSyncService;
+use grpc_lib::application::services::SyncImportExecutionService;
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::models::inventory::{StockMovement, StockMovementType};
 use uuid::Uuid;
@@ -104,7 +104,7 @@ fn test_imported_movements_do_not_create_fifo_layers() {
         year,
     );
 
-    let result = ImportSyncService::new(db.executor()).import_stock_movements(vec![movement], None);
+    let result = SyncImportExecutionService::new(db.executor()).import_stock_movements(vec![movement], None);
     assert!(
         result.is_ok(),
         "import_stock_movements failed: {:?}",
@@ -176,7 +176,7 @@ fn test_imported_movements_do_not_update_inventory() {
         year,
     );
 
-    let result = ImportSyncService::new(db.executor()).import_stock_movements(vec![movement], None);
+    let result = SyncImportExecutionService::new(db.executor()).import_stock_movements(vec![movement], None);
     assert!(
         result.is_ok(),
         "import_stock_movements failed: {:?}",

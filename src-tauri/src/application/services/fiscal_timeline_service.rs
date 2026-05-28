@@ -176,18 +176,8 @@ impl<'a> FiscalTimelineService<'a> {
     }
 
     fn collect_archival_events(&self, out: &mut Vec<FiscalTimelineEvent>) -> Result<(), AppError> {
-        // From fiscal_year_status
-        let rows = self.executor.query_all(
-            "SELECT year, closed_at, closed_by FROM fiscal_year_status WHERE archived = 1",
-            [],
-            |r| {
-                Ok((
-                    r.get::<_, i32>(0)?,
-                    r.get::<_, Option<String>>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                ))
-            },
-        )?;
+        use crate::repositories::RepositoryProvider;
+        let rows = self.executor.timeline().fetch_archived_fiscal_years()?;
 
         for (year, closed_at, closed_by) in rows {
             out.push(FiscalTimelineEvent {

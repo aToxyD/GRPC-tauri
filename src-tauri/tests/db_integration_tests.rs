@@ -1214,7 +1214,7 @@ fn test_unit_cost_tracking_in_stock_movements() {
     let (sync_db, sync_unit_id) = setup_test_db_with_unit();
     create_test_product(&sync_db, "prod_cost_test", "Acquisition Cost Product");
     let sync_executor = sync_db.executor();
-    let sync_svc = grpc_lib::application::services::ImportSyncService::new(sync_executor);
+    let sync_svc = grpc_lib::application::services::SyncImportExecutionService::new(sync_executor);
 
     // Import the movements
     sync_svc

@@ -415,6 +415,36 @@ impl<'a> InventoryRepository<'a> {
         )?)
     }
 
+    #[allow(clippy::type_complexity)]
+    pub fn verify_consistency_for_year(
+        &self,
+        fiscal_year: i32,
+    ) -> Result<Vec<(String, f64, f64, f64, f64)>, AppError> {
+        self.executor
+            .query_all(
+                r#"SELECT s.product_id,
+       COALESCE(obs.opening_quantity,0),
+       COALESCE(SUM(CASE WHEN sm.movement_type IN ('IN','OPENING') THEN sm.quantity ELSE 0 END),0),
+       COALESCE(SUM(CASE WHEN sm.movement_type='OUT' THEN sm.quantity ELSE 0 END),0),
+       COALESCE(s.quantity,0)
+       FROM inventory_stocks s
+       LEFT JOIN opening_balance_snapshots obs ON obs.product_id=s.product_id AND obs.fiscal_year=?1
+       LEFT JOIN stock_movements sm ON sm.product_id=s.product_id AND sm.fiscal_year=?1
+       GROUP BY s.product_id,s.quantity,obs.opening_quantity"#,
+                rusqlite::params![fiscal_year],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, f64>(1)?,
+                        r.get::<_, f64>(2)?,
+                        r.get::<_, f64>(3)?,
+                        r.get::<_, f64>(4)?,
+                    ))
+                },
+            )
+            .map_err(Into::into)
+    }
+
     pub fn get_total_inventory_value(&self) -> Result<f64, AppError> {
         let total: f64 = self
             .executor

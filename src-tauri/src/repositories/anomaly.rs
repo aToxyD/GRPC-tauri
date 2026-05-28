@@ -84,6 +84,38 @@ impl<'a> AnomalyRepository<'a> {
             .map_err(Into::into)
     }
 
+    pub fn count_critical_findings(&self) -> AppResult<i64> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM operational_findings_log WHERE severity = 'CRITICAL'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn count_active_anomalies(&self) -> AppResult<i64> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM operational_findings_log WHERE severity IN ('WARNING','CRITICAL')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn count_critical_without_recommendation(&self) -> AppResult<i64> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM operational_findings_log
+                 WHERE severity = 'CRITICAL'
+                   AND (recommendation IS NULL OR TRIM(recommendation) = '')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub fn count_recent_reports(&self, window_start: &str) -> AppResult<i64> {
         self.executor
             .query_row(

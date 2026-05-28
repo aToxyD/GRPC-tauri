@@ -1,5 +1,6 @@
 use crate::errors::AppError;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::RepositoryProvider;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,27 +31,7 @@ impl<'a> InventoryIntegrityService<'a> {
         fiscal_year: i32,
     ) -> Result<InventoryIntegrityReport, AppError> {
         log::info!(target:"grpc::inventory","[INVENTORY_VERIFY_START] fiscal_year={}",fiscal_year);
-        let rows = self.executor.query_all(
-            r#"SELECT s.product_id,
-      COALESCE(obs.opening_quantity,0),
-      COALESCE(SUM(CASE WHEN sm.movement_type IN ('IN','OPENING') THEN sm.quantity ELSE 0 END),0),
-      COALESCE(SUM(CASE WHEN sm.movement_type='OUT' THEN sm.quantity ELSE 0 END),0),
-      COALESCE(s.quantity,0)
-      FROM inventory_stocks s
-      LEFT JOIN opening_balance_snapshots obs ON obs.product_id=s.product_id AND obs.fiscal_year=?1
-      LEFT JOIN stock_movements sm ON sm.product_id=s.product_id AND sm.fiscal_year=?1
-      GROUP BY s.product_id,s.quantity,obs.opening_quantity"#,
-            [fiscal_year],
-            |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, f64>(1)?,
-                    r.get::<_, f64>(2)?,
-                    r.get::<_, f64>(3)?,
-                    r.get::<_, f64>(4)?,
-                ))
-            },
-        )?;
+        let rows = self.executor.inventory().verify_consistency_for_year(fiscal_year)?;
         let mut issues = Vec::new();
         for (product_id, opening, inbound, outbound, actual) in rows.iter() {
             let expected = opening + inbound - outbound;
@@ -77,11 +58,7 @@ impl<'a> InventoryIntegrityService<'a> {
     pub fn verify_inventory_consistency_all_years(
         &self,
     ) -> Result<Vec<InventoryIntegrityReport>, AppError> {
-        let years = self.executor.query_all(
-            "SELECT year FROM fiscal_year_status ORDER BY year",
-            [],
-            |r| r.get::<_, i32>(0),
-        )?;
+        let years = self.executor.fiscal_year_status().get_all_years()?;
         years
             .into_iter()
             .map(|y| self.verify_inventory_consistency(y))

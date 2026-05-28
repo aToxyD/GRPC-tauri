@@ -151,6 +151,18 @@ impl<'a> IntegrityRepository<'a> {
         Ok(count)
     }
 
+    pub fn count_recent_failures(&self) -> AppResult<i64> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM integrity_verification_attempts
+                 WHERE outcome = 'FAIL'
+                   AND attempted_at >= datetime('now', '-90 days')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub fn count_post_closure_movements(&self) -> AppResult<i64> {
         let count: i64 = self.executor.query_row(
             "SELECT COUNT(*) FROM stock_movements sm

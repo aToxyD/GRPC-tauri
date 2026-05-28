@@ -4,7 +4,7 @@
 //! sync packages.  Does NOT mutate any state.
 
 use crate::errors::AppError;
-use crate::repositories::DbExecutor;
+use crate::repositories::{DbExecutor, RepositoryProvider};
 
 pub struct SyncImportValidationService<'a> {
     executor: DbExecutor<'a>,
@@ -25,11 +25,7 @@ impl<'a> SyncImportValidationService<'a> {
         source_node: &str,
         package_id: &str,
     ) -> Result<(), AppError> {
-        let current_year: i32 =
-            self.executor
-                .query_row("SELECT current_year FROM settings WHERE id=1", [], |r| {
-                    r.get(0)
-                })?;
+        let current_year: i32 = self.executor.settings().get_current_year()?;
         crate::application::services::FiscalHistoricalGuard::new(self.executor)
             .assert_import_year_allowed(incoming_year)?;
         crate::application::services::FiscalValidationService::new(self.executor)

@@ -114,6 +114,36 @@ impl<'a> FiscalYearStatusRepository<'a> {
             .map_err(Into::into)
     }
 
+    pub fn count_archived(&self) -> Result<i64, AppError> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM fiscal_year_status WHERE archived = 1",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn count_closed(&self) -> Result<i64, AppError> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM fiscal_year_status WHERE status = 'closed'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn get_all_years(&self) -> Result<Vec<i32>, AppError> {
+        self.executor
+            .query_all(
+                "SELECT year FROM fiscal_year_status ORDER BY year",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub fn count_invariant_violations(&self) -> Result<(i64, i64, i64), AppError> {
         let v1: i64 = self.executor.query_row(
             "SELECT COUNT(*) FROM fiscal_year_status WHERE archived = 1 AND status != 'closed'",

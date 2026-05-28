@@ -293,6 +293,12 @@ impl<'a> AuditRepository<'a> {
     // Statistics (SQL aggregation only; calculations belong to service)
     // ─────────────────────────────────────────────────────────────────────────
 
+    pub fn count_by_action(&self, action: &str) -> Result<i64, AppError> {
+        Ok(self
+            .executor
+            .query_row("SELECT COUNT(*) FROM audit_log WHERE action = ?1", params![action], |row| row.get(0))?)
+    }
+
     pub fn count_total_ops(&self, start_ts: &str, end_ts: &str) -> Result<i64, AppError> {
         Ok(self.executor.query_row(
             "SELECT COUNT(*) FROM audit_log WHERE timestamp >= ?1 AND timestamp <= ?2",

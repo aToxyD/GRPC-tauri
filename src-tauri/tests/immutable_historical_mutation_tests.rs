@@ -1,8 +1,8 @@
 //! Hostile historical mutation tests — archived years must remain immutable (fail-closed).
 
 use grpc_lib::application::services::{
-    FiscalExportSnapshot, FiscalExportSnapshotService, FiscalHistoricalGuard, FiscalYearService,
-    ImportSyncService,
+    FiscalExportSnapshot, FiscalExportSnapshotService, FiscalHistoricalGuard,
+    SyncImportExecutionService, FiscalClosingService,
 };
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::ports::backup::BackupPort;
@@ -86,7 +86,7 @@ fn case_b_rejects_import_records_for_archived_year() {
         }],
     };
 
-    let err = ImportSyncService::new(db.executor())
+    let err = SyncImportExecutionService::new(db.executor())
         .import_daily_reports(vec![report])
         .unwrap_err();
     assert!(matches!(
@@ -211,7 +211,7 @@ fn archive_closed_year_succeeds_when_not_yet_archived() {
             |r| r.get(0),
         )
         .unwrap();
-    db.with_transaction(|tx| FiscalYearService::new(tx).archive_year(2015, &admin_id, "admin"))
+    db.with_transaction(|tx| FiscalClosingService::new(tx).archive_year(2015, &admin_id, "admin"))
         .unwrap();
 
     let archived: i32 = db

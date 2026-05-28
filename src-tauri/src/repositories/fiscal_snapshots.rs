@@ -106,6 +106,17 @@ impl<'a> FiscalSnapshotRepository<'a> {
         Ok(self.executor.last_insert_rowid())
     }
 
+    pub fn count_distinct_closed_years_with_snapshot(&self) -> AppResult<i64> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(DISTINCT fiscal_year) FROM fiscal_operational_snapshots
+                 WHERE fiscal_year IN (SELECT year FROM fiscal_year_status WHERE status = 'closed')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub fn list_operational_snapshots(
         &self,
         fiscal_year: Option<i32>,

@@ -423,6 +423,16 @@ impl<'a> ReportRepository<'a> {
         )
     }
 
+    pub fn count_with_fiscal_year_mismatch(&self) -> Result<i64, AppError> {
+        self.executor
+            .query_row(
+                "SELECT COUNT(*) FROM daily_reports dr CROSS JOIN settings s WHERE dr.fiscal_year != s.current_year",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub fn count_active_reports_by_year(&self, year: i32) -> Result<i64, AppError> {
         let count = self.executor.query_row(
             "SELECT COUNT(*) FROM daily_reports WHERE fiscal_year = ?1 AND deleted = 0",

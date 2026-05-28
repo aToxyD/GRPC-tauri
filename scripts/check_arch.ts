@@ -110,14 +110,11 @@ checkRule(
     /"SELECT\b|"INSERT\b|"UPDATE\b|"DELETE\b|\.execute\(|\.prepare\(/,
     (line) => line.trim().startsWith("//") || line.includes("[arch:allow-sql]"),
     "error",
-    (f) => !f.includes("fiscal_year_service") &&
-           !f.includes("fiscal_validation_service") &&
+    (f) => !f.includes("fiscal_validation_service") &&
            !f.includes("fiscal_integrity_service") &&
            !f.includes("export_reproducibility_helper") &&
            !f.includes("fiscal_timeline_service") &&
-           !f.includes("import_sync_service") &&
            !f.includes("sync_import_validation_service") &&
-           !f.includes("sync_import_execution_service") &&
            !f.includes("inventory_integrity_service") &&
            !f.includes("operational_consistency_verifier") &&
            !f.includes("operation_execution_guard")

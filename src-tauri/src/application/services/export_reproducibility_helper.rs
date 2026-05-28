@@ -6,6 +6,7 @@ use crate::application::services::{
 use crate::errors::AppError;
 use crate::infrastructure::security::resolve_active_signing_key_id;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::RepositoryProvider;
 use chrono::Utc;
 
 pub struct ExportReproducibilityContext {
@@ -26,16 +27,8 @@ pub fn record_export_with_reproducibility(
         "{:?}",
         SystemIntegrityState::resolve_from_executor(executor)?
     );
-    let archived_years_count: i64 = executor.query_row(
-        "SELECT COUNT(*) FROM fiscal_year_status WHERE archived = 1",
-        [],
-        |r| r.get(0),
-    )?;
-    let active_anomalies_count: i64 = executor.query_row(
-        "SELECT COUNT(*) FROM operational_findings_log WHERE severity IN ('WARNING','CRITICAL')",
-        [],
-        |r| r.get(0),
-    )?;
+    let archived_years_count: i64 = executor.fiscal_year_status().count_archived()?;
+    let active_anomalies_count: i64 = executor.anomaly().count_active_anomalies()?;
     let signing_key_id = resolve_active_signing_key_id().unwrap_or_else(|| "unset".to_string());
 
     let snapshot = FiscalExportSnapshot {

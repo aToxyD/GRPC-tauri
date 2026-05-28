@@ -8,6 +8,7 @@ use crate::application::services::system_integrity_state_service::SystemIntegrit
 use crate::application::services::{FiscalTimelineQuery, FiscalTimelineService, TimelineEventKind};
 use crate::errors::AppError;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::RepositoryProvider;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,15 +84,7 @@ impl<'a> OperationalConsistencyVerifier<'a> {
         &self,
         findings: &mut Vec<OperationalConsistencyFinding>,
     ) -> Result<(), AppError> {
-        let missing: i64 = self.executor.query_row(
-            r#"
-            SELECT COUNT(*) FROM operational_findings_log
-            WHERE severity = 'CRITICAL'
-              AND (recommendation IS NULL OR TRIM(recommendation) = '')
-            "#,
-            [],
-            |r| r.get(0),
-        )?;
+        let missing = self.executor.anomaly().count_critical_without_recommendation()?;
         let passed = missing == 0;
         Self::push(
             findings,
@@ -143,16 +136,8 @@ impl<'a> OperationalConsistencyVerifier<'a> {
         &self,
         findings: &mut Vec<OperationalConsistencyFinding>,
     ) -> Result<(), AppError> {
-        let archived_years: i64 = self.executor.query_row(
-            "SELECT COUNT(*) FROM fiscal_year_status WHERE archived = 1",
-            [],
-            |r| r.get(0),
-        )?;
-        let inconsistent: i64 = self.executor.query_row(
-            "SELECT COUNT(*) FROM fiscal_year_status WHERE archived = 1 AND status != 'closed'",
-            [],
-            |r| r.get(0),
-        )?;
+        let archived_years = self.executor.fiscal_year_status().count_archived()?;
+        let (inconsistent, _, _) = self.executor.fiscal_year_status().count_invariant_violations()?;
         let passed = inconsistent == 0;
         Self::push(
             findings,
@@ -178,14 +163,7 @@ impl<'a> OperationalConsistencyVerifier<'a> {
         &self,
         findings: &mut Vec<OperationalConsistencyFinding>,
     ) -> Result<(), AppError> {
-        let failed_recent: i64 = self.executor.query_row(
-            r#"
-            SELECT COUNT(*) FROM integrity_verification_attempts
-            WHERE outcome = 'FAIL' AND attempted_at >= datetime('now', '-90 days')
-            "#,
-            [],
-            |r| r.get(0),
-        )?;
+        let failed_recent = self.executor.integrity().count_recent_failures()?;
         if failed_recent == 0 {
             Self::push(
                 findings,
@@ -232,11 +210,7 @@ impl<'a> OperationalConsistencyVerifier<'a> {
         &self,
         findings: &mut Vec<OperationalConsistencyFinding>,
     ) -> Result<(), AppError> {
-        let closed_years: i64 = self.executor.query_row(
-            "SELECT COUNT(*) FROM fiscal_year_status WHERE status = 'closed'",
-            [],
-            |r| r.get(0),
-        )?;
+        let closed_years = self.executor.fiscal_year_status().count_closed()?;
         if closed_years == 0 {
             Self::push(
                 findings,
@@ -246,22 +220,11 @@ impl<'a> OperationalConsistencyVerifier<'a> {
             );
             return Ok(());
         }
-        let audit_closes: i64 = self.executor.query_row(
-            r#"
-            SELECT COUNT(*) FROM audit_log
-            WHERE action = 'FiscalYearClosed'
-            "#,
-            [],
-            |r| r.get(0),
-        )?;
-        let snapshots_after_close: i64 = self.executor.query_row(
-            r#"
-            SELECT COUNT(DISTINCT fiscal_year) FROM fiscal_operational_snapshots
-            WHERE fiscal_year IN (SELECT year FROM fiscal_year_status WHERE status = 'closed')
-            "#,
-            [],
-            |r| r.get(0),
-        )?;
+        let audit_closes = self.executor.audit().count_by_action("FiscalYearClosed")?;
+        let snapshots_after_close = self
+            .executor
+            .fiscal_snapshots()
+            .count_distinct_closed_years_with_snapshot()?;
         let recs = OperationalRecommendationService::new(self.executor).build_recommendations()?;
         let _ = recs;
         let passed = audit_closes > 0 && snapshots_after_close > 0;

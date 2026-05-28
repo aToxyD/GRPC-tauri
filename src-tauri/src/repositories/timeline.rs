@@ -183,6 +183,25 @@ impl<'a> TimelineRepository<'a> {
             .map_err(Into::into)
     }
 
+    #[allow(clippy::type_complexity)]
+    pub fn fetch_archived_fiscal_years(
+        &self,
+    ) -> AppResult<Vec<(i32, Option<String>, Option<String>)>> {
+        self.executor
+            .query_all(
+                "SELECT year, closed_at, closed_by FROM fiscal_year_status WHERE archived = 1",
+                [],
+                |r| {
+                    Ok((
+                        r.get::<_, i32>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .map_err(Into::into)
+    }
+
     pub fn fetch_exports(&self, limit: i64) -> AppResult<Vec<TimelineExportRow>> {
         self.executor
             .query_all(

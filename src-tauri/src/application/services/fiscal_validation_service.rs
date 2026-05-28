@@ -39,11 +39,8 @@ pub fn validate_fiscal_state(db: &crate::db::Database) -> Result<(), String> {
 
     // ── A: exactly one open year ──────────────────────────────────────────
     let open_count: i64 = executor
-        .query_row(
-            "SELECT COUNT(*) FROM fiscal_year_status WHERE status = 'open'",
-            [],
-            |r| r.get(0),
-        )
+        .fiscal_year_status()
+        .count_open_years()
         .map_err(|e| format!("fiscal_state A: cannot count open years: {}", e))?;
 
     if open_count == 0 {
@@ -61,17 +58,14 @@ pub fn validate_fiscal_state(db: &crate::db::Database) -> Result<(), String> {
 
     // ── B: settings.current_year matches open year ────────────────────────
     let open_year: i32 = executor
-        .query_row(
-            "SELECT year FROM fiscal_year_status WHERE status = 'open' LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| format!("fiscal_state B: cannot read open year: {}", e))?;
+        .fiscal_year_status()
+        .get_open_year()
+        .map_err(|e| format!("fiscal_state B: cannot read open year: {}", e))?
+        .ok_or_else(|| "FISCAL STATE INVALID: open year not found after count check".to_string())?;
 
     let current_year: i32 = executor
-        .query_row("SELECT current_year FROM settings WHERE id = 1", [], |r| {
-            r.get(0)
-        })
+        .settings()
+        .get_current_year()
         .map_err(|e| format!("fiscal_state B: cannot read settings.current_year: {}", e))?;
 
     if current_year != open_year {
@@ -89,11 +83,8 @@ pub fn validate_fiscal_state(db: &crate::db::Database) -> Result<(), String> {
 
     // ── C: no orphan opening_balance_snapshots ────────────────────────────
     let orphan_count: i64 = executor
-        .query_row(
-            "SELECT COUNT(DISTINCT fiscal_year)              FROM opening_balance_snapshots              WHERE fiscal_year NOT IN (SELECT year FROM fiscal_year_status)",
-            [],
-            |r| r.get(0),
-        )
+        .integrity()
+        .count_orphan_opening_balances()
         .map_err(|e| format!("fiscal_state C: orphan check failed: {}", e))?;
 
     if orphan_count > 0 {

@@ -9,6 +9,7 @@ use crate::application::services::system_integrity_state_service::SystemIntegrit
 use crate::application::services::OperationalAnomalyService;
 use crate::errors::{AppError, BusinessLogicError};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::RepositoryProvider;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -60,25 +61,16 @@ impl OperationExecutionGuard {
 
     /// Deterministic fingerprint of fiscal + integrity signals used for tokens.
     pub fn state_fingerprint(executor: DbExecutor<'_>) -> Result<String, AppError> {
-        let open_year: i32 = executor.query_row(
-            "SELECT year FROM fiscal_year_status WHERE status = 'open' LIMIT 1",
-            [],
-            |r| r.get(0),
-        )?;
-        let current_year: i32 =
-            executor.query_row("SELECT current_year FROM settings WHERE id = 1", [], |r| {
-                r.get(0)
-            })?;
-        let max_archived: i32 = executor.query_row(
-            "SELECT COALESCE(MAX(year), 0) FROM fiscal_year_status WHERE archived = 1",
-            [],
-            |r| r.get(0),
-        )?;
-        let critical_findings: i64 = executor.query_row(
-            "SELECT COUNT(*) FROM operational_findings_log WHERE severity = 'CRITICAL'",
-            [],
-            |r| r.get(0),
-        )?;
+        let open_year: i32 = executor
+            .fiscal_year_status()
+            .get_open_year()?
+            .unwrap_or(0); // [arch:allow-unwrap-or] safe default when no open year
+        let current_year: i32 = executor.settings().get_current_year()?;
+        let max_archived: i32 = executor
+            .fiscal_year_status()
+            .max_archived_year()?
+            .unwrap_or(0); // [arch:allow-unwrap-or] safe default when no archived years
+        let critical_findings: i64 = executor.anomaly().count_critical_findings()?;
         let integrity = SystemIntegrityState::resolve_from_executor(executor)?;
         Ok(format!(
             "open={}|current={}|archived_max={}|critical_findings={}|integrity={:?}",
