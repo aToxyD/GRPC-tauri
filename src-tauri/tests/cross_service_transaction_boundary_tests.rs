@@ -84,7 +84,7 @@ fn case_a_fiscal_close_audit_failure_rolls_back_entire_transaction() {
         .unwrap();
 
     let res = db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(2024, 2025, &uid, "__FISCAL_CLOSE_AUDIT_FAIL__", None)
+        FiscalClosingService::new(tx).close_year(2024, 2025, &uid, "__FISCAL_CLOSE_AUDIT_FAIL__", None)
     });
     assert!(res.is_err());
 
@@ -137,7 +137,7 @@ fn case_b_snapshot_creation_failure_does_not_lock_year() {
         .unwrap();
 
     let res = db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(2024, 2025, &uid, "admin", None)
+        FiscalClosingService::new(tx).close_year(2024, 2025, &uid, "admin", None)
     });
     assert!(res.is_err());
     assert_eq!(fiscal_status(&db, 2024), "open");
@@ -175,7 +175,7 @@ fn case_c_settings_current_year_failure_rolls_back_snapshots() {
         .unwrap();
 
     let res = db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(2024, 2025, &uid, "admin", None)
+        FiscalClosingService::new(tx).close_year(2024, 2025, &uid, "admin", None)
     });
     assert!(res.is_err());
     assert_eq!(fiscal_status(&db, 2024), "open");

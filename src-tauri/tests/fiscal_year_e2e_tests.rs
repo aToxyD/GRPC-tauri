@@ -231,7 +231,7 @@ fn test_e2e_single_layer_carry_forward() {
     // Phase 2: close YEAR_N, open YEAR_N1
     let uid = admin_id(&db);
     db.with_transaction(|ex| {
-        FiscalYearService::new(ex).close_year(YEAR_N, YEAR_N1, &uid, "system", None)
+        FiscalClosingService::new(ex).close_year(YEAR_N, YEAR_N1, &uid, "system", None)
     })
     .expect("close_year failed");
 
@@ -372,7 +372,7 @@ fn test_e2e_multi_layer_carry_forward() {
     // Phase 2: close_year
     let uid = admin_id(&db);
     db.with_transaction(|ex| {
-        FiscalYearService::new(ex).close_year(YEAR_N, YEAR_N1, &uid, "system", None)
+        FiscalClosingService::new(ex).close_year(YEAR_N, YEAR_N1, &uid, "system", None)
     })
     .expect("close_year failed");
 
@@ -522,7 +522,7 @@ fn test_e2e_multi_product_carry_forward() {
     // Phase 2: close_year
     let uid = admin_id(&db);
     db.with_transaction(|ex| {
-        FiscalYearService::new(ex).close_year(YEAR_N, YEAR_N1, &uid, "system", None)
+        FiscalClosingService::new(ex).close_year(YEAR_N, YEAR_N1, &uid, "system", None)
     })
     .expect("close_year failed");
 

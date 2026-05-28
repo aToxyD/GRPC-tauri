@@ -12,6 +12,7 @@ mod common;
 
 use chrono::{Datelike, Utc};
 use grpc_lib::application::services::{FiscalClosingService, StockMovementService};
+use grpc_lib::application::services::FiscalValidationService;
 use grpc_lib::models::{NewStockMovement, StockMovementType};
 use grpc_lib::repositories::RepositoryProvider;
 
@@ -21,7 +22,9 @@ fn test_fiscal_lifecycle_sim() {
     let db = state.db.lock().unwrap();
     let executor = db.as_ref().unwrap().executor();
 
-    let fiscal_service = FiscalYearService::new(executor);
+    let fiscal_closing_service = FiscalClosingService::new(executor);
+    let fiscal_validation_service = FiscalValidationService::new(executor);
+
     let stock_service = StockMovementService::new(executor);
 
     let current_year = Utc::now().year();
@@ -36,7 +39,7 @@ fn test_fiscal_lifecycle_sim() {
 
     // 1. Initial State: Year should be open by default (via migration or manual seed)
     // Let's seed it to be sure
-    fiscal_service
+    fiscal_closing_service
         .close_year(current_year - 1, current_year, &user_id, username, None)
         .ok(); // ignore if fails
 
@@ -95,7 +98,7 @@ fn test_fiscal_lifecycle_sim() {
         .expect("Should create FIFO layer");
 
     // 4. ATOMIC CLOSE
-    fiscal_service
+    fiscal_closing_service
         .close_year(current_year, next_year, &user_id, username, None)
         .expect("Atomic close should succeed");
 
@@ -123,7 +126,7 @@ fn test_fiscal_lifecycle_sim() {
     assert_eq!(snapshot.carried_from_year, Some(current_year));
 
     // 7. Verify next year is OPEN
-    fiscal_service
+    fiscal_validation_service
         .assert_fiscal_year_open(next_year)
         .expect("Next year should be open");
 }

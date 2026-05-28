@@ -151,7 +151,7 @@ fn get_layer_consumption_cost(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
 fn close_year(db: &mut grpc_lib::db::Database, year: i32, next_year: i32) {
     let uid = admin_id(db);
     db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(year, next_year, &uid, "system", None)
+        FiscalClosingService::new(tx).close_year(year, next_year, &uid, "system", None)
     })
     .expect("close_year failed");
 }

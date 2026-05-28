@@ -103,7 +103,7 @@ fn fiscal_close_zero_stock_never_uses_base_price() {
     let mut guard = state.db.lock().unwrap();
     let db = guard.as_mut().unwrap();
     db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(2025, 2026, "system", "system", None)
+        FiscalClosingService::new(tx).close_year(2025, 2026, "system", "system", None)
     })
     .unwrap();
 
@@ -497,7 +497,7 @@ fn closed_fiscal_year_rejects_daily_report() {
         let mut guard = state.db.lock().unwrap();
         let db = guard.as_mut().unwrap();
         db.with_transaction(|tx| {
-            FiscalYearService::new(tx).close_year(2025, 2026, "system", "system", None)
+            FiscalClosingService::new(tx).close_year(2025, 2026, "system", "system", None)
         })
         .unwrap();
     }

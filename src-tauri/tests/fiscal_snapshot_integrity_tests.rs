@@ -21,7 +21,7 @@ fn close(state: &grpc_lib::commands::AppState) -> Result<usize, grpc_lib::errors
     let mut guard = state.db.lock().unwrap();
     let db = guard.as_mut().unwrap();
     db.with_transaction(|tx| {
-        FiscalYearService::new(tx).close_year(YEAR, NEXT, USER_ID, USERNAME, None)
+        FiscalClosingService::new(tx).close_year(YEAR, NEXT, USER_ID, USERNAME, None)
     })
 }
 
