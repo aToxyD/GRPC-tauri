@@ -3,6 +3,7 @@ pub mod audit;
 pub mod audit_chain;
 pub mod backup;
 pub mod fifo_engine;
+pub mod invariants;
 pub mod meal_cost_engine;
 pub mod ports;
 pub mod rate_limiter;
