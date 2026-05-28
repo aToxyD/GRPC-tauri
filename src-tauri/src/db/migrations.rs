@@ -19,6 +19,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Add origin_fiscal_year to fifo_stock_layers for carry-forward audit",
             include_str!("migrations/002_origin_fiscal_year.sql"),
         ),
+        (
+            3,
+            "Create domain_events table for deterministic event persistence",
+            include_str!("migrations/003_domain_events.sql"),
+        ),
     ]
 }
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use uuid::Uuid;
 
 /// Categorization of domain events by domain area.
@@ -8,6 +9,32 @@ pub enum EventCategory {
     Fiscal,
     Sync,
     Audit,
+}
+
+impl EventCategory {
+    /// Serialize category as a static string for DB storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Stock => "Stock",
+            Self::Fiscal => "Fiscal",
+            Self::Sync => "Sync",
+            Self::Audit => "Audit",
+        }
+    }
+}
+
+impl FromStr for EventCategory {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Stock" => Ok(Self::Stock),
+            "Fiscal" => Ok(Self::Fiscal),
+            "Sync" => Ok(Self::Sync),
+            "Audit" => Ok(Self::Audit),
+            other => Err(format!("invalid event category: {}", other)),
+        }
+    }
 }
 
 /// A domain event enriched with its transaction-scoped metadata.
@@ -20,6 +47,18 @@ pub struct StoredEvent {
     pub transaction_id: Uuid,
     pub category: EventCategory,
     pub event: DomainEvent,
+}
+
+impl StoredEvent {
+    /// Serialize the event body as JSON for persistence.
+    pub fn event_body_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(&self.event)
+    }
+
+    /// The event type name string.
+    pub fn event_type_str(&self) -> &'static str {
+        self.event.event_name()
+    }
 }
 
 /// All domain events in the system.

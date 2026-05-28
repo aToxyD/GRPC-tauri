@@ -6,6 +6,7 @@
 
 pub mod anomaly;
 pub mod audit;
+pub mod domain_events;
 pub mod executor;
 pub mod fifo_layers;
 pub mod fiscal_package_registry;
@@ -32,6 +33,7 @@ pub mod users;
 
 pub use anomaly::AnomalyRepository;
 pub use audit::AuditRepository;
+pub use domain_events::{DomainEventRepository, EventSequenceGap};
 pub use executor::{DbExecutor, ExecutorProvider};
 pub use fifo_layers::FifoLayerRepository;
 pub use fiscal_package_registry::{FiscalPackageRegistryEntry, FiscalPackageRegistryRepository};
@@ -57,6 +59,7 @@ pub use units::UnitRepository;
 pub use users::UserRepository;
 
 impl crate::architecture::Repository for AnomalyRepository<'_> {}
+impl crate::architecture::Repository for DomainEventRepository<'_> {}
 impl crate::architecture::Repository for UserRepository<'_> {}
 impl crate::architecture::Repository for SettingsRepository<'_> {}
 impl crate::architecture::Repository for ProductRepository<'_> {}
@@ -83,6 +86,7 @@ impl crate::architecture::Repository for FifoLayerRepository<'_> {}
 pub trait RepositoryProvider<'a> {
     fn anomaly(&self) -> AnomalyRepository<'a>;
     fn audit(&self) -> AuditRepository<'a>;
+    fn domain_events(&self) -> DomainEventRepository<'a>;
     fn fiscal_year_status(&self) -> FiscalYearStatusRepository<'a>;
     fn fiscal_snapshots(&self) -> FiscalSnapshotRepository<'a>;
     fn fiscal_transitions(&self) -> FiscalTransitionRepository<'a>;
@@ -113,6 +117,9 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn audit(&self) -> AuditRepository<'a> {
         AuditRepository::new(*self)
+    }
+    fn domain_events(&self) -> DomainEventRepository<'a> {
+        DomainEventRepository::new(*self)
     }
     fn fiscal_year_status(&self) -> FiscalYearStatusRepository<'a> {
         FiscalYearStatusRepository::new(*self)

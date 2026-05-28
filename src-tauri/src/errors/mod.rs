@@ -319,6 +319,18 @@ pub enum AuthenticationError {
     SessionNotFound,
 }
 
+impl From<serde_json::Error> for AppError {
+    fn from(e: serde_json::Error) -> Self {
+        AppError::Internal(format!("JSON error: {}", e))
+    }
+}
+
+impl From<uuid::Error> for AppError {
+    fn from(e: uuid::Error) -> Self {
+        AppError::Internal(format!("UUID error: {}", e))
+    }
+}
+
 impl From<argon2::password_hash::Error> for AppError {
     fn from(e: argon2::password_hash::Error) -> Self {
         map_argon2_error(e)

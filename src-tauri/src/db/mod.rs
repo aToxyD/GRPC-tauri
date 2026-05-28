@@ -45,6 +45,9 @@ impl Database {
     ///
     /// Provides an `EventContext` for database access and event emission.
     /// On success returns `(result, EventBuffer)`; on rollback the buffer is discarded.
+    ///
+    /// Events are NOT automatically persisted. Use `with_event_persistence`
+    /// for automatic persistence before commit.
     pub fn with_event_context<F, T>(
         &mut self,
         f: F,
@@ -53,6 +56,28 @@ impl Database {
         F: FnOnce(&mut crate::domain::events::EventContext<'_>) -> Result<T, AppError>,
     {
         crate::infrastructure::db::transaction::TransactionService::with_event_context(
+            &mut self.conn,
+            f,
+        )
+    }
+
+    /// Execute within a transaction with automatic event persistence.
+    ///
+    /// Works like `with_event_context`, but additionally persists all
+    /// buffered events to the `domain_events` table before committing.
+    ///
+    /// Persistence guarantees:
+    /// - Events are persisted inside the same SQLite transaction
+    /// - If the operation rolls back, events are discarded
+    /// - If commit succeeds, events are atomically persisted with state changes
+    pub fn with_event_persistence<F, T>(
+        &mut self,
+        f: F,
+    ) -> Result<(T, crate::domain::events::EventBuffer), AppError>
+    where
+        F: FnOnce(&mut crate::domain::events::EventContext<'_>) -> Result<T, AppError>,
+    {
+        crate::infrastructure::db::transaction::TransactionService::with_event_persistence(
             &mut self.conn,
             f,
         )
