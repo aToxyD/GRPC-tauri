@@ -41,6 +41,23 @@ impl Database {
         )
     }
 
+    /// Execute within a transaction with domain event support.
+    ///
+    /// Provides an `EventContext` for database access and event emission.
+    /// On success returns `(result, EventBuffer)`; on rollback the buffer is discarded.
+    pub fn with_event_context<F, T>(
+        &mut self,
+        f: F,
+    ) -> Result<(T, crate::domain::events::EventBuffer), AppError>
+    where
+        F: FnOnce(&mut crate::domain::events::EventContext<'_>) -> Result<T, AppError>,
+    {
+        crate::infrastructure::db::transaction::TransactionService::with_event_context(
+            &mut self.conn,
+            f,
+        )
+    }
+
     /// الحصول على مسار ملف قاعدة البيانات
     pub fn get_connection_path(&self) -> DbResult<PathBuf> {
         Ok(get_connection_path(&self.conn)?)

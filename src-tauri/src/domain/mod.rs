@@ -2,6 +2,7 @@ pub mod accounting;
 pub mod audit;
 pub mod audit_chain;
 pub mod backup;
+pub mod events;
 pub mod fifo_engine;
 pub mod invariants;
 pub mod meal_cost_engine;
