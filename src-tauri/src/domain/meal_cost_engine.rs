@@ -7,7 +7,8 @@
 //! real DB consumption and in-memory simulation — zero fork risk.
 
 use crate::errors::AppError;
-use crate::models::{ConsumedLayerPortion, MealSectionInput, MealType};
+use crate::domain::accounting::fifo::ConsumedLayerPortion;
+use crate::models::{MealSectionInput, MealType};
 
 /// Cost breakdown for one product within a meal.
 #[derive(Debug, Clone)]

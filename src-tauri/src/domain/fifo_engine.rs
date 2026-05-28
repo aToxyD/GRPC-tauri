@@ -3,7 +3,7 @@
 //! Ordering: `received_at ASC`, then `id ASC` (stable FIFO).
 
 use crate::errors::{AppError, BusinessLogicError};
-use crate::models::ConsumedLayerPortion;
+use crate::domain::accounting::fifo::ConsumedLayerPortion;
 
 /// One layer row used for simulation: (layer_id, unit_cost, qty_remaining).
 pub type FifoLayerRow = (String, f64, f64);

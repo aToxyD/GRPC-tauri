@@ -36,13 +36,7 @@ pub struct InventoryLayerConsumption {
     pub consumed_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConsumedLayerPortion {
-    pub layer_id: String,
-    pub quantity: f64,
-    pub unit_cost: f64,
-    pub total_cost: f64,
-}
+pub use crate::domain::accounting::fifo::ConsumedLayerPortion;
 
 /// Predicted consumption for one product line (FIFO dry-run).
 #[derive(Debug, Clone, Serialize, Deserialize)]

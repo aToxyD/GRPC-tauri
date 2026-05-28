@@ -1,11 +1,7 @@
-//! Accounting value objects — distinct from catalog/reference pricing.
-//!
-//! `ReferencePrice` is informational only (purchasing, UI comparison).
-//! `FifoUnitCost`, `ConsumptionCost`, `InventoryValue`, and `HistoricalCost`
-//! are the only types that may participate in inventory accounting.
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use super::fifo::ConsumedLayerPortion;
 
 /// Catalog / reference price — must never drive FIFO, COGS, or valuation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -48,27 +44,9 @@ impl ConsumptionCost {
         self.0
     }
 
-    pub fn from_portions(portions: &[crate::models::ConsumedLayerPortion]) -> Self {
+    pub fn from_portions(portions: &[ConsumedLayerPortion]) -> Self {
         let total: f64 = portions.iter().map(|p| p.total_cost).sum();
         Self(total)
-    }
-}
-
-/// Inventory valuation from remaining FIFO layers only.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct InventoryValue(f64);
-
-impl InventoryValue {
-    pub fn new(value: f64) -> Self {
-        Self(value)
-    }
-
-    pub fn value(self) -> f64 {
-        self.0
-    }
-
-    pub fn zero() -> Self {
-        Self(0.0)
     }
 }
 
