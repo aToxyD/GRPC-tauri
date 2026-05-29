@@ -74,17 +74,17 @@ impl StoredEvent {
 pub enum DomainEvent {
     // ── Stock Events ──
     StockMovementRecorded {
-        movement_id: i64,
+        movement_id: String,
         account: String,
         actor_user_id: String,
     },
     FifoLayerConsumed {
-        layer_id: i64,
+        layer_id: String,
         quantity: f64,
         unit_cost: f64,
     },
     InventoryCorrected {
-        product_id: i64,
+        product_id: String,
         before_quantity: f64,
         after_quantity: f64,
         reason: String,
@@ -161,6 +161,50 @@ impl DomainEvent {
             Self::AuditIntegrityBreach { .. } => "AuditIntegrityBreach",
         }
     }
+}
+
+/// Validate that a slice of events is in canonical replay order:
+/// `(transaction_id ASC, sequence_number ASC)`.
+///
+/// Returns `true` if every adjacent pair respects the ordering invariant.
+/// An empty or single-element slice trivially passes.
+pub fn validate_replay_ordering(events: &[StoredEvent]) -> bool {
+    for i in 1..events.len() {
+        let prev = &events[i - 1];
+        let cur = &events[i];
+        if cur.transaction_id.as_u128() < prev.transaction_id.as_u128() {
+            return false;
+        }
+        if cur.transaction_id == prev.transaction_id
+            && cur.sequence_number <= prev.sequence_number
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// Validate that all sequence numbers within each transaction are
+/// contiguous (no gaps) and start at 1.
+///
+/// This is a stronger invariant than `validate_replay_ordering`: it
+/// ensures no sequence numbers were skipped within any transaction.
+pub fn validate_transaction_sequences(events: &[StoredEvent]) -> bool {
+    let mut i = 0;
+    while i < events.len() {
+        let tx_id = events[i].transaction_id;
+        let mut expected_seq = 1u64;
+        let mut j = i;
+        while j < events.len() && events[j].transaction_id == tx_id {
+            if events[j].sequence_number != expected_seq {
+                return false;
+            }
+            expected_seq += 1;
+            j += 1;
+        }
+        i = j;
+    }
+    true
 }
 
 /// Transaction-scoped event buffer.
@@ -313,7 +357,7 @@ mod tests {
         let mut buf = EventBuffer::new(Uuid::new_v4());
         buf.push(DomainEvent::FiscalYearClosed { year: 2024 });
         buf.push(DomainEvent::StockMovementRecorded {
-            movement_id: 1,
+            movement_id: "mov-1".into(),
             account: "Consumption".into(),
             actor_user_id: "user-1".into(),
         });
@@ -366,21 +410,21 @@ mod tests {
     #[test]
     fn event_category_stock() {
         let e = DomainEvent::StockMovementRecorded {
-            movement_id: 1,
+            movement_id: "mov-1".into(),
             account: "Consumption".into(),
             actor_user_id: "u1".into(),
         };
         assert_eq!(e.category(), EventCategory::Stock);
 
         let e = DomainEvent::FifoLayerConsumed {
-            layer_id: 1,
+            layer_id: "layer-1".into(),
             quantity: 10.0,
             unit_cost: 5.0,
         };
         assert_eq!(e.category(), EventCategory::Stock);
 
         let e = DomainEvent::InventoryCorrected {
-            product_id: 1,
+            product_id: "prod-1".into(),
             before_quantity: 10.0,
             after_quantity: 8.0,
             reason: "spoilage".into(),
@@ -496,5 +540,117 @@ mod tests {
         assert_eq!(restored.sequence_number, 1);
         assert_eq!(restored.transaction_id, tx_id);
         assert_eq!(restored.category, EventCategory::Fiscal);
+    }
+
+    #[test]
+    fn validate_replay_ordering_accepts_correct_order() {
+        let tx = Uuid::new_v4();
+        let events = vec![
+            StoredEvent {
+                sequence_number: 1,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearClosed { year: 2024 },
+            },
+            StoredEvent {
+                sequence_number: 2,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearArchived { year: 2024 },
+            },
+        ];
+        assert!(validate_replay_ordering(&events));
+    }
+
+    #[test]
+    fn validate_replay_ordering_rejects_reversed_transaction() {
+        // Use deterministic UUIDs where order is known: tx2 > tx1 by u128
+        let tx1 = Uuid::from_u128(100);
+        let tx2 = Uuid::from_u128(200);
+        let events = vec![
+            StoredEvent {
+                sequence_number: 1,
+                transaction_id: tx2,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearClosed { year: 2024 },
+            },
+            StoredEvent {
+                sequence_number: 1,
+                transaction_id: tx1,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearClosed { year: 2023 },
+            },
+        ];
+        assert!(!validate_replay_ordering(&events));
+    }
+
+    #[test]
+    fn validate_replay_ordering_rejects_same_tx_wrong_seq() {
+        let tx = Uuid::from_u128(42);
+        let events = vec![
+            StoredEvent {
+                sequence_number: 2,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearClosed { year: 2024 },
+            },
+            StoredEvent {
+                sequence_number: 1,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearArchived { year: 2024 },
+            },
+        ];
+        assert!(!validate_replay_ordering(&events));
+    }
+
+    #[test]
+    fn validate_transaction_sequences_accepts_contiguous() {
+        let tx = Uuid::new_v4();
+        let events = vec![
+            StoredEvent {
+                sequence_number: 1,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearClosed { year: 2024 },
+            },
+            StoredEvent {
+                sequence_number: 2,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearArchived { year: 2024 },
+            },
+        ];
+        assert!(validate_transaction_sequences(&events));
+    }
+
+    #[test]
+    fn validate_transaction_sequences_rejects_gaps() {
+        let tx = Uuid::new_v4();
+        let events = vec![
+            StoredEvent {
+                sequence_number: 1,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearClosed { year: 2024 },
+            },
+            StoredEvent {
+                sequence_number: 3,
+                transaction_id: tx,
+                category: EventCategory::Fiscal,
+                event: DomainEvent::FiscalYearArchived { year: 2024 },
+            },
+        ];
+        assert!(!validate_transaction_sequences(&events));
+    }
+
+    #[test]
+    fn validate_replay_ordering_trivially_passes_for_empty_slice() {
+        assert!(validate_replay_ordering(&[]));
+    }
+
+    #[test]
+    fn validate_transaction_sequences_trivially_passes_for_empty_slice() {
+        assert!(validate_transaction_sequences(&[]));
     }
 }

@@ -13,7 +13,7 @@ fn create_persisted_events(db: &mut grpc_lib::db::Database) -> (EventBuffer, Uui
                 to_year: 2025,
             });
             ctx.emit(DomainEvent::StockMovementRecorded {
-                movement_id: 10,
+                movement_id: "mov-10".into(),
                 account: "Consumption".into(),
                 actor_user_id: "admin".into(),
             });
@@ -100,12 +100,12 @@ fn committed_transaction_persists_events_atomically() {
     let (_, buffer) = db
         .with_event_persistence(|ctx| {
             ctx.emit(DomainEvent::FifoLayerConsumed {
-                layer_id: 1,
+                layer_id: "layer-1".into(),
                 quantity: 50.0,
                 unit_cost: 12.5,
             });
             ctx.emit(DomainEvent::InventoryCorrected {
-                product_id: 100,
+                product_id: "prod-100".into(),
                 before_quantity: 50.0,
                 after_quantity: 45.0,
                 reason: "spoilage".into(),
@@ -174,7 +174,6 @@ fn replay_queries_ordered_by_transaction_id_sequence_number() {
 
     assert_eq!(all.len(), 3);
 
-    // Events from same transaction must be contiguous and ordered by sequence_number
     let tx1_events: Vec<_> = all
         .iter()
         .filter(|e| e.transaction_id == tx1_id)
@@ -191,9 +190,7 @@ fn replay_queries_ordered_by_transaction_id_sequence_number() {
     assert_eq!(tx2_events[0].sequence_number, 1);
     assert_eq!(tx2_events[1].sequence_number, 2);
 
-    // Cross-transaction ordering must be by transaction_id ASC
     for (i, e) in all.iter().enumerate() {
-        // Each event's transaction_id must be >= the previous
         if i > 0 {
             assert!(
                 e.transaction_id.as_u128() >= all[i - 1].transaction_id.as_u128(),
@@ -202,7 +199,6 @@ fn replay_queries_ordered_by_transaction_id_sequence_number() {
         }
     }
 
-    // Within same transaction_id, sequence_number must be ASC
     let mut i = 0;
     while i < all.len() {
         let tx_id = all[i].transaction_id;
@@ -299,7 +295,7 @@ fn multiple_events_in_single_tx_share_transaction_id() {
         .with_event_persistence(|ctx| {
             ctx.emit(DomainEvent::FiscalYearClosed { year: 2024 });
             ctx.emit(DomainEvent::FifoLayerConsumed {
-                layer_id: 1,
+                layer_id: "layer-1".into(),
                 quantity: 10.0,
                 unit_cost: 5.0,
             });
@@ -327,7 +323,7 @@ fn event_category_is_preserved_through_persistence() {
     let (_, buffer) = db
         .with_event_persistence(|ctx| {
             ctx.emit(DomainEvent::StockMovementRecorded {
-                movement_id: 1,
+                movement_id: "mov-1".into(),
                 account: "IN".into(),
                 actor_user_id: "admin".into(),
             });

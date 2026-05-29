@@ -4,6 +4,7 @@
 //! Breakfast consumes FIFO layers first, then Lunch, then Dinner.
 //! Each meal item's cost reflects authentic FIFO layer portions.
 
+use crate::domain::events::DomainEvent;
 use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
@@ -49,6 +50,17 @@ impl<'a> DailyReportService<'a> {
         unit_id: Option<&str>,
         user_id: &str,
         username: &str,
+    ) -> Result<String, AppError> {
+        self.create_daily_report_impl(input, unit_id, user_id, username, &mut |_| {})
+    }
+
+    pub fn create_daily_report_impl(
+        &self,
+        input: &DailyReportInput,
+        unit_id: Option<&str>,
+        user_id: &str,
+        username: &str,
+        on_event: &mut dyn FnMut(DomainEvent),
     ) -> Result<String, AppError> {
         validate_daily_report_input(input)?;
 
@@ -135,6 +147,11 @@ impl<'a> DailyReportService<'a> {
                     unit_cost: Some(weighted_unit_cost),
                 };
                 let movement_id = stock_repo.record_stock_movement(&movement)?;
+                on_event(DomainEvent::StockMovementRecorded {
+                    movement_id: movement_id.clone(),
+                    account: "Consumption".into(),
+                    actor_user_id: user_id.to_string(),
+                });
 
                 for portion in &product.portions {
                     fifo_repo.create_consumption_record(
@@ -145,6 +162,11 @@ impl<'a> DailyReportService<'a> {
                         portion.unit_cost,
                         &now,
                     )?;
+                    on_event(DomainEvent::FifoLayerConsumed {
+                        layer_id: portion.layer_id.clone(),
+                        quantity: portion.quantity,
+                        unit_cost: portion.unit_cost,
+                    });
                     item_costs.push((
                         product.product_id.clone(),
                         portion.quantity,

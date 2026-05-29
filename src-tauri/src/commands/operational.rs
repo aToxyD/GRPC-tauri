@@ -25,6 +25,7 @@ use crate::application::services::{
 use crate::commands::common::{db_mut_or_command_error, db_ref_or_command_error};
 use crate::commands::guards::{authorize_command, require_maintenance_allows};
 use crate::commands::types::AppState;
+use crate::domain::events::DomainEvent;
 use crate::errors::{into_command_error, AppError};
 use tauri::State;
 
@@ -317,16 +318,23 @@ pub fn close_fiscal_year_confirmed(
         .set(SystemMaintenanceState::MaintenanceLocked)
         .map_err(into_command_error)?;
 
-    let snapshot_count = match db.with_transaction(|tx| {
-        FiscalClosingService::new(tx).close_year(
+    let snapshot_count = match db.with_event_persistence(|ctx| {
+        let executor = ctx.executor();
+        let count = FiscalClosingService::new(executor).close_year(
             request.year,
             request.next_year,
             &user_id,
             &username,
             None,
-        )
+        )?;
+        ctx.emit(DomainEvent::FiscalYearClosed { year: request.year });
+        ctx.emit(DomainEvent::FiscalTransitionApplied {
+            from_year: request.year,
+            to_year: request.next_year,
+        });
+        Ok(count)
     }) {
-        Ok(v) => v,
+        Ok((v, _buf)) => v,
         Err(e) => {
             let _ = state.maintenance.set(SystemMaintenanceState::Normal);
             return Err(into_command_error(e));
@@ -432,8 +440,11 @@ pub fn archive_fiscal_year_confirmed(
         .set(SystemMaintenanceState::MaintenanceLocked)
         .map_err(into_command_error)?;
 
-    if let Err(e) = db.with_transaction(|tx| {
-        FiscalClosingService::new(tx).archive_year(request.year, &user_id, &username)
+    if let Err(e) = db.with_event_persistence(|ctx| {
+        let executor = ctx.executor();
+        FiscalClosingService::new(executor).archive_year(request.year, &user_id, &username)?;
+        ctx.emit(DomainEvent::FiscalYearArchived { year: request.year });
+        Ok(())
     }) {
         let _ = state.maintenance.set(SystemMaintenanceState::Normal);
         return Err(into_command_error(e));

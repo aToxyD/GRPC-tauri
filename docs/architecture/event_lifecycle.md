@@ -78,6 +78,8 @@ Replaying events from `domain_events` produces an **identical sequence** to the 
 - For a fixed starting state and the same event stream, replay produces identical derived state.
 - Replay does NOT re-execute authoritative domain mutations or invariant validation — it re-applies side-effect projections (audit, sync, reporting) to reconstruct projections, derived state, and audit views.
 
+`ORDER BY transaction_id ASC` uses SQLite TEXT comparison of UUID strings (since UUIDs are stored as TEXT). This ordering is deterministic — the same set of events always produces the same replay sequence — but it does NOT correspond to chronological creation order. Cross-transaction ordering is a stable artifact of string comparison, not commit time. Consumers MUST NOT assume temporal ordering across transactions.
+
 This guarantees:
 - **FIFO replay**: event stream mirrors FIFO consumption order exactly.
 - **Audit reconstruction**: every fiscal operation is traceable to the events it produced.
@@ -88,7 +90,7 @@ This guarantees:
 | Aspect | Rule |
 |--------|------|
 | Global order | `(transaction_id ASC, sequence_number ASC)` |
-| Cross-transaction ordering | `transaction_id` Uuid v7 provides temporal ordering |
+| Cross-transaction ordering | `transaction_id` Uuid v4 — `ORDER BY transaction_id ASC` uses SQLite TEXT comparison (deterministic but NOT chronological) |
 | Intra-transaction ordering | `sequence_number` — assigned at emission time, contiguous |
 | Tie-breaking | Impossible by construction: `(transaction_id, sequence_number)` is unique |
 | Replay order | Must match original emission order exactly |

@@ -751,6 +751,54 @@ checkRule(
 }
 
 // ============================================================
+// GROUP 10 — Domain Event Integrity Rules
+// ============================================================
+
+// Rule 46: No direct INSERT into domain_events table outside DomainEventRepository
+checkRule(
+    "Rule 46: Direct INSERT into domain_events outside DomainEventRepository",
+    ["src-tauri/src/**/*.rs"],
+    /INSERT\s+INTO\s+domain_events/i,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        // Allow in the repository itself (domain_events.rs) and tests
+        if (line.includes("domain_events.rs")) return true;
+        // Allow gap detection test which deliberately inserts corrupted data
+        if (line.includes("gap_detection_catches_corrupted")) return true;
+        return false;
+    },
+    "error",
+    (file) => !file.endsWith("domain_events.rs") && !file.includes("/tests/")
+);
+
+// Rule 47: Domain event queries must NOT ORDER BY created_at alone
+// Authoritative ordering for domain events is (transaction_id ASC, sequence_number ASC).
+// Using created_at alone can diverge from the authoritative ordering and must not
+// be used for domain event queries. Exception: explicit [arch:allow-created-at] tag.
+checkRule(
+    "Rule 47: ORDER BY created_at on domain_events table (must use transaction_id, sequence_number)",
+    ["src-tauri/src/**/*.rs"],
+    /ORDER\s+BY\s+created_at\b/i,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-created-at]")) return true;
+        return false;
+    },
+    "error",
+    (file) => file.includes("domain_events") || file.endsWith("mod.rs")
+         || file.endsWith("transaction.rs")
+);
+
+// Rule 48: Repositories must not use with_event_persistence (repos emit no events per ADR)
+checkRule(
+    "Rule 48: with_event_persistence used in repository (repositories must not emit events)",
+    ["src-tauri/src/repositories/**/*.rs"],
+    /with_event_persistence\s*\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
 // SUMMARY
 // ============================================================
 

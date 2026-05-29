@@ -5,7 +5,7 @@
 
 use crate::application::authz::Action;
 use crate::application::services::{
-    record_export_with_reproducibility, AuditTxService, DailyReportService,
+    record_export_with_reproducibility, AuditService, AuditTxService, DailyReportService,
     ExportReproducibilityContext, NodePackageService, ProductService, SettingsService,
     StockMovementService, UnitService, UserService,
 };
@@ -46,6 +46,7 @@ use crate::commands::guards::{authorize_command, require_maintenance_allows};
 use crate::commands::reports::build_report_scope;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
+use crate::domain::events::DomainEvent;
 use crate::domain::session::CurrentSession;
 use crate::domain::validation;
 use crate::errors::{into_command_error, AppError, ValidationError};
@@ -908,33 +909,51 @@ where
         reason_code: None,
     });
 
-    let user_ctx = user_ctx_from_session(&session);
     let imported_by_ref = session.username.trim();
 
     // 5. Transaction & Audit Orchestration
-    // ADR-0016 + Consistency: Use AuditTxService to ensure atomic mutation + main audit log entry.
-    let outcome =
-        AuditTxService::execute_with_audit(db, AuditAction::ImportNodePackage, &user_ctx, |tx| {
-            let registry = SqliteImportedPackageRegistry::new(
-                tx.executor,
-                package_kind,
-                source_node_id.as_deref(),
-                imported_by_ref,
-            );
+    // ADR-0016 + Consistency: Atomic mutation + domain event persistence + audit log entry.
+    let outcome = db.with_event_persistence(|ctx| {
+        let executor = ctx.executor();
+        let registry = SqliteImportedPackageRegistry::new(
+            executor,
+            package_kind,
+            source_node_id.as_deref(),
+            imported_by_ref,
+        );
 
-            let out = importer(tx.executor, &registry, package, &session, importer_wilaya)?;
+        let out = importer(executor, &registry, package, &session, importer_wilaya)?;
 
-            // Success Audit (Import Audit Table)
-            SqliteImportAuditLogger::new(tx.executor).log(&ImportAuditEvent {
-                event_type: ImportAuditEventType::ImportSucceeded,
-                package_id: package_id.clone(),
-                package_kind: kind.clone(),
-                source_node_id: source_node_id.clone(),
-                reason_code: None,
-            })?;
+        // Main audit log entry (same transaction — was handled by AuditTxService)
+        AuditService::new(executor).log_success(
+            &session.user_id,
+            &session.username,
+            AuditAction::ImportNodePackage,
+            AuditAction::ImportNodePackage.default_entity_type(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
 
-            Ok(out)
+        // Success Audit (Import Audit Table)
+        SqliteImportAuditLogger::new(executor).log(&ImportAuditEvent {
+            event_type: ImportAuditEventType::ImportSucceeded,
+            package_id: package_id.clone(),
+            package_kind: kind.clone(),
+            source_node_id: source_node_id.clone(),
+            reason_code: None,
+        })?;
+
+        ctx.emit(DomainEvent::SyncPackageImported {
+            package_id: package_id.clone(),
+            kind: package_kind.to_string(),
         });
+
+        Ok(out)
+    });
 
     // 6. Outcome Mapping & Failure Audit
     let source_integrity = SystemIntegrityState::resolve_from_executor(db.executor())
@@ -942,7 +961,7 @@ where
         .map(|s| format!("{:?}", s));
 
     match outcome {
-        Ok(v) => {
+        Ok((v, _buf)) => {
             let _ = ImportReproducibilityService::new(db.executor()).record_import_metadata(
                 &ImportReproducibilityRecord {
                     package_id: package_id.clone(),

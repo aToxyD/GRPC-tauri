@@ -7,7 +7,7 @@ use crate::application::authz::{Action, ResourceContext};
 use crate::application::services::MaintenanceBlockedOperation;
 use crate::application::usecases::reports::types::{DailyReportFilters, ReportScope, UnitId};
 use crate::commands::common::{
-    db_mut_or_command_error, db_ref_or_command_error, user_ctx_from_session,
+    db_mut_or_command_error, db_ref_or_command_error,
 };
 use crate::commands::guards::{authorize_command, require_maintenance_allows};
 use crate::commands::types::AppState;
@@ -19,7 +19,7 @@ use crate::models::{
 };
 
 use crate::application::services::{
-    AuditTxService, DailyReportService, FifoPreviewService, ReportCalculationService,
+    AuditService, DailyReportService, FifoPreviewService, ReportCalculationService,
     SettingsService,
 };
 use chrono::NaiveDate;
@@ -166,16 +166,33 @@ pub fn create_daily_report(
         .get_current_unit_id()
         .map_err(into_command_error)?;
 
-    let user_ctx = user_ctx_from_session(&session);
-
-    let report_id =
-        AuditTxService::execute_with_audit(db, AuditAction::CreateDailyReport, &user_ctx, |tx| {
-            DailyReportService::new(tx.executor).create_daily_report(
+    let (report_id, _event_buffer) = db
+        .with_event_persistence(|ctx| {
+            let executor = ctx.executor();
+            let report_id = DailyReportService::new(executor).create_daily_report_impl(
                 &input,
                 effective_unit_id.as_deref(),
                 &session.user_id,
                 &session.username,
-            )
+                &mut |event| {
+                    ctx.emit(event);
+                },
+            )?;
+
+            AuditService::new(executor).log_success(
+                &session.user_id,
+                &session.username,
+                AuditAction::CreateDailyReport,
+                AuditAction::CreateDailyReport.default_entity_type(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )?;
+
+            Ok(report_id)
         })
         .map_err(into_command_error)?;
 

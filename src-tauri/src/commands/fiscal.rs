@@ -5,6 +5,7 @@ use crate::application::services::FiscalReportingService;
 use crate::commands::common::db_mut_or_command_error;
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
+use crate::domain::events::DomainEvent;
 use crate::errors::into_command_error;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -57,14 +58,21 @@ pub fn close_fiscal_year(
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    let snapshot_count = db
-        .with_transaction(|tx_executor| {
-            let count = crate::application::services::FiscalClosingService::new(tx_executor)
+    let (snapshot_count, _event_buffer) = db
+        .with_event_persistence(|ctx| {
+            let executor = ctx.executor();
+            let count = crate::application::services::FiscalClosingService::new(executor)
                 .close_year(year, next_year, &user_id, &username, None)?;
 
             // NEW: Automatically register the package for export via service (Architectural integrity)
-            crate::application::services::FiscalClosurePackageService::new(tx_executor)
+            crate::application::services::FiscalClosurePackageService::new(executor)
                 .register_pending_package(year, next_year, &username)?;
+
+            ctx.emit(DomainEvent::FiscalYearClosed { year });
+            ctx.emit(DomainEvent::FiscalTransitionApplied {
+                from_year: year,
+                to_year: next_year,
+            });
 
             Ok(count)
         })
@@ -299,10 +307,18 @@ pub fn apply_fiscal_closure_package(
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    let result = db
-        .with_transaction(|tx| {
-            FiscalClosurePackageService::new(tx)
-                .apply_closure_package(&file_path, &user_id, &username)
+    let (result, _event_buffer) = db
+        .with_event_persistence(|ctx| {
+            let executor = ctx.executor();
+            let res = FiscalClosurePackageService::new(executor)
+                .apply_closure_package(&file_path, &user_id, &username)?;
+
+            ctx.emit(DomainEvent::FiscalTransitionApplied {
+                from_year: res.closed_year,
+                to_year: res.opened_year,
+            });
+
+            Ok(res)
         })
         .map_err(|e| {
             log::error!(
