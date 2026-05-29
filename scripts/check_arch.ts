@@ -15,6 +15,8 @@
  * @see docs/architecture/0011-unified-architecture-migration.md
  * @see docs/architecture/0012-production-error-exposure-policy.md
  * @see docs/architecture/0013-observability-layer.md
+ * @see docs/architecture/0030-adr-exception-governance.md
+ * @see docs/architecture/adr_exception_registry.md
  */
 
 import { Glob } from "bun";
@@ -1732,6 +1734,47 @@ checkRule(
         if (index > 0 && lines[index - 1].includes("[arch:allow-utc-now]")) return true;
         return false;
     },
+    "error"
+);
+
+// ============================================================
+// GROUP 23 — ADR Exception Governance (Phase 8)
+// ============================================================
+
+// Rule 123: All [arch:allow-*] tags must reference an ADR number
+checkRule(
+    "Rule 123: [arch:allow-*] tag without ADR reference (every exception must reference see ADR-NNNN)",
+    [
+        "src-tauri/src/**/*.rs",
+    ],
+    /\[arch:allow-/,
+    (line, index, lines) => {
+        // Allow tags that have ADR reference on the same line
+        if (line.includes("see ADR-")) return true;
+        // Allow preceding line to have ADR reference
+        if (index > 0 && lines[index - 1].includes("see ADR-")) return true;
+        // Allow [arch:allow-created-at] which is only a reference comment, not a real tag
+        if (line.includes("[arch:allow-created-at]")) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 124: check_arch.ts must contain ADR exception governance group
+checkRule(
+    "Rule 124: check_arch.ts must contain ADR exception governance group",
+    ["scripts/check_arch.ts"],
+    /GROUP 23.*ADR Exception Governance|adr_exception_registry/,
+    (line) => true,
+    "error"
+);
+
+// Rule 125: adr_exception_registry.md must exist and be non-empty
+checkRule(
+    "Rule 125: adr_exception_registry.md must exist and be non-empty",
+    ["docs/architecture/adr_exception_registry.md"],
+    /## Exception:/,
+    (line) => true,
     "error"
 );
 
