@@ -384,7 +384,7 @@ impl<'a> FiscalClosurePackageService<'a> {
         let mut issues: Vec<String> = Vec::new();
 
         // 1: Validate execution window
-        let now = chrono::Utc::now();
+        let now = chrono::Utc::now(); // [arch:allow-utc-now] see ADR-0007 — execution window validation against current time
         if let Ok(not_before) =
             chrono::DateTime::parse_from_rfc3339(&pkg.authorized_execution_window.not_before)
         {

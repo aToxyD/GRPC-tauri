@@ -61,12 +61,12 @@ impl OperationExecutionGuard {
 
     /// Deterministic fingerprint of fiscal + integrity signals used for tokens.
     pub fn state_fingerprint(executor: DbExecutor<'_>) -> Result<String, AppError> {
-        let open_year: i32 = executor.fiscal_year_status().get_open_year()?.unwrap_or(0); // [arch:allow-unwrap-or] safe default when no open year
+        let open_year: i32 = executor.fiscal_year_status().get_open_year()?.unwrap_or(0); // [arch:allow-unwrap-or] see ADR-0007 — safe default when no open year
         let current_year: i32 = executor.settings().get_current_year()?;
         let max_archived: i32 = executor
             .fiscal_year_status()
             .max_archived_year()?
-            .unwrap_or(0); // [arch:allow-unwrap-or] safe default when no archived years
+            .unwrap_or(0); // [arch:allow-unwrap-or] see ADR-0007 — safe default when no archived years
         let critical_findings: i64 = executor.anomaly().count_critical_findings()?;
         let integrity = SystemIntegrityState::resolve_from_executor(executor)?;
         Ok(format!(

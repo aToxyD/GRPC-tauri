@@ -28,7 +28,7 @@ impl<'a> SyncImportValidationService<'a> {
     ) -> Result<(), AppError> {
         let current_year: i32 = self
             .executor
-            // [arch:allow-sql] pre-existing legacy method
+            // [arch:allow-sql] see ADR-0011 — pre-existing legacy method
             .query_row("SELECT current_year FROM settings WHERE id=1", [], |r| {
                 r.get(0)
             })?;
