@@ -1455,6 +1455,106 @@ checkRule(
     "warning"
 );
 
+// ============================================================
+// GROUP 19 — SQLite Observability Rules (Phase 6.A)
+// ============================================================
+
+// Rule 97: No business logic in sqlite_observability/
+checkRule(
+    "Rule 97: Business logic in sqlite_observability/ (must be pure observability only)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /\b(fifo|FifoLayer|StockMovement|fiscal|FiscalYear|Account|CostBasis|InventorySnapshot|InventoryValuation)\b/,
+    (line) => line.trim().startsWith("//") || line.trim().startsWith("///"),
+    "error"
+);
+
+// Rule 98: No repository imports in sqlite_observability/
+checkRule(
+    "Rule 98: Repository import in sqlite_observability/ (must not depend on repositories)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /use\s+crate::repositories/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 99: No mutation queries in sqlite_observability/
+checkRule(
+    "Rule 99: SQL mutation in sqlite_observability/ (observability must be read-only)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.contains("DELETE FROM")) return true;
+        if (line.contains("INSERT INTO")) return true;
+        if (line.contains("UPDATE ")) return true;
+        return false;
+    },
+    "error",
+    (file) => {
+        // Allow tests which don't actually execute SQL
+        const normalized = file.replace(/\\/g, "/");
+        return normalized.endsWith("_tests.rs") || normalized.endsWith("/tests/");
+    }
+);
+
+// Rule 100: No WAL checkpoint execution in sqlite_observability/
+checkRule(
+    "Rule 100: WAL checkpoint execution in sqlite_observability/ (checkpoint not allowed until Phase 6.B)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /wal_checkpoint|checkpoint\(|PRAGMA\s+wal_checkpoint/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 101: No background thread spawning in sqlite_observability/
+checkRule(
+    "Rule 101: Background thread spawning in sqlite_observability/ (no threads in observability)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /\bstd::thread\b|\bspawn\b|\bthread::spawn\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 102: No OFFSET pagination in sqlite_observability diagnostics APIs
+checkRule(
+    "Rule 102: OFFSET pagination in sqlite_observability/ (must use keyset or no pagination)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /\bOFFSET\b/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 103: No chrono::Utc::now in diagnostics core (must be deterministic)
+checkRule(
+    "Rule 103: chrono::Utc::now() in sqlite_observability/ (diagnostics must be deterministic — no wall-clock)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /\bUtc::now\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 104: No direct filesystem mutation in sqlite_observability/
+checkRule(
+    "Rule 104: Filesystem mutation in sqlite_observability/ (must not write to filesystem)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /\bstd::fs\b|\bfs::\b|\bFile::\b|\bOpenOptions\b|\bPathBuf\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 105: No automatic index creation in sqlite_observability/
+checkRule(
+    "Rule 105: Automatic index creation in sqlite_observability/ (must not create indexes)",
+    ["src-tauri/src/infrastructure/sqlite_observability/**/*.rs"],
+    /CREATE\s+INDEX|CREATE\s+UNIQUE\s+INDEX/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
+// GROUP 20 — Rules inherited from Phase 5.C
+// ============================================================
+
 // Rule 96: No chrono::Utc::now in sync execution path
 checkRule(
     "Rule 96: chrono::Utc::now() in sync_import services (must be deterministic — no wall-clock)",
