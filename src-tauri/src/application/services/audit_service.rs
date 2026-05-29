@@ -1,7 +1,6 @@
 use crate::domain::audit::{
     audit_action_to_event_type, build_details_from_entry, AuditAction, AuditEntry, AuditEntryDbRow,
-    AuditFilters, AuditLogResponse, AuditQuery, AuditStats, AuditStatus, EntityType,
-    NewAuditEntry,
+    AuditFilters, AuditLogResponse, AuditQuery, AuditStats, AuditStatus, EntityType, NewAuditEntry,
 };
 use crate::errors::AppError;
 use crate::repositories::executor::DbExecutor;

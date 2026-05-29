@@ -33,13 +33,7 @@ fn admin_id(conn: &rusqlite::Connection) -> String {
 }
 
 /// Build a NewAuditEntry with the full set of structured fields (simulating new service).
-fn new_style_entry(
-    id: &str,
-    ts: &str,
-    uid: &str,
-    action: &str,
-    entity: &str,
-) -> NewAuditEntry {
+fn new_style_entry(id: &str, ts: &str, uid: &str, action: &str, entity: &str) -> NewAuditEntry {
     NewAuditEntry {
         id: id.to_string(),
         user_id: uid.to_string(),
@@ -83,7 +77,8 @@ fn build_test_details(entry: &NewAuditEntry) -> String {
         "status": entry.status,
         "error_message": entry.error_message,
         "metadata": entry.metadata,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Build a NewAuditEntry with ONLY legacy flat columns (simulating old code path).
@@ -156,25 +151,43 @@ fn dual_write_populates_structured_columns() {
 
     // Read back via projected event row
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     assert_eq!(rows.len(), 1, "expected 1 row");
     let row = &rows[0];
-    assert_eq!(row.event_type.as_deref(), Some("UserAction"), "dual-write: event_type");
-    assert_eq!(row.actor_id.as_deref(), Some(uid.as_str()), "dual-write: actor_id");
+    assert_eq!(
+        row.event_type.as_deref(),
+        Some("UserAction"),
+        "dual-write: event_type"
+    );
+    assert_eq!(
+        row.actor_id.as_deref(),
+        Some(uid.as_str()),
+        "dual-write: actor_id"
+    );
     assert_eq!(row.fiscal_year, Some(2025), "dual-write: fiscal_year");
-    assert_eq!(row.node_id.as_deref(), Some("node-42"), "dual-write: node_id");
-    assert!(row.details_json.is_some(), "dual-write: details must be populated");
+    assert_eq!(
+        row.node_id.as_deref(),
+        Some("node-42"),
+        "dual-write: node_id"
+    );
+    assert!(
+        row.details_json.is_some(),
+        "dual-write: details must be populated"
+    );
 
     // Convert to AuditEvent and verify
     let event = to_audit_event(row.clone()).expect("to_audit_event");
@@ -199,20 +212,24 @@ fn dual_write_details_json_is_valid() {
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     let row = &rows[0];
-    let details: serde_json::Value = serde_json::from_str(row.details_json.as_ref().unwrap()).unwrap();
+    let details: serde_json::Value =
+        serde_json::from_str(row.details_json.as_ref().unwrap()).unwrap();
     assert_eq!(details["action"], "CreateUnit");
     assert_eq!(details["entity_type"], "Unit");
     assert_eq!(details["entity_id"], "target-123");
@@ -236,17 +253,20 @@ fn legacy_row_reconstructs_from_flat_columns() {
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     let row = &rows[0];
     // Legacy rows have NULL structured columns
@@ -270,21 +290,30 @@ fn legacy_fiscal_action_has_correct_event_type() {
     let conn = db.get_connection();
     let uid = admin_id(conn);
 
-    let entry = legacy_style_entry("leg-2", "2026-04-01T00:00:00Z", &uid, "FiscalYearClosed", "Financial");
+    let entry = legacy_style_entry(
+        "leg-2",
+        "2026-04-01T00:00:00Z",
+        &uid,
+        "FiscalYearClosed",
+        "Financial",
+    );
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     let event = to_audit_event(rows[0].clone()).expect("to_audit_event");
     assert_eq!(event.event_type, AuditEventType::FiscalEvent);
@@ -298,21 +327,30 @@ fn legacy_sync_action_has_correct_event_type() {
     let conn = db.get_connection();
     let uid = admin_id(conn);
 
-    let entry = legacy_style_entry("leg-3", "2026-03-01T12:00:00Z", &uid, "ImportProducts", "Product");
+    let entry = legacy_style_entry(
+        "leg-3",
+        "2026-03-01T12:00:00Z",
+        &uid,
+        "ImportProducts",
+        "Product",
+    );
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     let event = to_audit_event(rows[0].clone()).expect("to_audit_event");
     assert_eq!(event.event_type, AuditEventType::SyncEvent);
@@ -336,17 +374,20 @@ fn legacy_integrity_action_has_correct_event_type() {
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     let event = to_audit_event(rows[0].clone()).expect("to_audit_event");
     assert_eq!(event.event_type, AuditEventType::IntegrityEvent);
@@ -373,17 +414,20 @@ fn mixed_schema_reads_old_and_new_rows() {
     insert_entry(conn, old_entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     assert_eq!(rows.len(), 2, "mixed: both rows returned");
 
@@ -426,21 +470,24 @@ fn keyset_ordering_is_deterministic() {
 
     // Read via keyset (ASC order to verify tiebreaker)
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows_keyset(
-        &AuditQuery {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            start_timestamp: None,
-            end_timestamp: None,
-            status: None,
-            search_like: None,
-            limit: 100,
-            offset: 0,
-        },
-        None,
-        None,
-    ).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows_keyset(
+            &AuditQuery {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                status: None,
+                search_like: None,
+                limit: 100,
+                offset: 0,
+            },
+            None,
+            None,
+        )
+        .unwrap();
 
     assert_eq!(rows.len(), 3, "keyset: all rows returned");
     // With same timestamp, tiebreaker is id ASC → k-a, k-b, k-c
@@ -449,21 +496,24 @@ fn keyset_ordering_is_deterministic() {
     assert_eq!(rows[2].id, "k-c", "keyset order: third");
 
     // Second read must produce identical order
-    let rows2 = ex.audit().fetch_event_rows_keyset(
-        &AuditQuery {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            start_timestamp: None,
-            end_timestamp: None,
-            status: None,
-            search_like: None,
-            limit: 100,
-            offset: 0,
-        },
-        None,
-        None,
-    ).unwrap();
+    let rows2 = ex
+        .audit()
+        .fetch_event_rows_keyset(
+            &AuditQuery {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                status: None,
+                search_like: None,
+                limit: 100,
+                offset: 0,
+            },
+            None,
+            None,
+        )
+        .unwrap();
 
     for (i, row) in rows2.iter().enumerate() {
         assert_eq!(row.id, rows[i].id, "keyset: reproducible at index {i}");
@@ -493,83 +543,95 @@ fn keyset_pagination_returns_contiguous_pages() {
     let ex = DbExecutor::Conn(conn);
 
     // Page 1: limit=2, no keyset → first 2 rows
-    let page1 = ex.audit().fetch_event_rows_keyset(
-        &AuditQuery {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            start_timestamp: None,
-            end_timestamp: None,
-            status: None,
-            search_like: None,
-            limit: 2,
-            offset: 0,
-        },
-        None,
-        None,
-    ).unwrap();
+    let page1 = ex
+        .audit()
+        .fetch_event_rows_keyset(
+            &AuditQuery {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                status: None,
+                search_like: None,
+                limit: 2,
+                offset: 0,
+            },
+            None,
+            None,
+        )
+        .unwrap();
     assert_eq!(page1.len(), 2, "page1: 2 rows");
     assert_eq!(page1[0].id, "kp-0", "page1: first row");
     assert_eq!(page1[1].id, "kp-1", "page1: second row");
 
     // Page 2: keyset from last row of page1
     let last = &page1[1];
-    let page2 = ex.audit().fetch_event_rows_keyset(
-        &AuditQuery {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            start_timestamp: None,
-            end_timestamp: None,
-            status: None,
-            search_like: None,
-            limit: 2,
-            offset: 0,
-        },
-        Some(&last.timestamp),
-        Some(&last.id),
-    ).unwrap();
+    let page2 = ex
+        .audit()
+        .fetch_event_rows_keyset(
+            &AuditQuery {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                status: None,
+                search_like: None,
+                limit: 2,
+                offset: 0,
+            },
+            Some(&last.timestamp),
+            Some(&last.id),
+        )
+        .unwrap();
     assert_eq!(page2.len(), 2, "page2: 2 rows");
     assert_eq!(page2[0].id, "kp-2", "page2: first row");
     assert_eq!(page2[1].id, "kp-3", "page2: second row");
 
     // Page 3: keyset from last row of page2
     let last2 = &page2[1];
-    let page3 = ex.audit().fetch_event_rows_keyset(
-        &AuditQuery {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            start_timestamp: None,
-            end_timestamp: None,
-            status: None,
-            search_like: None,
-            limit: 2,
-            offset: 0,
-        },
-        Some(&last2.timestamp),
-        Some(&last2.id),
-    ).unwrap();
+    let page3 = ex
+        .audit()
+        .fetch_event_rows_keyset(
+            &AuditQuery {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                status: None,
+                search_like: None,
+                limit: 2,
+                offset: 0,
+            },
+            Some(&last2.timestamp),
+            Some(&last2.id),
+        )
+        .unwrap();
     assert_eq!(page3.len(), 1, "page3: 1 row (last)");
     assert_eq!(page3[0].id, "kp-4", "page3: last row");
 
     // No more rows
     let last3 = &page3[0];
-    let page4 = ex.audit().fetch_event_rows_keyset(
-        &AuditQuery {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            start_timestamp: None,
-            end_timestamp: None,
-            status: None,
-            search_like: None,
-            limit: 2,
-            offset: 0,
-        },
-        Some(&last3.timestamp),
-        Some(&last3.id),
-    ).unwrap();
+    let page4 = ex
+        .audit()
+        .fetch_event_rows_keyset(
+            &AuditQuery {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                status: None,
+                search_like: None,
+                limit: 2,
+                offset: 0,
+            },
+            Some(&last3.timestamp),
+            Some(&last3.id),
+        )
+        .unwrap();
     assert!(page4.is_empty(), "page4: no more rows");
 }
 
@@ -585,21 +647,30 @@ fn to_audit_event_is_stable_across_calls() {
     let conn = db.get_connection();
     let uid = admin_id(conn);
 
-    let entry = new_style_entry("stable-1", "2026-07-01T10:00:00Z", &uid, "FiscalYearClosed", "Financial");
+    let entry = new_style_entry(
+        "stable-1",
+        "2026-07-01T10:00:00Z",
+        &uid,
+        "FiscalYearClosed",
+        "Financial",
+    );
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     // Call to_audit_event twice
     let event_a = to_audit_event(rows[0].clone()).unwrap();
@@ -619,21 +690,30 @@ fn legacy_reconstruction_is_stable() {
     let conn = db.get_connection();
     let uid = admin_id(conn);
 
-    let entry = legacy_style_entry("legacy-stable", "2026-05-01T10:00:00Z", &uid, "Login", "User");
+    let entry = legacy_style_entry(
+        "legacy-stable",
+        "2026-05-01T10:00:00Z",
+        &uid,
+        "Login",
+        "User",
+    );
     insert_entry(conn, entry);
 
     let ex = DbExecutor::Conn(conn);
-    let rows = ex.audit().fetch_event_rows(&AuditQuery {
-        user_id: None,
-        action: None,
-        entity_type: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        status: None,
-        search_like: None,
-        limit: 100,
-        offset: 0,
-    }).unwrap();
+    let rows = ex
+        .audit()
+        .fetch_event_rows(&AuditQuery {
+            user_id: None,
+            action: None,
+            entity_type: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            status: None,
+            search_like: None,
+            limit: 100,
+            offset: 0,
+        })
+        .unwrap();
 
     let event_a = to_audit_event(rows[0].clone()).unwrap();
     let event_b = to_audit_event(rows[0].clone()).unwrap();
@@ -682,7 +762,10 @@ fn audit_event_serialization_round_trip() {
     assert_eq!(deserialized.fiscal_year, event.fiscal_year);
     assert_eq!(deserialized.before_snapshot, event.before_snapshot);
     assert_eq!(deserialized.details, event.details);
-    assert_eq!(deserialized.action_display_arabic, event.action_display_arabic);
+    assert_eq!(
+        deserialized.action_display_arabic,
+        event.action_display_arabic
+    );
     assert_eq!(deserialized.entry_hash, event.entry_hash);
 }
 
@@ -744,7 +827,10 @@ fn chain_verification_works_with_dual_write_entries() {
     // Chain verification must pass
     let ex = DbExecutor::Conn(conn);
     let summary = ex.audit().verify_audit_chain_streaming().unwrap();
-    assert!(summary.is_valid, "chain verification must pass with dual-write entries");
+    assert!(
+        summary.is_valid,
+        "chain verification must pass with dual-write entries"
+    );
     assert_eq!(summary.verified_entries, 2, "both entries verified");
 }
 
@@ -765,15 +851,23 @@ fn chain_verification_works_with_mixed_entries() {
         previous_hash: None,
         entry_hash: Some(h1.clone()),
         ..e1
-    }).unwrap();
+    })
+    .unwrap();
 
-    let e2 = new_style_entry("mix-chain-2", "2026-08-01T10:01:00Z", &uid, "Logout", "User");
+    let e2 = new_style_entry(
+        "mix-chain-2",
+        "2026-08-01T10:01:00Z",
+        &uid,
+        "Logout",
+        "User",
+    );
     let h2 = compute_entry_hash(Some(&h1), &e2);
     repo.insert_audit_log(&NewAuditEntry {
         previous_hash: Some(h1),
         entry_hash: Some(h2),
         ..e2
-    }).unwrap();
+    })
+    .unwrap();
 
     let summary = repo.verify_audit_chain_streaming().unwrap();
     assert!(summary.is_valid, "mixed chain verification must pass");

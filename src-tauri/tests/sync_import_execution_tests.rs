@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use grpc_lib::application::services::{
-    ConflictResolutionOutcome, ImportExecutionError, ImportMutationSummary, ResolutionPolicy,
-    ReplayProtectionResult, SyncImportRequest, SyncImportResult, SyncImportExecutionService,
+    ConflictResolutionOutcome, ImportExecutionError, ImportMutationSummary, ReplayProtectionResult,
+    ResolutionPolicy, SyncImportExecutionService, SyncImportRequest, SyncImportResult,
     SyncImportValidationService, SyncPackageKind,
 };
 use grpc_lib::application::sync_integrity::replay::{
@@ -148,10 +148,7 @@ fn rollback_on_invalid_fiscal_year() {
         2025,
         5,
     );
-    assert!(
-        !result.success,
-        "too-old fiscal year should be rejected"
-    );
+    assert!(!result.success, "too-old fiscal year should be rejected");
 }
 
 // ─── Fiscal Import Atomicity ─────────────────────────────────────────────────
@@ -254,7 +251,10 @@ fn same_input_same_db_same_result() {
         2025,
         5,
     );
-    assert_eq!(r1.success, r2.success, "same input + same DB state => same result");
+    assert_eq!(
+        r1.success, r2.success,
+        "same input + same DB state => same result"
+    );
     assert_eq!(
         r1.error.is_some(),
         r2.error.is_some(),
@@ -313,10 +313,7 @@ fn sync_import_result_serde_round_trip() {
     let json = serde_json::to_string(&result).unwrap();
     let restored: SyncImportResult = serde_json::from_str(&json).unwrap();
     assert_eq!(restored.success, result.success);
-    assert_eq!(
-        restored.replay_protection.map(|r| r.audited),
-        Some(true)
-    );
+    assert_eq!(restored.replay_protection.map(|r| r.audited), Some(true));
 }
 
 #[test]
@@ -478,5 +475,8 @@ fn idempotent_across_different_kinds() {
 
     let product = make_product_request("pkg-cross-kind");
     let r2 = SyncImportExecutionService::execute_import(&mut db, product, 2025, 5);
-    assert!(!r2.success, "same package_id should be rejected regardless of kind");
+    assert!(
+        !r2.success,
+        "same package_id should be rejected regardless of kind"
+    );
 }

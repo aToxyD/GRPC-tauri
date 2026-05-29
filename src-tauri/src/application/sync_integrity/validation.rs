@@ -52,12 +52,12 @@ impl ValidationGate {
             match SequenceValidator::check_sequence_continuity(incoming, Some(last_applied)) {
                 SequenceContinuity::Contiguous => None,
                 SequenceContinuity::Gap { expected, got } => {
-                    let evidence = vec![
-                        format!("expected:{}", expected),
-                        format!("got:{}", got),
-                    ];
+                    let evidence = vec![format!("expected:{}", expected), format!("got:{}", got)];
                     let meta = ConflictMetadata {
-                        conflict_id: super::types::ConflictId(format!("seq-gap-{}-{}", expected, got)),
+                        conflict_id: super::types::ConflictId(format!(
+                            "seq-gap-{}-{}",
+                            expected, got
+                        )),
                         package_id: package_id.to_string(),
                         source_node_id: String::new(),
                         target_node_id: String::new(),
@@ -179,7 +179,9 @@ impl ValidationGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::sync_integrity::replay::{AppliedPackages, AppliedTransitions, SeenTransactions};
+    use crate::application::sync_integrity::replay::{
+        AppliedPackages, AppliedTransitions, SeenTransactions,
+    };
     use std::collections::BTreeSet;
 
     fn empty_detector() -> ReplayDetector {

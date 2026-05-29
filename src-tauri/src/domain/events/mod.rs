@@ -146,8 +146,9 @@ impl DomainEvent {
             | Self::SyncConflictDetected { .. }
             | Self::SyncConflictResolved { .. } => EventCategory::Sync,
 
-            Self::AuditEventWritten { .. }
-            | Self::AuditIntegrityBreach { .. } => EventCategory::Audit,
+            Self::AuditEventWritten { .. } | Self::AuditIntegrityBreach { .. } => {
+                EventCategory::Audit
+            }
         }
     }
 
@@ -181,8 +182,7 @@ pub fn validate_replay_ordering(events: &[StoredEvent]) -> bool {
         if cur.transaction_id.as_u128() < prev.transaction_id.as_u128() {
             return false;
         }
-        if cur.transaction_id == prev.transaction_id
-            && cur.sequence_number <= prev.sequence_number
+        if cur.transaction_id == prev.transaction_id && cur.sequence_number <= prev.sequence_number
         {
             return false;
         }
@@ -355,7 +355,13 @@ mod tests {
         let mut buf = EventBuffer::new(Uuid::new_v4());
         assert_eq!(buf.push(DomainEvent::FiscalYearClosed { year: 2024 }), 1);
         assert_eq!(buf.push(DomainEvent::FiscalYearArchived { year: 2024 }), 2);
-        assert_eq!(buf.push(DomainEvent::FiscalTransitionApplied { from_year: 2024, to_year: 2025 }), 3);
+        assert_eq!(
+            buf.push(DomainEvent::FiscalTransitionApplied {
+                from_year: 2024,
+                to_year: 2025
+            }),
+            3
+        );
     }
 
     #[test]
@@ -376,9 +382,18 @@ mod tests {
 
         let events = buf.into_events();
         assert_eq!(events.len(), 3);
-        assert!(matches!(events[0].event, DomainEvent::FiscalYearClosed { .. }));
-        assert!(matches!(events[1].event, DomainEvent::StockMovementRecorded { .. }));
-        assert!(matches!(events[2].event, DomainEvent::SyncPackageImported { .. }));
+        assert!(matches!(
+            events[0].event,
+            DomainEvent::FiscalYearClosed { .. }
+        ));
+        assert!(matches!(
+            events[1].event,
+            DomainEvent::StockMovementRecorded { .. }
+        ));
+        assert!(matches!(
+            events[2].event,
+            DomainEvent::SyncPackageImported { .. }
+        ));
     }
 
     #[test]

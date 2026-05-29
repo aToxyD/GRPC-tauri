@@ -652,10 +652,10 @@ pub fn to_audit_event(r: AuditEventRow) -> Result<AuditEvent, String> {
 
     // Attempt reconstruction from structured columns first (new rows)
     if let Some(ref et) = r.event_type {
-        let event_type = AuditEventType::parse(et)
-            .unwrap_or(AuditEventType::SystemEvent);
+        let event_type = AuditEventType::parse(et).unwrap_or(AuditEventType::SystemEvent);
 
-        let details: serde_json::Value = r.details_json
+        let details: serde_json::Value = r
+            .details_json
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or(serde_json::Value::Null);
@@ -698,22 +698,60 @@ pub fn to_audit_event(r: AuditEventRow) -> Result<AuditEvent, String> {
         let parsed: serde_json::Value = serde_json::from_str(d)
             .map_err(|e| format!("Failed to parse audit details JSON: {e}"))?;
 
-        let action_parsed = parsed.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let status_str = parsed.get("status").and_then(|v| v.as_str()).unwrap_or("Success").to_string();
-        let entity_type_str = parsed.get("entity_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let action_parsed = parsed
+            .get("action")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let status_str = parsed
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Success")
+            .to_string();
+        let entity_type_str = parsed
+            .get("entity_type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let a_action = action_parsed.as_deref().and_then(AuditAction::parse);
         let a_entity = entity_type_str.as_deref().and_then(EntityType::parse);
 
-        let event_type = a_action.as_ref().map(audit_action_to_event_type).unwrap_or(AuditEventType::SystemEvent);
-        let actor_id = parsed.get("user_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let actor_name = parsed.get("username").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let target_id = parsed.get("entity_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let entity_name = parsed.get("entity_name").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let session_id = parsed.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let error_msg = parsed.get("error_message").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let before = parsed.get("old_value").and_then(|v| parse_json_value(v.clone()));
-        let after = parsed.get("new_value").and_then(|v| parse_json_value(v.clone()));
-        let node = parsed.get("node_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let event_type = a_action
+            .as_ref()
+            .map(audit_action_to_event_type)
+            .unwrap_or(AuditEventType::SystemEvent);
+        let actor_id = parsed
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let actor_name = parsed
+            .get("username")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let target_id = parsed
+            .get("entity_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let entity_name = parsed
+            .get("entity_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let session_id = parsed
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let error_msg = parsed
+            .get("error_message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let before = parsed
+            .get("old_value")
+            .and_then(|v| parse_json_value(v.clone()));
+        let after = parsed
+            .get("new_value")
+            .and_then(|v| parse_json_value(v.clone()));
+        let node = parsed
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let action_str = action_parsed.unwrap_or_default();
         let entity_str = entity_type_str.unwrap_or_default();
 
@@ -730,9 +768,13 @@ pub fn to_audit_event(r: AuditEventRow) -> Result<AuditEvent, String> {
             node_id: node,
             details: parsed,
             action: action_str,
-            action_display_arabic: a_action.map(|a| a.display_arabic().to_string()).unwrap_or_default(),
+            action_display_arabic: a_action
+                .map(|a| a.display_arabic().to_string())
+                .unwrap_or_default(),
             entity_type: entity_str,
-            entity_type_display_arabic: a_entity.map(|e| e.display_arabic().to_string()).unwrap_or_default(),
+            entity_type_display_arabic: a_entity
+                .map(|e| e.display_arabic().to_string())
+                .unwrap_or_default(),
             entity_name,
             session_id,
             timestamp: r.timestamp,
@@ -743,8 +785,8 @@ pub fn to_audit_event(r: AuditEventRow) -> Result<AuditEvent, String> {
         })
     } else {
         // Legacy row — reconstruct from flat columns
-        let a_action = AuditAction::parse(&action)
-            .ok_or_else(|| format!("Unknown audit action: {action}"))?;
+        let a_action =
+            AuditAction::parse(&action).ok_or_else(|| format!("Unknown audit action: {action}"))?;
         let a_entity = EntityType::parse(&entity_type)
             .ok_or_else(|| format!("Unknown entity type: {entity_type}"))?;
         let a_status = AuditStatus::parse(&r.status)
@@ -886,7 +928,9 @@ fn parse_json_str(s: Option<&str>) -> Option<serde_json::Value> {
 fn parse_json_value(v: serde_json::Value) -> Option<serde_json::Value> {
     match v {
         serde_json::Value::Null => None,
-        serde_json::Value::String(s) => serde_json::from_str(&s).ok().or(Some(serde_json::Value::String(s))),
+        serde_json::Value::String(s) => serde_json::from_str(&s)
+            .ok()
+            .or(Some(serde_json::Value::String(s))),
         other => Some(other),
     }
 }

@@ -183,10 +183,8 @@ mod tests {
 
     #[test]
     fn records_with_custom_threshold() {
-        let mut record = SlowQueryRecord::with_threshold(
-            100,
-            SlowQueryThreshold::Milliseconds(200),
-        );
+        let mut record =
+            SlowQueryRecord::with_threshold(100, SlowQueryThreshold::Milliseconds(200));
         record.record("SELECT 1", 150, 0);
         assert!(record.is_empty());
         record.record("SELECT 1", 250, 0);

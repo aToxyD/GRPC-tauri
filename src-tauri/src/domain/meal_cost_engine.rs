@@ -6,8 +6,8 @@
 //! The `consume` callback is injected so the engine works with both
 //! real DB consumption and in-memory simulation — zero fork risk.
 
-use crate::errors::AppError;
 use crate::domain::accounting::fifo::ConsumedLayerPortion;
+use crate::errors::AppError;
 use crate::models::{MealSectionInput, MealType};
 
 /// Cost breakdown for one product within a meal.

@@ -1,7 +1,8 @@
 //! Cross-service transaction boundary tests — real SQLite, explicit failure injection.
 
 use grpc_lib::application::services::{
-    FiscalClosingService, FiscalExportSnapshot, FiscalExportSnapshotService, OperationalAnomalyService,
+    FiscalClosingService, FiscalExportSnapshot, FiscalExportSnapshotService,
+    OperationalAnomalyService,
 };
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::repositories::RepositoryProvider;
@@ -84,7 +85,13 @@ fn case_a_fiscal_close_audit_failure_rolls_back_entire_transaction() {
         .unwrap();
 
     let res = db.with_transaction(|tx| {
-        FiscalClosingService::new(tx).close_year(2024, 2025, &uid, "__FISCAL_CLOSE_AUDIT_FAIL__", None)
+        FiscalClosingService::new(tx).close_year(
+            2024,
+            2025,
+            &uid,
+            "__FISCAL_CLOSE_AUDIT_FAIL__",
+            None,
+        )
     });
     assert!(res.is_err());
 

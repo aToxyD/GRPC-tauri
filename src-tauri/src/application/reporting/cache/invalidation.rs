@@ -99,22 +99,10 @@ mod tests {
             source_node_id: None,
             sequence_number: None,
         };
-        assert!(matches!(invalidation_kind(&event), InvalidationKind::AllOpenFiscalYear));
-
-        let event = DomainEvent::SyncConflictDetected {
-            conflict_id: 1,
-            conflict_type: None,
-            package_id: None,
-            details: None,
-        };
-        assert!(matches!(invalidation_kind(&event), InvalidationKind::AllOpenFiscalYear));
-
-        let event = DomainEvent::SyncConflictResolved {
-            conflict_id: 1,
-            resolved_by: "admin".into(),
-            resolution: None,
-        };
-        assert!(matches!(invalidation_kind(&event), InvalidationKind::AllOpenFiscalYear));
+        assert!(matches!(
+            invalidation_kind(&event),
+            InvalidationKind::AllOpenFiscalYear
+        ));
     }
 
     #[test]

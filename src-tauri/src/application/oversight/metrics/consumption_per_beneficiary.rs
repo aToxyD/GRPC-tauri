@@ -1,15 +1,25 @@
 use crate::application::oversight::context::ReportsContext;
-use crate::application::oversight::types::{MetricValue, OversightMetric, UnitType, Dimension};
+use crate::application::oversight::types::{Dimension, MetricValue, OversightMetric, UnitType};
 
 /// ConsumptionPerBeneficiary = total_consumption_value / total_beneficiaries
 pub struct ConsumptionPerBeneficiary;
 
 impl OversightMetric for ConsumptionPerBeneficiary {
-    fn id(&self) -> &'static str { "consumption-per-beneficiary" }
-    fn name(&self) -> &'static str { "Consumption Per Beneficiary" }
-    fn formula(&self) -> &'static str { "total_consumption_value / total_beneficiaries" }
-    fn unit(&self) -> UnitType { UnitType::Amount }
-    fn dimension(&self) -> Dimension { Dimension::Unit }
+    fn id(&self) -> &'static str {
+        "consumption-per-beneficiary"
+    }
+    fn name(&self) -> &'static str {
+        "Consumption Per Beneficiary"
+    }
+    fn formula(&self) -> &'static str {
+        "total_consumption_value / total_beneficiaries"
+    }
+    fn unit(&self) -> UnitType {
+        UnitType::Amount
+    }
+    fn dimension(&self) -> Dimension {
+        Dimension::Unit
+    }
 
     fn compute(&self, ctx: &ReportsContext<'_>) -> Result<MetricValue, String> {
         let summary = match ctx.fiscal_year_summary()? {

@@ -104,7 +104,8 @@ fn test_imported_movements_do_not_create_fifo_layers() {
         year,
     );
 
-    let result = SyncImportExecutionService::new(db.executor()).import_stock_movements(vec![movement], None);
+    let result =
+        SyncImportExecutionService::new(db.executor()).import_stock_movements(vec![movement], None);
     assert!(
         result.is_ok(),
         "import_stock_movements failed: {:?}",
@@ -176,7 +177,8 @@ fn test_imported_movements_do_not_update_inventory() {
         year,
     );
 
-    let result = SyncImportExecutionService::new(db.executor()).import_stock_movements(vec![movement], None);
+    let result =
+        SyncImportExecutionService::new(db.executor()).import_stock_movements(vec![movement], None);
     assert!(
         result.is_ok(),
         "import_stock_movements failed: {:?}",

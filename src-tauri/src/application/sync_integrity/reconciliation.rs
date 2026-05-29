@@ -58,7 +58,10 @@ impl ReconciliationComparer {
     ///
     /// Two windows are equal iff they have the same transaction_id,
     /// same start and end, and same contiguity flag.
-    pub fn compare_sequence_windows(window_a: &SequenceWindow, window_b: &SequenceWindow) -> SequenceWindowComparison {
+    pub fn compare_sequence_windows(
+        window_a: &SequenceWindow,
+        window_b: &SequenceWindow,
+    ) -> SequenceWindowComparison {
         let mut differences = Vec::new();
 
         if window_a.transaction_id != window_b.transaction_id {
@@ -220,10 +223,7 @@ impl ReconciliationComparer {
                     });
                 }
                 None => {
-                    inconsistencies.push(format!(
-                        "transaction {}: missing in side B",
-                        txn_id
-                    ));
+                    inconsistencies.push(format!("transaction {}: missing in side B", txn_id));
                 }
             }
         }
@@ -231,10 +231,7 @@ impl ReconciliationComparer {
         // Check for transactions in B that are missing from A
         for (txn_id, _) in &sorted_b {
             if !sorted_a.iter().any(|(id, _)| id == txn_id) {
-                inconsistencies.push(format!(
-                    "transaction {}: missing in side A",
-                    txn_id
-                ));
+                inconsistencies.push(format!("transaction {}: missing in side A", txn_id));
             }
         }
 
@@ -382,10 +379,7 @@ mod tests {
 
     #[test]
     fn missing_transaction_detected() {
-        let a = vec![
-            ("txn-1".into(), vec![1, 2]),
-            ("txn-2".into(), vec![1]),
-        ];
+        let a = vec![("txn-1".into(), vec![1, 2]), ("txn-2".into(), vec![1])];
         let b = vec![("txn-1".into(), vec![1, 2])];
         let result = ReconciliationComparer::compare_event_ordering(&a, &b);
         assert!(!result.is_consistent);
@@ -393,14 +387,8 @@ mod tests {
 
     #[test]
     fn ordering_is_deterministic_by_transaction_id() {
-        let a = vec![
-            ("txn-b".into(), vec![1]),
-            ("txn-a".into(), vec![1]),
-        ];
-        let b = vec![
-            ("txn-a".into(), vec![1]),
-            ("txn-b".into(), vec![1]),
-        ];
+        let a = vec![("txn-b".into(), vec![1]), ("txn-a".into(), vec![1])];
+        let b = vec![("txn-a".into(), vec![1]), ("txn-b".into(), vec![1])];
         let result = ReconciliationComparer::compare_event_ordering(&a, &b);
         assert!(result.is_consistent);
     }
@@ -432,7 +420,8 @@ mod tests {
             fingerprint_hash: "abc".into(),
         };
 
-        let result_a = ReconciliationComparer::compare_stock_state(&[fp_a1, fp_a2], &[fp_b1, fp_b2]);
+        let result_a =
+            ReconciliationComparer::compare_stock_state(&[fp_a1, fp_a2], &[fp_b1, fp_b2]);
         assert!(result_a.is_identical);
     }
 }

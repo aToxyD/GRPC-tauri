@@ -3,7 +3,7 @@ use grpc_lib::application::oversight::metrics::{
     ClosureTimeliness, ConsumptionPerBeneficiary, FiscalComplianceScore, PercentileRanking,
     SlowMovingStock, StockCoverageDays,
 };
-use grpc_lib::application::oversight::types::{MetricValue, OversightMetric, UnitType, Dimension};
+use grpc_lib::application::oversight::types::{Dimension, MetricValue, OversightMetric, UnitType};
 use grpc_lib::db::ConnectionFactory;
 
 mod common;
@@ -154,7 +154,8 @@ fn kpi_outputs_are_deterministic_across_empty_dbs() {
         let r1 = metric.compute(&ctx1).unwrap();
         let r2 = metric.compute(&ctx2).unwrap();
         assert_eq!(
-            r1, r2,
+            r1,
+            r2,
             "KPI {} produced different outputs on identical empty DB state",
             metric.id()
         );

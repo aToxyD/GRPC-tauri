@@ -23,14 +23,23 @@ pub enum AuditChainIntegrityViolation {
 impl fmt::Display for AuditChainIntegrityViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AuditChainIntegrityViolation::LinkageBreak { entry_id, index, expected_previous, actual_previous } => {
+            AuditChainIntegrityViolation::LinkageBreak {
+                entry_id,
+                index,
+                expected_previous,
+                actual_previous,
+            } => {
                 write!(
                     f,
                     "audit chain linkage break at index {}: entry {} expected previous_hash {:?}, got {:?}",
                     index, entry_id, expected_previous, actual_previous
                 )
             }
-            AuditChainIntegrityViolation::MissingEntryHash { entry_id, index, has_previous_hash } => {
+            AuditChainIntegrityViolation::MissingEntryHash {
+                entry_id,
+                index,
+                has_previous_hash,
+            } => {
                 write!(
                     f,
                     "audit entry {} at index {} has previous_hash={} but missing entry_hash",
@@ -158,7 +167,9 @@ mod tests {
         let v = check_audit_chain_integrity(entries);
         assert!(!v.is_empty());
         match &v[0] {
-            AuditChainIntegrityViolation::LinkageBreak { entry_id, index, .. } => {
+            AuditChainIntegrityViolation::LinkageBreak {
+                entry_id, index, ..
+            } => {
                 assert_eq!(entry_id, "b");
                 assert_eq!(*index, 1);
             }
@@ -175,7 +186,11 @@ mod tests {
         let v = check_audit_chain_integrity(entries);
         assert!(!v.is_empty());
         match &v[0] {
-            AuditChainIntegrityViolation::MissingEntryHash { entry_id, index, has_previous_hash } => {
+            AuditChainIntegrityViolation::MissingEntryHash {
+                entry_id,
+                index,
+                has_previous_hash,
+            } => {
                 assert_eq!(entry_id, "b");
                 assert_eq!(*index, 1);
                 assert!(*has_previous_hash);
@@ -186,10 +201,7 @@ mod tests {
 
     #[test]
     fn legacy_rows_are_allowed() {
-        let entries = vec![
-            entry("legacy-1", None, None),
-            entry("legacy-2", None, None),
-        ];
+        let entries = vec![entry("legacy-1", None, None), entry("legacy-2", None, None)];
         assert!(check_audit_chain_integrity(entries).is_empty());
     }
 

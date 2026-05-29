@@ -1,5 +1,5 @@
-use crate::application::oversight::types::{MetricValue, OversightMetric, UnitType, Dimension};
 use crate::application::oversight::context::ReportsContext;
+use crate::application::oversight::types::{Dimension, MetricValue, OversightMetric, UnitType};
 
 /// PercentileRanking — computes percentile rank of a unit's KPI value
 /// against a reference population.
@@ -9,13 +9,21 @@ use crate::application::oversight::context::ReportsContext;
 pub struct PercentileRanking;
 
 impl OversightMetric for PercentileRanking {
-    fn id(&self) -> &'static str { "percentile-ranking" }
-    fn name(&self) -> &'static str { "Percentile Ranking" }
+    fn id(&self) -> &'static str {
+        "percentile-ranking"
+    }
+    fn name(&self) -> &'static str {
+        "Percentile Ranking"
+    }
     fn formula(&self) -> &'static str {
         "percentile rank of unit KPI value against reference population"
     }
-    fn unit(&self) -> UnitType { UnitType::Ratio }
-    fn dimension(&self) -> Dimension { Dimension::Wilaya }
+    fn unit(&self) -> UnitType {
+        UnitType::Ratio
+    }
+    fn dimension(&self) -> Dimension {
+        Dimension::Wilaya
+    }
 
     fn compute(&self, _ctx: &ReportsContext<'_>) -> Result<MetricValue, String> {
         // Phase 3.B: accept a population of values and compute percentile.

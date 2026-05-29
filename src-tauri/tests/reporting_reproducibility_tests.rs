@@ -1,6 +1,3 @@
-use grpc_lib::application::reporting::{
-    cache_key::CacheKey, Report,
-};
 use grpc_lib::application::reporting::fiscal_year_summary::{
     FiscalYearSummaryInput, FiscalYearSummaryReport,
 };
@@ -10,6 +7,7 @@ use grpc_lib::application::reporting::inventory_valuation::{
 use grpc_lib::application::reporting::stock_movement_ledger::{
     StockMovementLedgerInput, StockMovementLedgerReport,
 };
+use grpc_lib::application::reporting::{cache_key::CacheKey, Report};
 use grpc_lib::db::ConnectionFactory;
 
 mod common;
@@ -30,10 +28,7 @@ fn inventory_valuation_has_correct_trait_metadata() {
 
 #[test]
 fn stock_movement_ledger_has_correct_trait_metadata() {
-    assert_eq!(
-        StockMovementLedgerReport::slug(),
-        "stock-movement-ledger"
-    );
+    assert_eq!(StockMovementLedgerReport::slug(), "stock-movement-ledger");
     assert_eq!(StockMovementLedgerReport::version(), 1);
     assert!(StockMovementLedgerReport::is_reproducible());
 }
@@ -43,12 +38,18 @@ fn fiscal_year_summary_computes_on_empty_db_without_error() {
     let db = ConnectionFactory::new_for_test().expect("create test db");
     let executor = db.executor();
 
-    let result = FiscalYearSummaryReport::compute(executor, FiscalYearSummaryInput {
-        fiscal_year: 2024,
-        unit_id: None,
-    });
+    let result = FiscalYearSummaryReport::compute(
+        executor,
+        FiscalYearSummaryInput {
+            fiscal_year: 2024,
+            unit_id: None,
+        },
+    );
 
-    assert!(result.is_err(), "should fail with year not found on empty db");
+    assert!(
+        result.is_err(),
+        "should fail with year not found on empty db"
+    );
 }
 
 #[test]
@@ -56,12 +57,19 @@ fn inventory_valuation_computes_on_empty_db() {
     let db = ConnectionFactory::new_for_test().expect("create test db");
     let executor = db.executor();
 
-    let result = InventoryValuationReport::compute(executor, InventoryValuationInput {
-        fiscal_year: None,
-        unit_id: None,
-    });
+    let result = InventoryValuationReport::compute(
+        executor,
+        InventoryValuationInput {
+            fiscal_year: None,
+            unit_id: None,
+        },
+    );
 
-    assert!(result.is_ok(), "should succeed on empty db: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "should succeed on empty db: {:?}",
+        result.err()
+    );
     let envelope = result.unwrap();
     assert_eq!(envelope.data.total_inventory_value, 0.0);
     assert_eq!(envelope.data.product_count, 0);
@@ -76,18 +84,25 @@ fn stock_movement_ledger_computes_on_empty_db() {
     let db = ConnectionFactory::new_for_test().expect("create test db");
     let executor = db.executor();
 
-    let result = StockMovementLedgerReport::compute(executor, StockMovementLedgerInput {
-        fiscal_year: None,
-        product_id: None,
-        movement_type: None,
-        unit_id: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        limit: 100,
-        offset: 0,
-    });
+    let result = StockMovementLedgerReport::compute(
+        executor,
+        StockMovementLedgerInput {
+            fiscal_year: None,
+            product_id: None,
+            movement_type: None,
+            unit_id: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            limit: 100,
+            offset: 0,
+        },
+    );
 
-    assert!(result.is_ok(), "should succeed on empty db: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "should succeed on empty db: {:?}",
+        result.err()
+    );
     let envelope = result.unwrap();
     assert_eq!(envelope.data.rows.len(), 0);
     assert_eq!(envelope.data.total_count, 0);
@@ -187,10 +202,7 @@ fn cache_key_deterministic() {
 
 #[test]
 fn round_money_basic_cases() {
-    assert_eq!(
-        grpc_lib::application::reporting::round_money(100.0),
-        100.0
-    );
+    assert_eq!(grpc_lib::application::reporting::round_money(100.0), 100.0);
     assert_eq!(
         grpc_lib::application::reporting::round_money(100.456),
         100.46
@@ -199,10 +211,7 @@ fn round_money_basic_cases() {
         grpc_lib::application::reporting::round_money(100.454),
         100.45
     );
-    assert_eq!(
-        grpc_lib::application::reporting::round_money(0.0),
-        0.0
-    );
+    assert_eq!(grpc_lib::application::reporting::round_money(0.0), 0.0);
 }
 
 #[test]

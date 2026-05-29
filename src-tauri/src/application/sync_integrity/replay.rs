@@ -119,7 +119,11 @@ impl ReplayDetector {
     ///
     /// Transition uniqueness is enforced at the application layer,
     /// not at the DB constraint level.
-    pub fn check_transition(&self, transition_id: &str, package_id: &str) -> ConflictDetectionOutcome {
+    pub fn check_transition(
+        &self,
+        transition_id: &str,
+        package_id: &str,
+    ) -> ConflictDetectionOutcome {
         if self.applied_transitions.contains(transition_id) {
             let evidence = vec![format!("transition_already_applied:{}", transition_id)];
             ConflictDetectionOutcome::ConflictDetected(SyncConflict::ReplayAttempt(
@@ -132,7 +136,11 @@ impl ReplayDetector {
 
     /// Check if a transaction ID has already been seen (replay detection
     /// at the transaction level).
-    pub fn check_transaction(&self, transaction_id: &str, package_id: &str) -> ConflictDetectionOutcome {
+    pub fn check_transaction(
+        &self,
+        transaction_id: &str,
+        package_id: &str,
+    ) -> ConflictDetectionOutcome {
         if self.seen_transactions.contains(transaction_id) {
             let evidence = vec![format!("transaction_already_seen:{}", transaction_id)];
             ConflictDetectionOutcome::ConflictDetected(SyncConflict::ReplayAttempt(
@@ -205,7 +213,13 @@ impl ReplayDetector {
         label: &str,
         evidence: Vec<String>,
     ) -> ConflictMetadata {
-        let id_input = format!("{}:{}:{}:{}", package_id, label, self.source_node_id, evidence.join(","));
+        let id_input = format!(
+            "{}:{}:{}:{}",
+            package_id,
+            label,
+            self.source_node_id,
+            evidence.join(",")
+        );
         let hash = hex::encode(Sha256::digest(id_input.as_bytes()));
 
         ConflictMetadata {
@@ -215,7 +229,10 @@ impl ReplayDetector {
             target_node_id: self.target_node_id.clone(),
             explanation: ConflictExplanation {
                 label: label.to_string(),
-                description: format!("{}: package={} source={}", label, package_id, self.source_node_id),
+                description: format!(
+                    "{}: package={} source={}",
+                    label, package_id, self.source_node_id
+                ),
             },
             fiscal_scope: FiscalScope::unknown(),
             evidence,

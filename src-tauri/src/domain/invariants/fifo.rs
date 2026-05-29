@@ -22,14 +22,23 @@ pub enum FifoOrderStableViolation {
 impl fmt::Display for FifoOrderStableViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FifoOrderStableViolation::LayerConsumedOutOfOrder { layer_id, received_at, older_layer_with_stock_id, older_layer_received_at } => {
+            FifoOrderStableViolation::LayerConsumedOutOfOrder {
+                layer_id,
+                received_at,
+                older_layer_with_stock_id,
+                older_layer_received_at,
+            } => {
                 write!(
                     f,
                     "layer {} (received {}) consumed before older layer {} (received {})",
                     layer_id, received_at, older_layer_with_stock_id, older_layer_received_at
                 )
             }
-            FifoOrderStableViolation::ConsumptionSkippedLayer { layer_id, received_at, quantity_remaining_before_consumption } => {
+            FifoOrderStableViolation::ConsumptionSkippedLayer {
+                layer_id,
+                received_at,
+                quantity_remaining_before_consumption,
+            } => {
                 write!(
                     f,
                     "layer {} (received {}) had {:.2} remaining but was skipped during consumption",
@@ -90,11 +99,16 @@ impl Invariant for FifoOrderStable {
                     break;
                 }
 
-                let older_received_earlier = timestamp_cmp(&older.received_at, &c.received_at) == Ordering::Less;
-                let same_received = timestamp_cmp(&older.received_at, &c.received_at) == Ordering::Equal;
+                let older_received_earlier =
+                    timestamp_cmp(&older.received_at, &c.received_at) == Ordering::Less;
+                let same_received =
+                    timestamp_cmp(&older.received_at, &c.received_at) == Ordering::Equal;
 
                 if older_received_earlier && older.quantity_remaining > 0.0 {
-                    let was_consumed = ctx.applied_consumptions.iter().any(|ac| ac.layer_id == older.layer_id);
+                    let was_consumed = ctx
+                        .applied_consumptions
+                        .iter()
+                        .any(|ac| ac.layer_id == older.layer_id);
                     if !was_consumed {
                         violations.push(FifoOrderStableViolation::ConsumptionSkippedLayer {
                             layer_id: older.layer_id.clone(),
@@ -138,7 +152,13 @@ mod tests {
         }
     }
 
-    fn consumption(layer_id: &str, received: &str, consumed: f64, before: f64, order: usize) -> LayerAtConsumption {
+    fn consumption(
+        layer_id: &str,
+        received: &str,
+        consumed: f64,
+        before: f64,
+        order: usize,
+    ) -> LayerAtConsumption {
         LayerAtConsumption {
             layer_id: layer_id.to_string(),
             received_at: received.to_string(),
@@ -154,9 +174,7 @@ mod tests {
             layer("l1", "2025-01-01T00:00:00Z", 50.0),
             layer("l2", "2025-01-10T00:00:00Z", 100.0),
         ];
-        let consumptions = vec![
-            consumption("l1", "2025-01-01T00:00:00Z", 30.0, 50.0, 0),
-        ];
+        let consumptions = vec![consumption("l1", "2025-01-01T00:00:00Z", 30.0, 50.0, 0)];
 
         assert!(check_fifo_consumption_order(consumptions, layers).is_empty());
     }
@@ -167,9 +185,7 @@ mod tests {
             layer("l1", "2025-01-01T00:00:00Z", 50.0),
             layer("l2", "2025-01-10T00:00:00Z", 100.0),
         ];
-        let consumptions = vec![
-            consumption("l2", "2025-01-10T00:00:00Z", 20.0, 100.0, 1),
-        ];
+        let consumptions = vec![consumption("l2", "2025-01-10T00:00:00Z", 20.0, 100.0, 1)];
 
         let v = check_fifo_consumption_order(consumptions, layers);
         assert!(!v.is_empty());
@@ -181,9 +197,7 @@ mod tests {
             layer("l1", "2025-01-01T00:00:00Z", 0.0),
             layer("l2", "2025-01-10T00:00:00Z", 100.0),
         ];
-        let consumptions = vec![
-            consumption("l2", "2025-01-10T00:00:00Z", 20.0, 100.0, 1),
-        ];
+        let consumptions = vec![consumption("l2", "2025-01-10T00:00:00Z", 20.0, 100.0, 1)];
 
         assert!(check_fifo_consumption_order(consumptions, layers).is_empty());
     }

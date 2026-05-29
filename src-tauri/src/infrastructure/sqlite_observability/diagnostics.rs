@@ -62,7 +62,11 @@ impl QueryPlanWarningSummary {
             .map(|d| d.severity())
             .max()
             .unwrap_or(ScanSeverity::None);
-        let slowest_scan_count = diagnostics.iter().map(|d| d.plan.scan_count).max().unwrap_or(0);
+        let slowest_scan_count = diagnostics
+            .iter()
+            .map(|d| d.plan.scan_count)
+            .max()
+            .unwrap_or(0);
         Self {
             query_count,
             total_warnings,
@@ -236,7 +240,14 @@ mod tests {
     #[test]
     fn same_input_same_snapshot() {
         let snap1 = SqliteDiagnosticsSnapshot::new(
-            Some(WalMetrics::new(4096, 100, 5, 0, super::super::wal::WalState::Ok, 1000)),
+            Some(WalMetrics::new(
+                4096,
+                100,
+                5,
+                0,
+                super::super::wal::WalState::Ok,
+                1000,
+            )),
             Some(sample_integrity_snapshot()),
             Some(&sample_slow_record()),
             sample_query_diagnostics(),
@@ -244,7 +255,14 @@ mod tests {
             1,
         );
         let snap2 = SqliteDiagnosticsSnapshot::new(
-            Some(WalMetrics::new(4096, 100, 5, 0, super::super::wal::WalState::Ok, 1000)),
+            Some(WalMetrics::new(
+                4096,
+                100,
+                5,
+                0,
+                super::super::wal::WalState::Ok,
+                1000,
+            )),
             Some(sample_integrity_snapshot()),
             Some(&sample_slow_record()),
             sample_query_diagnostics(),

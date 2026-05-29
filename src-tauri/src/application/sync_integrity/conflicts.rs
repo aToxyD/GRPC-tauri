@@ -64,7 +64,14 @@ impl ConflictDetector {
                 format!("last_applied_sequence:{}", input.last_applied_sequence),
             ];
             ConflictDetectionOutcome::ConflictDetected(SyncConflict::StaleImport(
-                Self::build_metadata(package_id, source_node_id, target_node_id, "StaleImport", evidence, FiscalScope::unknown()),
+                Self::build_metadata(
+                    package_id,
+                    source_node_id,
+                    target_node_id,
+                    "StaleImport",
+                    evidence,
+                    FiscalScope::unknown(),
+                ),
             ))
         } else {
             ConflictDetectionOutcome::NoConflict
@@ -84,12 +91,22 @@ impl ConflictDetector {
     ) -> ConflictDetectionOutcome {
         if input.incoming_fingerprint != input.local_fingerprint {
             let evidence = vec![
-                format!("incoming_hash:{}", input.incoming_fingerprint.fingerprint_hash),
+                format!(
+                    "incoming_hash:{}",
+                    input.incoming_fingerprint.fingerprint_hash
+                ),
                 format!("local_hash:{}", input.local_fingerprint.fingerprint_hash),
                 format!("product_id:{}", input.incoming_fingerprint.product_id),
             ];
             ConflictDetectionOutcome::ConflictDetected(SyncConflict::DivergentStockState(
-                Self::build_metadata(package_id, source_node_id, target_node_id, "DivergentStockState", evidence, FiscalScope::unknown()),
+                Self::build_metadata(
+                    package_id,
+                    source_node_id,
+                    target_node_id,
+                    "DivergentStockState",
+                    evidence,
+                    FiscalScope::unknown(),
+                ),
             ))
         } else {
             ConflictDetectionOutcome::NoConflict
@@ -125,16 +142,16 @@ impl ConflictDetector {
                     source_b.source_node_id, source_b.last_export_sequence
                 ),
             ];
-            ConflictDetectionOutcome::ConflictDetected(
-                SyncConflict::ConflictingInventoryMutation(Self::build_metadata(
+            ConflictDetectionOutcome::ConflictDetected(SyncConflict::ConflictingInventoryMutation(
+                Self::build_metadata(
                     package_id,
                     &source_a.source_node_id,
                     target_node_id,
                     "ConflictingInventoryMutation",
                     evidence,
                     FiscalScope::unknown(),
-                )),
-            )
+                ),
+            ))
         } else {
             ConflictDetectionOutcome::NoConflict
         }
@@ -148,7 +165,13 @@ impl ConflictDetector {
         evidence: Vec<String>,
         fiscal_scope: FiscalScope,
     ) -> ConflictMetadata {
-        let id_input = format!("{}:{}:{}:{}", package_id, label, source_node_id, evidence.join(","));
+        let id_input = format!(
+            "{}:{}:{}:{}",
+            package_id,
+            label,
+            source_node_id,
+            evidence.join(",")
+        );
         let hash = hex::encode(Sha256::digest(id_input.as_bytes()));
 
         ConflictMetadata {
@@ -255,7 +278,8 @@ mod tests {
             last_export_sequence: 5,
             mutation_count: 3,
         };
-        let result = ConflictDetector::detect_conflicting_inventory_mutation(&a, &b, "pkg-1", "node-b");
+        let result =
+            ConflictDetector::detect_conflicting_inventory_mutation(&a, &b, "pkg-1", "node-b");
         assert!(matches!(result, ConflictDetectionOutcome::NoConflict));
     }
 
@@ -273,7 +297,8 @@ mod tests {
             last_export_sequence: 5,
             mutation_count: 3,
         };
-        let result = ConflictDetector::detect_conflicting_inventory_mutation(&a, &b, "pkg-1", "node-b");
+        let result =
+            ConflictDetector::detect_conflicting_inventory_mutation(&a, &b, "pkg-1", "node-b");
         assert!(matches!(result, ConflictDetectionOutcome::NoConflict));
     }
 
@@ -291,9 +316,12 @@ mod tests {
             last_export_sequence: 8,
             mutation_count: 3,
         };
-        let result = ConflictDetector::detect_conflicting_inventory_mutation(&a, &b, "pkg-1", "node-c");
+        let result =
+            ConflictDetector::detect_conflicting_inventory_mutation(&a, &b, "pkg-1", "node-c");
         match result {
-            ConflictDetectionOutcome::ConflictDetected(SyncConflict::ConflictingInventoryMutation(meta)) => {
+            ConflictDetectionOutcome::ConflictDetected(
+                SyncConflict::ConflictingInventoryMutation(meta),
+            ) => {
                 assert_eq!(meta.explanation.label, "ConflictingInventoryMutation");
             }
             _ => panic!("expected ConflictingInventoryMutation conflict"),

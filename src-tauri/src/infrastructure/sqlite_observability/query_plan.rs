@@ -241,7 +241,12 @@ mod tests {
     fn sample_explain_rows() -> Vec<(u64, u64, u64, String)> {
         vec![
             (3, 0, 0, "SCAN TABLE products".into()),
-            (5, 0, 0, "SEARCH TABLE inventory_stocks USING INDEX idx_stock_product (product_id=?)".into()),
+            (
+                5,
+                0,
+                0,
+                "SEARCH TABLE inventory_stocks USING INDEX idx_stock_product (product_id=?)".into(),
+            ),
         ]
     }
 

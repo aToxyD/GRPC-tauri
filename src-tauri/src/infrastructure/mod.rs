@@ -9,6 +9,8 @@ pub mod export;
 pub mod logging;
 pub mod security;
 pub mod sqlite_observability;
+pub mod sqlite_runtime;
+pub mod sqlite_runtime_review;
 pub mod sync;
 
 /// الحد الأقصى لحجم ملفات الاستيراد (512 ميجابايت) لمنع استنزاف الذاكرة.

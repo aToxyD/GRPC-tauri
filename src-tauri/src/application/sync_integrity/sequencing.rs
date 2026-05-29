@@ -186,15 +186,9 @@ pub enum SequenceContinuity {
     /// The incoming sequence continues cleanly from the last applied.
     Contiguous,
     /// There is a gap: expected X but got Y.
-    Gap {
-        expected: u64,
-        got: u64,
-    },
+    Gap { expected: u64, got: u64 },
     /// The incoming sequence has already been applied.
-    Duplicate {
-        last_applied: u64,
-        incoming: u64,
-    },
+    Duplicate { last_applied: u64, incoming: u64 },
 }
 
 #[cfg(test)]
@@ -281,7 +275,10 @@ mod tests {
         );
         assert_eq!(
             SequenceValidator::check_sequence_continuity(2, None),
-            SequenceContinuity::Gap { expected: 1, got: 2 }
+            SequenceContinuity::Gap {
+                expected: 1,
+                got: 2
+            }
         );
     }
 
@@ -297,7 +294,10 @@ mod tests {
     fn continuity_check_gap_detected() {
         assert_eq!(
             SequenceValidator::check_sequence_continuity(7, Some(5)),
-            SequenceContinuity::Gap { expected: 6, got: 7 }
+            SequenceContinuity::Gap {
+                expected: 6,
+                got: 7
+            }
         );
     }
 

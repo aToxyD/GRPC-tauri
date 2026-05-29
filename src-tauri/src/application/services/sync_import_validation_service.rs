@@ -26,12 +26,12 @@ impl<'a> SyncImportValidationService<'a> {
         source_node: &str,
         package_id: &str,
     ) -> Result<(), AppError> {
-        let current_year: i32 =
-            self.executor
-                // [arch:allow-sql] pre-existing legacy method
-                .query_row("SELECT current_year FROM settings WHERE id=1", [], |r| {
-                    r.get(0)
-                })?;
+        let current_year: i32 = self
+            .executor
+            // [arch:allow-sql] pre-existing legacy method
+            .query_row("SELECT current_year FROM settings WHERE id=1", [], |r| {
+                r.get(0)
+            })?;
         crate::application::services::FiscalHistoricalGuard::new(self.executor)
             .assert_import_year_allowed(incoming_year)?;
         crate::application::services::FiscalValidationService::new(self.executor)
@@ -86,7 +86,9 @@ impl<'a> SyncImportValidationService<'a> {
                 request.last_applied_sequence,
                 request.fiscal_year,
             );
-            if let Some(ConflictDetectionOutcome::ConflictDetected(_)) = result.replay_check.as_ref() {
+            if let Some(ConflictDetectionOutcome::ConflictDetected(_)) =
+                result.replay_check.as_ref()
+            {
                 return ValidationSnapshot {
                     package_id: package_id.clone(),
                     replay_check,
@@ -102,7 +104,11 @@ impl<'a> SyncImportValidationService<'a> {
         };
 
         let fiscal_year_check = if let Some(year) = request.fiscal_year {
-            match ValidationGate::validate_fiscal_year(year, current_fiscal_year, max_historical_years) {
+            match ValidationGate::validate_fiscal_year(
+                year,
+                current_fiscal_year,
+                max_historical_years,
+            ) {
                 Ok(_) => None,
                 Err(_) => {
                     return ValidationSnapshot {
@@ -136,8 +142,12 @@ impl<'a> SyncImportValidationService<'a> {
             None
         };
 
-        let all_checks_passed = sequence_check.as_ref().is_none_or(|c| matches!(c, ConflictDetectionOutcome::NoConflict))
-            && fiscal_year_check.as_ref().is_none_or(|c| matches!(c, ConflictDetectionOutcome::NoConflict));
+        let all_checks_passed = sequence_check
+            .as_ref()
+            .is_none_or(|c| matches!(c, ConflictDetectionOutcome::NoConflict))
+            && fiscal_year_check
+                .as_ref()
+                .is_none_or(|c| matches!(c, ConflictDetectionOutcome::NoConflict));
 
         ValidationSnapshot {
             package_id: package_id.clone(),
@@ -159,13 +169,20 @@ impl<'a> SyncImportValidationService<'a> {
     ) -> ValidationSnapshot {
         let detector = ReplayDetector::new(
             crate::application::sync_integrity::replay::AppliedPackages::new(applied_packages),
-            crate::application::sync_integrity::replay::AppliedTransitions::new(applied_transitions),
+            crate::application::sync_integrity::replay::AppliedTransitions::new(
+                applied_transitions,
+            ),
             crate::application::sync_integrity::replay::SeenTransactions::new(seen_transactions),
             request.source_node_id.clone(),
             request.target_node_id.clone(),
         );
 
-        Self::validate(request, &detector, current_fiscal_year, max_historical_years)
+        Self::validate(
+            request,
+            &detector,
+            current_fiscal_year,
+            max_historical_years,
+        )
     }
 }
 
@@ -206,7 +223,10 @@ mod tests {
         )
     }
 
-    fn make_request(package_id: &str, kind: crate::application::services::SyncPackageKind) -> SyncImportRequest {
+    fn make_request(
+        package_id: &str,
+        kind: crate::application::services::SyncPackageKind,
+    ) -> SyncImportRequest {
         SyncImportRequest {
             package_id: package_id.into(),
             source_node_id: "node-a".into(),
@@ -281,7 +301,12 @@ mod tests {
         let transitions: BTreeSet<String> = BTreeSet::new();
         let seen: BTreeSet<String> = BTreeSet::new();
         let result = SyncImportValidationService::validate_immutable_snapshot(
-            &req, pkgs, transitions, seen, 2025, 5,
+            &req,
+            pkgs,
+            transitions,
+            seen,
+            2025,
+            5,
         );
         assert!(result.all_checks_passed);
     }

@@ -185,7 +185,14 @@ fn fifo_layer_consumed_events_match_consumption_order() {
     );
     // Event 1: FifoLayerConsumed (layer1, 10@400) — breakfast consumed layer1 entirely
     assert!(
-        matches!(&all[1].event, DomainEvent::FifoLayerConsumed { quantity: 10.0, unit_cost: 400.0, .. }),
+        matches!(
+            &all[1].event,
+            DomainEvent::FifoLayerConsumed {
+                quantity: 10.0,
+                unit_cost: 400.0,
+                ..
+            }
+        ),
         "event[1] should be FifoLayerConsumed 10@400, got {:?}",
         all[1].event
     );
@@ -196,7 +203,14 @@ fn fifo_layer_consumed_events_match_consumption_order() {
     );
     // Event 3: FifoLayerConsumed (layer2, 20@500) — lunch consumed layer2 entirely
     assert!(
-        matches!(&all[3].event, DomainEvent::FifoLayerConsumed { quantity: 20.0, unit_cost: 500.0, .. }),
+        matches!(
+            &all[3].event,
+            DomainEvent::FifoLayerConsumed {
+                quantity: 20.0,
+                unit_cost: 500.0,
+                ..
+            }
+        ),
         "event[3] should be FifoLayerConsumed 20@500, got {:?}",
         all[3].event
     );
@@ -207,7 +221,14 @@ fn fifo_layer_consumed_events_match_consumption_order() {
     );
     // Event 5: FifoLayerConsumed (layer3, 10@600) — dinner consumed 10 from layer3
     assert!(
-        matches!(&all[5].event, DomainEvent::FifoLayerConsumed { quantity: 10.0, unit_cost: 600.0, .. }),
+        matches!(
+            &all[5].event,
+            DomainEvent::FifoLayerConsumed {
+                quantity: 10.0,
+                unit_cost: 600.0,
+                ..
+            }
+        ),
         "event[5] should be FifoLayerConsumed 10@600, got {:?}",
         all[5].event
     );
@@ -242,12 +263,26 @@ fn multi_layer_split_within_single_meal() {
         "event[0] should be StockMovementRecorded"
     );
     assert!(
-        matches!(&all[1].event, DomainEvent::FifoLayerConsumed { quantity: 10.0, unit_cost: 400.0, .. }),
+        matches!(
+            &all[1].event,
+            DomainEvent::FifoLayerConsumed {
+                quantity: 10.0,
+                unit_cost: 400.0,
+                ..
+            }
+        ),
         "event[1] should be FifoLayerConsumed 10@400, got {:?}",
         all[1].event
     );
     assert!(
-        matches!(&all[2].event, DomainEvent::FifoLayerConsumed { quantity: 15.0, unit_cost: 500.0, .. }),
+        matches!(
+            &all[2].event,
+            DomainEvent::FifoLayerConsumed {
+                quantity: 15.0,
+                unit_cost: 500.0,
+                ..
+            }
+        ),
         "event[2] should be FifoLayerConsumed 15@500, got {:?}",
         all[2].event
     );
@@ -380,7 +415,10 @@ fn fifo_consumption_events_rollback_on_insufficient_stock() {
         .get_connection()
         .query_row("SELECT COUNT(*) FROM stock_movements", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(movement_count, 0, "no stock movements should survive rollback");
+    assert_eq!(
+        movement_count, 0,
+        "no stock movements should survive rollback"
+    );
 
     // Verify FIFO layers are unchanged
     let fifo_qty: f64 = db
@@ -433,8 +471,14 @@ fn same_layer_consumed_across_multiple_meals() {
         })
         .collect();
     assert_eq!(layer_ids.len(), 3);
-    assert_eq!(layer_ids[0], layer_ids[1], "all portions should share layer_id");
-    assert_eq!(layer_ids[0], layer_ids[2], "all portions should share layer_id");
+    assert_eq!(
+        layer_ids[0], layer_ids[1],
+        "all portions should share layer_id"
+    );
+    assert_eq!(
+        layer_ids[0], layer_ids[2],
+        "all portions should share layer_id"
+    );
 
     // Verify total consumed quantity
     let total_consumed: f64 = all
@@ -500,14 +544,8 @@ fn multiple_products_independent_fifo_ordering() {
     let input = DailyReportInput {
         date,
         meals: vec![
-            meal(
-                MealType::Breakfast,
-                vec![(&pa, 10.0), (&pb, 15.0)],
-            ),
-            meal(
-                MealType::Lunch,
-                vec![(&pa, 10.0), (&pb, 10.0)],
-            ),
+            meal(MealType::Breakfast, vec![(&pa, 10.0), (&pb, 15.0)]),
+            meal(MealType::Lunch, vec![(&pa, 10.0), (&pb, 10.0)]),
         ],
     };
 
@@ -542,7 +580,13 @@ fn multiple_products_independent_fifo_ordering() {
         "event[0] should be StockMovementRecorded"
     );
     assert!(
-        matches!(&all[1].event, DomainEvent::FifoLayerConsumed { unit_cost: 400.0, .. }),
+        matches!(
+            &all[1].event,
+            DomainEvent::FifoLayerConsumed {
+                unit_cost: 400.0,
+                ..
+            }
+        ),
         "event[1] should be FifoLayerConsumed @400 (A oldest layer)"
     );
     assert!(
@@ -550,7 +594,13 @@ fn multiple_products_independent_fifo_ordering() {
         "event[2] should be StockMovementRecorded"
     );
     assert!(
-        matches!(&all[3].event, DomainEvent::FifoLayerConsumed { unit_cost: 300.0, .. }),
+        matches!(
+            &all[3].event,
+            DomainEvent::FifoLayerConsumed {
+                unit_cost: 300.0,
+                ..
+            }
+        ),
         "event[3] should be FifoLayerConsumed @300 (B oldest layer)"
     );
     assert!(
@@ -558,7 +608,13 @@ fn multiple_products_independent_fifo_ordering() {
         "event[4] should be StockMovementRecorded"
     );
     assert!(
-        matches!(&all[5].event, DomainEvent::FifoLayerConsumed { unit_cost: 500.0, .. }),
+        matches!(
+            &all[5].event,
+            DomainEvent::FifoLayerConsumed {
+                unit_cost: 500.0,
+                ..
+            }
+        ),
         "event[5] should be FifoLayerConsumed @500 (A newer layer)"
     );
     assert!(
@@ -566,7 +622,13 @@ fn multiple_products_independent_fifo_ordering() {
         "event[6] should be StockMovementRecorded"
     );
     assert!(
-        matches!(&all[7].event, DomainEvent::FifoLayerConsumed { unit_cost: 600.0, .. }),
+        matches!(
+            &all[7].event,
+            DomainEvent::FifoLayerConsumed {
+                unit_cost: 600.0,
+                ..
+            }
+        ),
         "event[7] should be FifoLayerConsumed @600 (B newer layer)"
     );
 }

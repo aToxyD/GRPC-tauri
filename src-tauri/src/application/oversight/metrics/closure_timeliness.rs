@@ -1,5 +1,5 @@
 use crate::application::oversight::context::ReportsContext;
-use crate::application::oversight::types::{MetricValue, OversightMetric, UnitType, Dimension};
+use crate::application::oversight::types::{Dimension, MetricValue, OversightMetric, UnitType};
 
 /// ClosureTimeliness — days between fiscal year end (Dec 31) and actual closure.
 ///
@@ -13,13 +13,21 @@ use crate::application::oversight::types::{MetricValue, OversightMetric, UnitTyp
 pub struct ClosureTimeliness;
 
 impl OversightMetric for ClosureTimeliness {
-    fn id(&self) -> &'static str { "closure-timeliness" }
-    fn name(&self) -> &'static str { "Closure Timeliness" }
+    fn id(&self) -> &'static str {
+        "closure-timeliness"
+    }
+    fn name(&self) -> &'static str {
+        "Closure Timeliness"
+    }
     fn formula(&self) -> &'static str {
         "days between fiscal year end (Dec 31) and actual closure date"
     }
-    fn unit(&self) -> UnitType { UnitType::Days }
-    fn dimension(&self) -> Dimension { Dimension::Period }
+    fn unit(&self) -> UnitType {
+        UnitType::Days
+    }
+    fn dimension(&self) -> Dimension {
+        Dimension::Period
+    }
 
     fn compute(&self, ctx: &ReportsContext<'_>) -> Result<MetricValue, String> {
         let summary = match ctx.fiscal_year_summary()? {

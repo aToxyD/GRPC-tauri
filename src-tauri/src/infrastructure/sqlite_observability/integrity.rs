@@ -198,10 +198,7 @@ mod tests {
         let result = QuickCheckResult::parse("wrong page 42 in table products");
         assert!(!result.passed);
         assert!(result.issue.is_some());
-        assert_eq!(
-            result.issue.unwrap().severity,
-            IntegritySeverity::Critical
-        );
+        assert_eq!(result.issue.unwrap().severity, IntegritySeverity::Critical);
     }
 
     #[test]
@@ -224,7 +221,8 @@ mod tests {
 
     #[test]
     fn deterministic_issue_ordering() {
-        let raw = "ok\nrow 5 missing from index idx_a\nrow 3 missing from index idx_b\nwrong page 1";
+        let raw =
+            "ok\nrow 5 missing from index idx_a\nrow 3 missing from index idx_b\nwrong page 1";
         let result1 = IntegrityCheckResult::parse(raw);
         let result2 = IntegrityCheckResult::parse(raw);
         assert_eq!(result1, result2);

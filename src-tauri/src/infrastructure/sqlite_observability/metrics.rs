@@ -46,8 +46,7 @@ impl PageGrowthMetrics {
         } else {
             (growth as f64 / previous_page_count as f64) * 100.0
         };
-        let freelist_growth =
-            current_freelist_count as i64 - previous_freelist_count as i64;
+        let freelist_growth = current_freelist_count as i64 - previous_freelist_count as i64;
         Self {
             current_page_count,
             previous_page_count,

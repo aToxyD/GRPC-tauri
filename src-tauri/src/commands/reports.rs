@@ -6,9 +6,7 @@
 use crate::application::authz::{Action, ResourceContext};
 use crate::application::services::MaintenanceBlockedOperation;
 use crate::application::usecases::reports::types::{DailyReportFilters, ReportScope, UnitId};
-use crate::commands::common::{
-    db_mut_or_command_error, db_ref_or_command_error,
-};
+use crate::commands::common::{db_mut_or_command_error, db_ref_or_command_error};
 use crate::commands::guards::{authorize_command, require_maintenance_allows};
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
@@ -19,8 +17,7 @@ use crate::models::{
 };
 
 use crate::application::services::{
-    AuditService, DailyReportService, FifoPreviewService, ReportCalculationService,
-    SettingsService,
+    AuditService, DailyReportService, FifoPreviewService, ReportCalculationService, SettingsService,
 };
 use chrono::NaiveDate;
 use tauri::State;

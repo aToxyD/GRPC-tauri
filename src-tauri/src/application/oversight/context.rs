@@ -52,10 +52,7 @@ impl<'a> ReportsContext<'a> {
     /// Returns the FiscalYearSummary for this context's fiscal year (optionally scoped to unit_id).
     /// Returns Ok(None) if the year doesn't exist (no data yet).
     /// Returns Err for actual DB/query failures.
-    pub fn fiscal_year_summary(
-        &self,
-    ) -> Result<Option<FiscalYearSummaryOutput>, String>
-    {
+    pub fn fiscal_year_summary(&self) -> Result<Option<FiscalYearSummaryOutput>, String> {
         match FiscalYearSummaryReport::compute(self.executor, FiscalYearSummaryInput {
             fiscal_year: self.fiscal_year,
             unit_id: self.unit_id.clone(),
@@ -75,10 +72,13 @@ impl<'a> ReportsContext<'a> {
         InventoryValuationOutput,
         crate::application::reporting::inventory_valuation::InventoryValuationError,
     > {
-        InventoryValuationReport::compute(self.executor, InventoryValuationInput {
-            fiscal_year,
-            unit_id,
-        })
+        InventoryValuationReport::compute(
+            self.executor,
+            InventoryValuationInput {
+                fiscal_year,
+                unit_id,
+            },
+        )
         .map(|e| e.data)
     }
 

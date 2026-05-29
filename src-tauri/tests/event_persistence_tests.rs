@@ -174,14 +174,8 @@ fn replay_queries_ordered_by_transaction_id_sequence_number() {
 
     assert_eq!(all.len(), 3);
 
-    let tx1_events: Vec<_> = all
-        .iter()
-        .filter(|e| e.transaction_id == tx1_id)
-        .collect();
-    let tx2_events: Vec<_> = all
-        .iter()
-        .filter(|e| e.transaction_id == tx2_id)
-        .collect();
+    let tx1_events: Vec<_> = all.iter().filter(|e| e.transaction_id == tx1_id).collect();
+    let tx2_events: Vec<_> = all.iter().filter(|e| e.transaction_id == tx2_id).collect();
 
     assert_eq!(tx1_events.len(), 1);
     assert_eq!(tx1_events[0].sequence_number, 1);

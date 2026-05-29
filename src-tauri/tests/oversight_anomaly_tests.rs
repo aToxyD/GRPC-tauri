@@ -94,8 +94,14 @@ fn percentile_outlier_detector_identifies_extremes() {
     // since 5.0 is NOT < 5.0, and 95.0 is NOT > 95.0
     let unit_1 = batch.reports.iter().find(|r| r.unit_id == "unit-1");
     let unit_10 = batch.reports.iter().find(|r| r.unit_id == "unit-10");
-    assert!(unit_1.is_none(), "percentile rank 5.0 should not be flagged");
-    assert!(unit_10.is_none(), "percentile rank 95.0 should not be flagged");
+    assert!(
+        unit_1.is_none(),
+        "percentile rank 5.0 should not be flagged"
+    );
+    assert!(
+        unit_10.is_none(),
+        "percentile rank 95.0 should not be flagged"
+    );
 }
 
 #[test]
@@ -155,10 +161,22 @@ fn percentile_severity_classification() {
 
 #[test]
 fn max_severity_combines_correctly() {
-    assert_eq!(max_severity(AnomalySeverity::Normal, AnomalySeverity::Normal), AnomalySeverity::Normal);
-    assert_eq!(max_severity(AnomalySeverity::Warning, AnomalySeverity::Normal), AnomalySeverity::Warning);
-    assert_eq!(max_severity(AnomalySeverity::Critical, AnomalySeverity::Normal), AnomalySeverity::Critical);
-    assert_eq!(max_severity(AnomalySeverity::Warning, AnomalySeverity::Critical), AnomalySeverity::Critical);
+    assert_eq!(
+        max_severity(AnomalySeverity::Normal, AnomalySeverity::Normal),
+        AnomalySeverity::Normal
+    );
+    assert_eq!(
+        max_severity(AnomalySeverity::Warning, AnomalySeverity::Normal),
+        AnomalySeverity::Warning
+    );
+    assert_eq!(
+        max_severity(AnomalySeverity::Critical, AnomalySeverity::Normal),
+        AnomalySeverity::Critical
+    );
+    assert_eq!(
+        max_severity(AnomalySeverity::Warning, AnomalySeverity::Critical),
+        AnomalySeverity::Critical
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +352,10 @@ fn nan_values_do_not_panic() {
     let p_batch = PercentileOutlierDetector.detect(&dist);
 
     // NaN should be filtered out; only 2 usable values remain
-    assert_eq!(z_batch.total_units, 3, "total_units reflects raw population");
+    assert_eq!(
+        z_batch.total_units, 3,
+        "total_units reflects raw population"
+    );
     assert_eq!(z_batch.reports.len(), 2, "NaN filtered, 2 valid reports");
     assert!(p_batch.is_empty(), "no percentile outliers in [10, 20]");
 }
@@ -350,8 +371,15 @@ fn infinite_values_do_not_panic() {
     let z_batch = ZScoreDetector.detect(&dist);
     let p_batch = PercentileOutlierDetector.detect(&dist);
 
-    assert_eq!(z_batch.total_units, 3, "total_units reflects raw population");
-    assert_eq!(z_batch.reports.len(), 1, "Inf/-Inf filtered, 1 valid report");
+    assert_eq!(
+        z_batch.total_units, 3,
+        "total_units reflects raw population"
+    );
+    assert_eq!(
+        z_batch.reports.len(),
+        1,
+        "Inf/-Inf filtered, 1 valid report"
+    );
     assert!(p_batch.is_empty(), "single valid value has no outliers");
 }
 
@@ -378,11 +406,30 @@ fn anomaly_batch_counts_correctly() {
         benchmark_id: "b1".into(),
     };
 
-    batch.push(AnomalyReport { severity: AnomalySeverity::Normal, ..base.clone() });
-    batch.push(AnomalyReport { severity: AnomalySeverity::Warning, unit_id: "u2".into(), ..base.clone() });
-    batch.push(AnomalyReport { severity: AnomalySeverity::Warning, unit_id: "u3".into(), ..base.clone() });
-    batch.push(AnomalyReport { severity: AnomalySeverity::Critical, unit_id: "u4".into(), ..base.clone() });
-    batch.push(AnomalyReport { severity: AnomalySeverity::Normal, unit_id: "u5".into(), ..base.clone() });
+    batch.push(AnomalyReport {
+        severity: AnomalySeverity::Normal,
+        ..base.clone()
+    });
+    batch.push(AnomalyReport {
+        severity: AnomalySeverity::Warning,
+        unit_id: "u2".into(),
+        ..base.clone()
+    });
+    batch.push(AnomalyReport {
+        severity: AnomalySeverity::Warning,
+        unit_id: "u3".into(),
+        ..base.clone()
+    });
+    batch.push(AnomalyReport {
+        severity: AnomalySeverity::Critical,
+        unit_id: "u4".into(),
+        ..base.clone()
+    });
+    batch.push(AnomalyReport {
+        severity: AnomalySeverity::Normal,
+        unit_id: "u5".into(),
+        ..base.clone()
+    });
 
     assert_eq!(batch.total_units, 5);
     assert_eq!(batch.anomaly_count, 3);

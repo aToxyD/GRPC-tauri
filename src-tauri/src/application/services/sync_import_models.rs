@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::application::sync_integrity::types::{
-    ConflictDetectionOutcome, SyncConflict,
-};
+use crate::application::sync_integrity::types::{ConflictDetectionOutcome, SyncConflict};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncImportRequest {
@@ -125,9 +123,18 @@ pub struct ReplayProtectionResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ImportExecutionError {
     ReplayDetected(String),
-    SequenceGap { expected: u64, got: u64 },
-    StaleImport { incoming_sequence: u64, last_applied: u64 },
-    FiscalYearMismatch { incoming: i32, current: i32 },
+    SequenceGap {
+        expected: u64,
+        got: u64,
+    },
+    StaleImport {
+        incoming_sequence: u64,
+        last_applied: u64,
+    },
+    FiscalYearMismatch {
+        incoming: i32,
+        current: i32,
+    },
     FiscalYearClosed(i32),
     DuplicatePackage(String),
     ValidationFailed(String),
@@ -151,7 +158,11 @@ impl std::fmt::Display for ImportExecutionError {
                 incoming_sequence, last_applied
             ),
             Self::FiscalYearMismatch { incoming, current } => {
-                write!(f, "Fiscal year mismatch: incoming={} current={}", incoming, current)
+                write!(
+                    f,
+                    "Fiscal year mismatch: incoming={} current={}",
+                    incoming, current
+                )
             }
             Self::FiscalYearClosed(y) => write!(f, "Fiscal year {} is closed", y),
             Self::DuplicatePackage(pkg) => write!(f, "Duplicate package: {}", pkg),

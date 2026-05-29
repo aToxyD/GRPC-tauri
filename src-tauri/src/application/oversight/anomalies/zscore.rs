@@ -52,7 +52,10 @@ impl AnomalyDetector for ZScoreDetector {
             let z_sev = z_score_severity(z);
 
             let count_below = numeric.iter().filter(|&&v| v < val).count();
-            let count_equal = numeric.iter().filter(|&&v| (v - val).abs() < f64::EPSILON).count();
+            let count_equal = numeric
+                .iter()
+                .filter(|&&v| (v - val).abs() < f64::EPSILON)
+                .count();
             let total = numeric.len();
             let percentile_rank = if total <= 1 {
                 50.0
@@ -67,7 +70,11 @@ impl AnomalyDetector for ZScoreDetector {
             let explanation = if combined == AnomalySeverity::Normal {
                 format!(
                     "Z-score {:.2}: value {:.2} is {:.2}σ {} mean {:.2} (|z| < 2.0: normal range).",
-                    z, val, z.abs(), dir, mean
+                    z,
+                    val,
+                    z.abs(),
+                    dir,
+                    mean
                 )
             } else {
                 format!(

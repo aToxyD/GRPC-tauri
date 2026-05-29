@@ -4,8 +4,8 @@ pub mod audit_tx_service;
 pub mod daily_report_service;
 pub mod fifo_preview_service;
 pub mod fiscal_closing_service;
-pub mod fiscal_scope;
 pub mod fiscal_reporting_service;
+pub mod fiscal_scope;
 pub mod fiscal_validation_service;
 pub mod inventory_snapshot_service;
 pub mod monthly_report_service;
@@ -49,7 +49,7 @@ pub use sync_conflict_service::SyncConflictService;
 pub use sync_import_execution_service::SyncImportExecutionService;
 pub use sync_import_models::{
     ConflictResolutionOutcome, ImportExecutionError, ImportExecutionSummary, ImportMutationSummary,
-    ResolutionPolicy, ReplayProtectionResult, SyncImportRequest, SyncImportResult, SyncPackageKind,
+    ReplayProtectionResult, ResolutionPolicy, SyncImportRequest, SyncImportResult, SyncPackageKind,
 };
 pub use sync_import_validation_service::SyncImportValidationService;
 pub use system_diagnostics_service::SystemDiagnosticsService;

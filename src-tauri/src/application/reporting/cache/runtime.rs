@@ -172,11 +172,7 @@ mod tests {
         |y| years.contains(&y)
     }
 
-    fn runtime_with_entry(
-        runtime: &ReportCacheRuntime,
-        slug: &str,
-        year: Option<i32>,
-    ) -> CacheKey {
+    fn runtime_with_entry(runtime: &ReportCacheRuntime, slug: &str, year: Option<i32>) -> CacheKey {
         let key = CacheKey::new(slug, 1, "{}", year);
         runtime.insert(key.clone(), slug, 1, year, json!("data"));
         key

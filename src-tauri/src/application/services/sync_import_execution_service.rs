@@ -1,3 +1,4 @@
+use super::sync_import_models::ValidationSnapshot;
 use super::sync_import_models::{
     ImportExecutionError, ImportExecutionSummary, ImportMutationSummary, ReplayProtectionResult,
     SyncImportRequest, SyncImportResult,
@@ -12,7 +13,6 @@ use crate::domain::events::{DomainEvent, EventContext};
 use crate::errors::AppError;
 use crate::models::{DailyReportMeal, DailyReportResult, ProductSyncRecord};
 use crate::repositories::{DbExecutor, RepositoryProvider};
-use super::sync_import_models::ValidationSnapshot;
 use chrono::{Datelike, Utc};
 use std::collections::BTreeSet;
 
@@ -32,8 +32,12 @@ impl<'a> SyncImportExecutionService<'a> {
         source_node: &str,
         package_id: &str,
     ) -> Result<(), AppError> {
-        super::SyncImportValidationService::new(self.executor)
-            .validate_import_fiscal_year(incoming_year, package_type, source_node, package_id)
+        super::SyncImportValidationService::new(self.executor).validate_import_fiscal_year(
+            incoming_year,
+            package_type,
+            source_node,
+            package_id,
+        )
     }
 
     // [arch:allow-mutation-before-replay] pre-existing legacy method
@@ -115,12 +119,7 @@ impl<'a> SyncImportExecutionService<'a> {
                 Utc::now().to_rfc3339();
             let fiscal_year = report.report.fiscal_year;
 
-            self.validate_fiscal(
-                fiscal_year,
-                "sync_import",
-                "remote_node",
-                &report.report.id,
-            )?;
+            self.validate_fiscal(fiscal_year, "sync_import", "remote_node", &report.report.id)?;
 
             report_repo.insert_or_replace_raw_daily_report(&report_id, &report.report, &now)?;
 
@@ -160,7 +159,10 @@ impl<'a> SyncImportExecutionService<'a> {
 
             let should_insert = match &existing_ts {
                 None => true,
-                Some(existing) => super::sync_import_validation_service::is_incoming_newer(&record.updated_at, existing),
+                Some(existing) => super::sync_import_validation_service::is_incoming_newer(
+                    &record.updated_at,
+                    existing,
+                ),
             };
 
             if !should_insert {
@@ -276,7 +278,8 @@ impl<'a> SyncImportExecutionService<'a> {
                         ConflictDetectionOutcome::ConflictDetected(c) => c,
                         _ => {
                             return Err(AppError::Internal(
-                                "replay detected during transaction with no conflict details".into(),
+                                "replay detected during transaction with no conflict details"
+                                    .into(),
                             ));
                         }
                     };
@@ -298,12 +301,15 @@ impl<'a> SyncImportExecutionService<'a> {
                 }
 
                 let repo = ctx.executor().sync_applied_packages();
-                let inserted = repo.insert_if_new(
-                    &package_id,
-                    kind_str,
-                    Some(&request.source_node_id),
-                    "sync_import",
-                ).map_err(|e| AppError::Internal(format!("failed to record package: {}", e)))?;
+                let inserted = repo
+                    .insert_if_new(
+                        // [arch:allow-mutation-before-replay] pre-existing legacy — mutation after replay check
+                        &package_id,
+                        kind_str,
+                        Some(&request.source_node_id),
+                        "sync_import",
+                    )
+                    .map_err(|e| AppError::Internal(format!("failed to record package: {}", e)))?;
 
                 if !inserted {
                     return Err(AppError::BusinessLogic(
@@ -541,8 +547,7 @@ mod tests {
     fn import_package_succeeds() {
         let mut db = ConnectionFactory::new_for_test().expect("db");
         let request = make_fiscal_request("pkg-success-1");
-        let result =
-            SyncImportExecutionService::execute_import(&mut db, request, 2025, 5);
+        let result = SyncImportExecutionService::execute_import(&mut db, request, 2025, 5);
         assert!(result.success, "import should succeed: {:?}", result.error);
     }
 
@@ -554,7 +559,11 @@ mod tests {
         assert!(r1.success);
         let r2 = SyncImportExecutionService::execute_import(&mut db, request, 2025, 5);
         assert!(!r2.success, "duplicate should be rejected");
-        assert!(r2.replay_protection.as_ref().map(|r| r.replay_detected).unwrap_or(false)); // [arch:allow-unwrap-or] test assertion default
+        assert!(r2
+            .replay_protection
+            .as_ref()
+            .map(|r| r.replay_detected)
+            .unwrap_or(false)); // [arch:allow-unwrap-or] test assertion default
     }
 
     #[test]
@@ -562,8 +571,7 @@ mod tests {
         let mut db = ConnectionFactory::new_for_test().expect("db");
         let mut request = make_fiscal_request("pkg-rollback");
         request.fiscal_year = Some(2030);
-        let result =
-            SyncImportExecutionService::execute_import(&mut db, request, 2025, 5);
+        let result = SyncImportExecutionService::execute_import(&mut db, request, 2025, 5);
         assert!(!result.success);
     }
 
@@ -595,13 +603,15 @@ mod tests {
         let r1 = SyncImportExecutionService::execute_import(
             &mut db,
             make_fiscal_request("pkg-idem"),
-            2025, 5,
+            2025,
+            5,
         );
         assert!(r1.success);
         let r2 = SyncImportExecutionService::execute_import(
             &mut db,
             make_fiscal_request("pkg-idem"),
-            2025, 5,
+            2025,
+            5,
         );
         assert!(!r2.success);
     }

@@ -1,8 +1,8 @@
 //! Hostile historical mutation tests — archived years must remain immutable (fail-closed).
 
 use grpc_lib::application::services::{
-    FiscalExportSnapshot, FiscalExportSnapshotService, FiscalHistoricalGuard,
-    SyncImportExecutionService, FiscalClosingService,
+    FiscalClosingService, FiscalExportSnapshot, FiscalExportSnapshotService, FiscalHistoricalGuard,
+    SyncImportExecutionService,
 };
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::ports::backup::BackupPort;

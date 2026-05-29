@@ -1,9 +1,8 @@
+use grpc_lib::application::oversight::benchmarks::Benchmark;
 use grpc_lib::application::oversight::benchmarks::{
-    ConsumptionPerBeneficiaryBenchmark, FiscalComplianceScoreBenchmark,
-    StockCoverageDaysBenchmark,
+    ConsumptionPerBeneficiaryBenchmark, FiscalComplianceScoreBenchmark, StockCoverageDaysBenchmark,
 };
 use grpc_lib::application::oversight::context::ReportsContext;
-use grpc_lib::application::oversight::benchmarks::Benchmark;
 use grpc_lib::application::oversight::types::{
     BenchmarkDistribution, Dimension, MetricValue, UnitType,
 };
@@ -162,11 +161,24 @@ macro_rules! assert_benchmark_reproducible {
     ($name:expr, $bench:expr, $ctx1:expr, $ctx2:expr) => {
         let r1 = $bench.compute(&$ctx1).unwrap();
         let r2 = $bench.compute(&$ctx2).unwrap();
-        assert_eq!(r1.unit_count, r2.unit_count, "{}: unit_count differs", $name);
-        assert_eq!(r1.values.len(), r2.values.len(), "{}: values.len differs", $name);
+        assert_eq!(
+            r1.unit_count, r2.unit_count,
+            "{}: unit_count differs",
+            $name
+        );
+        assert_eq!(
+            r1.values.len(),
+            r2.values.len(),
+            "{}: values.len differs",
+            $name
+        );
         let json1 = serde_json::to_string(&r1).expect("serialize r1");
         let json2 = serde_json::to_string(&r2).expect("serialize r2");
-        assert_eq!(json1, json2, "{}: distribution differs across identical DB states", $name);
+        assert_eq!(
+            json1, json2,
+            "{}: distribution differs across identical DB states",
+            $name
+        );
     };
 }
 
@@ -206,13 +218,14 @@ fn percentile_rank_stability() {
     // Same value => same rank
     let r1 = PercentileRank::compute(50.0, &[50.0, 50.0, 50.0]);
     let r2 = PercentileRank::compute(50.0, &[50.0, 50.0, 50.0]);
-    assert_eq!(r1.value(), r2.value(), "same value should produce same rank");
+    assert_eq!(
+        r1.value(),
+        r2.value(),
+        "same value should produce same rank"
+    );
 
     // Deterministic ordering: tie-breaking by unit_id should be stable
-    let raw = vec![
-        ("b".to_string(), 100.0),
-        ("a".to_string(), 100.0),
-    ];
+    let raw = vec![("b".to_string(), 100.0), ("a".to_string(), 100.0)];
     let dist = BenchmarkDistribution::compute(
         "test",
         "test",
@@ -224,7 +237,10 @@ fn percentile_rank_stability() {
     );
     assert_eq!(dist.values.len(), 2);
     // Both tied at value 100.0, sorted by id ascending => "a" first, then "b"
-    assert_eq!(dist.values[0].unit_id, "a", "tie-breaker should sort by unit_id asc");
+    assert_eq!(
+        dist.values[0].unit_id, "a",
+        "tie-breaker should sort by unit_id asc"
+    );
     assert_eq!(dist.values[0].rank, 1, "tied values share same rank");
     assert_eq!(dist.values[1].rank, 1, "tied values share same rank");
 }
@@ -242,8 +258,24 @@ fn ranking_is_reproducible() {
     ];
     let raw2 = raw1.clone();
 
-    let d1 = BenchmarkDistribution::compute("r", "r", UnitType::Amount, Dimension::Unit, 2025, raw1, MetricValue::Amount);
-    let d2 = BenchmarkDistribution::compute("r", "r", UnitType::Amount, Dimension::Unit, 2025, raw2, MetricValue::Amount);
+    let d1 = BenchmarkDistribution::compute(
+        "r",
+        "r",
+        UnitType::Amount,
+        Dimension::Unit,
+        2025,
+        raw1,
+        MetricValue::Amount,
+    );
+    let d2 = BenchmarkDistribution::compute(
+        "r",
+        "r",
+        UnitType::Amount,
+        Dimension::Unit,
+        2025,
+        raw2,
+        MetricValue::Amount,
+    );
 
     assert_eq!(d1.values[0].rank, d2.values[0].rank);
     assert_eq!(d1.values[1].rank, d2.values[1].rank);
@@ -257,21 +289,34 @@ fn ranking_is_reproducible() {
 
 #[test]
 fn benchmark_distribution_serialization_is_stable() {
-    let raw = vec![
-        ("z".to_string(), 10.0),
-        ("a".to_string(), 100.0),
-    ];
-    let d = BenchmarkDistribution::compute("test-id", "test-name", UnitType::Amount, Dimension::Unit, 2025, raw, MetricValue::Amount);
+    let raw = vec![("z".to_string(), 10.0), ("a".to_string(), 100.0)];
+    let d = BenchmarkDistribution::compute(
+        "test-id",
+        "test-name",
+        UnitType::Amount,
+        Dimension::Unit,
+        2025,
+        raw,
+        MetricValue::Amount,
+    );
     let json = serde_json::to_string(&d).expect("serialize");
 
     // Re-compute and verify same JSON (deep stability)
-    let raw2 = vec![
-        ("z".to_string(), 10.0),
-        ("a".to_string(), 100.0),
-    ];
-    let d2 = BenchmarkDistribution::compute("test-id", "test-name", UnitType::Amount, Dimension::Unit, 2025, raw2, MetricValue::Amount);
+    let raw2 = vec![("z".to_string(), 10.0), ("a".to_string(), 100.0)];
+    let d2 = BenchmarkDistribution::compute(
+        "test-id",
+        "test-name",
+        UnitType::Amount,
+        Dimension::Unit,
+        2025,
+        raw2,
+        MetricValue::Amount,
+    );
     let json2 = serde_json::to_string(&d2).expect("serialize");
-    assert_eq!(json, json2, "identical distributions must produce identical JSON");
+    assert_eq!(
+        json, json2,
+        "identical distributions must produce identical JSON"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -325,8 +370,16 @@ fn benchmark_distribution_median_and_p95() {
     // 5 values, sorted desc: 25, 20, 15, 10, 5
     // median (p50): nearest-rank ceil(50/100 * 5) = ceil(2.5) = 3 => index 2 => 15
     // p95: ceil(95/100 * 5) = ceil(4.75) = 5 => index 4 => 5
-    assert_eq!(d.median, Some(15.0), "median should be 15 for values 5,10,15,20,25 sorted desc");
+    assert_eq!(
+        d.median,
+        Some(15.0),
+        "median should be 15 for values 5,10,15,20,25 sorted desc"
+    );
     assert_eq!(d.min, Some(5.0));
     assert_eq!(d.max, Some(25.0));
-    assert_eq!(d.p95, Some(5.0), "p95 should be the 5th value (lowest since sorted desc = nearest rank)");
+    assert_eq!(
+        d.p95,
+        Some(5.0),
+        "p95 should be the 5th value (lowest since sorted desc = nearest rank)"
+    );
 }

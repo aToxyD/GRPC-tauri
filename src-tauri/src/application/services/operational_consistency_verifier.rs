@@ -84,7 +84,10 @@ impl<'a> OperationalConsistencyVerifier<'a> {
         &self,
         findings: &mut Vec<OperationalConsistencyFinding>,
     ) -> Result<(), AppError> {
-        let missing = self.executor.anomaly().count_critical_without_recommendation()?;
+        let missing = self
+            .executor
+            .anomaly()
+            .count_critical_without_recommendation()?;
         let passed = missing == 0;
         Self::push(
             findings,
@@ -137,7 +140,10 @@ impl<'a> OperationalConsistencyVerifier<'a> {
         findings: &mut Vec<OperationalConsistencyFinding>,
     ) -> Result<(), AppError> {
         let archived_years = self.executor.fiscal_year_status().count_archived()?;
-        let (inconsistent, _, _) = self.executor.fiscal_year_status().count_invariant_violations()?;
+        let (inconsistent, _, _) = self
+            .executor
+            .fiscal_year_status()
+            .count_invariant_violations()?;
         let passed = inconsistent == 0;
         Self::push(
             findings,

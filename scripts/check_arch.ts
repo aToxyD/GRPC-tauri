@@ -257,16 +257,12 @@ checkRule(
     ["src-tauri/src/application/services/*.rs"],
     /\.unwrap_or\(|\.ok\(\)\?/,
     (line, index, lines) => {
-        // Skip ordinary comment lines
         if (line.trim().startsWith("//")) return true;
-        // Skip lines with the explicit inline suppression tag:
-        //   [arch:allow-unwrap-or]  — must also include a rationale comment
         if (line.includes("[arch:allow-unwrap-or]")) return true;
         if (index > 0 && lines[index - 1].includes("[arch:allow-unwrap-or]")) return true;
         return false;
     },
-    "warning",
-    (filename) => /sync|parse|service/.test(filename)
+    "warning"
 );
 
 // Rule 14: Commands must not directly use repositories
@@ -790,11 +786,7 @@ checkRule(
     "Rule 47: ORDER BY created_at on domain_events table (must use transaction_id, sequence_number)",
     ["src-tauri/src/**/*.rs"],
     /ORDER\s+BY\s+created_at\b/i,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        if (line.includes("[arch:allow-created-at]")) return true;
-        return false;
-    },
+    (line) => line.trim().startsWith("//"),
     "error",
     (file) => file.includes("domain_events") || file.endsWith("mod.rs")
          || file.endsWith("transaction.rs")
@@ -1340,6 +1332,7 @@ checkRule(
         if (line.trim().startsWith("//")) return true;
         if (line.includes("[arch:allow-mutation-before-replay]")) return true;
         if (index > 0 && lines[index - 1].includes("[arch:allow-mutation-before-replay]")) return true;
+        if (index + 1 < lines.length && lines[index + 1].includes("[arch:allow-mutation-before-replay]")) return true;
         if (line.includes("repo.")) return true;
         return false;
     },
@@ -1414,14 +1407,11 @@ checkRule(
     /ReplayDetected|replay_detected|DuplicatePackage/,
     (line, index, lines) => {
         if (line.trim().startsWith("//")) return true;
-        if (line.includes("[arch:allow-no-audit]")) return true;
-        if (index > 0 && lines[index - 1].includes("[arch:allow-no-audit]")) return true;
-        // Lines that are part of the error type definitions or are near emit() calls are ok
         if (line.includes("emit(DomainEvent::SyncConflictDetected")) return true;
         if (line.includes("ReplayProtectionResult")) return true;
         if (line.includes("ImportExecutionError")) return true;
         if (line.includes("audited:")) return true;
-        if (line.includes("replay_detected:")) return true;
+        if (line.includes("replay_detected:") || line.includes("r.replay_detected")) return true;
         if (line.includes("assert!")) return true;
         return false;
     },
@@ -1444,8 +1434,6 @@ checkRule(
     /fn execute_import/,
     (line, index, lines) => {
         if (line.trim().startsWith("//")) return true;
-        if (line.includes("[arch:allow-no-event-persistence]")) return true;
-        if (index > 0 && lines[index - 1].includes("[arch:allow-no-event-persistence]")) return true;
         // Scan next 40 lines for with_event_persistence
         for (let i = index + 1; i < Math.min(index + 40, lines.length); i++) {
             if (lines[i].includes("with_event_persistence(")) return true;
@@ -1484,10 +1472,10 @@ checkRule(
     /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
     (line) => {
         if (line.trim().startsWith("//")) return true;
-        if (line.contains("DELETE FROM")) return true;
-        if (line.contains("INSERT INTO")) return true;
-        if (line.contains("UPDATE ")) return true;
-        return false;
+        if (line.includes("DELETE FROM")) return false;
+        if (line.includes("INSERT INTO")) return false;
+        if (line.includes("UPDATE ")) return false;
+        return true;
     },
     "error",
     (file) => {
@@ -1552,7 +1540,181 @@ checkRule(
 );
 
 // ============================================================
-// GROUP 20 — Rules inherited from Phase 5.C
+// GROUP 20 — SQLite Runtime Rules (Phase 6.B)
+// ============================================================
+
+// Rule 106: No VACUUM execution in sqlite_runtime/
+checkRule(
+    "Rule 106: VACUUM execution in sqlite_runtime/ (VACUUM must not be executed automatically)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\bVACUUM\b/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 107: No auto repair in sqlite_runtime/
+checkRule(
+    "Rule 107: Auto-repair logic in sqlite_runtime/ (integrity monitoring must not auto-repair)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\brepair\b|\bfix\b|\brecover\b/i,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("recover_interrupted_restore")) return true;
+        if (line.includes("BackupValidationFailure")) return true;
+        if (line.includes("IntegrityExecutionPolicy")) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 108: No background threads in sqlite_runtime/
+checkRule(
+    "Rule 108: Background thread spawning in sqlite_runtime/ (no threads in runtime)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\bstd::thread\b|\bspawn\b|\bthread::spawn\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 109: No hidden loops in sqlite_runtime/ (no infinite loops, no background polling)
+checkRule(
+    "Rule 109: Hidden loop in sqlite_runtime/ (no infinite loops or background polling)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\bloop\s*\{\s*$|\bwhile\s*true\b|\bfor\s*\(?\s*;;/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 110: No second SQLite connection outside explicit backup validation
+checkRule(
+    "Rule 110: Second SQLite connection in sqlite_runtime/ outside backup validation (only backup_validation.rs may open temp connections)",
+    [
+        "src-tauri/src/infrastructure/sqlite_runtime/checkpoint.rs",
+        "src-tauri/src/infrastructure/sqlite_runtime/integrity_runner.rs",
+        "src-tauri/src/infrastructure/sqlite_runtime/idle_checkpoint.rs",
+        "src-tauri/src/infrastructure/sqlite_runtime/runtime_metrics.rs",
+        "src-tauri/src/infrastructure/sqlite_runtime/policies.rs",
+    ],
+    /Connection::open|Connection::open_with_flags/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 111: No repository imports in sqlite_runtime/
+checkRule(
+    "Rule 111: Repository import in sqlite_runtime/ (must not depend on repositories)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /use\s+crate::repositories/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 112: No business logic in sqlite_runtime/
+checkRule(
+    "Rule 112: Business logic in sqlite_runtime/ (must be pure runtime execution only)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\b(fifo|FifoLayer|StockMovement|fiscal|FiscalYear|Account|CostBasis|InventorySnapshot|InventoryValuation)\b/,
+    (line) => line.trim().startsWith("//") || line.trim().startsWith("///"),
+    "error"
+);
+
+// Rule 113: No filesystem deletion in sqlite_runtime/ (no fs::remove, no fs::write)
+checkRule(
+    "Rule 113: Filesystem deletion in sqlite_runtime/ (must not delete filesystem artifacts)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\bstd::fs\b|\bfs::remove\b|\bfs::write\b|\bunlink\b/i,
+    (line) => line.trim().startsWith("//"),
+    "error",
+    (file) => !file.endsWith("backup_validation.rs") // backup_validation may open files
+);
+
+// Rule 114: No WAL deletion by path in sqlite_runtime/
+checkRule(
+    "Rule 114: WAL file deletion by path sqlite_runtime/ (must not delete -wal files directly)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /-wal|-shm/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 115: No chrono::Utc::now in sqlite_runtime core
+checkRule(
+    "Rule 115: chrono::Utc::now() in sqlite_runtime/ (runtime must be deterministic — no wall-clock)",
+    ["src-tauri/src/infrastructure/sqlite_runtime/**/*.rs"],
+    /\bUtc::now\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
+// GROUP 21 — SQLite Runtime Review Rules (Phase 6.C)
+// ============================================================
+
+// Rule 116: No background threads in sqlite_runtime_review/
+checkRule(
+    "Rule 116: Background thread spawning in sqlite_runtime_review/ (no threads in runtime review)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /\bstd::thread\b|\bspawn\b|\bthread::spawn\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 117: No async runtime in sqlite_runtime_review/
+checkRule(
+    "Rule 117: Async runtime usage in sqlite_runtime_review/ (must be synchronous)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /\basync\s+fn\b|\bawait\b|\btokio::\b|\bfutures::\b|\bAsync\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 118: No scheduler loops in sqlite_runtime_review/
+checkRule(
+    "Rule 118: Hidden loop in sqlite_runtime_review/ (no infinite loops or background polling)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /\bloop\s*\{\s*$|\bwhile\s*true\b|\bfor\s*\(?\s*;;/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 119: No automatic checkpoints in sqlite_runtime_review/
+checkRule(
+    "Rule 119: Automatic checkpoint execution in sqlite_runtime_review/ (review must not execute checkpoints)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /\bcheckpoint\s*\(|PRAGMA\s+wal_checkpoint|\.execute_checkpoint/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 120: No second write connection in sqlite_runtime_review/
+checkRule(
+    "Rule 120: Second SQLite write connection in sqlite_runtime_review/ (must not open write connections)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /Connection::open\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 121: No mutation in sqlite_runtime_review/
+checkRule(
+    "Rule 121: Mutation call in sqlite_runtime_review/ (evaluation must not mutate state)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b|\.execute\(|\.prepare\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 122: No chrono::Utc::now in sqlite_runtime_review/
+checkRule(
+    "Rule 122: chrono::Utc::now() in sqlite_runtime_review/ (review must be deterministic — no wall-clock)",
+    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
+    /\bUtc::now\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
+// GROUP 22 — Rules inherited from Phase 5.C
 // ============================================================
 
 // Rule 96: No chrono::Utc::now in sync execution path

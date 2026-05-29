@@ -187,8 +187,14 @@ impl<'a> UnitRepository<'a> {
             [],
             |row| {
                 let created_at_str: String = row.get(5)?;
-                let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e)))?;
+                let created_at =
+                    crate::errors::parse_datetime_rfc3339(&created_at_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            5,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
                 Ok(Unit {
                     id: row.get(0)?,
                     code: row.get(1)?,

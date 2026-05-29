@@ -44,7 +44,9 @@ pub struct InvariantReport {
 
 impl InvariantReport {
     pub fn new() -> Self {
-        Self { violations: Vec::new() }
+        Self {
+            violations: Vec::new(),
+        }
     }
 
     pub fn is_clean(&self) -> bool {

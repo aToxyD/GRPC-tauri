@@ -133,7 +133,10 @@ impl PercentileRank {
             return PercentileRank(0.0);
         }
         let count_below = sorted_values.iter().filter(|&&v| v < value).count();
-        let count_equal = sorted_values.iter().filter(|&&v| (v - value).abs() < f64::EPSILON).count();
+        let count_equal = sorted_values
+            .iter()
+            .filter(|&&v| (v - value).abs() < f64::EPSILON)
+            .count();
         let total = sorted_values.len();
         let rank = if total == 1 {
             50.0

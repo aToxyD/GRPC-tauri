@@ -24,7 +24,10 @@ pub trait Report {
 
     fn slug() -> &'static str;
     fn version() -> u32;
-    fn compute(executor: DbExecutor<'_>, input: Self::Input) -> Result<ReportEnvelope<Self::Output>, Self::Error>;
+    fn compute(
+        executor: DbExecutor<'_>,
+        input: Self::Input,
+    ) -> Result<ReportEnvelope<Self::Output>, Self::Error>;
     fn is_reproducible() -> bool {
         true
     }
@@ -92,21 +95,20 @@ pub fn compute_or_get_cached<R: Report>(
     input: R::Input,
     fiscal_scope: Option<i32>,
 ) -> Result<ReportEnvelope<R::Output>, R::Error> {
-    let input_json = serde_json::to_string(&input)
-        .expect("Report input serialization must not fail");
+    let input_json =
+        serde_json::to_string(&input).expect("Report input serialization must not fail");
     let key = CacheKey::new(R::slug(), R::version(), &input_json, fiscal_scope);
 
     if let Some(cached) = runtime.get(&key) {
-        let envelope: ReportEnvelope<R::Output> =
-            serde_json::from_value(cached.payload_json)
-                .expect("Cached report deserialization must not fail; version mismatch = key change");
+        let envelope: ReportEnvelope<R::Output> = serde_json::from_value(cached.payload_json)
+            .expect("Cached report deserialization must not fail; version mismatch = key change");
         return Ok(envelope);
     }
 
     let envelope = R::compute(executor, input)?;
 
-    let payload = serde_json::to_value(&envelope)
-        .expect("Report envelope serialization must not fail");
+    let payload =
+        serde_json::to_value(&envelope).expect("Report envelope serialization must not fail");
     runtime.insert(key, R::slug(), R::version(), fiscal_scope, payload);
 
     Ok(envelope)

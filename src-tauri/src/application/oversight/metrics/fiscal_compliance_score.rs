@@ -1,5 +1,5 @@
 use crate::application::oversight::context::ReportsContext;
-use crate::application::oversight::types::{MetricValue, OversightMetric, UnitType, Dimension};
+use crate::application::oversight::types::{Dimension, MetricValue, OversightMetric, UnitType};
 
 /// FiscalComplianceScore = (actual_daily_reports / expected_daily_reports) × 100
 ///
@@ -8,11 +8,21 @@ use crate::application::oversight::types::{MetricValue, OversightMetric, UnitTyp
 pub struct FiscalComplianceScore;
 
 impl OversightMetric for FiscalComplianceScore {
-    fn id(&self) -> &'static str { "fiscal-compliance-score" }
-    fn name(&self) -> &'static str { "Fiscal Compliance Score" }
-    fn formula(&self) -> &'static str { "(daily_report_count / 365) × 100" }
-    fn unit(&self) -> UnitType { UnitType::Percentage }
-    fn dimension(&self) -> Dimension { Dimension::Period }
+    fn id(&self) -> &'static str {
+        "fiscal-compliance-score"
+    }
+    fn name(&self) -> &'static str {
+        "Fiscal Compliance Score"
+    }
+    fn formula(&self) -> &'static str {
+        "(daily_report_count / 365) × 100"
+    }
+    fn unit(&self) -> UnitType {
+        UnitType::Percentage
+    }
+    fn dimension(&self) -> Dimension {
+        Dimension::Period
+    }
 
     fn compute(&self, ctx: &ReportsContext<'_>) -> Result<MetricValue, String> {
         let summary = match ctx.fiscal_year_summary()? {

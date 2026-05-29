@@ -13,7 +13,12 @@ use grpc_lib::infrastructure::sqlite_observability::wal::*;
 fn query_plan_parsing_determinism() {
     let rows = vec![
         (3, 0, 0, "SCAN TABLE products".into()),
-        (5, 0, 0, "SEARCH TABLE inventory_stocks USING INDEX idx_stock_product (product_id=?)".into()),
+        (
+            5,
+            0,
+            0,
+            "SEARCH TABLE inventory_stocks USING INDEX idx_stock_product (product_id=?)".into(),
+        ),
     ];
 
     let plan1 = QueryPlan::from_explain_output("SELECT * FROM products", rows.clone());
@@ -29,9 +34,7 @@ fn query_plan_parsing_determinism() {
 
 #[test]
 fn detects_full_table_scans() {
-    let rows = vec![
-        (3, 0, 0, "SCAN TABLE products".into()),
-    ];
+    let rows = vec![(3, 0, 0, "SCAN TABLE products".into())];
     let plan = QueryPlan::from_explain_output("SELECT * FROM products", rows);
     assert!(plan.has_full_table_scan);
     assert_eq!(plan.scan_count, 1);
@@ -41,8 +44,19 @@ fn detects_full_table_scans() {
 #[test]
 fn no_full_table_scan_when_using_index() {
     let rows = vec![
-        (2, 0, 0, "SEARCH TABLE products USING INDEX idx_products_id (id=?)".into()),
-        (4, 0, 0, "SEARCH TABLE inventory_stocks USING COVERING INDEX idx_stock_product (product_id=?)".into()),
+        (
+            2,
+            0,
+            0,
+            "SEARCH TABLE products USING INDEX idx_products_id (id=?)".into(),
+        ),
+        (
+            4,
+            0,
+            0,
+            "SEARCH TABLE inventory_stocks USING COVERING INDEX idx_stock_product (product_id=?)"
+                .into(),
+        ),
     ];
     let plan = QueryPlan::from_explain_output("SELECT * FROM products WHERE id = ?", rows);
     assert!(!plan.has_full_table_scan);
@@ -55,10 +69,9 @@ fn no_full_table_scan_when_using_index() {
 
 #[test]
 fn index_recommendation_stability() {
-    let rows = vec![
-        (3, 0, 0, "SCAN TABLE products".into()),
-    ];
-    let recs1 = QueryPlan::from_explain_output("SELECT * FROM products", rows.clone()).recommendations();
+    let rows = vec![(3, 0, 0, "SCAN TABLE products".into())];
+    let recs1 =
+        QueryPlan::from_explain_output("SELECT * FROM products", rows.clone()).recommendations();
     let recs2 = QueryPlan::from_explain_output("SELECT * FROM products", rows).recommendations();
 
     assert_eq!(recs1, recs2);
@@ -148,7 +161,7 @@ fn diagnostics_snapshot_reproducibility() {
     let growth = PageGrowthMetrics::new(200, 100, 10, 5);
 
     let snap1 = SqliteDiagnosticsSnapshot::new(
-        Some(wal.clone()),
+        Some(wal),
         Some(integrity.clone()),
         Some(&slow),
         vec![diag.clone()],
@@ -246,14 +259,8 @@ fn serde_round_trip_diagnostics_snapshot() {
     let integrity = IntegritySnapshot::new(check, quick);
     let growth = PageGrowthMetrics::new(200, 100, 10, 5);
 
-    let snap = SqliteDiagnosticsSnapshot::new(
-        Some(wal),
-        Some(integrity),
-        None,
-        vec![],
-        Some(growth),
-        42,
-    );
+    let snap =
+        SqliteDiagnosticsSnapshot::new(Some(wal), Some(integrity), None, vec![], Some(growth), 42);
     let json = serde_json::to_string(&snap).unwrap();
     let deserialized: SqliteDiagnosticsSnapshot = serde_json::from_str(&json).unwrap();
     assert_eq!(snap, deserialized);
@@ -292,9 +299,12 @@ fn same_input_produces_same_snapshot() {
 
 #[test]
 fn scan_severity_none() {
-    let rows = vec![
-        (2, 0, 0, "SEARCH TABLE products USING INDEX idx_id (id=?)".into()),
-    ];
+    let rows = vec![(
+        2,
+        0,
+        0,
+        "SEARCH TABLE products USING INDEX idx_id (id=?)".into(),
+    )];
     let plan = QueryPlan::from_explain_output("SELECT * FROM products WHERE id = ?", rows);
     assert_eq!(plan.severity, ScanSeverity::None);
 }
@@ -370,14 +380,7 @@ fn diagnostics_healthy_when_all_ok() {
     let quick = QuickCheckResult::parse("ok");
     let integrity = IntegritySnapshot::new(check, quick);
 
-    let snap = SqliteDiagnosticsSnapshot::new(
-        Some(wal),
-        Some(integrity),
-        None,
-        vec![],
-        None,
-        1,
-    );
+    let snap = SqliteDiagnosticsSnapshot::new(Some(wal), Some(integrity), None, vec![], None, 1);
     assert!(snap.is_healthy());
     assert!(!snap.has_integrity_issues());
     assert!(!snap.has_slow_queries());

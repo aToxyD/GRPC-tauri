@@ -31,7 +31,10 @@ impl<'a> InventoryIntegrityService<'a> {
         fiscal_year: i32,
     ) -> Result<InventoryIntegrityReport, AppError> {
         log::info!(target:"grpc::inventory","[INVENTORY_VERIFY_START] fiscal_year={}",fiscal_year);
-        let rows = self.executor.inventory().verify_consistency_for_year(fiscal_year)?;
+        let rows = self
+            .executor
+            .inventory()
+            .verify_consistency_for_year(fiscal_year)?;
         let mut issues = Vec::new();
         for (product_id, opening, inbound, outbound, actual) in rows.iter() {
             let expected = opening + inbound - outbound;

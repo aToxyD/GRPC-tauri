@@ -17,7 +17,11 @@ pub enum OriginImmutableViolation {
 impl fmt::Display for OriginImmutableViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OriginImmutableViolation::OriginFiscalYearChanged { layer_id, expected_origin_year, actual_origin_year } => {
+            OriginImmutableViolation::OriginFiscalYearChanged {
+                layer_id,
+                expected_origin_year,
+                actual_origin_year,
+            } => {
                 write!(
                     f,
                     "layer {} origin_fiscal_year changed: expected {}, got {}",
@@ -126,9 +130,7 @@ impl Invariant for SingleOpenFiscalYear {
 
         if !open_years.is_empty() {
             if open_years.len() > 1 {
-                violations.push(SingleOpenFiscalYearViolation::MultipleOpenYears {
-                    open_years,
-                });
+                violations.push(SingleOpenFiscalYearViolation::MultipleOpenYears { open_years });
             }
         } else {
             violations.push(SingleOpenFiscalYearViolation::NoOpenYear);
@@ -139,7 +141,9 @@ impl Invariant for SingleOpenFiscalYear {
 }
 
 /// Convenience: check that at most one fiscal year is open.
-pub fn check_single_open_fiscal_year(years: Vec<FiscalYearEntry>) -> Vec<SingleOpenFiscalYearViolation> {
+pub fn check_single_open_fiscal_year(
+    years: Vec<FiscalYearEntry>,
+) -> Vec<SingleOpenFiscalYearViolation> {
     let ctx = FiscalYearContext { years };
     SingleOpenFiscalYear::check(&ctx)
 }
@@ -170,7 +174,11 @@ mod tests {
         let v = check_origin_immutable(layers);
         assert_eq!(v.len(), 1);
         match &v[0] {
-            OriginImmutableViolation::OriginFiscalYearChanged { layer_id, expected_origin_year, actual_origin_year } => {
+            OriginImmutableViolation::OriginFiscalYearChanged {
+                layer_id,
+                expected_origin_year,
+                actual_origin_year,
+            } => {
                 assert_eq!(layer_id, "l1");
                 assert_eq!(*expected_origin_year, 2025);
                 assert_eq!(*actual_origin_year, 2026);
@@ -181,8 +189,16 @@ mod tests {
     #[test]
     fn multiple_layers_all_valid() {
         let layers = vec![
-            OriginYearRecord { layer_id: "l1".into(), expected_origin_year: 2024, actual_origin_year: 2024 },
-            OriginYearRecord { layer_id: "l2".into(), expected_origin_year: 2025, actual_origin_year: 2025 },
+            OriginYearRecord {
+                layer_id: "l1".into(),
+                expected_origin_year: 2024,
+                actual_origin_year: 2024,
+            },
+            OriginYearRecord {
+                layer_id: "l2".into(),
+                expected_origin_year: 2025,
+                actual_origin_year: 2025,
+            },
         ];
         assert!(check_origin_immutable(layers).is_empty());
     }
@@ -190,9 +206,21 @@ mod tests {
     #[test]
     fn mixed_violations_collected() {
         let layers = vec![
-            OriginYearRecord { layer_id: "l1".into(), expected_origin_year: 2025, actual_origin_year: 2025 },
-            OriginYearRecord { layer_id: "l2".into(), expected_origin_year: 2025, actual_origin_year: 2024 },
-            OriginYearRecord { layer_id: "l3".into(), expected_origin_year: 2025, actual_origin_year: 2026 },
+            OriginYearRecord {
+                layer_id: "l1".into(),
+                expected_origin_year: 2025,
+                actual_origin_year: 2025,
+            },
+            OriginYearRecord {
+                layer_id: "l2".into(),
+                expected_origin_year: 2025,
+                actual_origin_year: 2024,
+            },
+            OriginYearRecord {
+                layer_id: "l3".into(),
+                expected_origin_year: 2025,
+                actual_origin_year: 2026,
+            },
         ];
         let v = check_origin_immutable(layers);
         assert_eq!(v.len(), 2);
@@ -203,9 +231,18 @@ mod tests {
     #[test]
     fn exactly_one_open_year_is_valid() {
         let years = vec![
-            FiscalYearEntry { year: 2024, status: "closed".into() },
-            FiscalYearEntry { year: 2025, status: "open".into() },
-            FiscalYearEntry { year: 2026, status: "archived".into() },
+            FiscalYearEntry {
+                year: 2024,
+                status: "closed".into(),
+            },
+            FiscalYearEntry {
+                year: 2025,
+                status: "open".into(),
+            },
+            FiscalYearEntry {
+                year: 2026,
+                status: "archived".into(),
+            },
         ];
         assert!(check_single_open_fiscal_year(years).is_empty());
     }
@@ -213,8 +250,14 @@ mod tests {
     #[test]
     fn multiple_open_years_triggers_violation() {
         let years = vec![
-            FiscalYearEntry { year: 2025, status: "open".into() },
-            FiscalYearEntry { year: 2026, status: "open".into() },
+            FiscalYearEntry {
+                year: 2025,
+                status: "open".into(),
+            },
+            FiscalYearEntry {
+                year: 2026,
+                status: "open".into(),
+            },
         ];
         let v = check_single_open_fiscal_year(years);
         assert_eq!(v.len(), 1);
@@ -231,8 +274,14 @@ mod tests {
     #[test]
     fn no_open_year_triggers_violation() {
         let years = vec![
-            FiscalYearEntry { year: 2024, status: "closed".into() },
-            FiscalYearEntry { year: 2025, status: "archived".into() },
+            FiscalYearEntry {
+                year: 2024,
+                status: "closed".into(),
+            },
+            FiscalYearEntry {
+                year: 2025,
+                status: "archived".into(),
+            },
         ];
         let v = check_single_open_fiscal_year(years);
         assert_eq!(v.len(), 1);
@@ -242,8 +291,14 @@ mod tests {
     #[test]
     fn all_archived_triggers_no_open() {
         let years = vec![
-            FiscalYearEntry { year: 2023, status: "archived".into() },
-            FiscalYearEntry { year: 2024, status: "archived".into() },
+            FiscalYearEntry {
+                year: 2023,
+                status: "archived".into(),
+            },
+            FiscalYearEntry {
+                year: 2024,
+                status: "archived".into(),
+            },
         ];
         let v = check_single_open_fiscal_year(years);
         assert_eq!(v.len(), 1);
@@ -259,9 +314,10 @@ mod tests {
 
     #[test]
     fn only_one_open_no_other_years_is_valid() {
-        let years = vec![
-            FiscalYearEntry { year: 2025, status: "open".into() },
-        ];
+        let years = vec![FiscalYearEntry {
+            year: 2025,
+            status: "open".into(),
+        }];
         assert!(check_single_open_fiscal_year(years).is_empty());
     }
 }

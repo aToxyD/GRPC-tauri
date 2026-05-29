@@ -130,9 +130,9 @@ impl<'a> DomainEventRepository<'a> {
                 let actual: i64 = row.get(1)?;
                 let expected: i64 = row.get(2)?;
 
-                let tx_id: Uuid = tx_str.parse().map_err(|e| {
-                    rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-                })?;
+                let tx_id: Uuid = tx_str
+                    .parse()
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
                 Ok(EventSequenceGap {
                     transaction_id: tx_id,

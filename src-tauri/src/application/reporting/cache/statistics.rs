@@ -22,8 +22,12 @@ impl CacheStatistics {
 
         for entry in &entries {
             total_access_count += entry.access_count;
-            *entries_per_slug.entry(entry.report_slug.clone()).or_insert(0) += 1;
-            *entries_per_fiscal_year.entry(entry.fiscal_scope).or_insert(0) += 1;
+            *entries_per_slug
+                .entry(entry.report_slug.clone())
+                .or_insert(0) += 1;
+            *entries_per_fiscal_year
+                .entry(entry.fiscal_scope)
+                .or_insert(0) += 1;
             if !slugs.contains(&entry.report_slug) {
                 slugs.push(entry.report_slug.clone());
             }
@@ -44,8 +48,8 @@ impl CacheStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::reporting::cache::store::CachedReport;
     use crate::application::reporting::cache::key::CacheKey;
+    use crate::application::reporting::cache::store::CachedReport;
     use serde_json::json;
 
     #[test]

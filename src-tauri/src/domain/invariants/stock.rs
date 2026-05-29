@@ -5,24 +5,29 @@ use crate::domain::invariants::Invariant;
 /// Violation raised when a stock quantity is negative.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StockNonNegativeViolation {
-    NegativeLayerQuantity {
-        layer_id: String,
-        quantity: f64,
-    },
-    NegativeBalance {
-        product_label: String,
-        balance: f64,
-    },
+    NegativeLayerQuantity { layer_id: String, quantity: f64 },
+    NegativeBalance { product_label: String, balance: f64 },
 }
 
 impl fmt::Display for StockNonNegativeViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StockNonNegativeViolation::NegativeLayerQuantity { layer_id, quantity } => {
-                write!(f, "layer {} has negative remaining quantity: {}", layer_id, quantity)
+                write!(
+                    f,
+                    "layer {} has negative remaining quantity: {}",
+                    layer_id, quantity
+                )
             }
-            StockNonNegativeViolation::NegativeBalance { product_label, balance } => {
-                write!(f, "product {} has negative stock balance: {}", product_label, balance)
+            StockNonNegativeViolation::NegativeBalance {
+                product_label,
+                balance,
+            } => {
+                write!(
+                    f,
+                    "product {} has negative stock balance: {}",
+                    product_label, balance
+                )
             }
         }
     }
@@ -149,7 +154,10 @@ mod tests {
         let v = check_product_balance("product-xyz", -1.0);
         assert_eq!(v.len(), 1);
         match &v[0] {
-            StockNonNegativeViolation::NegativeBalance { product_label, balance } => {
+            StockNonNegativeViolation::NegativeBalance {
+                product_label,
+                balance,
+            } => {
                 assert_eq!(product_label, "product-xyz");
                 assert!((*balance - -1.0).abs() < 1e-9);
             }
@@ -160,13 +168,28 @@ mod tests {
     #[test]
     fn multiple_violations_collected() {
         let layers = vec![
-            LayerQuantity { layer_id: "a".into(), quantity: 10.0 },
-            LayerQuantity { layer_id: "b".into(), quantity: -3.0 },
-            LayerQuantity { layer_id: "c".into(), quantity: -1.5 },
+            LayerQuantity {
+                layer_id: "a".into(),
+                quantity: 10.0,
+            },
+            LayerQuantity {
+                layer_id: "b".into(),
+                quantity: -3.0,
+            },
+            LayerQuantity {
+                layer_id: "c".into(),
+                quantity: -1.5,
+            },
         ];
         let balances = vec![
-            ProductBalance { product_label: "p1".into(), balance: 5.0 },
-            ProductBalance { product_label: "p2".into(), balance: -7.0 },
+            ProductBalance {
+                product_label: "p1".into(),
+                balance: 5.0,
+            },
+            ProductBalance {
+                product_label: "p2".into(),
+                balance: -7.0,
+            },
         ];
 
         let v = check_stock_non_negative(layers, balances);
@@ -176,12 +199,19 @@ mod tests {
     #[test]
     fn all_valid_returns_empty() {
         let layers = vec![
-            LayerQuantity { layer_id: "a".into(), quantity: 10.0 },
-            LayerQuantity { layer_id: "b".into(), quantity: 0.0 },
+            LayerQuantity {
+                layer_id: "a".into(),
+                quantity: 10.0,
+            },
+            LayerQuantity {
+                layer_id: "b".into(),
+                quantity: 0.0,
+            },
         ];
-        let balances = vec![
-            ProductBalance { product_label: "p1".into(), balance: 5.0 },
-        ];
+        let balances = vec![ProductBalance {
+            product_label: "p1".into(),
+            balance: 5.0,
+        }];
 
         assert!(check_stock_non_negative(layers, balances).is_empty());
     }

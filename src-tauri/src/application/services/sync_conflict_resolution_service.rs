@@ -10,21 +10,11 @@ impl SyncConflictResolutionService {
         _target_node_id: &str,
     ) -> ConflictResolutionOutcome {
         let policy = match conflict {
-            SyncConflict::DuplicatePackage(meta) => {
-                Self::resolve_duplicate_package(meta)
-            }
-            SyncConflict::StaleImport(meta) => {
-                Self::resolve_stale_import(meta)
-            }
-            SyncConflict::ReplayAttempt(meta) => {
-                Self::resolve_replay_attempt(meta)
-            }
-            SyncConflict::SequenceGap(meta) => {
-                Self::resolve_sequence_gap(meta)
-            }
-            SyncConflict::DivergentStockState(meta) => {
-                Self::resolve_divergent_stock(meta)
-            }
+            SyncConflict::DuplicatePackage(meta) => Self::resolve_duplicate_package(meta),
+            SyncConflict::StaleImport(meta) => Self::resolve_stale_import(meta),
+            SyncConflict::ReplayAttempt(meta) => Self::resolve_replay_attempt(meta),
+            SyncConflict::SequenceGap(meta) => Self::resolve_sequence_gap(meta),
+            SyncConflict::DivergentStockState(meta) => Self::resolve_divergent_stock(meta),
             SyncConflict::ConflictingInventoryMutation(meta) => {
                 Self::resolve_conflicting_inventory(meta)
             }
@@ -97,7 +87,9 @@ impl crate::architecture::Service for SyncConflictResolutionService {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::sync_integrity::types::{ConflictExplanation, ConflictId, ConflictMetadata, FiscalScope};
+    use crate::application::sync_integrity::types::{
+        ConflictExplanation, ConflictId, ConflictMetadata, FiscalScope,
+    };
 
     fn make_meta(package_id: &str, label: &str) -> ConflictMetadata {
         ConflictMetadata {
@@ -130,9 +122,7 @@ mod tests {
     #[test]
     fn duplicate_package_skip_idempotent() {
         let conflict = SyncConflict::DuplicatePackage(make_meta("pkg-1", "Duplicate"));
-        let outcome = SyncConflictResolutionService::resolve(
-            &conflict, "node-a", "node-b",
-        );
+        let outcome = SyncConflictResolutionService::resolve(&conflict, "node-a", "node-b");
         assert!(matches!(
             outcome.resolution,
             ResolutionPolicy::SkipIdempotent
@@ -142,9 +132,7 @@ mod tests {
     #[test]
     fn stale_import_rejected() {
         let conflict = SyncConflict::StaleImport(make_meta("pkg-1", "Stale"));
-        let outcome = SyncConflictResolutionService::resolve(
-            &conflict, "node-a", "node-b",
-        );
+        let outcome = SyncConflictResolutionService::resolve(&conflict, "node-a", "node-b");
         assert!(matches!(
             outcome.resolution,
             ResolutionPolicy::RejectWithAudit
@@ -154,9 +142,7 @@ mod tests {
     #[test]
     fn replay_attempt_rejected() {
         let conflict = SyncConflict::ReplayAttempt(make_meta("pkg-1", "Replay"));
-        let outcome = SyncConflictResolutionService::resolve(
-            &conflict, "node-a", "node-b",
-        );
+        let outcome = SyncConflictResolutionService::resolve(&conflict, "node-a", "node-b");
         assert!(matches!(
             outcome.resolution,
             ResolutionPolicy::RejectWithAudit
@@ -166,9 +152,7 @@ mod tests {
     #[test]
     fn sequence_gap_manual() {
         let conflict = SyncConflict::SequenceGap(make_meta("pkg-1", "Gap"));
-        let outcome = SyncConflictResolutionService::resolve(
-            &conflict, "node-a", "node-b",
-        );
+        let outcome = SyncConflictResolutionService::resolve(&conflict, "node-a", "node-b");
         assert!(matches!(
             outcome.resolution,
             ResolutionPolicy::ManualResolutionRequired
@@ -198,9 +182,7 @@ mod tests {
     #[test]
     fn duplicate_not_manual() {
         let conflict = SyncConflict::DuplicatePackage(make_meta("pkg-1", "Duplicate"));
-        assert!(!SyncConflictResolutionService::requires_manual_intervention(
-            &conflict
-        ));
+        assert!(!SyncConflictResolutionService::requires_manual_intervention(&conflict));
     }
 
     #[test]
@@ -225,32 +207,26 @@ mod tests {
             SyncConflict::ConflictingInventoryMutation(make_meta("p6", "Conf")),
         ];
         for v in &variants {
-            let _outcome = SyncConflictResolutionService::resolve(
-                v, "node-a", "node-b",
-            );
+            let _outcome = SyncConflictResolutionService::resolve(v, "node-a", "node-b");
         }
     }
 
     #[test]
     fn resolve_output_contains_conflict() {
         let conflict = SyncConflict::DuplicatePackage(make_meta_full(
-            "pkg-1", "Duplicate", "node-a", "node-b",
+            "pkg-1",
+            "Duplicate",
+            "node-a",
+            "node-b",
         ));
-        let outcome = SyncConflictResolutionService::resolve(
-            &conflict, "node-a", "node-b",
-        );
-        assert_eq!(
-            outcome.conflict.conflict_id().0,
-            "id-Duplicate"
-        );
+        let outcome = SyncConflictResolutionService::resolve(&conflict, "node-a", "node-b");
+        assert_eq!(outcome.conflict.conflict_id().0, "id-Duplicate");
     }
 
     #[test]
     fn no_silent_auto_merge_on_manual() {
         let conflict = SyncConflict::SequenceGap(make_meta("pkg-1", "Gap"));
-        let outcome = SyncConflictResolutionService::resolve(
-            &conflict, "node-a", "node-b",
-        );
+        let outcome = SyncConflictResolutionService::resolve(&conflict, "node-a", "node-b");
         assert!(!matches!(
             outcome.resolution,
             ResolutionPolicy::SkipIdempotent
