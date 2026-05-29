@@ -12,4 +12,5 @@ pub mod ports;
 pub mod reporting;
 pub mod services;
 pub mod sync;
+pub mod sync_integrity;
 pub mod usecases;

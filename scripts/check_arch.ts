@@ -1257,6 +1257,75 @@ checkRule(
 );
 
 // ============================================================
+// GROUP 17 — Sync Integrity Rules (Phase 5.B)
+// ============================================================
+
+// Rule 81: No SQL in sync_integrity/ except repository layer
+checkRule(
+    "Rule 81: SQL found in sync_integrity/ (only repository layer may contain SQL)",
+    ["src-tauri/src/application/sync_integrity/**/*.rs"],
+    /"SELECT|"INSERT|"UPDATE|"DELETE|\.execute\(|\.prepare\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 82: No chrono::Utc::now() in sync_integrity/
+checkRule(
+    "Rule 82: chrono::Utc::now() in sync_integrity/ (must be deterministic — no wall-clock)",
+    ["src-tauri/src/application/sync_integrity/**/*.rs"],
+    /\bUtc::now\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 83: No mutation during validation phase
+// Checks for INSERT/UPDATE/DELETE in sync_integrity/ validation paths
+checkRule(
+    "Rule 83: SQL mutation in sync_integrity/validation.rs (validation must not mutate state)",
+    ["src-tauri/src/application/sync_integrity/validation.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
+    (line) => line.trim().startsWith("//") || line.includes("evidence") || line.includes(".insert("),
+    "error"
+);
+
+// Rule 84: Replay checks must occur before mutation
+// Enforced at the module level: sync_integrity/replay.rs is read-only
+checkRule(
+    "Rule 84: Mutation call in sync_integrity/replay.rs (replay checks must not mutate)",
+    ["src-tauri/src/application/sync_integrity/replay.rs"],
+    /\.(insert|update|delete|create|reclassify|archive|close|seed|set|refresh|upsert)_/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 85: No OFFSET pagination in reconciliation paths
+checkRule(
+    "Rule 85: OFFSET pagination in sync_integrity/reconciliation.rs (must use keyset pagination)",
+    ["src-tauri/src/application/sync_integrity/reconciliation.rs"],
+    /\bOFFSET\b/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 86: All sync ordering requires deterministic tiebreakers
+checkRule(
+    "Rule 86: Potential non-deterministic ordering in sync_integrity/ (missing explicit tiebreaker)",
+    ["src-tauri/src/application/sync_integrity/**/*.rs"],
+    /\.sort_by\s*\([^)]*$/,
+    (line) => line.trim().startsWith("//") || line.includes("cmp"),
+    "error"
+);
+
+// Rule 87: No direct domain_events inserts in sync_integrity/
+checkRule(
+    "Rule 87: Direct domain_events insert in sync_integrity/ (must not write events directly)",
+    ["src-tauri/src/application/sync_integrity/**/*.rs"],
+    /INSERT\s+INTO\s+domain_events/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
 // SUMMARY
 // ============================================================
 
