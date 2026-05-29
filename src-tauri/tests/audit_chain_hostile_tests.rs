@@ -34,6 +34,15 @@ fn base_entry(id: &str, ts: &str, user_id: &str) -> NewAuditEntry {
         metadata: None,
         previous_hash: None,
         entry_hash: None,
+        event_type: None,
+        actor_id: None,
+        target_type: None,
+        target_id: None,
+        fiscal_year: None,
+        before_snapshot: None,
+        after_snapshot: None,
+        node_id: None,
+        details: None,
     }
 }
 

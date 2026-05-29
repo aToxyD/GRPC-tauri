@@ -1009,6 +1009,165 @@ checkRule(
 );
 
 // ============================================================
+// GROUP 15 — Audit Schema Evolution Rules (Phase 4)
+// ============================================================
+
+// Rule 69: No destructive audit migrations (ALTER TABLE DROP COLUMN, DROP TABLE audit_log, etc.)
+checkRule(
+    "Rule 69: Destructive audit migration detected (must be additive only)",
+    ["src-tauri/src/db/migrations/*.sql"],
+    /DROP\s+TABLE\s+audit_log|DROP\s+COLUMN\s+|ALTER\s+TABLE\s+audit_log\s+DROP/i,
+    (line) => line.trim().startsWith("--"),
+    "error",
+    (file) => !file.includes("001_initial.sql")
+);
+
+// Rule 70: New audit writes must populate structured columns (event_type, actor_id, details)
+// Checks that every INSERT INTO audit_log in the repository includes the event_type column.
+{
+    const patterns = ["src-tauri/src/repositories/audit.rs"];
+    const scannedFiles = new Set<string>();
+    let ruleViolations = 0;
+    const matches: { file: string; line: number; content: string }[] = [];
+
+    for (const pattern of patterns) {
+        const glob = new Glob(pattern);
+        for (const file of glob.scanSync(".")) {
+            const normalizedFile = file.replace(/\\/g, "/");
+            if (scannedFiles.has(normalizedFile)) continue;
+            scannedFiles.add(normalizedFile);
+
+            const content = readFileSync(file, "utf-8");
+            const lines = content.split("\n");
+
+            lines.forEach((line, index) => {
+                if (line.trim().startsWith("//")) return;
+                const insertMatch = line.match(/INSERT\s+INTO\s+audit_log\b/i);
+                if (!insertMatch) return;
+
+                // Check if this INSERT (or its continuation) includes event_type
+                // Collect all lines of the SQL statement (multiline string)
+                let mergedLine = line;
+                let i = index;
+                while (!mergedLine.includes("event_type") && !mergedLine.includes(";") && i < lines.length - 1) {
+                    i++;
+                    mergedLine += " " + lines[i].trim();
+                }
+                if (!mergedLine.includes("event_type")) {
+                    matches.push({ file, line: index + 1, content: line.trim() });
+                    ruleViolations++;
+                }
+            });
+        }
+    }
+
+    if (ruleViolations > 0) {
+        console.log(`❌ ${colors.red}Rule 70: Audit INSERT missing structured columns (dual-write requires event_type, actor_id, details)${colors.reset}`);
+        matches.forEach((m) => {
+            console.log(`  ${m.file}:${m.line} → ${m.content}`);
+        });
+        violations++;
+    }
+}
+
+// Rule 71: No direct audit_log INSERT outside AuditRepository
+// Any INSERT INTO audit_log outside repositories/ is a layer bypass.
+checkRule(
+    "Rule 71: Direct audit_log INSERT outside AuditRepository (use AuditService + AuditRepository)",
+    [
+        "src-tauri/src/application/**/*.rs",
+        "src-tauri/src/commands/**/*.rs",
+        "src-tauri/src/domain/**/*.rs",
+        "src-tauri/src/infrastructure/**/*.rs",
+    ],
+    /INSERT\s+INTO\s+audit_log\b/i,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        return false;
+    },
+    "error",
+    (file) => file.endsWith("audit.rs") || file.includes("/tests/")
+);
+
+// Rule 72: Audit readers must not depend on unstable ordering (timestamp alone is unstable)
+// Scans audit_log queries for ORDER BY timestamp without id tiebreaker.
+// Exempts legacy OFFSET-based methods and chain-verification (rowid-based).
+{
+    const patterns = ["src-tauri/src/repositories/audit.rs"];
+    const scannedFiles = new Set<string>();
+    let ruleViolations = 0;
+    const matches: { file: string; line: number; content: string }[] = [];
+
+    // Methods exempt from this rule (legacy OFFSET pagination)
+    const exemptMethods = ["fetch_entries", "fetch_entries_iter", "fetch_user_activity_since"];
+
+    for (const pattern of patterns) {
+        const glob = new Glob(pattern);
+        for (const file of glob.scanSync(".")) {
+            const normalizedFile = file.replace(/\\/g, "/");
+            if (scannedFiles.has(normalizedFile)) continue;
+            scannedFiles.add(normalizedFile);
+
+            const content = readFileSync(file, "utf-8");
+            const lines = content.split("\n");
+            let currentMethod = "";
+
+            lines.forEach((line, index) => {
+                if (line.trim().startsWith("//")) return;
+
+                // Track which method we're in
+                const methodMatch = line.match(/^\s+pub\s+fn\s+(\w+)/);
+                if (methodMatch) {
+                    currentMethod = methodMatch[1];
+                }
+
+                // Exempt known legacy methods (exact match)
+                if (exemptMethods.includes(currentMethod)) return;
+
+                // Find ORDER BY timestamp lines
+                const orderByMatch = line.match(/ORDER\s+BY\s+timestamp\b/i);
+                if (!orderByMatch) return;
+
+                // Allow ORDER BY rowid (deterministic — not timestamp-based)
+                if (/ORDER\s+BY\s+rowid\b/i.test(line)) return;
+
+                // Check if the ORDER BY includes an id tiebreaker after the timestamp
+                // Look for `, id ASC` or `, id DESC` after the timestamp clause
+                const afterTimestamp = line.slice(orderByMatch.index! + orderByMatch[0].length);
+                const hasIdTiebreaker = /\s+(?:ASC|DESC)?\s*,\s*id\s+(?:ASC|DESC)/i.test(afterTimestamp);
+
+                if (!hasIdTiebreaker) {
+                    matches.push({ file, line: index + 1, content: line.trim() });
+                    ruleViolations++;
+                }
+            });
+        }
+    }
+
+    if (ruleViolations > 0) {
+        console.log(`⚠️ ${colors.yellow}Rule 72: Audit query with ORDER BY timestamp without id tiebreaker (unstable ordering)${colors.reset}`);
+        matches.forEach((m) => {
+            console.log(`  ${m.file}:${m.line} → ${m.content}`);
+        });
+        warnings++;
+    }
+}
+
+// Rule 73: No audit mutation bypass (UPDATE/DELETE on audit_log outside cleanup)
+checkRule(
+    "Rule 73: UPDATE/DELETE on audit_log outside cleanup path (audit mutation bypass)",
+    ["src-tauri/src/repositories/audit.rs"],
+    /\bUPDATE\s+audit_log\b|\bDELETE\s+FROM\s+audit_log\b/i,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        // Allow the delete_older_than cleanup method
+        if (line.includes("delete_older_than") || line.includes("timestamp < ?")) return true;
+        return false;
+    },
+    "error"
+);
+
+// ============================================================
 // SUMMARY
 // ============================================================
 

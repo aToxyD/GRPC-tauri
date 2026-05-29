@@ -24,6 +24,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Create domain_events table for deterministic event persistence",
             include_str!("migrations/003_domain_events.sql"),
         ),
+        (
+            4,
+            "Audit schema evolution: structured columns, dual-write, keyset indexes",
+            include_str!("migrations/004_audit_schema_evolution.sql"),
+        ),
     ]
 }
 

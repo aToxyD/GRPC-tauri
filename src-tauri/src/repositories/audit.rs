@@ -6,7 +6,8 @@
 //! - No hashing, pagination building, export, integrity verification, or stats calculations.
 
 use crate::domain::audit::{
-    AuditEntryDbRow, AuditQuery, DailyOperationCountRow, OperationCountRow, UserActivitySummaryRow,
+    AuditEntryDbRow, AuditEventRow, AuditQuery, DailyOperationCountRow, OperationCountRow,
+    UserActivitySummaryRow,
 };
 use crate::domain::audit_chain::AuditChainVerifyRow;
 use crate::errors::AppError;
@@ -34,8 +35,11 @@ impl<'a> AuditRepository<'a> {
             r#"INSERT INTO audit_log
                (id, user_id, username, action, entity_type, entity_id, entity_name,
                 old_value, new_value, session_id, timestamp, status, error_message, metadata,
-                previous_hash, entry_hash)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"#,
+                previous_hash, entry_hash,
+                event_type, actor_id, target_type, target_id, fiscal_year,
+                before_snapshot, after_snapshot, node_id, details)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                       ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"#,
             params![
                 &entry.id,
                 &entry.user_id,
@@ -53,6 +57,15 @@ impl<'a> AuditRepository<'a> {
                 &entry.metadata,
                 &entry.previous_hash,
                 &entry.entry_hash,
+                &entry.event_type,
+                &entry.actor_id,
+                &entry.target_type,
+                &entry.target_id,
+                &entry.fiscal_year,
+                &entry.before_snapshot,
+                &entry.after_snapshot,
+                &entry.node_id,
+                &entry.details,
             ],
         )?;
         Ok(())
@@ -98,6 +111,15 @@ impl<'a> AuditRepository<'a> {
                     metadata: row.get(15)?,
                     previous_hash: None,
                     entry_hash: None,
+                    event_type: None,
+                    actor_id: None,
+                    target_type: None,
+                    target_id: None,
+                    fiscal_year: None,
+                    before_snapshot: None,
+                    after_snapshot: None,
+                    node_id: None,
+                    details: None,
                 },
             })
         })?;
@@ -186,6 +208,186 @@ impl<'a> AuditRepository<'a> {
                 })
             },
         )?)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Audit event rows (supports both legacy and structured columns)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Fetch rows with ALL columns (legacy + structured) for the projection layer.
+    /// Returns AuditEventRow which can be converted via to_audit_event().
+    pub fn fetch_event_rows(&self, q: &AuditQuery) -> Result<Vec<AuditEventRow>, AppError> {
+        Ok(self.executor.query_all(
+            r#"SELECT id, user_id, username, action, entity_type, entity_id, entity_name,
+                      old_value, new_value, session_id, timestamp, status, error_message, metadata,
+                      previous_hash, entry_hash,
+                      event_type, actor_id, target_type, target_id, fiscal_year,
+                      before_snapshot, after_snapshot, node_id, details
+               FROM audit_log
+               WHERE (?1 IS NULL OR user_id = ?1)
+                 AND (?2 IS NULL OR action = ?2)
+                 AND (?3 IS NULL OR entity_type = ?3)
+                 AND (?4 IS NULL OR timestamp >= ?4)
+                 AND (?5 IS NULL OR timestamp <= ?5)
+                 AND (?6 IS NULL OR status = ?6)
+                 AND (?7 IS NULL OR (
+                      entity_name LIKE ?7 OR username LIKE ?7 OR action LIKE ?7
+                 ))
+               ORDER BY timestamp DESC, id ASC
+               LIMIT ?8 OFFSET ?9"#,
+            params![
+                q.user_id.as_deref(),
+                q.action.as_deref(),
+                q.entity_type.as_deref(),
+                q.start_timestamp.as_deref(),
+                q.end_timestamp.as_deref(),
+                q.status.as_deref(),
+                q.search_like.as_deref(),
+                q.limit,
+                q.offset,
+            ],
+            |row| {
+                Ok(AuditEventRow {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    username: row.get(2)?,
+                    action: row.get(3)?,
+                    entity_type: row.get(4)?,
+                    entity_id: row.get(5)?,
+                    entity_name: row.get(6)?,
+                    old_value_json: row.get(7)?,
+                    new_value_json: row.get(8)?,
+                    session_id: row.get(9)?,
+                    timestamp: row.get(10)?,
+                    status: row.get(11)?,
+                    error_message: row.get(12)?,
+                    metadata_json: row.get(13)?,
+                    previous_hash: row.get(14)?,
+                    entry_hash: row.get(15)?,
+                    event_type: row.get(16)?,
+                    actor_id: row.get(17)?,
+                    target_type: row.get(18)?,
+                    target_id: row.get(19)?,
+                    fiscal_year: row.get(20)?,
+                    before_snapshot_json: row.get(21)?,
+                    after_snapshot_json: row.get(22)?,
+                    node_id: row.get(23)?,
+                    details_json: row.get(24)?,
+                })
+            },
+        )?)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Keyset pagination primitives (deterministic, no OFFSET)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Keyset-paginated fetch of audit event rows.
+    /// Uses (timestamp, id) as the pagination key for stable, deterministic ordering.
+    ///
+    /// - `keyset_timestamp`: the `timestamp` of the last row from the previous page (exclusive)
+    /// - `keyset_id`: the `id` of the last row from the previous page (tiebreaker, exclusive)
+    /// - `limit`: maximum number of rows to return
+    /// - Returns: results strictly after the keyset, ordered by (timestamp ASC, id ASC)
+    ///
+    /// Passing `None` for both keyset values fetches the first page.
+    pub fn fetch_event_rows_keyset(
+        &self,
+        q: &AuditQuery,
+        keyset_timestamp: Option<&str>,
+        keyset_id: Option<&str>,
+    ) -> Result<Vec<AuditEventRow>, AppError> {
+        let limit = q.limit;
+        Ok(self.executor.query_all(
+            r#"SELECT id, user_id, username, action, entity_type, entity_id, entity_name,
+                      old_value, new_value, session_id, timestamp, status, error_message, metadata,
+                      previous_hash, entry_hash,
+                      event_type, actor_id, target_type, target_id, fiscal_year,
+                      before_snapshot, after_snapshot, node_id, details
+               FROM audit_log
+               WHERE (?1 IS NULL OR user_id = ?1)
+                 AND (?2 IS NULL OR action = ?2)
+                 AND (?3 IS NULL OR entity_type = ?3)
+                 AND (?4 IS NULL OR timestamp >= ?4)
+                 AND (?5 IS NULL OR timestamp <= ?5)
+                 AND (?6 IS NULL OR status = ?6)
+                 AND (?7 IS NULL OR (
+                      entity_name LIKE ?7 OR username LIKE ?7 OR action LIKE ?7
+                 ))
+                 AND (?8 IS NULL OR ?9 IS NULL OR
+                      (timestamp > ?8 OR (timestamp = ?8 AND id > ?9)))
+               ORDER BY timestamp ASC, id ASC
+               LIMIT ?10"#,
+            params![
+                q.user_id.as_deref(),
+                q.action.as_deref(),
+                q.entity_type.as_deref(),
+                q.start_timestamp.as_deref(),
+                q.end_timestamp.as_deref(),
+                q.status.as_deref(),
+                q.search_like.as_deref(),
+                keyset_timestamp,
+                keyset_id,
+                limit,
+            ],
+            |row| {
+                Ok(AuditEventRow {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    username: row.get(2)?,
+                    action: row.get(3)?,
+                    entity_type: row.get(4)?,
+                    entity_id: row.get(5)?,
+                    entity_name: row.get(6)?,
+                    old_value_json: row.get(7)?,
+                    new_value_json: row.get(8)?,
+                    session_id: row.get(9)?,
+                    timestamp: row.get(10)?,
+                    status: row.get(11)?,
+                    error_message: row.get(12)?,
+                    metadata_json: row.get(13)?,
+                    previous_hash: row.get(14)?,
+                    entry_hash: row.get(15)?,
+                    event_type: row.get(16)?,
+                    actor_id: row.get(17)?,
+                    target_type: row.get(18)?,
+                    target_id: row.get(19)?,
+                    fiscal_year: row.get(20)?,
+                    before_snapshot_json: row.get(21)?,
+                    after_snapshot_json: row.get(22)?,
+                    node_id: row.get(23)?,
+                    details_json: row.get(24)?,
+                })
+            },
+        )?)
+    }
+
+    /// Count total entries matching a keyset query (same WHERE clause without keyset + pagination).
+    pub fn count_entries_keyset(&self, q: &AuditQuery) -> Result<i64, AppError> {
+        let total: i64 = self.executor.query_row(
+            r#"SELECT COUNT(*)
+               FROM audit_log
+               WHERE (?1 IS NULL OR user_id = ?1)
+                 AND (?2 IS NULL OR action = ?2)
+                 AND (?3 IS NULL OR entity_type = ?3)
+                 AND (?4 IS NULL OR timestamp >= ?4)
+                 AND (?5 IS NULL OR timestamp <= ?5)
+                 AND (?6 IS NULL OR status = ?6)
+                 AND (?7 IS NULL OR (
+                      entity_name LIKE ?7 OR username LIKE ?7 OR action LIKE ?7
+                 ))"#,
+            params![
+                q.user_id.as_deref(),
+                q.action.as_deref(),
+                q.entity_type.as_deref(),
+                q.start_timestamp.as_deref(),
+                q.end_timestamp.as_deref(),
+                q.status.as_deref(),
+                q.search_like.as_deref(),
+            ],
+            |row| row.get(0),
+        )?;
+        Ok(total)
     }
 
     /// Memory-aware Audit Log Scan (bounded peak RAM)

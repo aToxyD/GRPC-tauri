@@ -1,6 +1,7 @@
 use crate::domain::audit::{
-    AuditAction, AuditEntry, AuditEntryDbRow, AuditFilters, AuditLogResponse, AuditQuery,
-    AuditStats, AuditStatus, EntityType, NewAuditEntry,
+    audit_action_to_event_type, build_details_from_entry, AuditAction, AuditEntry, AuditEntryDbRow,
+    AuditFilters, AuditLogResponse, AuditQuery, AuditStats, AuditStatus, EntityType,
+    NewAuditEntry,
 };
 use crate::errors::AppError;
 use crate::repositories::executor::DbExecutor;
@@ -31,6 +32,7 @@ impl<'a> AuditService<'a> {
         session_id: Option<&str>,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
+        let event_type = audit_action_to_event_type(&action);
         let entry = NewAuditEntry {
             id: Uuid::new_v4().to_string(),
             user_id: user_id.to_string(),
@@ -39,15 +41,28 @@ impl<'a> AuditService<'a> {
             entity_type: entity_type.as_str().to_string(),
             entity_id: entity_id.map(|s| s.to_string()),
             entity_name: entity_name.map(|s| s.to_string()),
-            old_value: old_value.map(|v| v.to_string()),
-            new_value: new_value.map(|v| v.to_string()),
+            old_value: old_value.as_ref().map(|v| v.to_string()),
+            new_value: new_value.as_ref().map(|v| v.to_string()),
             session_id: session_id.map(|s| s.to_string()),
             timestamp: Utc::now().to_rfc3339(),
             status: AuditStatus::Success.as_str().to_string(),
             error_message: None,
-            metadata: metadata.map(|v| v.to_string()),
+            metadata: metadata.as_ref().map(|v| v.to_string()),
             previous_hash: None,
             entry_hash: None,
+            event_type: Some(event_type.as_str().to_string()),
+            actor_id: Some(user_id.to_string()),
+            target_type: Some(entity_type.as_str().to_string()),
+            target_id: entity_id.map(|s| s.to_string()),
+            fiscal_year: None,
+            before_snapshot: old_value.as_ref().map(|v| v.to_string()),
+            after_snapshot: new_value.as_ref().map(|v| v.to_string()),
+            node_id: None,
+            details: None,
+        };
+        let entry = NewAuditEntry {
+            details: build_details_from_entry(&entry),
+            ..entry
         };
 
         self.insert_audit_log(&entry)
@@ -64,6 +79,7 @@ impl<'a> AuditService<'a> {
         error_message: &str,
         session_id: Option<&str>,
     ) -> Result<(), AppError> {
+        let event_type = audit_action_to_event_type(&action);
         let entry = NewAuditEntry {
             id: Uuid::new_v4().to_string(),
             user_id: user_id.to_string(),
@@ -81,6 +97,19 @@ impl<'a> AuditService<'a> {
             metadata: None,
             previous_hash: None,
             entry_hash: None,
+            event_type: Some(event_type.as_str().to_string()),
+            actor_id: Some(user_id.to_string()),
+            target_type: Some(entity_type.as_str().to_string()),
+            target_id: entity_id.map(|s| s.to_string()),
+            fiscal_year: None,
+            before_snapshot: None,
+            after_snapshot: None,
+            node_id: None,
+            details: None,
+        };
+        let entry = NewAuditEntry {
+            details: build_details_from_entry(&entry),
+            ..entry
         };
 
         self.insert_audit_log(&entry)
