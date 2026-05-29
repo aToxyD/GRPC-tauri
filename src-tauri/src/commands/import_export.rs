@@ -950,6 +950,8 @@ where
         ctx.emit(DomainEvent::SyncPackageImported {
             package_id: package_id.clone(),
             kind: package_kind.to_string(),
+            source_node_id: source_node_id.clone(),
+            sequence_number: None,
         });
 
         Ok(out)

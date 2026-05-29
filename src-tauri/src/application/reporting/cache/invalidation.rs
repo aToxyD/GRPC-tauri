@@ -94,15 +94,37 @@ mod tests {
     #[test]
     fn sync_package_imported_uses_all_open() {
         let event = DomainEvent::SyncPackageImported {
-            package_id: "pkg1".into(),
+            package_id: "pkg-1".into(),
             kind: "full".into(),
+            source_node_id: None,
+            sequence_number: None,
+        };
+        assert!(matches!(invalidation_kind(&event), InvalidationKind::AllOpenFiscalYear));
+
+        let event = DomainEvent::SyncConflictDetected {
+            conflict_id: 1,
+            conflict_type: None,
+            package_id: None,
+            details: None,
+        };
+        assert!(matches!(invalidation_kind(&event), InvalidationKind::AllOpenFiscalYear));
+
+        let event = DomainEvent::SyncConflictResolved {
+            conflict_id: 1,
+            resolved_by: "admin".into(),
+            resolution: None,
         };
         assert!(matches!(invalidation_kind(&event), InvalidationKind::AllOpenFiscalYear));
     }
 
     #[test]
     fn sync_conflict_detected_does_not_invalidate() {
-        let event = DomainEvent::SyncConflictDetected { conflict_id: 1 };
+        let event = DomainEvent::SyncConflictDetected {
+            conflict_id: 1,
+            conflict_type: None,
+            package_id: None,
+            details: None,
+        };
         match invalidation_kind(&event) {
             InvalidationKind::Slugs(slugs) => {
                 assert!(slugs.is_empty());
@@ -116,6 +138,7 @@ mod tests {
         let event = DomainEvent::SyncConflictResolved {
             conflict_id: 1,
             resolved_by: "admin".into(),
+            resolution: None,
         };
         match invalidation_kind(&event) {
             InvalidationKind::Slugs(slugs) => assert!(slugs.is_empty()),

@@ -331,6 +331,8 @@ fn event_category_is_preserved_through_persistence() {
             ctx.emit(DomainEvent::SyncPackageImported {
                 package_id: "pkg-1".into(),
                 kind: "full".into(),
+                source_node_id: None,
+                sequence_number: None,
             });
             ctx.emit(DomainEvent::AuditEventWritten { audit_event_id: 1 });
             Ok(true)

@@ -106,13 +106,19 @@ pub enum DomainEvent {
     SyncPackageImported {
         package_id: String,
         kind: String,
+        source_node_id: Option<String>,
+        sequence_number: Option<u64>,
     },
     SyncConflictDetected {
         conflict_id: i64,
+        conflict_type: Option<String>,
+        package_id: Option<String>,
+        details: Option<String>,
     },
     SyncConflictResolved {
         conflict_id: i64,
         resolved_by: String,
+        resolution: Option<String>,
     },
 
     // ── Audit Events ──
@@ -364,6 +370,8 @@ mod tests {
         buf.push(DomainEvent::SyncPackageImported {
             package_id: "pkg-1".into(),
             kind: "full".into(),
+            source_node_id: None,
+            sequence_number: None,
         });
 
         let events = buf.into_events();
@@ -452,15 +460,23 @@ mod tests {
         let e = DomainEvent::SyncPackageImported {
             package_id: "p1".into(),
             kind: "full".into(),
+            source_node_id: None,
+            sequence_number: None,
         };
         assert_eq!(e.category(), EventCategory::Sync);
 
-        let e = DomainEvent::SyncConflictDetected { conflict_id: 1 };
+        let e = DomainEvent::SyncConflictDetected {
+            conflict_id: 1,
+            conflict_type: None,
+            package_id: None,
+            details: None,
+        };
         assert_eq!(e.category(), EventCategory::Sync);
 
         let e = DomainEvent::SyncConflictResolved {
             conflict_id: 1,
             resolved_by: "admin".into(),
+            resolution: None,
         };
         assert_eq!(e.category(), EventCategory::Sync);
     }

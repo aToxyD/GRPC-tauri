@@ -281,6 +281,8 @@ mod tests {
         let event = DomainEvent::SyncPackageImported {
             package_id: "pkg1".into(),
             kind: "full".into(),
+            source_node_id: None,
+            sequence_number: None,
         };
         let result = runtime.invalidate(&event, &closed_years(&[2023]));
         assert_eq!(result.len(), 1);
@@ -297,6 +299,8 @@ mod tests {
         let event = DomainEvent::SyncPackageImported {
             package_id: "pkg1".into(),
             kind: "full".into(),
+            source_node_id: None,
+            sequence_number: None,
         };
         let result = runtime.invalidate(&event, &closed_years(&[2023]));
         assert_eq!(result.len(), 1);

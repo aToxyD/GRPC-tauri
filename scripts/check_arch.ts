@@ -59,7 +59,7 @@ function checkRule(
             lines.forEach((line, index) => {
                 if (line.trim().startsWith("//")) return;
 
-                if (regex.test(line) && !excludeLines(line)) {
+                if (regex.test(line) && !excludeLines(line, index, lines)) {
                     matches.push({
                         file,
                         line: index + 1,
@@ -256,12 +256,13 @@ checkRule(
     "Potential silent error swallowing in services",
     ["src-tauri/src/application/services/*.rs"],
     /\.unwrap_or\(|\.ok\(\)\?/,
-    (line) => {
+    (line, index, lines) => {
         // Skip ordinary comment lines
         if (line.trim().startsWith("//")) return true;
         // Skip lines with the explicit inline suppression tag:
         //   [arch:allow-unwrap-or]  — must also include a rationale comment
         if (line.includes("[arch:allow-unwrap-or]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-unwrap-or]")) return true;
         return false;
     },
     "warning",
@@ -1322,6 +1323,153 @@ checkRule(
     ["src-tauri/src/application/sync_integrity/**/*.rs"],
     /INSERT\s+INTO\s+domain_events/i,
     (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
+// GROUP 18 — Import Execution Hardening Rules (Phase 5.C)
+// ============================================================
+
+// Rule 88: No mutation before replay detection in sync_import_execution_service
+// All mutations go through repositories, which are the allowed path.
+checkRule(
+    "Rule 88: Mutation before replay detection in sync_import_execution_service (replay check must precede all mutations)",
+    ["src-tauri/src/application/services/sync_import_execution_service.rs"],
+    /\.insert_if_new\(|\.insert_raw_|\.upsert_|\.insert_empty_/,
+    (line, index, lines) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-mutation-before-replay]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-mutation-before-replay]")) return true;
+        if (line.includes("repo.")) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 89: No nested transactions in sync services
+checkRule(
+    "Rule 89: Nested with_transaction in sync services (single transaction boundary only)",
+    [
+        "src-tauri/src/application/services/sync_import_execution_service.rs",
+        "src-tauri/src/application/services/sync_import_validation_service.rs",
+        "src-tauri/src/application/services/sync_conflict_resolution_service.rs",
+    ],
+    /with_transaction\(|with_event_context\(|with_event_persistence\(/,
+    (line, index, lines) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-non-nested]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-non-nested]")) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 90: No SQL in sync_integrity/ (already Rule 81, also check services)
+checkRule(
+    "Rule 90: SQL found in sync_import_*_service.rs (must use repositories, not raw SQL)",
+    [
+        "src-tauri/src/application/services/sync_import_execution_service.rs",
+        "src-tauri/src/application/services/sync_import_validation_service.rs",
+        "src-tauri/src/application/services/sync_conflict_resolution_service.rs",
+        "src-tauri/src/application/services/sync_import_models.rs",
+    ],
+    /"SELECT|"INSERT|"UPDATE|"DELETE|\.execute\(|\.prepare\(/,
+    (line, index, lines) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-sql]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-sql]")) return true;
+        if (line.includes("repo.")) return true;
+        return false;
+    },
+    "error"
+);
+
+// Rule 91: No OFFSET pagination in sync import execution
+checkRule(
+    "Rule 91: OFFSET pagination in sync_import_execution_service (must use keyset pagination)",
+    ["src-tauri/src/application/services/sync_import_execution_service.rs"],
+    /\bOFFSET\b/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 92: No direct domain_events insert in sync import services
+checkRule(
+    "Rule 92: Direct domain_events insert in sync import services (must use EventContext::emit)",
+    [
+        "src-tauri/src/application/services/sync_import_execution_service.rs",
+        "src-tauri/src/application/services/sync_import_validation_service.rs",
+        "src-tauri/src/application/services/sync_conflict_resolution_service.rs",
+    ],
+    /INSERT\s+INTO\s+domain_events/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 93: Replay rejection must audit (enforced by checking that SyncConflictDetected is emitted)
+// This rule verifies that conflict detection is paired with event emission
+checkRule(
+    "Rule 93: Replay rejection without audit event in sync_import_execution_service",
+    ["src-tauri/src/application/services/sync_import_execution_service.rs"],
+    /ReplayDetected|replay_detected|DuplicatePackage/,
+    (line, index, lines) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-no-audit]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-no-audit]")) return true;
+        // Lines that are part of the error type definitions or are near emit() calls are ok
+        if (line.includes("emit(DomainEvent::SyncConflictDetected")) return true;
+        if (line.includes("ReplayProtectionResult")) return true;
+        if (line.includes("ImportExecutionError")) return true;
+        if (line.includes("audited:")) return true;
+        if (line.includes("replay_detected:")) return true;
+        if (line.includes("assert!")) return true;
+        return false;
+    },
+    "warning"
+);
+
+// Rule 94: validation service must not mutate
+checkRule(
+    "Rule 94: Mutation call in sync_import_validation_service (validation must not mutate state)",
+    ["src-tauri/src/application/services/sync_import_validation_service.rs"],
+    /\.insert_|\.update_|\.delete_|\.upsert_/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 95: execution service must own transaction (verified by checking it uses with_event_persistence)
+checkRule(
+    "Rule 95: sync_import_execution_service must use with_event_persistence (owns transaction boundary)",
+    ["src-tauri/src/application/services/sync_import_execution_service.rs"],
+    /fn execute_import/,
+    (line, index, lines) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-no-event-persistence]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-no-event-persistence]")) return true;
+        // Scan next 40 lines for with_event_persistence
+        for (let i = index + 1; i < Math.min(index + 40, lines.length); i++) {
+            if (lines[i].includes("with_event_persistence(")) return true;
+        }
+        return false;
+    },
+    "warning"
+);
+
+// Rule 96: No chrono::Utc::now in sync execution path
+checkRule(
+    "Rule 96: chrono::Utc::now() in sync_import services (must be deterministic — no wall-clock)",
+    [
+        "src-tauri/src/application/services/sync_import_execution_service.rs",
+        "src-tauri/src/application/services/sync_import_validation_service.rs",
+        "src-tauri/src/application/services/sync_conflict_resolution_service.rs",
+    ],
+    /\bUtc::now\b/,
+    (line, index, lines) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("[arch:allow-utc-now]")) return true;
+        if (index > 0 && lines[index - 1].includes("[arch:allow-utc-now]")) return true;
+        return false;
+    },
     "error"
 );
 

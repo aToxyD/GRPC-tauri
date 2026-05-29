@@ -16,7 +16,11 @@ pub mod report_calculation_service;
 pub mod settings_service;
 pub mod stock_level_service;
 pub mod stock_movement_service;
+pub mod sync_conflict_resolution_service;
 pub mod sync_conflict_service;
+pub mod sync_import_execution_service;
+pub mod sync_import_models;
+pub mod sync_import_validation_service;
 pub mod system_diagnostics_service;
 pub mod system_health_service;
 pub mod system_stats_service;
@@ -40,12 +44,14 @@ pub use report_calculation_service::ReportCalculationService;
 pub use settings_service::SettingsService;
 pub use stock_level_service::StockLevelService;
 pub use stock_movement_service::StockMovementService;
+pub use sync_conflict_resolution_service::SyncConflictResolutionService;
 pub use sync_conflict_service::SyncConflictService;
-pub mod sync_import_execution_service;
-pub mod sync_import_validation_service;
 pub use sync_import_execution_service::SyncImportExecutionService;
+pub use sync_import_models::{
+    ConflictResolutionOutcome, ImportExecutionError, ImportExecutionSummary, ImportMutationSummary,
+    ResolutionPolicy, ReplayProtectionResult, SyncImportRequest, SyncImportResult, SyncPackageKind,
+};
 pub use sync_import_validation_service::SyncImportValidationService;
-pub use sync_import_validation_service::is_incoming_newer;
 pub use system_diagnostics_service::SystemDiagnosticsService;
 pub use system_health_service::SystemHealthService;
 pub use system_stats_service::SystemStatsService;
