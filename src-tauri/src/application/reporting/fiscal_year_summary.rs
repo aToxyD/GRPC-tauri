@@ -9,6 +9,7 @@ use super::{Report, ReportEnvelope, ReportMetadata};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FiscalYearSummaryInput {
     pub fiscal_year: i32,
+    pub unit_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -59,6 +60,7 @@ impl Report for FiscalYearSummaryReport {
         input: Self::Input,
     ) -> Result<ReportEnvelope<Self::Output>, Self::Error> {
         let year = input.fiscal_year;
+        let unit_id = input.unit_id;
 
         let status = executor
             .fiscal_year_status()
@@ -73,7 +75,7 @@ impl Report for FiscalYearSummaryReport {
             end_timestamp: None,
             reference_type: None,
             reference_id: None,
-            unit_id: None,
+            unit_id: unit_id.clone(),
             limit: 0,
             offset: 0,
         };
@@ -110,31 +112,52 @@ impl Report for FiscalYearSummaryReport {
         }
 
         let reports = executor.reports();
-        let daily_report_count = reports.count_active_reports_by_year(year)?;
-
+        let mut daily_report_count: i64 = 0;
         let mut total_beneficiaries: i64 = 0;
         let all_daily = reports.list_daily_reports(None, None)?;
         for r in &all_daily {
             if r.fiscal_year == year {
-                total_beneficiaries += r.total_daily_beneficiaries as i64;
+                let unit_match = unit_id.is_none() || r.unit_id.as_deref() == unit_id.as_deref();
+                if unit_match {
+                    daily_report_count += 1;
+                    total_beneficiaries += r.total_daily_beneficiaries as i64;
+                }
             }
         }
 
-        let ending_inventory_value: f64 = executor
-            .query_row(
-                "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0.0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0",
-                rusqlite::params![year],
-                |row| row.get::<_, f64>(0),
-            )
-            .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
-
-        let layer_count: i64 = executor
-            .query_row(
-                "SELECT COUNT(*) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0",
-                rusqlite::params![year],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+        let (ending_inventory_value, layer_count) = if let Some(ref uid) = unit_id {
+            let inv: f64 = executor
+                .query_row(
+                    "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0.0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0 AND unit_id = ?2",
+                    rusqlite::params![year, uid],
+                    |row| row.get::<_, f64>(0),
+                )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+            let cnt: i64 = executor
+                .query_row(
+                    "SELECT COUNT(*) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0 AND unit_id = ?2",
+                    rusqlite::params![year, uid],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+            (inv, cnt)
+        } else {
+            let inv: f64 = executor
+                .query_row(
+                    "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0.0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0",
+                    rusqlite::params![year],
+                    |row| row.get::<_, f64>(0),
+                )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+            let cnt: i64 = executor
+                .query_row(
+                    "SELECT COUNT(*) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0",
+                    rusqlite::params![year],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+            (inv, cnt)
+        };
 
         let metadata = ReportMetadata::new(Self::slug(), Self::version(), Some(year))
             .with_snapshot_source("fifo_stock_layers + stock_movements + daily_reports".into());

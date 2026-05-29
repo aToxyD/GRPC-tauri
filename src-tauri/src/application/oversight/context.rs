@@ -17,6 +17,7 @@ use crate::repositories::DbExecutor;
 pub struct ReportsContext<'a> {
     executor: DbExecutor<'a>,
     fiscal_year: i32,
+    unit_id: Option<String>,
 }
 
 impl<'a> ReportsContext<'a> {
@@ -24,6 +25,16 @@ impl<'a> ReportsContext<'a> {
         Self {
             executor,
             fiscal_year,
+            unit_id: None,
+        }
+    }
+
+    /// Create a new context scoped to a specific unit.
+    pub fn with_unit_id(&self, unit_id: &str) -> Self {
+        Self {
+            executor: self.executor,
+            fiscal_year: self.fiscal_year,
+            unit_id: Some(unit_id.to_string()),
         }
     }
 
@@ -31,7 +42,14 @@ impl<'a> ReportsContext<'a> {
         self.fiscal_year
     }
 
-    /// Returns the FiscalYearSummary for this context's fiscal year.
+    /// Returns all unit IDs in the system (for cross-unit benchmarks).
+    pub fn unit_ids(&self) -> Result<Vec<String>, String> {
+        let repo = crate::repositories::units::UnitRepository::new(self.executor);
+        let units = repo.list_all_units().map_err(|e| e.to_string())?;
+        Ok(units.into_iter().map(|u| u.id).collect())
+    }
+
+    /// Returns the FiscalYearSummary for this context's fiscal year (optionally scoped to unit_id).
     /// Returns Ok(None) if the year doesn't exist (no data yet).
     /// Returns Err for actual DB/query failures.
     pub fn fiscal_year_summary(
@@ -40,6 +58,7 @@ impl<'a> ReportsContext<'a> {
     {
         match FiscalYearSummaryReport::compute(self.executor, FiscalYearSummaryInput {
             fiscal_year: self.fiscal_year,
+            unit_id: self.unit_id.clone(),
         }) {
             Ok(e) => Ok(Some(e.data)),
             Err(crate::application::reporting::fiscal_year_summary::FiscalYearSummaryError::YearNotFound(_)) => Ok(None),

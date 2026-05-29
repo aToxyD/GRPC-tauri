@@ -45,6 +45,7 @@ fn fiscal_year_summary_computes_on_empty_db_without_error() {
 
     let result = FiscalYearSummaryReport::compute(executor, FiscalYearSummaryInput {
         fiscal_year: 2024,
+        unit_id: None,
     });
 
     assert!(result.is_err(), "should fail with year not found on empty db");

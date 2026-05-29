@@ -180,6 +180,27 @@ impl<'a> UnitRepository<'a> {
         )?)
     }
 
+    /// List all units across all wilayas (for cross-unit benchmarks).
+    pub fn list_all_units(&self) -> Result<Vec<Unit>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT id, code, name, wilaya_code, user_id, created_at FROM units ORDER BY code",
+            [],
+            |row| {
+                let created_at_str: String = row.get(5)?;
+                let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e)))?;
+                Ok(Unit {
+                    id: row.get(0)?,
+                    code: row.get(1)?,
+                    name: row.get(2)?,
+                    wilaya_code: row.get(3)?,
+                    user_id: row.get(4)?,
+                    created_at,
+                })
+            },
+        )?)
+    }
+
     /// Delete a unit and its associated user
     /// Note: For atomic deletion, use with_transaction at Database level
     pub fn delete_unit(&self, unit_id: &str) -> Result<Option<String>, AppError> {

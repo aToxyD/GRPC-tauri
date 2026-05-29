@@ -902,6 +902,55 @@ checkRule(
 );
 
 // ============================================================
+// GROUP 13 — Benchmark Layer Rules (Phase 3.B)
+// ============================================================
+
+// Rule 58: No SQL in benchmarks/ (benchmarks must compute from report outputs only)
+checkRule(
+    "Rule 58: SQL string in oversight/benchmarks/ (benchmarks must not reference SQL directly)",
+    ["src-tauri/src/application/oversight/benchmarks/**/*.rs"],
+    /"SELECT|"INSERT|"UPDATE|"DELETE|"FROM\s+\w+|\.execute\(|\.prepare\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 59: No mutations in benchmarks/
+checkRule(
+    "Rule 59: SQL mutation in oversight/benchmarks/ (benchmarks must not mutate state)",
+    ["src-tauri/src/application/oversight/benchmarks/**/*.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
+    (line) => line.trim().startsWith("//") || line.includes(".update("),
+    "error"
+);
+
+// Rule 60: No transaction ownership in benchmarks/
+checkRule(
+    "Rule 60: Transaction ownership in oversight/benchmarks/ (benchmarks must not own transactions)",
+    ["src-tauri/src/application/oversight/benchmarks/**/*.rs"],
+    /with_transaction|with_event_context|with_event_persistence\s*\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 61: No repository imports in benchmark implementations (must depend on context only)
+checkRule(
+    "Rule 61: Repository import in oversight/benchmarks/ (benchmarks must depend on context only)",
+    ["src-tauri/src/application/oversight/benchmarks/**/*.rs"],
+    /use\s+crate::repositories/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 62: No rusqlite in benchmarks/
+checkRule(
+    "Rule 62: rusqlite in oversight/benchmarks/ (benchmarks must not reference rusqlite)",
+    ["src-tauri/src/application/oversight/benchmarks/**/*.rs"],
+    /\brusqlite\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
 // SUMMARY
 // ============================================================
 
