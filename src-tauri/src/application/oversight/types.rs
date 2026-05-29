@@ -55,6 +55,19 @@ pub enum MetricValue {
 }
 
 impl MetricValue {
+    /// Extract the numeric value as f64 (for statistical computation).
+    /// Returns None for MetricValue::None.
+    pub fn numeric_value(&self) -> Option<f64> {
+        match self {
+            MetricValue::Count(v) => Some(*v as f64),
+            MetricValue::Amount(v) => Some(*v),
+            MetricValue::Ratio(v) => Some(*v),
+            MetricValue::Percentage(v) => Some(*v),
+            MetricValue::Days(v) => Some(*v as f64),
+            MetricValue::None => None,
+        }
+    }
+
     pub fn unit_type(&self) -> Option<UnitType> {
         match self {
             MetricValue::Count(_) => Some(UnitType::Count),

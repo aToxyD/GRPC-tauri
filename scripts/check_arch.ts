@@ -951,6 +951,64 @@ checkRule(
 );
 
 // ============================================================
+// GROUP 14 — Anomaly Detection Rules (Phase 3.C)
+// ============================================================
+
+// Rule 63: No SQL in anomalies/ (detectors must compute from distribution data only)
+checkRule(
+    "Rule 63: SQL string in oversight/anomalies/ (detectors must not reference SQL directly)",
+    ["src-tauri/src/application/oversight/anomalies/**/*.rs"],
+    /"SELECT|"INSERT|"UPDATE|"DELETE|"FROM\s+\w+|\.execute\(|\.prepare\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 64: No mutations in anomalies/
+checkRule(
+    "Rule 64: SQL mutation in oversight/anomalies/ (detectors must not mutate state)",
+    ["src-tauri/src/application/oversight/anomalies/**/*.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
+    (line) => line.trim().startsWith("//") || line.includes(".update("),
+    "error"
+);
+
+// Rule 65: No transaction ownership in anomalies/
+checkRule(
+    "Rule 65: Transaction ownership in oversight/anomalies/ (detectors must not own transactions)",
+    ["src-tauri/src/application/oversight/anomalies/**/*.rs"],
+    /with_transaction|with_event_context|with_event_persistence\s*\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 66: No repository imports in anomaly implementations
+checkRule(
+    "Rule 66: Repository import in oversight/anomalies/ (detectors must depend on distribution only)",
+    ["src-tauri/src/application/oversight/anomalies/**/*.rs"],
+    /use\s+crate::repositories/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 67: No rusqlite in anomalies/
+checkRule(
+    "Rule 67: rusqlite in oversight/anomalies/ (detectors must not reference rusqlite)",
+    ["src-tauri/src/application/oversight/anomalies/**/*.rs"],
+    /\brusqlite\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 68: No wall-clock dependency in anomalies/ (Utc::now, SystemTime, Instant)
+checkRule(
+    "Rule 68: Wall-clock dependency in oversight/anomalies/ (detectors must be deterministic — no Utc::now)",
+    ["src-tauri/src/application/oversight/anomalies/**/*.rs"],
+    /\bUtc::now\b|\bSystemTime::now\b|\bInstant::now\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
 // SUMMARY
 // ============================================================
 
