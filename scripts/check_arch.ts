@@ -813,12 +813,19 @@ checkRule(
 // ============================================================
 
 // Rule 49: No INSERT/UPDATE/DELETE in reporting/ (reports must be read-only)
-// Excludes `.update(` method calls (e.g. Digest::update in cache_key.rs)
+// Excludes `.update(` and `.insert(` method calls (Digest::update, CacheStore::insert)
+// and `fn insert(` method declarations.
 checkRule(
     "Rule 49: SQL mutation in reporting/ (reports must be read-only)",
     ["src-tauri/src/application/reporting/**/*.rs"],
     /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
-    (line) => line.trim().startsWith("//") || line.includes(".update("),
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes(".update(")) return true;
+        if (line.includes(".insert(")) return true;
+        if (line.includes("fn insert(")) return true;
+        return false;
+    },
     "error"
 );
 
@@ -1164,6 +1171,88 @@ checkRule(
         if (line.includes("delete_older_than") || line.includes("timestamp < ?")) return true;
         return false;
     },
+    "error"
+);
+
+// ============================================================
+// GROUP 16 — Reporting Cache Runtime Rules (Phase 5.A)
+// ============================================================
+
+// Rule 74: No SQL inside reporting/cache/ (cache must not know SQL)
+checkRule(
+    "Rule 74: SQL found in reporting/cache/ (cache must not reference SQL)",
+    ["src-tauri/src/application/reporting/cache/**/*.rs"],
+    /"SELECT|"INSERT|"UPDATE|"DELETE|\.execute\(|\.prepare\(/,
+    (line) => line.trim().startsWith("//") || line.includes(".update("),
+    "error"
+);
+
+// Rule 75: No repository imports inside reporting/cache/ (cache must not know repositories)
+// Exception: compute_or_get_cached_helper which bridges the cache with report computation.
+checkRule(
+    "Rule 75: Repository import in reporting/cache/ (cache must not depend on repositories)",
+    ["src-tauri/src/application/reporting/cache/**/*.rs"],
+    /use\s+crate::repositories/,
+    (line) => line.trim().startsWith("//") || line.includes("compute_or_get_cached_helper"),
+    "error"
+);
+
+// Rule 76: No mutation outside cache store in reporting/cache/
+// Only store.rs may mutate the underlying HashMap directly.
+// runtime.rs uses self.store.*, tests use runtime.* or store.*
+checkRule(
+    "Rule 76: Mutation call on non-store object in reporting/cache/",
+    ["src-tauri/src/application/reporting/cache/**/*.rs"],
+    /\.(insert|remove|clear)\(/,
+    (line) => {
+        if (line.trim().startsWith("//")) return true;
+        if (line.includes("self.store.") || line.includes("map.")) return true;
+        if (line.includes("self.inner")) return true;
+        if (line.includes("runtime.") || line.includes("runtime.insert(")) return true;
+        if (line.includes("store.")) return true;
+        if (line.includes("CacheStore::new")) return true;
+        return false;
+    },
+    "error",
+    (file) => {
+        const normalized = file.replace(/\\/g, "/");
+        return !normalized.endsWith("store.rs");
+    }
+);
+
+// Rule 77: No chrono::Utc::now() directly in reporting/ (use SystemTime)
+checkRule(
+    "Rule 77: chrono::Utc::now() in reporting/ (use SystemTime for access tracking)",
+    ["src-tauri/src/application/reporting/**/*.rs"],
+    /\bUtc::now\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 78: No TTL-based eviction logic in reporting/cache/
+checkRule(
+    "Rule 78: TTL/expiry logic in reporting/cache/ (only semantic invalidation allowed)",
+    ["src-tauri/src/application/reporting/cache/**/*.rs"],
+    /\bttl\b|\bexpir\b|\bTTL\b|\bexpire\b|\bexpiry\b/i,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 79: No filesystem persistence in reporting/cache/ (in-memory only)
+checkRule(
+    "Rule 79: Filesystem persistence in reporting/cache/ (in-memory only)",
+    ["src-tauri/src/application/reporting/cache/**/*.rs"],
+    /\bstd::fs\b|\bfs::\b|\bFile::\b|\bOpenOptions\b|\bPathBuf\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 80: No rusqlite in reporting/cache/ (cache must not reference SQL layer)
+checkRule(
+    "Rule 80: rusqlite in reporting/cache/ (cache must not reference SQL layer)",
+    ["src-tauri/src/application/reporting/cache/**/*.rs"],
+    /\brusqlite\b/,
+    (line) => line.trim().startsWith("//"),
     "error"
 );
 

@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Deterministic cache key for report results.
 /// SHA256(slug | version | canonical_input_json | fiscal_scope).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CacheKey(String);
 
 impl CacheKey {
