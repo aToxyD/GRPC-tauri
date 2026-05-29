@@ -852,6 +852,56 @@ checkRule(
 );
 
 // ============================================================
+// GROUP 12 — Oversight Layer Rules (Phase 3.A)
+// ============================================================
+
+// Rule 53: No SQL in oversight/ (KPIs must compute from report outputs only)
+checkRule(
+    "Rule 53: SQL string in oversight/ (KPIs must not reference SQL directly)",
+    ["src-tauri/src/application/oversight/**/*.rs"],
+    /"SELECT|"INSERT|"UPDATE|"DELETE|"FROM\s+\w+|\.execute\(|\.prepare\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 54: No mutations in oversight/ (KPIs are read-only projections)
+checkRule(
+    "Rule 54: SQL mutation in oversight/ (KPIs must not mutate state)",
+    ["src-tauri/src/application/oversight/**/*.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
+    (line) => line.trim().startsWith("//") || line.includes(".update("),
+    "error"
+);
+
+// Rule 55: No transaction ownership in oversight/
+checkRule(
+    "Rule 55: Transaction ownership in oversight/ (KPIs must not own transactions)",
+    ["src-tauri/src/application/oversight/**/*.rs"],
+    /with_transaction|with_event_context|with_event_persistence\s*\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 56: No repository imports in oversight/ KPI implementations
+// Exception: context.rs which bridges reports to KPIs
+checkRule(
+    "Rule 56: Repository import in oversight/metrics/ (KPIs must depend on context only)",
+    ["src-tauri/src/application/oversight/metrics/**/*.rs"],
+    /use\s+crate::repositories/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 57: No rusqlite in oversight/ (KPIs must not touch SQL layer)
+checkRule(
+    "Rule 57: rusqlite in oversight/ (KPIs must not reference rusqlite)",
+    ["src-tauri/src/application/oversight/**/*.rs"],
+    /\brusqlite\b/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
 // SUMMARY
 // ============================================================
 
