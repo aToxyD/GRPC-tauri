@@ -8,6 +8,7 @@
 pub mod authz;
 pub mod command_context;
 pub mod ports;
+pub mod reporting;
 pub mod services;
 pub mod sync;
 pub mod usecases;

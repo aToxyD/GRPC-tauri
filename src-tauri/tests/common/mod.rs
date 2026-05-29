@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 /// Create a test AppState with isolated database
+#[allow(dead_code)]
 pub fn create_test_state() -> (AppState, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let db_path = temp_dir.path().join("test.db");

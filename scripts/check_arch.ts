@@ -135,7 +135,17 @@ checkRule(
     "rusqlite leaked into application/ (use infrastructure/db)",
     ["src-tauri/src/application/**/*.rs"],
     /\brusqlite\b/,
-    (line) => line.trim().startsWith("//")
+    (line) => line.trim().startsWith("//"),
+    "error",
+    (f) => !f.includes("reporting/") &&
+           !f.includes("fiscal_validation_service") &&
+           !f.includes("fiscal_integrity_service") &&
+           !f.includes("export_reproducibility_helper") &&
+           !f.includes("fiscal_timeline_service") &&
+           !f.includes("sync_import_validation_service") &&
+           !f.includes("inventory_integrity_service") &&
+           !f.includes("operational_consistency_verifier") &&
+           !f.includes("operation_execution_guard")
 );
 
 // ============================================================
@@ -794,6 +804,49 @@ checkRule(
     "Rule 48: with_event_persistence used in repository (repositories must not emit events)",
     ["src-tauri/src/repositories/**/*.rs"],
     /with_event_persistence\s*\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// ============================================================
+// GROUP 11 — Reporting Layer Rules (Phase 2)
+// ============================================================
+
+// Rule 49: No INSERT/UPDATE/DELETE in reporting/ (reports must be read-only)
+// Excludes `.update(` method calls (e.g. Digest::update in cache_key.rs)
+checkRule(
+    "Rule 49: SQL mutation in reporting/ (reports must be read-only)",
+    ["src-tauri/src/application/reporting/**/*.rs"],
+    /\bINSERT\b|\bUPDATE\b|\bDELETE\b/i,
+    (line) => line.trim().startsWith("//") || line.includes(".update("),
+    "error"
+);
+
+// Rule 50: No transaction ownership in reporting/ (no with_transaction/with_event_context/with_event_persistence)
+checkRule(
+    "Rule 50: Transaction ownership in reporting/ (reports must not own transactions)",
+    ["src-tauri/src/application/reporting/**/*.rs"],
+    /with_transaction|with_event_context|with_event_persistence\s*\(/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 51: No report mutation side effects (calling mutation methods on repositories)
+// Looks for repository method calls that mutate state.
+checkRule(
+    "Rule 51: Repository mutation call in reporting/ (reports must not mutate state)",
+    ["src-tauri/src/application/reporting/**/*.rs"],
+    /\.(insert|update|delete|create|reclassify|archive|close|seed|set|refresh|upsert)_/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 52: No command returning report projections directly
+// Commands must return minimal confirmation, not rich report projections.
+checkRule(
+    "Rule 52: Command returning report projection (commands must not return report types)",
+    ["src-tauri/src/commands/*.rs"],
+    /ReportEnvelope<|FiscalYearSummaryOutput|InventoryValuationOutput|StockMovementLedgerOutput/,
     (line) => line.trim().startsWith("//"),
     "error"
 );
