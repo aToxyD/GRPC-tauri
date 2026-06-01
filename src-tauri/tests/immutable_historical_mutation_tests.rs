@@ -7,7 +7,9 @@ use grpc_lib::application::services::{
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::ports::backup::BackupPort;
 use grpc_lib::errors::{AppError, BusinessLogicError};
-use grpc_lib::models::{DailyReport, DailyReportMeal, DailyReportResult, MealSectionResult};
+use grpc_lib::models::{
+    DailyConsumptionSummary, DailyReport, DailyReportMeal, DailyReportResult, MealSectionResult,
+};
 use grpc_lib::repositories::RepositoryProvider;
 use tempfile::tempdir;
 
@@ -68,6 +70,7 @@ fn case_b_rejects_import_records_for_archived_year() {
             created_at: chrono::Utc::now(),
             fiscal_year: 2018,
         },
+        daily_summary: DailyConsumptionSummary::default(),
         meals: vec![MealSectionResult {
             meal: DailyReportMeal {
                 id: "m1".into(),

@@ -150,6 +150,7 @@ pub struct MealSectionResult {
 pub struct DailyReportResult {
     pub report: DailyReport,
     pub meals: Vec<MealSectionResult>,
+    pub daily_summary: DailyConsumptionSummary,
 }
 
 impl DailyReportResult {

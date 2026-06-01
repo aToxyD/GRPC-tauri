@@ -9,8 +9,9 @@ use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
 use crate::models::{
-    DailyReport, DailyReportInput, DailyReportMeal, DailyReportResult, MealSectionInput,
-    MealSectionResult, MealType, MonthlySummary, NewStockMovement, StockMovementType,
+    DailyConsumptionSummary, DailyReport, DailyReportInput, DailyReportMeal, DailyReportResult,
+    MealSectionInput, MealSectionResult, MealType, MonthlySummary, NewStockMovement,
+    StockMovementType,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::Datelike;
@@ -256,7 +257,12 @@ impl<'a> DailyReportService<'a> {
             meals.push(MealSectionResult { meal, items });
         }
 
-        Ok(Some(DailyReportResult { report, meals }))
+        let daily_summary = DailyConsumptionSummary::from_meal_sections(&meals);
+        Ok(Some(DailyReportResult {
+            report,
+            meals,
+            daily_summary,
+        }))
     }
 
     pub fn get_daily_consumption_view(

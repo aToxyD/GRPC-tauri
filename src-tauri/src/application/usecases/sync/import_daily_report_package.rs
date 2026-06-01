@@ -10,7 +10,8 @@ use crate::application::sync::{
 use crate::application::usecases::exports::types::DailyReportExportDataset;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
 use crate::models::{
-    DailyReport, DailyReportMeal, DailyReportMealItem, DailyReportResult, MealSectionResult,
+    DailyConsumptionSummary, DailyReport, DailyReportMeal, DailyReportMealItem, DailyReportResult,
+    MealSectionResult,
 };
 use crate::repositories::{DbExecutor, UnitRepository};
 
@@ -140,11 +141,13 @@ pub fn execute(
     }
 
     let item_count: usize = meal_results.iter().map(|m| m.items.len()).sum();
+    let report_result = DailyReportResult {
+        report,
+        meals: meal_results,
+        daily_summary: DailyConsumptionSummary::default(),
+    };
     let imported = SyncImportExecutionService::new(executor).import_daily_reports(vec![
-        DailyReportResult {
-            report,
-            meals: meal_results,
-        },
+        report_result,
     ])?;
     registry.mark_imported(&package_id)?;
 

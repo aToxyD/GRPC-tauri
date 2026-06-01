@@ -6,8 +6,9 @@ use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
 use crate::models::{
-    ConsumedLayerPortion, ConsumptionItemInput, DailyFifoConsumptionPreview, DailyReportInput,
-    MealFifoPreview, ProductFifoPreview,
+    ConsumedLayerPortion, ConsumptionItemInput, DailyConsumptionSummary,
+    DailyFifoConsumptionPreview, DailyReportInput, DailyReportMeal, MealFifoPreview,
+    MealSectionInput, ProductFifoPreview,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use std::collections::HashMap;
@@ -46,6 +47,7 @@ impl<'a> FifoPreviewService<'a> {
             predicted_consumption_layers: product_previews,
             predicted_remaining_inventory_value: remaining_value.value(),
             meal_previews: vec![],
+            daily_summary: DailyConsumptionSummary::default(),
         })
     }
 
@@ -101,6 +103,9 @@ impl<'a> FifoPreviewService<'a> {
         let mut total_consumed: HashMap<String, f64> = HashMap::new();
         let mut total_portions: HashMap<String, Vec<ConsumedLayerPortion>> = HashMap::new();
 
+        let section_by_type: HashMap<&str, &MealSectionInput> =
+            input.meals.iter().map(|s| (s.meal_type.as_str(), s)).collect();
+
         for computed_meal in &computation.meals {
             let mut product_previews = Vec::new();
 
@@ -113,17 +118,40 @@ impl<'a> FifoPreviewService<'a> {
                     .or_default()
                     .extend(product.portions.clone());
 
+                let unit_cost = if product.quantity > 0.0 {
+                    product.total_cost / product.quantity
+                } else {
+                    0.0
+                };
                 product_previews.push(ProductFifoPreview {
                     product_id: product.product_id.clone(),
                     quantity: product.quantity,
                     predicted_fifo_cost: product.total_cost,
+                    unit_cost,
                     predicted_consumption_layers: product.portions.clone(),
                 });
             }
 
+            let section = section_by_type.get(computed_meal.meal_type.as_str());
+            let total_beneficiaries = section
+                .map(|s| {
+                    DailyReportMeal::compute_total_beneficiaries(
+                        s.staff_24h_count,
+                        s.staff_8h_count,
+                        s.reservation_count,
+                        s.mission_count,
+                        s.guest_count,
+                    )
+                })
+                // [arch:allow-unwrap-or] legitimate fallback — no section means zero beneficiaries (no meal served)
+                .unwrap_or(0);
+            let meal_average =
+                DailyReportMeal::compute_meal_average(computed_meal.total_cost, total_beneficiaries);
             meal_previews.push(MealFifoPreview {
                 meal_type: computed_meal.meal_type.as_str().to_string(),
                 predicted_fifo_cost: computed_meal.total_cost,
+                total_beneficiaries,
+                meal_average,
                 product_previews,
             });
         }
@@ -138,21 +166,57 @@ impl<'a> FifoPreviewService<'a> {
                 ))
             })?;
             let cost: f64 = portions.iter().map(|p| p.total_cost).sum();
+            let unit_cost = if qty > 0.0 { cost / qty } else { 0.0 };
             product_previews.push(ProductFifoPreview {
                 product_id,
                 quantity: qty,
                 predicted_fifo_cost: cost,
+                unit_cost,
                 predicted_consumption_layers: portions,
             });
         }
 
         let remaining_value = self.remaining_value_after_preview(unit_id, &product_previews)?;
 
+        // Build daily summary from meal previews (same semantics as DailyConsumptionSummary::from_meal_sections)
+        let mut daily_summary = DailyConsumptionSummary::default();
+        for mp in &meal_previews {
+            match mp.meal_type.as_str() {
+                "breakfast" => {
+                    daily_summary.breakfast_beneficiaries = mp.total_beneficiaries;
+                    daily_summary.breakfast_cost = mp.predicted_fifo_cost;
+                    daily_summary.breakfast_average = mp.meal_average;
+                }
+                "lunch" => {
+                    daily_summary.lunch_beneficiaries = mp.total_beneficiaries;
+                    daily_summary.lunch_cost = mp.predicted_fifo_cost;
+                    daily_summary.lunch_average = mp.meal_average;
+                }
+                "dinner" => {
+                    daily_summary.dinner_beneficiaries = mp.total_beneficiaries;
+                    daily_summary.dinner_cost = mp.predicted_fifo_cost;
+                    daily_summary.dinner_average = mp.meal_average;
+                }
+                _ => {}
+            }
+        }
+        daily_summary.total_daily_beneficiaries =
+            daily_summary.breakfast_beneficiaries
+                + daily_summary.lunch_beneficiaries
+                + daily_summary.dinner_beneficiaries;
+        daily_summary.total_daily_cost =
+            daily_summary.breakfast_cost + daily_summary.lunch_cost + daily_summary.dinner_cost;
+        daily_summary.daily_average =
+            daily_summary.breakfast_average
+                + daily_summary.lunch_average
+                + daily_summary.dinner_average;
+
         Ok(DailyFifoConsumptionPreview {
             predicted_fifo_cost: computation.total_cost,
             predicted_consumption_layers: product_previews,
             predicted_remaining_inventory_value: remaining_value.value(),
             meal_previews,
+            daily_summary,
         })
     }
 
@@ -167,10 +231,12 @@ impl<'a> FifoPreviewService<'a> {
         for (product_id, quantity) in stock_by_product {
             let portions = fifo_repo.preview_consume_fifo(unit_id, product_id, *quantity)?;
             let cost: f64 = portions.iter().map(|p| p.total_cost).sum();
+            let unit_cost = if *quantity > 0.0 { cost / *quantity } else { 0.0 };
             previews.push(ProductFifoPreview {
                 product_id: product_id.clone(),
                 quantity: *quantity,
                 predicted_fifo_cost: cost,
+                unit_cost,
                 predicted_consumption_layers: portions,
             });
         }

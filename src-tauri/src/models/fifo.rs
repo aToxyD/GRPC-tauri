@@ -1,3 +1,4 @@
+use crate::models::DailyConsumptionSummary;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ pub struct ProductFifoPreview {
     pub product_id: String,
     pub quantity: f64,
     pub predicted_fifo_cost: f64,
+    pub unit_cost: f64,
     pub predicted_consumption_layers: Vec<ConsumedLayerPortion>,
 }
 
@@ -52,6 +54,8 @@ pub struct ProductFifoPreview {
 pub struct MealFifoPreview {
     pub meal_type: String,
     pub predicted_fifo_cost: f64,
+    pub total_beneficiaries: i32,
+    pub meal_average: f64,
     pub product_previews: Vec<ProductFifoPreview>,
 }
 
@@ -94,4 +98,5 @@ pub struct DailyFifoConsumptionPreview {
     pub predicted_consumption_layers: Vec<ProductFifoPreview>,
     pub predicted_remaining_inventory_value: f64,
     pub meal_previews: Vec<MealFifoPreview>,
+    pub daily_summary: DailyConsumptionSummary,
 }
