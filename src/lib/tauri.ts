@@ -27,7 +27,7 @@ import type {
   InventoryStockPageView,
 } from './types';
 
-async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+export async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const startTime = performance.now();
   try {
     const result = await tauriInvoke<T>(cmd, args);
