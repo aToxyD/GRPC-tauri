@@ -1,6 +1,6 @@
 # Governance Metrics Dashboard
 
-Generated: 2026-06-01
+Generated: 2026-06-01 (v1.2.0 Release)
 Snapshot: v5-freeze
 
 ---
@@ -16,9 +16,9 @@ Snapshot: v5-freeze
 | Deferred rules | 0 |
 | Active suppressions | 9 |
 | Expired suppressions | 0 |
-| Governance approvals | 5 |
+| Governance approvals | 6 |
 | Architecture drift events | 0 |
-| Certification versions | 5 (v1–v5) |
+| Certification versions | 6 (v1–v6) |
 | Governance snapshots | 4 |
 | Governance documents | 10 |
 
@@ -46,6 +46,7 @@ Snapshot: v5-freeze
 | v3 | 2026-05-15 (est.) | Domain isolation + contract ownership |
 | v4 | 2026-06-01 | Continuous governance + snapshots |
 | v5 | 2026-06-01 | Governance freeze + release certification |
+| v6 | 2026-06-01 | v1.2.0 release — 6 atomic commits, 9 release gates verified |
 
 ---
 
@@ -67,6 +68,7 @@ Snapshot: v5-freeze
 | v3 (baseline) | 9 | Baseline |
 | v4 | 9 | Stable |
 | v5 | 9 | Stable |
+| v6 | 9 | Stable |
 
 ---
 
@@ -79,6 +81,7 @@ Snapshot: v5-freeze
 | 3 | 2026-06-01 | Initial governance snapshots | governance-certification |
 | 4 | 2026-06-01 | Suppression metadata annotation | governance-certification |
 | 5 | 2026-06-01 | Phase 5 — Governance freeze | governance-certification |
+| 6 | 2026-06-01 | v1.2.0 release certification | governance-certification |
 
 ---
 
