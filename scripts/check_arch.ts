@@ -3244,13 +3244,13 @@ checkRule(
 
     // Check 6: Current certification exists
     try {
-        const certContent = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v5.md", "utf-8");
+        const certContent = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v6.md", "utf-8");
         if (!certContent.includes("Status:")) {
-            console.log(`❌ ${colors.red}FE-165 Error: Release gate — FRONTEND_CERTIFICATION_v5.md missing Status section${colors.reset}`);
+            console.log(`❌ ${colors.red}FE-165 Error: Release gate — FRONTEND_CERTIFICATION_v6.md missing Status section${colors.reset}`);
             fe165Errors++;
         }
     } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — FRONTEND_CERTIFICATION_v5.md missing${colors.reset}`);
+        console.log(`❌ ${colors.red}FE-165 Error: Release gate — FRONTEND_CERTIFICATION_v6.md missing${colors.reset}`);
         fe165Errors++;
     }
 
@@ -3324,15 +3324,15 @@ checkRule(
     let fe167Warnings = 0;
 
     // Check 1: Certification files reference consistent versions
-    // v5 should reference v5-freeze snapshot version
+    // v6 should reference v5-freeze snapshot version
     try {
-        const v5Content = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v5.md", "utf-8");
-        if (!v5Content.includes("v5-freeze")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v5.md does not reference snapshot version 'v5-freeze'${colors.reset}`);
+        const v6Content = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v6.md", "utf-8");
+        if (!v6Content.includes("v5-freeze")) {
+            console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v6.md does not reference snapshot version 'v5-freeze'${colors.reset}`);
             fe167Warnings++;
         }
-        if (!v5Content.includes("v5")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v5.md does not reference version 'v5'${colors.reset}`);
+        if (!v6Content.includes("v6")) {
+            console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v6.md does not reference version 'v6'${colors.reset}`);
             fe167Warnings++;
         }
     } catch { /* handled by FE-165 */ }
@@ -3370,6 +3370,7 @@ checkRule(
         "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v2.md",
         "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v3.md",
         "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v4.md",
+        "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v5.md",
     ];
     for (const f of certFiles) {
         try {
