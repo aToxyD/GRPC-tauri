@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
+import { createRuntimeScope } from '../../lib/runtimeCleanup';
+import type { RuntimeScope } from '../../lib/runtimeCleanup';
 import { 
     bootstrapSession, 
     logout, 
@@ -32,6 +34,8 @@ vi.mock('../../lib/notifications', () => ({
 }));
 
 describe('Session Store', () => {
+    let sessionScope: RuntimeScope;
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -39,13 +43,13 @@ describe('Session Store', () => {
         currentUser.set(null);
         sessionState.set({
             isActive: false,
-            lastCheck: null,
-            warningShown: false,
-            checkInterval: null
+            warningShown: false
         });
+        sessionScope = createRuntimeScope();
     });
 
     afterEach(() => {
+        sessionScope.dispose();
         cleanupSessionManagement();
         vi.useRealTimers();
     });
@@ -56,7 +60,7 @@ describe('Session Store', () => {
             mockInvoke.mockResolvedValueOnce(user);
             mockInvoke.mockResolvedValueOnce({ is_active: true, is_expired: false, should_warn: false, remaining_minutes: 60 }); // Initial check_session
             
-            const result = await bootstrapSession();
+            const result = await bootstrapSession(sessionScope);
             
             expect(mockInvoke).toHaveBeenCalledWith('get_current_user', undefined);
             expect(result).toEqual(user);
@@ -66,7 +70,7 @@ describe('Session Store', () => {
         it('should handle failure and return null', async () => {
             mockInvoke.mockRejectedValueOnce(new Error('Backend error'));
             
-            const result = await bootstrapSession();
+            const result = await bootstrapSession(sessionScope);
             
             expect(result).toBeNull();
             expect(get(currentUser)).toBeNull();
@@ -115,7 +119,7 @@ describe('Session Store', () => {
             mockInvoke.mockResolvedValueOnce({ is_active: false, is_expired: true, should_warn: false }); // check_session
             mockInvoke.mockResolvedValueOnce(null); // logout
             
-            await bootstrapSession();
+            await bootstrapSession(sessionScope);
             
             // allow promises and microtasks to resolve
             await vi.advanceTimersByTimeAsync(10);
@@ -133,7 +137,7 @@ describe('Session Store', () => {
                 remaining_minutes: 4 
             }); // check_session
             
-            await bootstrapSession();
+            await bootstrapSession(sessionScope);
             await vi.advanceTimersByTimeAsync(10);
             
             expect(mockShowWarning).toHaveBeenCalled();

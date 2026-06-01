@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { login, getSettings, isConfigured, importUnitNodePackage, openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
+  import { openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
+  import { importUnitNodePackage } from '../lib/contracts';
+  import { login, getSettings, isConfigured } from '../lib/contracts';
   import type { LoginRequest, LoginResponse } from '../lib/types';
   import { push } from 'svelte-spa-router';
   import { showSuccess } from '../lib/notifications';
@@ -23,16 +25,25 @@
   const importOp = createOperationGuard({ scope });
   const importLoading = importOp.loading;
 
+  // @category TransientState
   let username = '';
+  // @category TransientState
   let password = '';
+  // @category TransientState
   let localError = '';
+  // @category ProjectionState
   let isAppConfigured = true;
 
+  // @category ProjectionState
   let loginAttempts = 0;
+  // @category ProjectionState
   let remainingAttempts: number | null = null;
+  // @category ProjectionState
   let lockoutTimeRemaining: number | null = null;
+  // @category ProjectionState
   let isRateLimited = false;
 
+  // @category UiState
   $: displayError = $loginError || localError;
 
   onMount(async () => {

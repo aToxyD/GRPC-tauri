@@ -1,16 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import {
-    getDailyReport, listUnits, listWilayaReports, getSettings
-  } from '../lib/tauri';
-  import type { ReportType } from '../lib/tauri';
+  import { getDailyReport, listUnits, listWilayaReports, getSettings, type ReportType } from '../lib/contracts';
   import type { DailyReport, DailyReportResult, MonthlySummary, Settings, Unit, StockMovement, WilayaReportList } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import DailyReportModal from '../components/reports/DailyReportModal.svelte';
   import MonthlySummaryModal from '../components/reports/MonthlySummaryModal.svelte';
   import StockMovementModal from '../components/reports/StockMovementModal.svelte';
-  import { exportAllUnitsMonthlyStatusExcel } from '../lib/tauri';
   import { saveFile } from '../lib/tauri';
+  import { exportAllUnitsMonthlyStatusExcel } from '../lib/contracts';
   import { showSuccess, showError } from '../lib/notifications';
   import { formatErrorMessage } from '../lib/errors';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -36,22 +33,37 @@
   const exportOp = createOperationGuard({ scope });
 
   // Data
+  // @category ProjectionState
   let reports: DailyReport[] = [];
+  // @category ProjectionState
   let monthlySummaries: MonthlySummary[] = [];
+  // @category ProjectionState
   let stockMovements: StockMovement[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category ProjectionState
   let units: Unit[] = [];
+  // @category UiState
   let selectedReport: DailyReportResult | null = null;
+  // @category UiState
   let selectedStockMovement: StockMovement | null = null;
+  // @category UiState
   let selectedMonthlySummary: MonthlySummary | null = null;
+  // @category UiState
   let viewingDetails = false;
+  // @category UiState
   let viewingStockMovement = false;
+  // @category UiState
   let viewingMonthlySummary = false;
 
   // Filters
+  // @category UiState
   let selectedUnitId: string = '';
+  // @category UiState
   let selectedReportType: ReportType = 'daily';
+  // @category UiState
   let currentMonth = new Date().getMonth() + 1;
+  // @category UiState
   let currentYear = new Date().getFullYear();
 
   const isExporting = exportOp.loading;

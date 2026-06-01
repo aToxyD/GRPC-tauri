@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { link, push } from "svelte-spa-router";
-  import { getSettings } from "../lib/tauri";
+  // [arch:allow-component-ipc-ghost] FE-138: Sidebar fetches settings directly as governance debt (21 pages need threading)
+  import { getSettings } from "../lib/contracts";
   import type { User, Settings } from "../lib/types";
   import { currentUser as userStore, logout } from "../lib/session";
   import { get } from "svelte/store";
@@ -11,12 +12,17 @@
   export let nodeType: "WILAYA" | "UNIT" | null = null;
   export let displayType: "WILAYA" | "UNIT" | null = null;
 
+  // @category SessionState
   let user: User | null = null;
+  // @category SessionState
   $: user = $userStore;
 
   // Type guard to check if user is Admin
+  // @category UiState
   $: isAdmin = user?.role === "Admin";
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category UiState
   let loading = true;
 
   onMount(async () => {
@@ -97,7 +103,9 @@
 
   // ── Admin-only observability section (shared by both node types) ────────────
   // All audit/observability pages require Admin role.
+  // @category UiState — navigation links
   let adminObservabilityLinks: NavItem[] = [];
+  // @category UiState — navigation links
   $: {
     const links: NavItem[] = [];
 
@@ -131,7 +139,9 @@
   }
 
   // ── WILAYA nav ──────────────────────────────────────────────────────────────
+  // @category UiState — navigation links
   let wilayaLinks: NavItem[] = [];
+  // @category UiState
   $: wilayaLinks = [
     makeHeader("الإدارة"),
     makeLink("/wilaya", "نظرة عامة", ICONS.dashboard),
@@ -147,7 +157,9 @@
   ];
 
   // ── UNIT nav ────────────────────────────────────────────────────────────────
+  // @category UiState — navigation links
   let unitLinks: NavItem[] = [];
+  // @category UiState
   $: unitLinks = [
     makeHeader("العمليات"),
     makeLink("/unit", "نظرة عامة", ICONS.dashboard),
@@ -162,10 +174,13 @@
   ];
 
   // Determine effective node type for links
+  // @category UiState
   $: effectiveNodeType =
     nodeType || displayType || settings?.node_type || "WILAYA";
+  // @category UiState
   $: navLinks = effectiveNodeType === "WILAYA" ? wilayaLinks : unitLinks;
 
+  // @category UiState — active route
   let currentPath = window.location.hash.replace("#", "") || "/";
 
   function isActive(path: string): boolean {

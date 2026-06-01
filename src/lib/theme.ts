@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 export type Theme = 'light' | 'dark';
 
 function createThemeStore() {
+	// @category UiState — theme preference
 	const { subscribe, set } = writable<Theme>('dark');
 
 	return {

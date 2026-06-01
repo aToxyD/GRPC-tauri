@@ -15,17 +15,23 @@ const mockApplyFiscalClosurePackage = vi.fn();
 const mockShowAsk = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
+    safeInvoke: vi.fn(),
+    saveFile: vi.fn(),
+    openFile: vi.fn(),
+    showAsk: (...args: any[]) => mockShowAsk(...args),
+    getAppWindow: () => ({ maximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true) }),
+    listenToResize: vi.fn().mockResolvedValue(() => {}),
+}));
+
+vi.mock('../../lib/contracts', () => ({
     closeFiscalYear: (...args: any[]) => mockCloseFiscalYear(...args),
     getFiscalYearStatus: (...args: any[]) => mockGetFiscalYearStatus(...args),
-    listProducts: (...args: any[]) => mockListProducts(...args),
-    getSettings: (...args: any[]) => mockGetSettings(...args),
     getFiscalTransitionHistory: (...args: any[]) => mockGetFiscalTransitionHistory(...args),
     listFiscalPackageRegistry: (...args: any[]) => mockListFiscalPackageRegistry(...args),
     previewFiscalClosurePackage: (...args: any[]) => mockPreviewFiscalClosurePackage(...args),
     applyFiscalClosurePackage: (...args: any[]) => mockApplyFiscalClosurePackage(...args),
-    showAsk: (...args: any[]) => mockShowAsk(...args),
-    getAppWindow: () => ({ maximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true) }),
-    listenToResize: vi.fn().mockResolvedValue(() => {}),
+    listProducts: (...args: any[]) => mockListProducts(...args),
+    getSettings: (...args: any[]) => mockGetSettings(...args),
 }));
 
 describe('Fiscal Management Integration Flow', () => {

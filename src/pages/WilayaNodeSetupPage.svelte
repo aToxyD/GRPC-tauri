@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { configureAsWilaya, getSettings, getAppWindow, createLogicalSize } from "../lib/tauri";
+  import { getAppWindow, createLogicalSize } from "../lib/tauri";
+  import { configureAsWilaya, getSettings } from "../lib/contracts";
   import { push } from "svelte-spa-router";
   import { formatErrorMessage } from "../lib/errors";
   import { createOperation } from "../lib/operationGuard";
@@ -16,8 +17,11 @@
   const loading = setupOp.loading;
   const error = setupOp.error;
 
+  // @category TransientState
   let wilayaCode = "";
+  // @category TransientState
   let wilayaName = "";
+  // @category TransientState
   let success = "";
   onDestroy(() => scope.dispose());
 

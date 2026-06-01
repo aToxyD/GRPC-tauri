@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSystemHealth, getSyncHealth, getSettings, getBuildInfo, getRecentTelemetry } from '../lib/tauri';
+  import { getSystemHealth, getSyncHealth, getBuildInfo, getRecentTelemetry } from '../lib/contracts';
+  import { getSettings } from '../lib/contracts';
   import type { SystemHealthReport, SyncNodeHealth, Settings, BuildInfo, TelemetryEvent } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { formatErrorMessage } from '../lib/errors';
@@ -22,10 +23,15 @@
   const loading = healthOp.loading;
   const error = healthOp.error;
 
+  // @category ProjectionState
   let health: SystemHealthReport | null = null;
+  // @category ProjectionState
   let nodes: SyncNodeHealth[] = [];
+  // @category ProjectionState
   let buildInfo: BuildInfo | null = null;
+  // @category ProjectionState
   let telemetry: TelemetryEvent[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
 
   async function load() {
@@ -59,6 +65,7 @@
     await load();
   });
 
+  // @category UiState
   $: nodeType = (settings?.node_type === 'WILAYA' ? 'WILAYA' : settings?.node_type === 'UNIT' ? 'UNIT' : null) as 'WILAYA' | 'UNIT' | null;
 </script>
 

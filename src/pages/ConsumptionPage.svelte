@@ -53,21 +53,33 @@
   const error = consumptionOp.error;
   const { loading: submitting, guard } = createOperationGuard({ scope });
 
+  // @category ProjectionState
   let products = $state<Product[]>([]);
+  // @category ProjectionState
   let settings = $state<Settings | null>(null);
+  // @category TransientState
   let success = $state('');
+  // @category ProjectionState
   let dailyView = $state<DailyConsumptionView | null>(null);
+  // @category ProjectionState
   let reportLocked = $state(false);
+  // @category TransientState
   let date = $state(new Date().toISOString().split('T')[0]);
+  // @category TransientState
   let activeMeal = $state<MealType>('breakfast');
+  // @category TransientState
   let mealForms = $state<Record<MealType, MealFormState>>(emptyMealForms());
+  // @category TransientState
   let consumptionItems = $state<ConsumptionProductRow[]>([]);
+  // @category ProjectionState
   let fifoPreview = $state<DailyFifoConsumptionPreview | null>(null);
+  // @category UiState
   let fifoPreviewLoading = $state(false);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m), 5000);
   onDestroy(() => scope.dispose());
 
+  // @category ProjectionState
   let displaySummary = $derived(
     dailyView
       ? summaryFromSaved(dailyView)
@@ -89,14 +101,17 @@
           }
   );
 
+  // @category ProjectionState
   let activeFifoMeal = $derived(
     fifoPreview?.meal_previews.find((m) => m.meal_type === activeMeal) ?? null
   );
 
+  // @category ProjectionState
   let activeMealPreview = $derived(
     mealPreviewFromFifo(mealForms[activeMeal], activeFifoMeal)
   );
 
+  // @category UiState
   let activeMealFifoCosts = $derived(
     productFifoCostsForMeal(
       activeFifoMeal,
@@ -105,6 +120,7 @@
     )
   );
 
+  // @category UiState
   let activeMealLabel = $derived(
     MEAL_OPTIONS.find((m) => m.id === activeMeal)?.label ?? activeMeal
   );

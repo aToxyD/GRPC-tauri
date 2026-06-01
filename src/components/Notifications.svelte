@@ -55,6 +55,7 @@
     });
   }
 
+  // @category UiState — display-truncated notification list
   $: notificationList = $notifications.slice(0, 5); // Show max 5 notifications
 </script>
 

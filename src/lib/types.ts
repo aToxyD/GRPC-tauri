@@ -199,6 +199,7 @@ export interface DailyReportInput {
 export interface DailyReportResult {
   report: DailyReport;
   meals: MealSectionResult[];
+  daily_summary: DailyConsumptionSummary;
 }
 
 export interface DailyConsumptionSummary {
@@ -242,12 +243,15 @@ export interface ProductFifoPreview {
   product_id: string;
   quantity: number;
   predicted_fifo_cost: number;
+  unit_cost: number;
   predicted_consumption_layers: ConsumedLayerPortion[];
 }
 
 export interface MealFifoPreview {
   meal_type: string;
   predicted_fifo_cost: number;
+  total_beneficiaries: number;
+  meal_average: number;
   product_previews: ProductFifoPreview[];
 }
 
@@ -256,6 +260,7 @@ export interface DailyFifoConsumptionPreview {
   predicted_consumption_layers: ProductFifoPreview[];
   predicted_remaining_inventory_value: number;
   meal_previews: MealFifoPreview[];
+  daily_summary: DailyConsumptionSummary;
 }
 
 // Summary Types

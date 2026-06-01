@@ -2,9 +2,12 @@ import { writable } from 'svelte/store';
 import { telemetry } from './telemetry';
 import { showError } from './notifications';
 
+// @category UiState — fatal error display
 export const hasFatalError = writable(false);
+// @category UiState — fatal error message
 export const fatalErrorMessage = writable('');
 
+// @category UiState — singleton initialization guard
 let initialized = false;
 
 export function initErrorBoundary() {

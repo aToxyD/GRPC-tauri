@@ -7,7 +7,9 @@
   export let beneficiaries: BeneficiaryFields;
   export let disabled = false;
 
+  // @category TransientState — derived from form props
   $: counts = parseBeneficiaryCounts(beneficiaries);
+  // @category TransientState — summed from form counts
   $: totalBeneficiaries =
     counts.staff_24h_count +
     counts.staff_8h_count +

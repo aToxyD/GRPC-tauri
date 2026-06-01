@@ -171,6 +171,7 @@ export const notificationManager = new NotificationManager();
 
 import { writable } from 'svelte/store';
 
+// @category UiState — notification display queue
 export const notifications = writable<Notification[]>([]);
 
 notificationManager.subscribe((notifs) => {

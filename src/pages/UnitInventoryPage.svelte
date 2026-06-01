@@ -1,11 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import {
-    listUnits, getSettings,
-    computeUnitInventorySnapshot, getUnitInventoryView,
-    getAvailableReportMonths, exportUnitInventoryExcel,
-    saveFile
-  } from '../lib/tauri';
+  import { saveFile } from '../lib/tauri';
+  import { listUnits, getSettings, computeUnitInventorySnapshot, getUnitInventoryView, getAvailableReportMonths, exportUnitInventoryExcel } from '../lib/contracts';
   import { showSuccess, showError, showWarning } from '../lib/notifications';
   import { formatErrorMessage } from '../lib/errors';
   import type {
@@ -39,26 +35,36 @@
   const computing = computeOp.loading;
 
   // ── State ──────────────────────────────────────
+  // @category ProjectionState
   let units: Unit[] = $state([]);
+  // @category ProjectionState
   let availableMonths: [number, number][] = $state([]);
+  // @category ProjectionState
   let inventoryView: UnitInventoryView | null = $state(null);
 
+  // @category UiState
   let selectedUnitId = $state('');
+  // @category UiState
   let selectedYear = $state(new Date().getFullYear());
+  // @category UiState
   let selectedMonth = $state(new Date().getMonth() + 1);
+  // @category UiState
   let searchProduct = $state('');
 
   // ── Derived ────────────────────────────────────
+  // @category UiState
   let filteredItems: UnitMonthlySnapshot[] = $derived(
     ((inventoryView as UnitInventoryView | null)?.items ?? []).filter((i: UnitMonthlySnapshot) =>
       i.product_name.includes(searchProduct) || !searchProduct
     )
   );
 
+  // @category UiState
   let selectedUnitName: string = $derived(
     units.find(u => u.id === selectedUnitId)?.name ?? ''
   );
 
+  // @category UiState
   let hasStaleData: boolean = $derived(
     ((inventoryView as UnitInventoryView | null)?.stale_count ?? 0) > 0
   );

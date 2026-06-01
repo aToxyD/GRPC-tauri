@@ -1,16 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import {
-    listSupplierOrders,
-    createSupplierOrder,
-    updateSupplierOrder,
-    deleteSupplierOrder,
-    confirmOrder,
-    listProducts,
-    getSupplierOrderItems,
-    showAsk,
-  } from '../lib/tauri';
+  import { listSupplierOrders, createSupplierOrder, updateSupplierOrder, deleteSupplierOrder, confirmOrder, getSupplierOrderItems } from '../lib/contracts';
+  import { showAsk } from '../lib/tauri';
+  import { listProducts } from '../lib/contracts';
   import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -31,20 +24,30 @@
   const loading = ordersOp.loading;
   const error = ordersOp.error;
 
+  // @category ProjectionState
   let orders = $state<SupplierOrder[]>([]);
+  // @category ProjectionState
   let products = $state<Product[]>([]);
+  // @category UiState
   let showModal = $state(false);
+  // @category UiState
   let editingOrderId = $state<string | null>(null);
+  // @category TransientState
   let success = $state('');
+  // @category ProjectionState
   let selectedOrder = $state<SupplierOrder | null>(null);
+  // @category ProjectionState
   let orderItems = $state<SupplierOrderItem[]>([]);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Form fields
+  // @category TransientState
   let supplierName = $state('');
+  // @category TransientState
   let referenceNumber = $state('');
+  // @category TransientState
   let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
 
   onMount(async () => {
@@ -395,7 +398,7 @@
           <div class="flex justify-between items-center">
             <span class="font-semibold text-gray-800 dark:text-gray-100">الإجمالي:</span>
             <span class="text-xl font-bold text-civil-blue">
-              {orderItems.reduce((sum, item) => sum + item.total_cost, 0).toFixed(2)} دج
+              {(selectedOrder.total_amount ?? 0).toFixed(2)} دج
             </span>
           </div>
         </div>

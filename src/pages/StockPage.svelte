@@ -3,19 +3,9 @@
   import { createRuntimeScope, createTransientMessage } from "../lib/runtimeCleanup";
   import { createOperation } from "../lib/operationGuard";
   import { formatErrorMessage } from "../lib/errors";
-  import {
-    getAllStocks,
-    importProductsPackage,
-    getStockSummary,
-    getStockMovements,
-    exportStockMovementsExcel,
-    exportStockMovementsPackage,
-    importStockMovementsPackage,
-    getSettings,
-    openFile,
-    saveFile,
-    getInventoryFifoView,
-  } from "../lib/tauri";
+  import { openFile, saveFile } from "../lib/tauri";
+  import { importProductsPackage, exportStockMovementsPackage, importStockMovementsPackage } from "../lib/contracts";
+  import { getAllStocks, getStockSummary, getStockMovements, exportStockMovementsExcel, getSettings, getInventoryFifoView } from "../lib/contracts";
   import { showSuccess, showError } from "../lib/notifications";
   import type {
     InventoryStock,
@@ -55,43 +45,64 @@
   const movementsLoading = movementsOp.loading;
 
   // Section 2 & 3: Summary
+  // @category ProjectionState
   let summary: StockSummary[] = $state([]);
 
   // Computed stats from summary
+  // @category ProjectionState
   let totalProducts = $derived(summary.length);
+  // @category ProjectionState
   let totalIn = $derived(summary.filter((p) => p.total_in > 0).length);
+  // @category ProjectionState
   let totalOut = $derived(summary.filter((p) => p.total_out > 0).length);
+  // @category ProjectionState
   let lowStockCount = $derived(
     summary.filter((p) => p.current_quantity < 10).length,
   );
+  // @category ProjectionState
   let outOfStockCount = $derived(
     summary.filter((p) => p.current_quantity === 0).length,
   );
 
   // Section 4: Movements
+  // @category ProjectionState
   let movements: StockMovement[] = $state([]);
+  // @category UiState
   let movementsVisible = $state(false);
+  // @category ProjectionState
   let totalMovements = $state(0);
+  // @category UiState
   let currentPage = $state(0);
+  // @category UiState
   let highlightedProductId = $state("");
   const PAGE_SIZE = 20;
 
   // Filters
+  // @category UiState
   let filterProductId = $state("");
+  // @category UiState
   let filterMovementType = $state("");
+  // @category UiState
   let filterStartDate = $state("");
+  // @category UiState
   let filterEndDate = $state("");
 
   // Messages (for import only)
+  // @category TransientState
   let importError = $state("");
+  // @category TransientState
   let importSuccess = $state("");
+  // @category ProjectionState
   let settings: Settings | null = $state(null);
 
   // Fallback stocks
+  // @category ProjectionState
   let stocks: InventoryStock[] = $state([]);
 
   // Section 2.5: FIFO Inventory View
+  // @category ProjectionState
   let fifoView: InventoryStockPageView | null = $state(null);
+  // @category UiState
   let expandedProductId: string | null = $state(null);
 
   function toggleFifoLayers(productId: string) {
@@ -306,6 +317,7 @@
     return new Date(dateStr).toLocaleString("ar-DZ");
   }
 
+  // @category UiState — pagination
   let totalPages = $derived(Math.ceil(totalMovements / PAGE_SIZE));
 </script>
 

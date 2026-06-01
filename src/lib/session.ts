@@ -1,32 +1,47 @@
-/**
- * Session Management for GRPC Frontend
- * 
- * Provides:
- * - Automatic session checking every 60 seconds
- * - Warning before session expiry (5 minutes)
- * - Auto-logout on session expiration
- * - Activity tracking to extend session
- */
-
 import { writable, type Writable } from 'svelte/store';
 import { push } from 'svelte-spa-router';
 import { showError, showWarning, showInfo } from './notifications';
 import type { SessionStatus, User } from './types';
-import { getCurrentUser, touchSession as tauriTouchSession, logout as tauriLogout, checkSession as tauriCheckSession } from './tauri';
+import { getCurrentUser, touchSession as tauriTouchSession, logout as tauriLogout, checkSession as tauriCheckSession } from './contracts';
+import { createRuntimeScope, type RuntimeScope } from './runtimeCleanup';
 
-// Auth State
+// @category SessionState
 export const currentUser = writable<User | null>(null);
+
+// @category SessionState — active session flag (module-level for non-reactive access)
+let isActive = false;
+
+// @category UiState — warning display state (module-level, not in store)
+let warningShown = false;
+
+// Lifecycle container for all session timers and listeners
+let activeScope: RuntimeScope | null = null;
+
+// @category SessionState — reactive session state for subscriptions
+export const sessionActive: Writable<boolean> = writable(false);
+
+// @category SessionState — backward-compatible session state
+interface SessionState {
+    isActive: boolean;
+    warningShown: boolean;
+}
+
+// @category SessionState — combined session state
+export const sessionState: Writable<SessionState> = writable({
+    isActive: false,
+    warningShown: false
+});
 
 export function setCurrentUser(user: User | null) {
     currentUser.set(user);
 }
 
-export async function bootstrapSession(): Promise<User | null> {
+export async function bootstrapSession(scope?: RuntimeScope): Promise<User | null> {
     try {
         const user = await getCurrentUser();
         setCurrentUser(user);
         if (user) {
-            startSessionMonitoring();
+            startSessionMonitoring(scope ?? createRuntimeScope());
         }
         return user;
     } catch (error) {
@@ -35,57 +50,25 @@ export async function bootstrapSession(): Promise<User | null> {
     }
 }
 
-
-// Session check interval in milliseconds (60 seconds)
 const SESSION_CHECK_INTERVAL = 60000;
-
-// Warning threshold in minutes (5 minutes before expiry)
-const SESSION_WARNING_MINUTES = 5;
-
-// Activity debounce time in milliseconds (5 seconds)
 const ACTIVITY_DEBOUNCE = 5000;
 
-interface SessionState {
-    isActive: boolean;
-    lastCheck: Date | null;
-    warningShown: boolean;
-    checkInterval: number | null;
-}
-
-export const sessionState: Writable<SessionState> = writable({
-    isActive: false,
-    lastCheck: null,
-    warningShown: false,
-    checkInterval: null
-});
-
-let activityTimeout: number | null = null;
-let activityHandler: (() => void) | null = null;
 const TRACKED_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const;
 
-/**
- * Check current session status
- */
 export async function checkSession(): Promise<SessionStatus | null> {
     try {
         const status = await tauriCheckSession();
-        sessionState.update(s => ({
-            ...s,
-            lastCheck: new Date(),
-            isActive: status.is_active
-        }));
+        isActive = status.is_active;
+        sessionActive.set(status.is_active);
+        sessionState.update(s => ({ ...s, isActive: status.is_active }));
         return status;
     } catch (error) {
         return null;
     }
 }
 
-/**
- * Handle session status and warnings
- */
 function handleSessionStatus(status: SessionStatus): void {
     if (!status.is_active) {
-        // Session expired or no session
         if (status.is_expired) {
             showError('الرجاء تسجيل الدخول مرة أخرى', 'انتهت الجلسة');
             logout();
@@ -93,112 +76,71 @@ function handleSessionStatus(status: SessionStatus): void {
         return;
     }
 
-    // Show warning if session is about to expire
-    let warningAlreadyShown = false;
-    sessionState.subscribe(s => warningAlreadyShown = s.warningShown)();
-
-    if (status.should_warn && !warningAlreadyShown) {
+    if (status.should_warn && !warningShown) {
         showWarning(
             `ستنتهي جلستك خلال ${status.remaining_minutes} دقيقة. قم بأي نشاط للتمديد.`,
             'تحذير الجلسة'
         );
+        warningShown = true;
         sessionState.update(s => ({ ...s, warningShown: true }));
     }
 
-    // Reset warning if session is no longer in warning state
-    if (!status.should_warn && warningAlreadyShown) {
+    if (!status.should_warn && warningShown) {
+        warningShown = false;
         sessionState.update(s => ({ ...s, warningShown: false }));
     }
 }
 
-/**
- * Start session monitoring
- */
-export function startSessionMonitoring(): void {
-    // Stop any existing monitoring
+export function startSessionMonitoring(scope: RuntimeScope): void {
     stopSessionMonitoring();
+    activeScope = scope;
 
-    // Initial check
     checkSession().then(status => {
-        if (status) {
-            handleSessionStatus(status);
-        }
+        if (!scope.isAlive()) return;
+        if (status) handleSessionStatus(status);
     });
 
-    // Set up periodic checks
-    const interval = window.setInterval(() => {
+    scope.setInterval(() => {
         checkSession().then(status => {
-            if (status) {
-                handleSessionStatus(status);
-            }
+            if (!scope.isAlive()) return;
+            if (status) handleSessionStatus(status);
         });
     }, SESSION_CHECK_INTERVAL);
 
-    sessionState.update(s => ({ ...s, checkInterval: interval }));
-
-    // Track user activity
-    setupActivityTracking();
+    setupActivityTracking(scope);
 }
 
-/**
- * Stop session monitoring
- */
 export function stopSessionMonitoring(): void {
-    sessionState.update(s => {
-        if (s.checkInterval !== null) {
-            clearInterval(s.checkInterval);
-        }
-        return { ...s, checkInterval: null };
-    });
-    
-    if (activityTimeout !== null) {
-        clearTimeout(activityTimeout);
-        activityTimeout = null;
+    if (activeScope) {
+        activeScope.dispose();
+        activeScope = null;
     }
-
-    removeActivityTracking();
+    isActive = false;
+    warningShown = false;
+    sessionActive.set(false);
+    sessionState.set({ isActive: false, warningShown: false });
 }
 
-/**
- * Remove activity tracking event listeners
- */
-function removeActivityTracking(): void {
-    if (activityHandler) {
-        TRACKED_EVENTS.forEach(event => {
-            document.removeEventListener(event, activityHandler!);
-        });
-        activityHandler = null;
-    }
-}
+function setupActivityTracking(scope: RuntimeScope): void {
+    let debounceTimer: number | null = null;
 
-/**
- * Setup activity tracking to extend session
- */
-function setupActivityTracking(): void {
-    // Remove existing listeners first to avoid duplication
-    removeActivityTracking();
-
-    activityHandler = () => {
-        // Debounce activity to avoid excessive API calls
-        if (activityTimeout !== null) {
-            clearTimeout(activityTimeout);
+    const handler = () => {
+        if (debounceTimer !== null) {
+            clearTimeout(debounceTimer);
         }
-        
-        activityTimeout = window.setTimeout(() => {
-            // Touch session on backend
+        debounceTimer = scope.setTimeout(() => {
             touchSession();
+            warningShown = false;
             sessionState.update(s => ({ ...s, warningShown: false }));
+            debounceTimer = null;
         }, ACTIVITY_DEBOUNCE);
     };
 
     TRACKED_EVENTS.forEach(event => {
-        document.addEventListener(event, activityHandler!, { passive: true });
+        scope.addListener(document, event, handler as EventListener, { passive: true });
     });
 }
 
-/**
- * Touch session to extend it
- */
 async function touchSession(): Promise<void> {
     try {
         await tauriTouchSession();
@@ -207,9 +149,6 @@ async function touchSession(): Promise<void> {
     }
 }
 
-/**
- * Logout user and redirect to login page
- */
 export async function logout(): Promise<void> {
     try {
         await tauriLogout();
@@ -217,37 +156,20 @@ export async function logout(): Promise<void> {
         showInfo('تم تسجيل خروجك بنجاح', 'تم تسجيل الخروج');
         push('/login');
     } catch (error) {
-        // Still redirect even if backend call fails
         push('/login');
     } finally {
         stopSessionMonitoring();
     }
 }
 
-/**
- * Get current session info
- */
-export function getSessionInfo(): { isActive: boolean; lastCheck: Date | null } {
-    let state: SessionState | undefined;
-    sessionState.subscribe(s => state = s)();
-    return {
-        isActive: state?.isActive ?? false,
-        lastCheck: state?.lastCheck ?? null
-    };
+export function getSessionInfo(): { isActive: boolean } {
+    return { isActive };
 }
 
-/**
- * Initialize session management
- * Call this when the app starts (after successful login)
- */
-export function initSessionManagement(): void {
-    startSessionMonitoring();
+export function initSessionManagement(scope?: RuntimeScope): void {
+    startSessionMonitoring(scope ?? createRuntimeScope());
 }
 
-/**
- * Cleanup session management
- * Call this when logging out or app shutdown
- */
 export function cleanupSessionManagement(): void {
     stopSessionMonitoring();
 }

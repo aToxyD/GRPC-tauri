@@ -1,13 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import {
-    createBackup,
-    issueOperationExecutionToken,
-    listBackups,
-    restoreBackup,
-    getSettings,
-    showAsk,
-  } from "../lib/tauri";
+  import { createBackup, issueOperationExecutionToken, listBackups, restoreBackup } from '../lib/contracts';
+  import { showAsk } from '../lib/tauri';
+  import { getSettings } from "../lib/contracts";
   import type { BackupInfo, Settings } from "../lib/types";
   import { formatBytes, formatDate } from "../lib/utils";
   import { showSuccess } from "../lib/notifications";
@@ -38,13 +33,19 @@
   const restoreBackupOp = createOperationGuard({ scope });
   const restoring = restoreBackupOp.loading;
 
+  // @category UiState
   let showRestoreModal = false;
+  // @category TransientState
   let restoreBackupPath = '';
+  // @category TransientState
   let restoreConfirmationInput = '';
 
+  // @category ProjectionState
   let backups: BackupInfo[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
 
+  // @category SessionState
   $: currentUser = $userStore;
 
   onMount(async () => {
@@ -60,7 +61,9 @@
     }
   }
 
+  // @category UiState
   $: isAdmin = currentUser?.role === "Admin";
+  // @category UiState
   $: nodeType = (settings?.node_type === "WILAYA" ? "WILAYA" : "UNIT") as
     | "WILAYA"
     | "UNIT";
@@ -131,6 +134,7 @@
     );
   }
 
+  // @category UiState
   $: sortBackups();
 </script>
 

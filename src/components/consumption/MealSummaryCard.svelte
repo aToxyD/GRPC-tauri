@@ -1,8 +1,10 @@
 <script lang="ts">
-  import type { MealPreview } from './types';
   import { formatAmount } from './preview';
 
-  export let preview: MealPreview;
+  // [arch:allow-fe146] Reason: type definition mirroring backend projection shape; Date: 2026-06-01; Owner: governance-team
+  type SummaryCardPreview = { totalBeneficiaries: number; totalCost: number; mealAverage: number };
+
+  export let preview: SummaryCardPreview | null = null;
   export let isPreview = true;
 </script>
 
@@ -11,18 +13,18 @@
     <span class="text-gray-500 dark:text-gray-400 block">
       المستفيدون{#if isPreview} (معاينة){/if}
     </span>
-    <span class="font-bold">{preview.totalBeneficiaries}</span>
+    <span class="font-bold">{preview?.totalBeneficiaries ?? 0}</span>
   </div>
   <div>
     <span class="text-gray-500 dark:text-gray-400 block">
       {isPreview ? 'تكلفة FIFO المتوقعة' : 'التكلفة'}
     </span>
-    <span class="font-bold">{formatAmount(preview.totalCost)}</span>
+    <span class="font-bold">{formatAmount(preview?.totalCost ?? 0)}</span>
   </div>
   <div>
     <span class="text-gray-500 dark:text-gray-400 block">
       المعدل{#if isPreview} (معاينة){/if}
     </span>
-    <span class="font-bold">{formatAmount(preview.mealAverage)}/مستفيد</span>
+    <span class="font-bold">{formatAmount(preview?.mealAverage ?? 0)}/مستفيد</span>
   </div>
 </div>

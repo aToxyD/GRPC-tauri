@@ -23,12 +23,16 @@ const mockCloseFiscalYear = vi.fn();
 const mockExportProductsExcel = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
+  safeInvoke: vi.fn(),
+}));
+
+vi.mock('../../lib/contracts', () => ({
   listProducts: (...args: any[]) => mocklistProducts(...args),
   createProduct: (...args: any[]) => mockCreateProduct(...args),
   updateProduct: (...args: any[]) => mockUpdateProduct(...args),
   getSettings: (...args: any[]) => mockGetSettings(...args),
-  closeFiscalYear: (...args: any[]) => mockCloseFiscalYear(...args),
   exportProductsExcel: (...args: any[]) => mockExportProductsExcel(...args),
+  closeFiscalYear: (...args: any[]) => mockCloseFiscalYear(...args),
 }));
 
 describe('Governance Specification Tests', () => {

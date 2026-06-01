@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getAuditLog, getAuditStats, exportAuditLogExcel, cleanupAuditLogs, getSettings, saveFile, showAsk } from '../lib/tauri';
+  import { getAuditLog, getAuditStats, exportAuditLogExcel, cleanupAuditLogs } from '../lib/contracts';
+  import { saveFile, showAsk } from '../lib/tauri';
+  import { getSettings } from '../lib/contracts';
   import type { AuditEntry, AuditFilters, AuditStats, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { formatErrorMessage } from '../lib/errors';
@@ -35,15 +37,22 @@
   const cleanupLoading = cleanupOp.loading;
 
   // State
+  // @category ProjectionState
   let entries: AuditEntry[] = [];
+  // @category ProjectionState
   let totalCount = 0;
+  // @category UiState
   let page = 0;
   const pageSize = 50;
+  // @category ProjectionState
   let hasMore = false;
+  // @category ProjectionState
   let stats: AuditStats | null = null;
+  // @category ProjectionState
   let settings: Settings | null = null;
   
   // Filters
+  // @category UiState
   let filters: AuditFilters = {
     user_id: undefined,
     action: undefined,
@@ -55,7 +64,9 @@
   };
   
   // Modal state
+  // @category UiState
   let selectedEntry: AuditEntry | null = null;
+  // @category UiState
   let showModal = false;
   
   // Date range for stats (last 30 days)
@@ -203,6 +214,7 @@
     loadStats();
   });
 
+  // @category UiState
   $: nodeType = (settings?.node_type as 'WILAYA' | 'UNIT' | null) || null;
 
   const actionOptions = [

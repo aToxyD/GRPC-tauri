@@ -1,20 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { 
-    closeFiscalYear, 
-    getFiscalYearStatus, 
-    listProducts,
-    getSettings,
-    exportFiscalClosurePackage,
-    previewFiscalClosurePackage,
-    applyFiscalClosurePackage,
-    getFiscalTransitionHistory,
-    listFiscalPackageRegistry,
-    updateFiscalPackageRetentionStatus,
-    saveFile,
-    openFile,
-    showAsk
-  } from '../lib/tauri';
+  import { closeFiscalYear, getFiscalYearStatus, exportFiscalClosurePackage, previewFiscalClosurePackage, applyFiscalClosurePackage, getFiscalTransitionHistory, listFiscalPackageRegistry, updateFiscalPackageRetentionStatus } from '../lib/contracts';
+  import { saveFile, openFile, showAsk } from '../lib/tauri';
+  import { listProducts, getSettings } from '../lib/contracts';
   import type { 
     FiscalYearStatus, 
     FiscalClosurePreview, 
@@ -42,24 +30,39 @@
 
   const { loading: opLoading, guard } = createOperationGuard({ scope });
 
+  // @category ProjectionState
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
+  // @category UiState
   let currentYear = new Date().getFullYear();
+  // @category UiState
   let nextYear = currentYear + 1;
+  // @category TransientState
   let confirmation = '';
+  // @category TransientState
   let message = '';
+  // @category ProjectionState
   let productCount = 0;
+  // @category ProjectionState
   let fiscalStatus: FiscalYearStatus | null = null;
 
   // Import/Preview state
+  // @category ProjectionState
   let preview: FiscalClosurePreview | null = null;
+  // @category TransientState
   let selectedFilePath = '';
+  // @category TransientState
   let applyConfirmation = '';
   
   // History & Registry state
+  // @category ProjectionState
   let transitionHistory: FiscalTransitionHistoryEntry[] = [];
+  // @category ProjectionState
   let packageRegistry: FiscalPackageRegistryEntry[] = [];
+  // @category TransientState
   let retentionConfirmation = '';
+  // @category UiState
   let selectedPackageForRetention: FiscalPackageRegistryEntry | null = null;
+  // @category UiState
   let targetRetentionStatus: 'ARCHIVED' | 'RETIRED' | null = null;
 
   async function load() {
@@ -230,9 +233,13 @@
   onMount(load);
 
   // Helper to determine badge state
+  // @category UiState
   $: isExpired = preview && new Date() > new Date(preview.authorized_execution_window.expires_at);
+  // @category UiState
   $: isNotYetStarted = preview && new Date() < new Date(preview.authorized_execution_window.not_before);
+  // @category UiState
   $: isReplay = preview && preview.validation_issues.some(i => i.includes('replay'));
+  // @category UiState
   $: isInvalidSignature = message.includes('HMAC verification failed');
 </script>
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSettings, getAllStocks, listSupplierOrders } from '../lib/tauri';
+  import { listSupplierOrders } from '../lib/contracts';
+  import { getSettings, getAllStocks } from '../lib/contracts';
   import type { Settings, InventoryStock, SupplierOrder } from '../lib/types';
   import Layout from '../components/Layout.svelte';
 
@@ -19,8 +20,11 @@
   const dashboardOp = createOperation({ scope });
   const loading = dashboardOp.loading;
 
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category ProjectionState
   let stocks: InventoryStock[] = [];
+  // @category ProjectionState
   let orders: SupplierOrder[] = [];
 
   onMount(async () => {
@@ -33,8 +37,11 @@
     });
   });
 
+  // @category UiState
   $: confirmedOrders = orders.filter(o => o.status === 'Confirmed' || o.status === 'Received');
+  // @category UiState
   $: lowStockItems = stocks.filter(s => s.quantity < 10);
+  // @category UiState
   $: subtitle = settings?.unit_name || 'مطعم الوحدة';
 
   function getOrderStatusIntent(status: string): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
@@ -121,6 +128,7 @@
         </svelte:fragment>
 
         {#each stocks.slice(0, 5) as stock}
+          <!-- [arch:allow-fe141] Reason: Tailwind CSS opacity class (bg-red-50/50) — not business division; Date: 2026-06-01; Owner: governance-team -->
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors {stock.quantity < 10 ? 'bg-red-50/50 dark:bg-red-900/10' : ''}">
             <td class="table-cell font-medium">{stock.product_name}</td>
             <td class="table-cell">

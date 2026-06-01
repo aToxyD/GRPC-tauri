@@ -1,7 +1,8 @@
-<script>
+<script lang="ts">
   import Router from 'svelte-spa-router';
   import { link } from 'svelte-spa-router';
   import { onMount, onDestroy } from 'svelte';
+  import { createRuntimeScope } from './lib/runtimeCleanup';
   import { bootstrapSession, cleanupSessionManagement } from './lib/session';
   import { hasFatalError, fatalErrorMessage } from './lib/errorBoundary';
   import { telemetry } from './lib/telemetry';
@@ -35,18 +36,21 @@
   // Import components
   import Notifications from './components/Notifications.svelte';
 
+  let sessionScope: ReturnType<typeof createRuntimeScope>;
   let mountTime = 0;
 
   // Initialize session management on mount
   onMount(async () => {
     const startTime = performance.now();
-    await bootstrapSession();
+    sessionScope = createRuntimeScope();
+    await bootstrapSession(sessionScope);
     mountTime = performance.now() - startTime;
     telemetry.trackPageLoad('App', mountTime);
   });
 
   // Cleanup session management on destroy
   onDestroy(() => {
+    if (sessionScope) sessionScope.dispose();
     cleanupSessionManagement();
   });
 

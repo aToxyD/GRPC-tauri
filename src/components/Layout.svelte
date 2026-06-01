@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  // [arch:allow-component-ipc] window management only (getAppWindow, listenToResize) — no business data
   import { getAppWindow, listenToResize } from '../lib/tauri';
   import Sidebar from './Sidebar.svelte';
 
@@ -8,8 +9,10 @@
   export let subtitle: string = '';
 
   // Display fallback to prevent flicker
+  // @category UiState
   $: displayNodeType = nodeType || 'WILAYA';
 
+  // @category UiState — cleanup handle for resize listener
   let unlisten: (() => void) | null = null;
 
   onMount(async () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getSystemMetrics, getLoginMetrics, getSettings } from '../lib/tauri';
+  import { getSystemMetrics, getLoginMetrics } from '../lib/contracts';
+  import { getSettings } from '../lib/contracts';
   import type { SystemMetrics, LoginMetrics, Settings, User } from '../lib/types';
   import { currentUser as userStore } from '../lib/session';
   import Layout from '../components/Layout.svelte';
@@ -19,10 +20,15 @@
   const loading = statsOp.loading;
   const error = statsOp.error;
 
+  // @category ProjectionState
   let systemMetrics: SystemMetrics | null = null;
+  // @category ProjectionState
   let loginMetrics: LoginMetrics | null = null;
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category SessionState
   $: currentUser = $userStore;
+  // @category UiState
   let currentTime = new Date();
 
   onMount(() => {
@@ -93,6 +99,7 @@
     }
   }
 
+  // @category UiState
   $: securityStatus = loginMetrics ? getSecurityStatus(loginMetrics) : null;
 </script>
 

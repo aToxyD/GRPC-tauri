@@ -1,12 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import {
-    getSettings,
-    getAdvancedDiagnosticsBundle,
-    verifyInventoryIntegrity,
-    getSystemHealth,
-    createFiscalOperationalSnapshot
-  } from '../lib/tauri';
+  import { getAdvancedDiagnosticsBundle, verifyInventoryIntegrity, getSystemHealth, createFiscalOperationalSnapshot } from '../lib/contracts';
+  import { getSettings } from '../lib/contracts';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
   import Layout from '../components/Layout.svelte';
@@ -41,14 +36,19 @@
   const op = createOperation({ scope });
   const loading = op.loading;
   const error = op.error;
+  // @category UiState
   let selectedYear: number | null = new Date().getFullYear();
+  // @category UiState
   let lastRefreshedAt: string | null = null;
+  // @category ProjectionState
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
 
   // Existing data
+  // @category ProjectionState
   let inventory: InventoryIntegrityReport | null = null;
 
   // New data
+  // @category ProjectionState
   let bundle: {
     anomalyReport: {
       generatedAt: string;

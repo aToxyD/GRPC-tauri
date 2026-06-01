@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSystemMetrics, getLoginMetrics, getSettings, syncPreflightCheck } from '../lib/tauri';
+  import { getSystemMetrics, getLoginMetrics, syncPreflightCheck } from '../lib/contracts';
+  import { getSettings } from '../lib/contracts';
   import type { SystemMetrics, LoginMetrics, Settings, SyncPreflightCheck } from '../lib/types';
   import { currentUser as userStore } from '../lib/session';
   import Layout from '../components/Layout.svelte';
@@ -18,11 +19,17 @@
   const loading = metricsOp.loading;
   const error = metricsOp.error;
 
+  // @category ProjectionState
   let systemMetrics: SystemMetrics | null = null;
+  // @category ProjectionState
   let loginMetrics: LoginMetrics | null = null;
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category SessionState
   $: currentUser = $userStore;
+  // @category UiState
   let currentTime = new Date();
+  // @category ProjectionState
   let preflight: SyncPreflightCheck | null = null;
 
   onMount(async () => {
@@ -93,6 +100,7 @@
     }
   }
 
+  // @category UiState
   $: securityStatus = loginMetrics ? getSecurityStatus(loginMetrics) : null;
 </script>
 

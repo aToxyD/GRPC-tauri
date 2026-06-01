@@ -1,13 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import {
-    importDailyReportPackage,
-    importMonthlySummaryPackage,
-    listUnits,
-    getSettings,
-    importStockMovementsPackage,
-    openFile
-  } from '../lib/tauri';
+  import { importDailyReportPackage, importMonthlySummaryPackage, importStockMovementsPackage } from '../lib/contracts';
+  import { openFile } from '../lib/tauri';
+  import { listUnits, getSettings } from '../lib/contracts';
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -31,11 +26,17 @@
 
   const { loading: operationLoading, guard } = createOperationGuard({ scope });
 
+  // @category ProjectionState
   let units: Unit[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category TransientState
   let error = '';
+  // @category TransientState
   let success = '';
+  // @category TransientState
   let importProgress = '';
+  // @category UiState
   let selectedUnit: string = '';
 
   onMount(async () => {

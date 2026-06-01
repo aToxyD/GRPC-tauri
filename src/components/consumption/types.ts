@@ -13,12 +13,6 @@ export type MealFormState = {
   quantities: Record<string, string>;
 };
 
-export type MealPreview = {
-  totalBeneficiaries: number;
-  totalCost: number;
-  mealAverage: number;
-};
-
 export type ConsumptionProductRow = {
   product: Product;
   available: boolean;

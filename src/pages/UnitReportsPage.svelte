@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import {
-    listDailyReports, getDailyReport, exportDailyReportPackage, exportMonthlySummaryPackage,
-    getMonthlySummary, getSettings, saveFile, listFiscalYears
-  } from '../lib/tauri';
+  import { saveFile } from '../lib/tauri';
+  import { exportDailyReportPackage, exportMonthlySummaryPackage } from '../lib/contracts';
+  import { listDailyReports, getDailyReport, getMonthlySummary, getSettings, listFiscalYears } from '../lib/contracts';
   import type { DailyReport, DailyReportResult, MonthlySummary, Settings } from '../lib/types';
   import DailyReportModal from '../components/reports/DailyReportModal.svelte';
   import Layout from '../components/Layout.svelte';
@@ -25,21 +24,32 @@
   const error = reportsOp.error;
 
   // Data
+  // @category ProjectionState
   let reports: DailyReport[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category TransientState
   let success = '';
+  // @category ProjectionState
   let selectedReport: DailyReportResult | null = null;
+  // @category UiState
   let viewingDetails = false;
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Fiscal year / month filtering
+  // @category ProjectionState
   let fiscalYears: number[] = [];
+  // @category UiState
   let selectedYear: number = new Date().getFullYear();
+  // @category UiState
   let selectedMonth: number = 0; // 0 = all months (full fiscal year)
+  // @category UiState
   let currentMonth = new Date().getMonth() + 1;
+  // @category UiState
   let currentYear = new Date().getFullYear();
+  // @category ProjectionState
   let monthlySummary: MonthlySummary | null = null;
 
   function selectedMonthApi(): number | undefined {

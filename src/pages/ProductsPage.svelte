@@ -1,19 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import {
-    listProducts,
-    createProduct,
-    updateProduct,
-    deleteProduct,
-    exportProductsPackage,
-    importProductsPackage,
-    exportProductsExcel,
-    getSettings,
-    saveFile,
-    openFile,
-    showAsk
-  } from '../lib/tauri';
+  import { saveFile, openFile, showAsk } from '../lib/tauri';
+  import { exportProductsPackage, importProductsPackage } from '../lib/contracts';
+  import { listProducts, createProduct, updateProduct, deleteProduct, getSettings, exportProductsExcel } from '../lib/contracts';
   import type { Product, Settings, CreateProductRequest, UpdateProductRequest } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -33,20 +23,30 @@
   const loading = productsOp.loading;
   const error = productsOp.error;
 
+  // @category ProjectionState
   let products = $state<Product[]>([]);
+  // @category ProjectionState
   let settings = $state<Settings | null>(null);
+  // @category UiState
   let showModal = $state(false);
+  // @category UiState
   let editingProduct = $state<Product | null>(null);
+  // @category TransientState
   let success = $state('');
+  // @category UiState
   let currentYear = $state(new Date().getFullYear());
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Form fields
+  // @category TransientState
   let productName = $state('');
+  // @category TransientState
   let basePrice = $state('');
+  // @category TransientState
   let tva = $state('');
+  // @category TransientState
   let supplierName = $state('');
 
   onMount(async () => {

@@ -11,12 +11,17 @@ const mockGetSettings = vi.fn();
 const mockImportUnitNodePackage = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
+    safeInvoke: vi.fn(),
+    openFile: vi.fn(),
+    getAppWindow: () => ({ maximize: vi.fn(), unmaximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true), center: vi.fn() }),
+    createLogicalSize: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('../../lib/contracts', () => ({
     login: (...args: any[]) => mockLogin(...args),
     isConfigured: (...args: any[]) => mockIsConfigured(...args),
     getSettings: (...args: any[]) => mockGetSettings(...args),
     importUnitNodePackage: (...args: any[]) => mockImportUnitNodePackage(...args),
-    getAppWindow: () => ({ maximize: vi.fn(), unmaximize: vi.fn(), setResizable: vi.fn(), setMinSize: vi.fn(), setSize: vi.fn(), setMaximizable: vi.fn(), isMaximized: vi.fn().mockResolvedValue(true), center: vi.fn() }),
-    createLogicalSize: vi.fn().mockReturnValue({}),
 }));
 
 // Mock tauri plugin dialog

@@ -19,9 +19,13 @@ export interface RuntimeScope {
   dispose(): void;
 }
 
+// @category UiState — telemetry counters
 let globalTimerCount = 0;
+// @category UiState — telemetry counters
 let globalIntervalCount = 0;
+// @category UiState — telemetry counters
 let globalListenerCount = 0;
+// @category UiState — telemetry counters
 let globalDisposeCount = 0;
 
 export function getCleanupMetrics() {

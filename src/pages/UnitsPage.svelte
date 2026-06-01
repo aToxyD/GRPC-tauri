@@ -1,15 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { formatErrorMessage } from "../lib/errors";
-  import {
-    listUnits,
-    createUnit,
-    getSettings,
-    exportUnitNodePackage,
-    updateUnit,
-    deleteUnit,
-    saveFile,
-  } from "../lib/tauri";
+  import { saveFile } from "../lib/tauri";
+  import { exportUnitNodePackage } from "../lib/contracts";
+  import { listUnits, createUnit, getSettings, updateUnit, deleteUnit } from "../lib/contracts";
   import type { Unit, Settings, CreateUnitRequest } from "../lib/types";
   import Layout from "../components/Layout.svelte";
   import { createOperation } from "../lib/operationGuard";
@@ -29,23 +23,36 @@
   const loading = unitsOp.loading;
   const error = unitsOp.error;
 
+  // @category ProjectionState
   let units: Unit[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category UiState
   let showModal = false;
+  // @category UiState
   let showEditModal = false;
+  // @category UiState
   let showDeleteModal = false;
+  // @category TransientState
   let success = "";
+  // @category UiState
   let editingUnit: Unit | null = null;
+  // @category UiState
   let deletingUnit: Unit | null = null;
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Form fields
+  // @category TransientState
   let unitCode = "";
+  // @category TransientState
   let unitName = "";
+  // @category TransientState
   let username = "";
+  // @category TransientState
   let password = "";
+  // @category TransientState
   let confirmPassword = "";
 
   onMount(async () => {

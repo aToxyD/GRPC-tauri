@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getAuditHealth, getAuditChainStatus, getSettings } from '../lib/tauri';
+  import { getAuditHealth, getAuditChainStatus } from '../lib/contracts';
+  import { getSettings } from '../lib/contracts';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
   import type { AuditHealthReport, Settings } from '../lib/types';
@@ -20,7 +21,9 @@
   const op = createOperation({ scope });
   const loading = op.loading;
   const error = op.error;
+  // @category ProjectionState
   let health: AuditHealthReport | null = null;
+  // @category ProjectionState
   let settings: Settings | null = null;
 
   async function loadHealth() {
@@ -43,7 +46,9 @@
     await loadHealth();
   });
 
+  // @category UiState
   $: nodeType = (settings?.node_type === 'WILAYA' ? 'WILAYA' : settings?.node_type === 'UNIT' ? 'UNIT' : null) as 'WILAYA' | 'UNIT' | null;
+  // @category UiState
   $: valid = health?.chainStatus?.isValid ?? null;
 </script>
 

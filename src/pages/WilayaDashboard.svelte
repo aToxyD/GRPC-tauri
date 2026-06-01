@@ -1,12 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import {
-    listUnits,
-    listProducts,
-    getSettings,
-    getSystemMetrics,
-    syncPreflightCheck,
-  } from "../lib/tauri";
+  import { getSystemMetrics, syncPreflightCheck } from "../lib/contracts";
+  import { listUnits, listProducts, getSettings } from "../lib/contracts";
   import type { Unit, Product, Settings, SystemMetrics, SyncPreflightCheck } from "../lib/types";
   import Layout from "../components/Layout.svelte";
   import { formatErrorMessage } from "../lib/errors";
@@ -31,15 +26,23 @@
   const loadingStats = statsOp.loading;
   const statsError = statsOp.error;
 
+  // @category ProjectionState
   let units: Unit[] = [];
+  // @category ProjectionState
   let products: Product[] = [];
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category UiState
   let currentYear = new Date().getFullYear();
+  // @category UiState
   let currentMonth = new Date().getMonth() + 1;
+  // @category ProjectionState
   let reportsThisMonth = 0;
 
   // Stats Data
+  // @category ProjectionState
   let metrics: SystemMetrics | null = null;
+  // @category ProjectionState
   let preflight: SyncPreflightCheck | null = null;
 
   onMount(async () => {
@@ -73,7 +76,9 @@
     });
   }
 
+  // @category ProjectionState — filtered backend data
   $: currentYearProducts = products.filter((p) => p.year === currentYear);
+  // @category UiState — display subtitle
   $: subtitle = settings?.wilaya_name || "مديرية الولاية";
 </script>
 

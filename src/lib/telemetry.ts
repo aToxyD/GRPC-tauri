@@ -151,6 +151,7 @@ class TelemetrySystem {
 
   getSummary(): TelemetrySummary {
     const durations = this.operationDurations;
+    // [arch:allow-fe146] Reason: telemetry latency average (infrastructure metric, not business logic); Date: 2026-06-01; Owner: governance-team
     const avg =
       durations.length > 0
         ? durations.reduce((a, b) => a + b, 0) / durations.length

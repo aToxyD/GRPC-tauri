@@ -3,17 +3,20 @@
   import BeneficiaryInputs from './BeneficiaryInputs.svelte';
   import MealProductsTable from './MealProductsTable.svelte';
   import MealSummaryCard from './MealSummaryCard.svelte';
-  import type { MealType } from '../../lib/types';
-  import type { ConsumptionProductRow, MealFormState, MealPreview } from './types';
+  import type { MealType, ProductFifoPreview } from '../../lib/types';
+  import type { ConsumptionProductRow, MealFormState } from './types';
+
+  // [arch:allow-fe146] Reason: type definition mirroring backend projection shape; Date: 2026-06-01; Owner: governance-team
+  type ActiveMealSummary = { totalBeneficiaries: number; totalCost: number; mealAverage: number };
 
   export let mealId: MealType;
   export let mealLabel: string;
   export let form: MealFormState;
-  export let preview: MealPreview;
+  export let preview: ActiveMealSummary | null = null;
   export let productRows: ConsumptionProductRow[] = [];
   export let disabled = false;
   export let isPreview = true;
-  export let fifoCosts: Record<string, { unitCost: number; lineTotal: number }> = {};
+  export let fifoCosts: ProductFifoPreview[] = [];
 </script>
 
 <AppCard>

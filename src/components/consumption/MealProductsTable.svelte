@@ -2,41 +2,39 @@
   import AppInput from '../../lib/components/ui/AppInput.svelte';
   import AppTable from '../../lib/components/ui/AppTable.svelte';
   import AppEmptyState from '../../lib/components/ui/AppEmptyState.svelte';
-  import type { MealType } from '../../lib/types';
+  import type { MealType, ProductFifoPreview } from '../../lib/types';
   import type { ConsumptionProductRow } from './types';
-
-  type FifoCostRow = { unitCost: number; lineTotal: number };
 
   let {
     mealId,
     quantities = $bindable<Record<string, string>>({}),
     rows = [],
     disabled = false,
-    fifoCosts = {},
+    fifoCosts = [],
     isPreview = true,
   }: {
     mealId: MealType;
     quantities?: Record<string, string>;
     rows?: ConsumptionProductRow[];
     disabled?: boolean;
-    fifoCosts?: Record<string, FifoCostRow>;
+    fifoCosts?: ProductFifoPreview[];
     isPreview?: boolean;
   } = $props();
 
-  function fifoFor(productId: string): FifoCostRow | undefined {
-    return fifoCosts[productId];
+  function fifoFor(productId: string): ProductFifoPreview | undefined {
+    return fifoCosts.find((f) => f.product_id === productId);
   }
 
   function unitCostLabel(productId: string): string {
-    const fifo = fifoFor(productId);
-    if (!fifo || fifo.lineTotal <= 0) return '—';
-    return `${fifo.unitCost.toFixed(2)} دج`;
+    const f = fifoFor(productId);
+    if (!f || f.predicted_fifo_cost <= 0) return '—';
+    return `${f.unit_cost.toFixed(2)} دج`;
   }
 
   function lineTotalLabel(productId: string): string {
-    const fifo = fifoFor(productId);
-    if (!fifo || fifo.lineTotal <= 0) return '—';
-    return `${fifo.lineTotal.toFixed(2)} دج`;
+    const f = fifoFor(productId);
+    if (!f || f.predicted_fifo_cost <= 0) return '—';
+    return `${f.predicted_fifo_cost.toFixed(2)} دج`;
   }
 </script>
 

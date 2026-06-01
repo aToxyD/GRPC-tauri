@@ -17,11 +17,13 @@ export interface OperationGuardOptions {
  */
 export function createOperationGuard(options?: OperationGuardOptions): OperationGuard {
   const scope = options?.scope;
+  // @category UiState — loading flag
   const loading = writable(false);
 
   async function guard(fn: () => Promise<void>): Promise<void> {
     if (scope && !scope.isAlive()) return;
 
+    // @category UiState — concurrent guard
     let currentlyLoading = false;
     loading.update((state) => {
       currentlyLoading = state;
@@ -63,12 +65,15 @@ export interface OrchestratedOperation {
  */
 export function createOperation(options?: OperationGuardOptions): OrchestratedOperation {
   const scope = options?.scope;
+  // @category UiState — loading flag
   const loading = writable(false);
+  // @category UiState — error display state
   const error = writable<string | null>(null);
 
   async function run<T>(fn: () => Promise<T>): Promise<T | null> {
     if (scope && !scope.isAlive()) return null;
 
+    // @category UiState — concurrent guard
     let busy = false;
     loading.update((state) => {
       busy = state;

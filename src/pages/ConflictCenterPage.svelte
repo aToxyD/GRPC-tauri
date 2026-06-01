@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { listSyncConflicts, resolveSyncConflict, getConflictSummary, getSettings } from '../lib/tauri';
+  import { listSyncConflicts, resolveSyncConflict, getConflictSummary } from '../lib/contracts';
+  import { getSettings } from '../lib/contracts';
   import type { SyncConflict, ConflictSummary, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { formatErrorMessage } from '../lib/errors';
@@ -25,13 +26,21 @@
 
   const { loading: resolving, guard } = createOperationGuard({ scope });
 
+  // @category ProjectionState
   let conflicts: SyncConflict[] = [];
+  // @category ProjectionState
   let summary: ConflictSummary | null = null;
+  // @category ProjectionState
   let settings: Settings | null = null;
+  // @category UiState
   let showUnresolvedOnly = false;
+  // @category UiState
   let filterType = '';
+  // @category UiState
   let filterSeverity = '';
+  // @category UiState
   let selectedConflict: SyncConflict | null = null;
+  // @category TransientState
   let resolveNote = '';
 
   async function load() {
@@ -70,6 +79,7 @@
     return s === 'CRITICAL' ? '🔴' : s === 'ERROR' ? '🟠' : s === 'WARNING' ? '🟡' : '🔵';
   }
 
+  // @category UiState
   $: filtered = conflicts.filter(c => {
     if (filterType && c.conflictType !== filterType) return false;
     if (filterSeverity && c.severity !== filterSeverity) return false;
@@ -81,6 +91,7 @@
     await load();
   });
 
+  // @category UiState
   $: nodeType = settings?.node_type || null;
 </script>
 
