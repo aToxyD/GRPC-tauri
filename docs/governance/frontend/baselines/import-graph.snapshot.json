@@ -1,0 +1,844 @@
+{
+  "generated": "2026-06-01T19:15:08.546Z",
+  "graph": {
+    "ProductsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "saveFile",
+        "openFile",
+        "showAsk",
+        "exportProductsPackage",
+        "importProductsPackage",
+        "listProducts",
+        "createProduct",
+        "updateProduct",
+        "deleteProduct",
+        "getSettings",
+        "exportProductsExcel",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "saveFile",
+        "openFile",
+        "showAsk",
+        "exportProductsPackage",
+        "importProductsPackage",
+        "listProducts",
+        "createProduct",
+        "updateProduct",
+        "deleteProduct",
+        "getSettings",
+        "exportProductsExcel",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ]
+    },
+    "SyncTopologyPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getSyncHealth",
+        "getConflictSummary",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getSyncHealth",
+        "getConflictSummary",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "AuditLogPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getAuditLog",
+        "getAuditStats",
+        "exportAuditLogExcel",
+        "cleanupAuditLogs",
+        "saveFile",
+        "showAsk",
+        "getSettings",
+        "formatErrorMessage",
+        "push",
+        "showSuccess",
+        "showError",
+        "currentUser",
+        "get",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getAuditLog",
+        "getAuditStats",
+        "exportAuditLogExcel",
+        "cleanupAuditLogs",
+        "saveFile",
+        "showAsk",
+        "getSettings",
+        "formatErrorMessage",
+        "push",
+        "showSuccess",
+        "showError",
+        "currentUser",
+        "get",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ]
+    },
+    "NotFoundPage": {
+      "type": "page",
+      "imports": [],
+      "importsFromContracts": []
+    },
+    "WilayaNodeSetupPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getAppWindow",
+        "createLogicalSize",
+        "configureAsWilaya",
+        "getSettings",
+        "push",
+        "formatErrorMessage",
+        "createOperation",
+        "createRuntimeScope"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getAppWindow",
+        "createLogicalSize",
+        "configureAsWilaya",
+        "getSettings",
+        "push",
+        "formatErrorMessage",
+        "createOperation",
+        "createRuntimeScope"
+      ]
+    },
+    "UnitInventoryPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "saveFile",
+        "listUnits",
+        "getSettings",
+        "computeUnitInventorySnapshot",
+        "getUnitInventoryView",
+        "getAvailableReportMonths",
+        "exportUnitInventoryExcel",
+        "showSuccess",
+        "showError",
+        "showWarning",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "saveFile",
+        "listUnits",
+        "getSettings",
+        "computeUnitInventorySnapshot",
+        "getUnitInventoryView",
+        "getAvailableReportMonths",
+        "exportUnitInventoryExcel",
+        "showSuccess",
+        "showError",
+        "showWarning",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "SystemHealthPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getSystemHealth",
+        "getSyncHealth",
+        "getBuildInfo",
+        "getRecentTelemetry",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getSystemHealth",
+        "getSyncHealth",
+        "getBuildInfo",
+        "getRecentTelemetry",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "WilayaDashboard": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getSystemMetrics",
+        "syncPreflightCheck",
+        "listUnits",
+        "listProducts",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getSystemMetrics",
+        "syncPreflightCheck",
+        "listUnits",
+        "listProducts",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "StockPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "createRuntimeScope",
+        "createTransientMessage",
+        "createOperation",
+        "formatErrorMessage",
+        "openFile",
+        "saveFile",
+        "importProductsPackage",
+        "exportStockMovementsPackage",
+        "importStockMovementsPackage",
+        "getAllStocks",
+        "getStockSummary",
+        "getStockMovements",
+        "exportStockMovementsExcel",
+        "getSettings",
+        "getInventoryFifoView",
+        "showSuccess",
+        "showError"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "createRuntimeScope",
+        "createTransientMessage",
+        "createOperation",
+        "formatErrorMessage",
+        "openFile",
+        "saveFile",
+        "importProductsPackage",
+        "exportStockMovementsPackage",
+        "importStockMovementsPackage",
+        "getAllStocks",
+        "getStockSummary",
+        "getStockMovements",
+        "exportStockMovementsExcel",
+        "getSettings",
+        "getInventoryFifoView",
+        "showSuccess",
+        "showError"
+      ]
+    },
+    "ConflictCenterPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "listSyncConflicts",
+        "resolveSyncConflict",
+        "getConflictSummary",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "listSyncConflicts",
+        "resolveSyncConflict",
+        "getConflictSummary",
+        "getSettings",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ]
+    },
+    "LoginPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "openFile",
+        "getAppWindow",
+        "createLogicalSize",
+        "importUnitNodePackage",
+        "login",
+        "getSettings",
+        "isConfigured",
+        "push",
+        "showSuccess",
+        "setCurrentUser",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "openFile",
+        "getAppWindow",
+        "createLogicalSize",
+        "importUnitNodePackage",
+        "login",
+        "getSettings",
+        "isConfigured",
+        "push",
+        "showSuccess",
+        "setCurrentUser",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ]
+    },
+    "WilayaStatisticsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getSystemMetrics",
+        "getLoginMetrics",
+        "syncPreflightCheck",
+        "getSettings",
+        "currentUser as userStore",
+        "createOperation",
+        "createRuntimeScope"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getSystemMetrics",
+        "getLoginMetrics",
+        "syncPreflightCheck",
+        "getSettings",
+        "currentUser as userStore",
+        "createOperation",
+        "createRuntimeScope"
+      ]
+    },
+    "FiscalManagementPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "closeFiscalYear",
+        "getFiscalYearStatus",
+        "exportFiscalClosurePackage",
+        "previewFiscalClosurePackage",
+        "applyFiscalClosurePackage",
+        "getFiscalTransitionHistory",
+        "listFiscalPackageRegistry",
+        "updateFiscalPackageRetentionStatus",
+        "saveFile",
+        "openFile",
+        "showAsk",
+        "listProducts",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperationGuard",
+        "formatErrorMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "closeFiscalYear",
+        "getFiscalYearStatus",
+        "exportFiscalClosurePackage",
+        "previewFiscalClosurePackage",
+        "applyFiscalClosurePackage",
+        "getFiscalTransitionHistory",
+        "listFiscalPackageRegistry",
+        "updateFiscalPackageRetentionStatus",
+        "saveFile",
+        "openFile",
+        "showAsk",
+        "listProducts",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperationGuard",
+        "formatErrorMessage"
+      ]
+    },
+    "UnitStatisticsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "getSystemMetrics",
+        "getLoginMetrics",
+        "getSettings",
+        "currentUser as userStore",
+        "createOperation",
+        "onDestroy",
+        "createRuntimeScope"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "getSystemMetrics",
+        "getLoginMetrics",
+        "getSettings",
+        "currentUser as userStore",
+        "createOperation",
+        "onDestroy",
+        "createRuntimeScope"
+      ]
+    },
+    "AuditIntegrityPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getAuditHealth",
+        "getAuditChainStatus",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getAuditHealth",
+        "getAuditChainStatus",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "BackupPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "createBackup",
+        "issueOperationExecutionToken",
+        "listBackups",
+        "restoreBackup",
+        "showAsk",
+        "getSettings",
+        "formatBytes",
+        "formatDate",
+        "showSuccess",
+        "currentUser as userStore",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard",
+        "formatErrorMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "createBackup",
+        "issueOperationExecutionToken",
+        "listBackups",
+        "restoreBackup",
+        "showAsk",
+        "getSettings",
+        "formatBytes",
+        "formatDate",
+        "showSuccess",
+        "currentUser as userStore",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard",
+        "formatErrorMessage"
+      ]
+    },
+    "UnitReportsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "saveFile",
+        "exportDailyReportPackage",
+        "exportMonthlySummaryPackage",
+        "listDailyReports",
+        "getDailyReport",
+        "getMonthlySummary",
+        "getSettings",
+        "listFiscalYears",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "saveFile",
+        "exportDailyReportPackage",
+        "exportMonthlySummaryPackage",
+        "listDailyReports",
+        "getDailyReport",
+        "getMonthlySummary",
+        "getSettings",
+        "listFiscalYears",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ]
+    },
+    "SyncPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "importDailyReportPackage",
+        "importMonthlySummaryPackage",
+        "importStockMovementsPackage",
+        "openFile",
+        "listUnits",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard",
+        "formatErrorMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "importDailyReportPackage",
+        "importMonthlySummaryPackage",
+        "importStockMovementsPackage",
+        "openFile",
+        "listUnits",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard",
+        "formatErrorMessage"
+      ]
+    },
+    "WilayaReportsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getDailyReport",
+        "listUnits",
+        "listWilayaReports",
+        "getSettings",
+        "type ReportType",
+        "saveFile",
+        "exportAllUnitsMonthlyStatusExcel",
+        "showSuccess",
+        "showError",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getDailyReport",
+        "listUnits",
+        "listWilayaReports",
+        "getSettings",
+        "saveFile",
+        "exportAllUnitsMonthlyStatusExcel",
+        "showSuccess",
+        "showError",
+        "formatErrorMessage",
+        "createRuntimeScope",
+        "createOperation",
+        "createOperationGuard"
+      ]
+    },
+    "UnitDashboard": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "listSupplierOrders",
+        "getSettings",
+        "getAllStocks",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "listSupplierOrders",
+        "getSettings",
+        "getAllStocks",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "OrdersPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "listSupplierOrders",
+        "createSupplierOrder",
+        "updateSupplierOrder",
+        "deleteSupplierOrder",
+        "confirmOrder",
+        "getSupplierOrderItems",
+        "showAsk",
+        "listProducts",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "listSupplierOrders",
+        "createSupplierOrder",
+        "updateSupplierOrder",
+        "deleteSupplierOrder",
+        "confirmOrder",
+        "getSupplierOrderItems",
+        "showAsk",
+        "listProducts",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ]
+    },
+    "UnitsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "saveFile",
+        "exportUnitNodePackage",
+        "listUnits",
+        "createUnit",
+        "getSettings",
+        "updateUnit",
+        "deleteUnit",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "saveFile",
+        "exportUnitNodePackage",
+        "listUnits",
+        "createUnit",
+        "getSettings",
+        "updateUnit",
+        "deleteUnit",
+        "createOperation",
+        "createRuntimeScope",
+        "createTransientMessage"
+      ]
+    },
+    "FiscalDiagnosticsPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "getAdvancedDiagnosticsBundle",
+        "verifyInventoryIntegrity",
+        "getSystemHealth",
+        "createFiscalOperationalSnapshot",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperation"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "getAdvancedDiagnosticsBundle",
+        "verifyInventoryIntegrity",
+        "getSystemHealth",
+        "createFiscalOperationalSnapshot",
+        "getSettings",
+        "createRuntimeScope",
+        "createOperation"
+      ]
+    },
+    "ConsumptionPage": {
+      "type": "page",
+      "imports": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "listProducts",
+        "createDailyReport",
+        "checkStockAvailability",
+        "getSettings",
+        "getDailyConsumption",
+        "previewDailyConsumptionFifo",
+        "createOperation",
+        "createOperationGuard",
+        "createRuntimeScope",
+        "createTransientMessage",
+        "hasAnyConsumption",
+        "mealItemsFromForm",
+        "parseBeneficiaryCounts",
+        "emptyMealForms",
+        "MEAL_OPTIONS",
+        "type ConsumptionProductRow",
+        "type MealFormState"
+      ],
+      "importsFromContracts": [
+        "onMount",
+        "onDestroy",
+        "formatErrorMessage",
+        "listProducts",
+        "createDailyReport",
+        "checkStockAvailability",
+        "getSettings",
+        "getDailyConsumption",
+        "previewDailyConsumptionFifo",
+        "createOperation",
+        "createOperationGuard",
+        "createRuntimeScope",
+        "createTransientMessage",
+        "hasAnyConsumption",
+        "mealItemsFromForm",
+        "parseBeneficiaryCounts",
+        "emptyMealForms",
+        "MEAL_OPTIONS"
+      ]
+    },
+    "metrics": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "inventory": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "platform": {
+      "type": "contract",
+      "imports": []
+    },
+    "audit": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "fiscal": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "backup": {
+      "type": "contract",
+      "imports": [
+        "../tauri",
+        "../types"
+      ]
+    },
+    "sync": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "orders": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "user": {
+      "type": "contract",
+      "imports": [
+        "../tauri",
+        "../types"
+      ]
+    },
+    "session": {
+      "type": "contract",
+      "imports": [
+        "../tauri",
+        "../types"
+      ]
+    },
+    "consumption": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "report": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    },
+    "dashboard": {
+      "type": "contract",
+      "imports": [
+        "../tauri",
+        "../types"
+      ]
+    },
+    "observability": {
+      "type": "contract",
+      "imports": [
+        "../tauri"
+      ]
+    }
+  }
+}

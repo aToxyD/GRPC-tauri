@@ -1,0 +1,171 @@
+{
+  "generated": "2026-06-01T19:15:05.187Z",
+  "pages": {
+    "ProductsPage": [
+      "listProducts",
+      "getSettings",
+      "updateProduct",
+      "createProduct",
+      "deleteProduct",
+      "exportProductsExcel",
+      "exportProductsPackage",
+      "importProductsPackage"
+    ],
+    "SyncTopologyPage": [
+      "getSyncHealth",
+      "getConflictSummary",
+      "getSettings"
+    ],
+    "AuditLogPage": [
+      "getAuditLog",
+      "getAuditStats",
+      "exportAuditLogExcel",
+      "cleanupAuditLogs",
+      "getSettings"
+    ],
+    "WilayaNodeSetupPage": [
+      "getSettings",
+      "configureAsWilaya"
+    ],
+    "UnitInventoryPage": [
+      "getSettings",
+      "listUnits",
+      "getAvailableReportMonths",
+      "computeUnitInventorySnapshot",
+      "getUnitInventoryView",
+      "exportUnitInventoryExcel"
+    ],
+    "SystemHealthPage": [
+      "getSystemHealth",
+      "getSyncHealth",
+      "getBuildInfo",
+      "getRecentTelemetry",
+      "getSettings"
+    ],
+    "WilayaDashboard": [
+      "getSystemMetrics",
+      "syncPreflightCheck",
+      "getSettings",
+      "listUnits",
+      "listProducts"
+    ],
+    "StockPage": [
+      "getSettings",
+      "getStockSummary",
+      "getAllStocks",
+      "getInventoryFifoView",
+      "getStockMovements",
+      "exportStockMovementsExcel",
+      "importProductsPackage",
+      "exportStockMovementsPackage"
+    ],
+    "ConflictCenterPage": [
+      "listSyncConflicts",
+      "getConflictSummary",
+      "resolveSyncConflict",
+      "getSettings"
+    ],
+    "LoginPage": [
+      "isConfigured",
+      "importUnitNodePackage",
+      "login",
+      "getSettings"
+    ],
+    "WilayaStatisticsPage": [
+      "getSettings",
+      "getSystemMetrics",
+      "getLoginMetrics",
+      "syncPreflightCheck"
+    ],
+    "FiscalManagementPage": [
+      "getSettings",
+      "getFiscalYearStatus",
+      "listProducts",
+      "getFiscalTransitionHistory",
+      "listFiscalPackageRegistry",
+      "updateFiscalPackageRetentionStatus",
+      "closeFiscalYear",
+      "exportFiscalClosurePackage",
+      "previewFiscalClosurePackage",
+      "applyFiscalClosurePackage"
+    ],
+    "UnitStatisticsPage": [
+      "getSettings",
+      "getSystemMetrics",
+      "getLoginMetrics"
+    ],
+    "AuditIntegrityPage": [
+      "getAuditHealth",
+      "getSettings"
+    ],
+    "BackupPage": [
+      "getSettings",
+      "listBackups",
+      "createBackup",
+      "issueOperationExecutionToken",
+      "restoreBackup"
+    ],
+    "UnitReportsPage": [
+      "getSettings",
+      "listFiscalYears",
+      "listDailyReports",
+      "getMonthlySummary",
+      "getDailyReport",
+      "exportDailyReportPackage",
+      "exportMonthlySummaryPackage"
+    ],
+    "SyncPage": [
+      "getSettings",
+      "listUnits",
+      "importDailyReportPackage",
+      "importMonthlySummaryPackage",
+      "importStockMovementsPackage"
+    ],
+    "WilayaReportsPage": [
+      "exportAllUnitsMonthlyStatusExcel",
+      "getSettings",
+      "listUnits",
+      "listWilayaReports",
+      "getDailyReport"
+    ],
+    "UnitDashboard": [
+      "getAllStocks",
+      "listSupplierOrders",
+      "getSettings"
+    ],
+    "OrdersPage": [
+      "listSupplierOrders",
+      "listProducts",
+      "getSupplierOrderItems",
+      "updateSupplierOrder",
+      "createSupplierOrder",
+      "deleteSupplierOrder",
+      "confirmOrder",
+      "getSupplierOrderItems"
+    ],
+    "UnitsPage": [
+      "getSettings",
+      "listUnits",
+      "createUnit",
+      "updateUnit",
+      "deleteUnit",
+      "exportUnitNodePackage"
+    ],
+    "FiscalDiagnosticsPage": [
+      "getAdvancedDiagnosticsBundle",
+      "verifyInventoryIntegrity",
+      "getSystemHealth",
+      "createFiscalOperationalSnapshot",
+      "getSettings"
+    ],
+    "ConsumptionPage": [
+      "getDailyConsumption",
+      "checkStockAvailability",
+      "listProducts",
+      "getSettings",
+      "previewDailyConsumptionFifo",
+      "checkStockAvailability",
+      "createDailyReport"
+    ]
+  }
+}

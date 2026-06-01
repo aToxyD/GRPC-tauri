@@ -1,0 +1,2678 @@
+{
+  "generated": "2026-06-01T19:15:02.460Z",
+  "totalTypes": 102,
+  "types": [
+    {
+      "name": "LoginRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "password",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "LoginResponse",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "success",
+          "type": "boolean"
+        },
+        {
+          "name": "user",
+          "type": "User | null"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        },
+        {
+          "name": "requires_configuration",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "role",
+          "type": "'Admin' | 'User'"
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "node_type",
+          "type": "'WILAYA' | 'UNIT'"
+        },
+        {
+          "name": "unit_name",
+          "type": "string | null"
+        },
+        {
+          "name": "unit_code",
+          "type": "string | null"
+        },
+        {
+          "name": "current_year",
+          "type": "number"
+        },
+        {
+          "name": "wilaya_code",
+          "type": "string | null"
+        },
+        {
+          "name": "wilaya_name",
+          "type": "string | null"
+        },
+        {
+          "name": "configured",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "NodeConfiguration",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "node_type",
+          "type": "'WILAYA' | 'UNIT'"
+        },
+        {
+          "name": "unit_name",
+          "type": "string | null"
+        },
+        {
+          "name": "wilaya_code",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "Product",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "base_price",
+          "type": "number"
+        },
+        {
+          "name": "tva",
+          "type": "number"
+        },
+        {
+          "name": "supplier_name",
+          "type": "string | null"
+        },
+        {
+          "name": "year",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "CreateProductRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "base_price",
+          "type": "number"
+        },
+        {
+          "name": "tva",
+          "type": "number"
+        },
+        {
+          "name": "supplier_name",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "UpdateProductRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "base_price",
+          "type": "number"
+        },
+        {
+          "name": "tva",
+          "type": "number"
+        },
+        {
+          "name": "supplier_name",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "Unit",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "wilaya_code",
+          "type": "string"
+        },
+        {
+          "name": "user_id",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "CreateUnitRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "password",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "InventoryStock",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "unit",
+          "type": "string"
+        },
+        {
+          "name": "last_updated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "StockCheckResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "available",
+          "type": "boolean"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "requested",
+          "type": "number"
+        },
+        {
+          "name": "available_stock",
+          "type": "number"
+        },
+        {
+          "name": "deficit",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "SupplierOrder",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "order_date",
+          "type": "string"
+        },
+        {
+          "name": "supplier_name",
+          "type": "string"
+        },
+        {
+          "name": "reference_number",
+          "type": "string | null"
+        },
+        {
+          "name": "total_amount",
+          "type": "number | null"
+        },
+        {
+          "name": "status",
+          "type": "'Draft' | 'Confirmed' | 'Received' | 'Cancelled'"
+        }
+      ]
+    },
+    {
+      "name": "SupplierOrderItem",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "unit_price",
+          "type": "number"
+        },
+        {
+          "name": "total_cost",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "CreateOrderRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "supplier_name",
+          "type": "string"
+        },
+        {
+          "name": "reference_number",
+          "type": "string | null"
+        },
+        {
+          "name": "items",
+          "type": "OrderItemInput[]"
+        }
+      ]
+    },
+    {
+      "name": "UpdateOrderRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "supplier_name",
+          "type": "string"
+        },
+        {
+          "name": "reference_number",
+          "type": "string | null"
+        },
+        {
+          "name": "items",
+          "type": "OrderItemInput[]"
+        }
+      ]
+    },
+    {
+      "name": "OrderItemInput",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "unit_price",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "MealType",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "DailyReport",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "date",
+          "type": "string"
+        },
+        {
+          "name": "unit_id",
+          "type": "string | null"
+        },
+        {
+          "name": "total_daily_cost",
+          "type": "number"
+        },
+        {
+          "name": "total_daily_average",
+          "type": "number"
+        },
+        {
+          "name": "total_daily_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "DailyReportMeal",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "daily_report_id",
+          "type": "string"
+        },
+        {
+          "name": "meal_type",
+          "type": "MealType"
+        },
+        {
+          "name": "staff_24h_count",
+          "type": "number"
+        },
+        {
+          "name": "staff_8h_count",
+          "type": "number"
+        },
+        {
+          "name": "reservation_count",
+          "type": "number"
+        },
+        {
+          "name": "mission_count",
+          "type": "number"
+        },
+        {
+          "name": "guest_count",
+          "type": "number"
+        },
+        {
+          "name": "total_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "total_meal_cost",
+          "type": "number"
+        },
+        {
+          "name": "meal_average",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "DailyReportMealItem",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "meal_id",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "unit_price",
+          "type": "number"
+        },
+        {
+          "name": "total_cost",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "MealSectionResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "meal",
+          "type": "DailyReportMeal"
+        },
+        {
+          "name": "items",
+          "type": "DailyReportMealItem[]"
+        }
+      ]
+    },
+    {
+      "name": "MealSectionInput",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "meal_type",
+          "type": "MealType"
+        },
+        {
+          "name": "staff_24h_count",
+          "type": "number"
+        },
+        {
+          "name": "staff_8h_count",
+          "type": "number"
+        },
+        {
+          "name": "reservation_count",
+          "type": "number"
+        },
+        {
+          "name": "mission_count",
+          "type": "number"
+        },
+        {
+          "name": "guest_count",
+          "type": "number"
+        },
+        {
+          "name": "items",
+          "type": "ConsumptionItemInput[]"
+        }
+      ]
+    },
+    {
+      "name": "DailyReportInput",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "date",
+          "type": "string"
+        },
+        {
+          "name": "meals",
+          "type": "MealSectionInput[]"
+        }
+      ]
+    },
+    {
+      "name": "DailyReportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "report",
+          "type": "DailyReport"
+        },
+        {
+          "name": "meals",
+          "type": "MealSectionResult[]"
+        },
+        {
+          "name": "daily_summary",
+          "type": "DailyConsumptionSummary"
+        }
+      ]
+    },
+    {
+      "name": "DailyConsumptionSummary",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "breakfast_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "lunch_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "dinner_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "breakfast_cost",
+          "type": "number"
+        },
+        {
+          "name": "lunch_cost",
+          "type": "number"
+        },
+        {
+          "name": "dinner_cost",
+          "type": "number"
+        },
+        {
+          "name": "breakfast_average",
+          "type": "number"
+        },
+        {
+          "name": "lunch_average",
+          "type": "number"
+        },
+        {
+          "name": "dinner_average",
+          "type": "number"
+        },
+        {
+          "name": "total_daily_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "total_daily_cost",
+          "type": "number"
+        },
+        {
+          "name": "daily_average",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "DailyConsumptionView",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "MealConsumption",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "MealConsumptionItem",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "MealConsumptionResult",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "MealConsumptionInput",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "DailyConsumptionInput",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "DailyConsumptionItem",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "ConsumptionItemInput",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "ConsumedLayerPortion",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "layer_id",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "unit_cost",
+          "type": "number"
+        },
+        {
+          "name": "total_cost",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "ProductFifoPreview",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "predicted_fifo_cost",
+          "type": "number"
+        },
+        {
+          "name": "unit_cost",
+          "type": "number"
+        },
+        {
+          "name": "predicted_consumption_layers",
+          "type": "ConsumedLayerPortion[]"
+        }
+      ]
+    },
+    {
+      "name": "MealFifoPreview",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "meal_type",
+          "type": "string"
+        },
+        {
+          "name": "predicted_fifo_cost",
+          "type": "number"
+        },
+        {
+          "name": "total_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "meal_average",
+          "type": "number"
+        },
+        {
+          "name": "product_previews",
+          "type": "ProductFifoPreview[]"
+        }
+      ]
+    },
+    {
+      "name": "DailyFifoConsumptionPreview",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "predicted_fifo_cost",
+          "type": "number"
+        },
+        {
+          "name": "predicted_consumption_layers",
+          "type": "ProductFifoPreview[]"
+        },
+        {
+          "name": "predicted_remaining_inventory_value",
+          "type": "number"
+        },
+        {
+          "name": "meal_previews",
+          "type": "MealFifoPreview[]"
+        },
+        {
+          "name": "daily_summary",
+          "type": "DailyConsumptionSummary"
+        }
+      ]
+    },
+    {
+      "name": "MonthlySummary",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "total_beneficiaries",
+          "type": "number"
+        },
+        {
+          "name": "total_consumption_value",
+          "type": "number"
+        },
+        {
+          "name": "breakfast_average",
+          "type": "number"
+        },
+        {
+          "name": "lunch_average",
+          "type": "number"
+        },
+        {
+          "name": "dinner_average",
+          "type": "number"
+        },
+        {
+          "name": "daily_average",
+          "type": "number"
+        },
+        {
+          "name": "report_count",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "SyncExportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "file_path",
+          "type": "string"
+        },
+        {
+          "name": "record_count",
+          "type": "number"
+        },
+        {
+          "name": "success",
+          "type": "boolean"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        },
+        {
+          "name": "file_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "XlsxExportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "file_path",
+          "type": "string"
+        },
+        {
+          "name": "record_count",
+          "type": "number"
+        },
+        {
+          "name": "success",
+          "type": "boolean"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "UnitNodePackage",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit",
+          "type": "Unit"
+        },
+        {
+          "name": "user",
+          "type": "UserExport"
+        }
+      ]
+    },
+    {
+      "name": "UserExport",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "password_hash",
+          "type": "string"
+        },
+        {
+          "name": "role",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "StockItem",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "unit",
+          "type": "string"
+        },
+        {
+          "name": "last_updated",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ConsumptionRecord",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "meal_type",
+          "type": "string"
+        },
+        {
+          "name": "consumption_time",
+          "type": "string"
+        },
+        {
+          "name": "date",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Order",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "total",
+          "type": "number | null"
+        }
+      ]
+    },
+    {
+      "name": "BackupInfo",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "filename",
+          "type": "string"
+        },
+        {
+          "name": "path",
+          "type": "string"
+        },
+        {
+          "name": "size_bytes",
+          "type": "number"
+        },
+        {
+          "name": "created",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "LoginMetrics",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "total_attempts",
+          "type": "number"
+        },
+        {
+          "name": "failed_attempts",
+          "type": "number"
+        },
+        {
+          "name": "current_lockout",
+          "type": "boolean"
+        },
+        {
+          "name": "lockout_reason",
+          "type": "string | null"
+        },
+        {
+          "name": "lockout_time_remaining",
+          "type": "number | null"
+        }
+      ]
+    },
+    {
+      "name": "SystemMetrics",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "database_size",
+          "type": "number"
+        },
+        {
+          "name": "backup_count",
+          "type": "number"
+        },
+        {
+          "name": "uptime",
+          "type": "number"
+        },
+        {
+          "name": "memory_usage",
+          "type": "number"
+        },
+        {
+          "name": "total_products",
+          "type": "number"
+        },
+        {
+          "name": "units_count",
+          "type": "number"
+        },
+        {
+          "name": "cache_hit_rate",
+          "type": "number"
+        },
+        {
+          "name": "last_backup",
+          "type": "string | null"
+        },
+        {
+          "name": "daily_reports",
+          "type": "number"
+        },
+        {
+          "name": "monthly_reports",
+          "type": "number"
+        },
+        {
+          "name": "today_orders",
+          "type": "number"
+        },
+        {
+          "name": "active_users",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "SyncSecurityDiagnostics",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "production_mode",
+          "type": "boolean"
+        },
+        {
+          "name": "has_app_key_env",
+          "type": "boolean"
+        },
+        {
+          "name": "has_package_signing_key_env",
+          "type": "boolean"
+        },
+        {
+          "name": "bootstrap_would_fail",
+          "type": "boolean"
+        },
+        {
+          "name": "active_signing_key_id",
+          "type": "string"
+        },
+        {
+          "name": "accepted_verification_key_ids",
+          "type": "string[]"
+        },
+        {
+          "name": "deprecated_signing_key_ids",
+          "type": "string[]"
+        },
+        {
+          "name": "deprecation_deadline_utc",
+          "type": "string | null"
+        },
+        {
+          "name": "enforce_trusted_signers",
+          "type": "boolean"
+        },
+        {
+          "name": "trusted_signer_ids",
+          "type": "string[]"
+        }
+      ]
+    },
+    {
+      "name": "SyncPreflightCheck",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "status",
+          "type": "'ok' | 'warn' | 'fail' | string"
+        },
+        {
+          "name": "reasons",
+          "type": "string[]"
+        },
+        {
+          "name": "reason_messages_ar",
+          "type": "string[]"
+        },
+        {
+          "name": "diagnostics",
+          "type": "SyncSecurityDiagnostics"
+        }
+      ]
+    },
+    {
+      "name": "Notification",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "type",
+          "type": "'success' | 'error' | 'warning' | 'info' | 'progress'"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        },
+        {
+          "name": "auto_close",
+          "type": "boolean"
+        },
+        {
+          "name": "progress_value",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "SyncImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "added",
+          "type": "number"
+        },
+        {
+          "name": "updated",
+          "type": "number"
+        },
+        {
+          "name": "deleted",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "DailyReportImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "report_count",
+          "type": "number"
+        },
+        {
+          "name": "item_count",
+          "type": "number"
+        },
+        {
+          "name": "unit_id",
+          "type": "string | null"
+        },
+        {
+          "name": "file_hash",
+          "type": "string"
+        },
+        {
+          "name": "imported_by",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "UnitNodePackageImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "unit_code",
+          "type": "string"
+        },
+        {
+          "name": "unit_name",
+          "type": "string"
+        },
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "file_hash",
+          "type": "string"
+        },
+        {
+          "name": "imported_by",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "StockMovementsImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "movement_count",
+          "type": "number"
+        },
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "file_hash",
+          "type": "string"
+        },
+        {
+          "name": "imported_by",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ProgressInfo",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "operation",
+          "type": "string"
+        },
+        {
+          "name": "current",
+          "type": "number"
+        },
+        {
+          "name": "total",
+          "type": "number"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "'running' | 'completed' | 'error'"
+        }
+      ]
+    },
+    {
+      "name": "AuditEntry",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "string"
+        },
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "action_display",
+          "type": "string"
+        },
+        {
+          "name": "entity_type",
+          "type": "string"
+        },
+        {
+          "name": "entity_type_display",
+          "type": "string"
+        },
+        {
+          "name": "entity_id",
+          "type": "string | null"
+        },
+        {
+          "name": "entity_name",
+          "type": "string | null"
+        },
+        {
+          "name": "old_value",
+          "type": "Record<string, unknown> | null"
+        },
+        {
+          "name": "new_value",
+          "type": "Record<string, unknown> | null"
+        },
+        {
+          "name": "session_id",
+          "type": "string | null"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "'Success' | 'Failed'"
+        },
+        {
+          "name": "error_message",
+          "type": "string | null"
+        },
+        {
+          "name": "metadata",
+          "type": "Record<string, unknown> | null"
+        }
+      ]
+    },
+    {
+      "name": "AuditFilters",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "string"
+        },
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "entity_type",
+          "type": "string"
+        },
+        {
+          "name": "start_date",
+          "type": "string"
+        },
+        {
+          "name": "end_date",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "search",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "AuditLogResponse",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "entries",
+          "type": "AuditEntry[]"
+        },
+        {
+          "name": "total_count",
+          "type": "number"
+        },
+        {
+          "name": "page",
+          "type": "number"
+        },
+        {
+          "name": "page_size",
+          "type": "number"
+        },
+        {
+          "name": "has_more",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "AuditStats",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "total_operations",
+          "type": "number"
+        },
+        {
+          "name": "failed_operations",
+          "type": "number"
+        },
+        {
+          "name": "success_rate",
+          "type": "number"
+        },
+        {
+          "name": "most_active_users",
+          "type": "UserActivitySummary[]"
+        },
+        {
+          "name": "operations_by_type",
+          "type": "OperationCount[]"
+        },
+        {
+          "name": "operations_by_day",
+          "type": "DailyOperationCount[]"
+        },
+        {
+          "name": "period_start",
+          "type": "string"
+        },
+        {
+          "name": "period_end",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "UserActivitySummary",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "string"
+        },
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "total_operations",
+          "type": "number"
+        },
+        {
+          "name": "failed_operations",
+          "type": "number"
+        },
+        {
+          "name": "last_activity",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "OperationCount",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "action_display",
+          "type": "string"
+        },
+        {
+          "name": "count",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "DailyOperationCount",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "date",
+          "type": "string"
+        },
+        {
+          "name": "total",
+          "type": "number"
+        },
+        {
+          "name": "failed",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "SessionStatus",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "is_active",
+          "type": "boolean"
+        },
+        {
+          "name": "is_expired",
+          "type": "boolean"
+        },
+        {
+          "name": "should_warn",
+          "type": "boolean"
+        },
+        {
+          "name": "remaining_minutes",
+          "type": "number"
+        },
+        {
+          "name": "username",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "StockMovementType",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "StockMovement",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string | null"
+        },
+        {
+          "name": "movement_type",
+          "type": "StockMovementType"
+        },
+        {
+          "name": "quantity",
+          "type": "number"
+        },
+        {
+          "name": "balance_before",
+          "type": "number"
+        },
+        {
+          "name": "balance_after",
+          "type": "number"
+        },
+        {
+          "name": "reference_type",
+          "type": "string | null"
+        },
+        {
+          "name": "reference_id",
+          "type": "string | null"
+        },
+        {
+          "name": "notes",
+          "type": "string | null"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        },
+        {
+          "name": "user_id",
+          "type": "string"
+        },
+        {
+          "name": "username",
+          "type": "string"
+        },
+        {
+          "name": "unit_id",
+          "type": "string | null"
+        },
+        {
+          "name": "unit_cost",
+          "type": "number | null"
+        }
+      ]
+    },
+    {
+      "name": "StockMovementFilters",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "movement_type",
+          "type": "StockMovementType"
+        },
+        {
+          "name": "start_date",
+          "type": "string"
+        },
+        {
+          "name": "end_date",
+          "type": "string"
+        },
+        {
+          "name": "reference_type",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "StockMovementResponse",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "movements",
+          "type": "StockMovement[]"
+        },
+        {
+          "name": "total_count",
+          "type": "number"
+        },
+        {
+          "name": "page",
+          "type": "number"
+        },
+        {
+          "name": "page_size",
+          "type": "number"
+        },
+        {
+          "name": "has_more",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "StockSummary",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "current_quantity",
+          "type": "number"
+        },
+        {
+          "name": "total_in",
+          "type": "number"
+        },
+        {
+          "name": "total_out",
+          "type": "number"
+        },
+        {
+          "name": "last_movement",
+          "type": "string | null"
+        },
+        {
+          "name": "movement_count",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "UnitMonthlySnapshot",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "unit_name",
+          "type": "string"
+        },
+        {
+          "name": "report_year",
+          "type": "number"
+        },
+        {
+          "name": "report_month",
+          "type": "number"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "opening_stock",
+          "type": "number"
+        },
+        {
+          "name": "total_in",
+          "type": "number"
+        },
+        {
+          "name": "total_out",
+          "type": "number"
+        },
+        {
+          "name": "computed_closing",
+          "type": "number"
+        },
+        {
+          "name": "reported_closing",
+          "type": "number"
+        },
+        {
+          "name": "variance",
+          "type": "number"
+        },
+        {
+          "name": "has_balance_anomaly",
+          "type": "boolean"
+        },
+        {
+          "name": "avg_consumption_3months",
+          "type": "number | null"
+        },
+        {
+          "name": "has_consumption_anomaly",
+          "type": "boolean"
+        },
+        {
+          "name": "is_stale",
+          "type": "boolean"
+        },
+        {
+          "name": "computed_at",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "UnitInventoryView",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "unit_name",
+          "type": "string"
+        },
+        {
+          "name": "report_year",
+          "type": "number"
+        },
+        {
+          "name": "report_month",
+          "type": "number"
+        },
+        {
+          "name": "items",
+          "type": "UnitMonthlySnapshot[]"
+        },
+        {
+          "name": "total_products",
+          "type": "number"
+        },
+        {
+          "name": "balance_anomaly_count",
+          "type": "number"
+        },
+        {
+          "name": "consumption_anomaly_count",
+          "type": "number"
+        },
+        {
+          "name": "stale_count",
+          "type": "number"
+        },
+        {
+          "name": "has_any_anomaly",
+          "type": "boolean"
+        },
+        {
+          "name": "computed_at",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ComputeSnapshotResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "unit_name",
+          "type": "string"
+        },
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "products_computed",
+          "type": "number"
+        },
+        {
+          "name": "balance_anomalies",
+          "type": "number"
+        },
+        {
+          "name": "consumption_anomalies",
+          "type": "number"
+        },
+        {
+          "name": "already_existed",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "WilayaReportList",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "type",
+          "type": "'Daily' | 'Monthly' | 'Stock'"
+        },
+        {
+          "name": "data",
+          "type": "DailyReport[] | MonthlySummary[] | StockMovement[]"
+        }
+      ]
+    },
+    {
+      "name": "InventoryLayerView",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "layer_id",
+          "type": "string"
+        },
+        {
+          "name": "source_type",
+          "type": "string | null"
+        },
+        {
+          "name": "received_at",
+          "type": "string"
+        },
+        {
+          "name": "qty_remaining",
+          "type": "number"
+        },
+        {
+          "name": "unit_cost",
+          "type": "number"
+        },
+        {
+          "name": "layer_value",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "InventoryProductView",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "total_quantity",
+          "type": "number"
+        },
+        {
+          "name": "total_value",
+          "type": "number"
+        },
+        {
+          "name": "oldest_layer_date",
+          "type": "string | null"
+        },
+        {
+          "name": "layer_count",
+          "type": "number"
+        },
+        {
+          "name": "layers",
+          "type": "InventoryLayerView[]"
+        }
+      ]
+    },
+    {
+      "name": "InventoryStockPageView",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "products",
+          "type": "InventoryProductView[]"
+        },
+        {
+          "name": "total_inventory_value",
+          "type": "number"
+        },
+        {
+          "name": "total_products",
+          "type": "number"
+        },
+        {
+          "name": "total_active_layers",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "AuditChainStatus",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "isValid",
+          "type": "boolean"
+        },
+        {
+          "name": "totalEntries",
+          "type": "number"
+        },
+        {
+          "name": "verifiedEntries",
+          "type": "number"
+        },
+        {
+          "name": "latestHash",
+          "type": "string | null"
+        },
+        {
+          "name": "latestEntryTimestamp",
+          "type": "string | null"
+        },
+        {
+          "name": "firstBrokenEntryId",
+          "type": "string | null"
+        },
+        {
+          "name": "breakDescription",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "AuditAnomaly",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "anomalyType",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "detectedAt",
+          "type": "string"
+        },
+        {
+          "name": "severity",
+          "type": "'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'"
+        }
+      ]
+    },
+    {
+      "name": "AuditHealthReport",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "chainStatus",
+          "type": "AuditChainStatus"
+        },
+        {
+          "name": "lastImportTimestamp",
+          "type": "string | null"
+        },
+        {
+          "name": "lastExportTimestamp",
+          "type": "string | null"
+        },
+        {
+          "name": "lastBackupTimestamp",
+          "type": "string | null"
+        },
+        {
+          "name": "lastRestoreTimestamp",
+          "type": "string | null"
+        },
+        {
+          "name": "anomalies",
+          "type": "AuditAnomaly[]"
+        }
+      ]
+    },
+    {
+      "name": "HealthStatus",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "ComponentHealth",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "status",
+          "type": "HealthStatus"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        },
+        {
+          "name": "details",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "BackupHealth",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "status",
+          "type": "HealthStatus"
+        },
+        {
+          "name": "lastBackup",
+          "type": "string | null"
+        },
+        {
+          "name": "backupCount",
+          "type": "number"
+        },
+        {
+          "name": "backupAgeDays",
+          "type": "number | null"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "SyncHealth",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "status",
+          "type": "HealthStatus"
+        },
+        {
+          "name": "failedImportsCount",
+          "type": "number"
+        },
+        {
+          "name": "failedDecryptionsCount",
+          "type": "number"
+        },
+        {
+          "name": "duplicatePackageAttempts",
+          "type": "number"
+        },
+        {
+          "name": "unresolvedConflicts",
+          "type": "number"
+        },
+        {
+          "name": "lastSuccessfulSync",
+          "type": "string | null"
+        },
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "SystemHealthReport",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "databaseStatus",
+          "type": "ComponentHealth"
+        },
+        {
+          "name": "backupStatus",
+          "type": "BackupHealth"
+        },
+        {
+          "name": "auditStatus",
+          "type": "ComponentHealth"
+        },
+        {
+          "name": "syncStatus",
+          "type": "SyncHealth"
+        },
+        {
+          "name": "storageUsageBytes",
+          "type": "number"
+        },
+        {
+          "name": "generatedAt",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "SyncNodeHealth",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "nodeId",
+          "type": "string"
+        },
+        {
+          "name": "nodeName",
+          "type": "string"
+        },
+        {
+          "name": "lastSyncTimestamp",
+          "type": "string | null"
+        },
+        {
+          "name": "packagesReceived",
+          "type": "number"
+        },
+        {
+          "name": "packagesRejected",
+          "type": "number"
+        },
+        {
+          "name": "replayAttempts",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "HealthStatus"
+        }
+      ]
+    },
+    {
+      "name": "ConflictResolutionSuggestion",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "requiresAdmin",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "SyncConflict",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "packageId",
+          "type": "string"
+        },
+        {
+          "name": "sourceNodeId",
+          "type": "string"
+        },
+        {
+          "name": "targetNodeId",
+          "type": "string"
+        },
+        {
+          "name": "conflictType",
+          "type": "string"
+        },
+        {
+          "name": "conflictTypeDisplay",
+          "type": "string"
+        },
+        {
+          "name": "severity",
+          "type": "'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "suggestedResolution",
+          "type": "ConflictResolutionSuggestion | null"
+        },
+        {
+          "name": "resolved",
+          "type": "boolean"
+        },
+        {
+          "name": "resolutionNote",
+          "type": "string | null"
+        },
+        {
+          "name": "resolvedBy",
+          "type": "string | null"
+        },
+        {
+          "name": "resolvedAt",
+          "type": "string | null"
+        },
+        {
+          "name": "createdAt",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "SeverityCount",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "severity",
+          "type": "string"
+        },
+        {
+          "name": "count",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "TypeCount",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "conflictType",
+          "type": "string"
+        },
+        {
+          "name": "conflictTypeDisplay",
+          "type": "string"
+        },
+        {
+          "name": "count",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "ConflictSummary",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "total",
+          "type": "number"
+        },
+        {
+          "name": "unresolved",
+          "type": "number"
+        },
+        {
+          "name": "bySeverity",
+          "type": "SeverityCount[]"
+        },
+        {
+          "name": "byType",
+          "type": "TypeCount[]"
+        },
+        {
+          "name": "recentConflicts",
+          "type": "SyncConflict[]"
+        }
+      ]
+    },
+    {
+      "name": "AuthorizedExecutionWindow",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "not_before",
+          "type": "string"
+        },
+        {
+          "name": "expires_at",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "FiscalClosurePackage",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "schema_version",
+          "type": "number"
+        },
+        {
+          "name": "closed_year",
+          "type": "number"
+        },
+        {
+          "name": "opened_year",
+          "type": "number"
+        },
+        {
+          "name": "closure_timestamp_utc",
+          "type": "string"
+        },
+        {
+          "name": "closure_authority_node_id",
+          "type": "string"
+        },
+        {
+          "name": "closure_authority_username",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_transition_id",
+          "type": "string"
+        },
+        {
+          "name": "package_created_at",
+          "type": "string"
+        },
+        {
+          "name": "signing_key_id",
+          "type": "string | null"
+        },
+        {
+          "name": "authorized_execution_window",
+          "type": "AuthorizedExecutionWindow"
+        }
+      ]
+    },
+    {
+      "name": "FiscalClosurePreview",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "closed_year",
+          "type": "number"
+        },
+        {
+          "name": "opened_year",
+          "type": "number"
+        },
+        {
+          "name": "closure_timestamp_utc",
+          "type": "string"
+        },
+        {
+          "name": "closure_authority_node_id",
+          "type": "string"
+        },
+        {
+          "name": "closure_authority_username",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_transition_id",
+          "type": "string"
+        },
+        {
+          "name": "package_created_at",
+          "type": "string"
+        },
+        {
+          "name": "signing_key_id",
+          "type": "string | null"
+        },
+        {
+          "name": "schema_version",
+          "type": "number"
+        },
+        {
+          "name": "authorized_execution_window",
+          "type": "AuthorizedExecutionWindow"
+        },
+        {
+          "name": "validation_ok",
+          "type": "boolean"
+        },
+        {
+          "name": "validation_issues",
+          "type": "string[]"
+        },
+        {
+          "name": "package_fingerprint",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "FiscalClosureApplyResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "fiscal_transition_id",
+          "type": "string"
+        },
+        {
+          "name": "closed_year",
+          "type": "number"
+        },
+        {
+          "name": "opened_year",
+          "type": "number"
+        },
+        {
+          "name": "snapshot_count",
+          "type": "number"
+        },
+        {
+          "name": "package_fingerprint",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "FiscalTransitionHistoryEntry",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "transition_id",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        },
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "next_year",
+          "type": "number"
+        },
+        {
+          "name": "actor",
+          "type": "string"
+        },
+        {
+          "name": "execution_node",
+          "type": "string | null"
+        },
+        {
+          "name": "signing_key_id",
+          "type": "string | null"
+        },
+        {
+          "name": "package_fingerprint",
+          "type": "string | null"
+        },
+        {
+          "name": "source",
+          "type": "'AUTHORITY' | 'EXECUTION'"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "FiscalPackageRegistryEntry",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "transition_id",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "next_year",
+          "type": "number"
+        },
+        {
+          "name": "package_fingerprint",
+          "type": "string"
+        },
+        {
+          "name": "signing_key_id",
+          "type": "string"
+        },
+        {
+          "name": "exported_at",
+          "type": "string"
+        },
+        {
+          "name": "applied_at",
+          "type": "string | null"
+        },
+        {
+          "name": "retention_status",
+          "type": "'ACTIVE' | 'ARCHIVED' | 'RETIRED'"
+        },
+        {
+          "name": "exported_by",
+          "type": "string"
+        },
+        {
+          "name": "applied_by",
+          "type": "string | null"
+        },
+        {
+          "name": "archived",
+          "type": "boolean"
+        },
+        {
+          "name": "notes",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "FiscalYearStatus",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "'open' | 'closed' | 'archived'"
+        },
+        {
+          "name": "opened_at",
+          "type": "string"
+        },
+        {
+          "name": "closed_at",
+          "type": "string"
+        },
+        {
+          "name": "closed_by",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "BuildInfo",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "app_version",
+          "type": "string"
+        },
+        {
+          "name": "git_commit",
+          "type": "string"
+        },
+        {
+          "name": "build_timestamp",
+          "type": "string"
+        },
+        {
+          "name": "schema_version",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "TelemetryEventType",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "TelemetryOutcome",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "TelemetryEvent",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "event_type",
+          "type": "TelemetryEventType"
+        },
+        {
+          "name": "outcome",
+          "type": "TelemetryOutcome"
+        },
+        {
+          "name": "duration_ms",
+          "type": "number | null"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        },
+        {
+          "name": "metadata",
+          "type": "Record<string, unknown> | null"
+        },
+        {
+          "name": "user_id",
+          "type": "string | null"
+        },
+        {
+          "name": "schema_version",
+          "type": "number"
+        }
+      ]
+    }
+  ]
+}

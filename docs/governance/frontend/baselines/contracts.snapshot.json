@@ -1,0 +1,752 @@
+{
+  "generated": "2026-06-01T19:14:59.732Z",
+  "contracts": [
+    {
+      "name": "metrics",
+      "exports": [
+        {
+          "name": "getLoginMetrics"
+        },
+        {
+          "name": "getSystemMetrics"
+        },
+        {
+          "name": "getSyncSecurityDiagnostics"
+        },
+        {
+          "name": "syncPreflightCheck"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_login_metrics"
+        },
+        {
+          "command": "get_system_metrics"
+        },
+        {
+          "command": "get_sync_security_diagnostics"
+        },
+        {
+          "command": "sync_preflight_check"
+        }
+      ],
+      "loc": 21,
+      "exportCount": 4,
+      "commandCount": 4
+    },
+    {
+      "name": "inventory",
+      "exports": [
+        {
+          "name": "createProduct"
+        },
+        {
+          "name": "updateProduct"
+        },
+        {
+          "name": "deleteProduct"
+        },
+        {
+          "name": "getProduct"
+        },
+        {
+          "name": "listProducts"
+        },
+        {
+          "name": "createUnit"
+        },
+        {
+          "name": "getUnit"
+        },
+        {
+          "name": "listUnits"
+        },
+        {
+          "name": "updateUnit"
+        },
+        {
+          "name": "deleteUnit"
+        },
+        {
+          "name": "getStock"
+        },
+        {
+          "name": "getAllStocks"
+        },
+        {
+          "name": "checkStockAvailability"
+        },
+        {
+          "name": "getCurrentStock"
+        },
+        {
+          "name": "getInventoryFifoView"
+        },
+        {
+          "name": "computeUnitInventorySnapshot"
+        },
+        {
+          "name": "getUnitInventoryView"
+        },
+        {
+          "name": "getAvailableReportMonths"
+        },
+        {
+          "name": "exportUnitInventoryExcel"
+        },
+        {
+          "name": "getStockMovements"
+        },
+        {
+          "name": "getStockSummary"
+        },
+        {
+          "name": "calculateProductPriceWithTva"
+        },
+        {
+          "name": "exportProductsExcel"
+        },
+        {
+          "name": "exportStockMovementsExcel"
+        },
+        {
+          "name": "getOrders"
+        }
+      ],
+      "commands": [
+        {
+          "command": "create_product"
+        },
+        {
+          "command": "update_product"
+        },
+        {
+          "command": "delete_product"
+        },
+        {
+          "command": "get_product"
+        },
+        {
+          "command": "list_products"
+        },
+        {
+          "command": "create_unit"
+        },
+        {
+          "command": "get_unit"
+        },
+        {
+          "command": "list_units"
+        },
+        {
+          "command": "update_unit"
+        },
+        {
+          "command": "delete_unit"
+        },
+        {
+          "command": "get_stock"
+        },
+        {
+          "command": "get_all_stocks"
+        },
+        {
+          "command": "check_stock_availability"
+        },
+        {
+          "command": "get_current_stock"
+        },
+        {
+          "command": "get_inventory_fifo_view"
+        },
+        {
+          "command": "compute_unit_inventory_snapshot"
+        },
+        {
+          "command": "get_unit_inventory_view"
+        },
+        {
+          "command": "get_available_report_months"
+        },
+        {
+          "command": "export_unit_inventory_excel"
+        },
+        {
+          "command": "get_stock_movements"
+        },
+        {
+          "command": "get_stock_summary"
+        },
+        {
+          "command": "calculate_product_price_with_tva"
+        },
+        {
+          "command": "export_products_excel"
+        },
+        {
+          "command": "export_stock_movements_excel"
+        },
+        {
+          "command": "get_orders"
+        }
+      ],
+      "loc": 131,
+      "exportCount": 25,
+      "commandCount": 25
+    },
+    {
+      "name": "platform",
+      "exports": [],
+      "commands": [],
+      "loc": 4,
+      "exportCount": 0,
+      "commandCount": 0
+    },
+    {
+      "name": "audit",
+      "exports": [
+        {
+          "name": "getAuditLog"
+        },
+        {
+          "name": "getAuditStats"
+        },
+        {
+          "name": "getUserActivity"
+        },
+        {
+          "name": "exportAuditLogExcel"
+        },
+        {
+          "name": "cleanupAuditLogs"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_audit_log"
+        },
+        {
+          "command": "get_audit_stats"
+        },
+        {
+          "command": "get_user_activity"
+        },
+        {
+          "command": "export_audit_log_excel"
+        },
+        {
+          "command": "cleanup_audit_logs"
+        }
+      ],
+      "loc": 38,
+      "exportCount": 5,
+      "commandCount": 5
+    },
+    {
+      "name": "fiscal",
+      "exports": [
+        {
+          "name": "closeFiscalYear"
+        },
+        {
+          "name": "getFiscalYearStatus"
+        },
+        {
+          "name": "exportFiscalClosurePackage"
+        },
+        {
+          "name": "previewFiscalClosurePackage"
+        },
+        {
+          "name": "applyFiscalClosurePackage"
+        },
+        {
+          "name": "getFiscalTransitionHistory"
+        },
+        {
+          "name": "listFiscalPackageRegistry"
+        },
+        {
+          "name": "updateFiscalPackageRetentionStatus"
+        },
+        {
+          "name": "getAdvancedDiagnosticsBundle"
+        },
+        {
+          "name": "verifyInventoryIntegrity"
+        },
+        {
+          "name": "createFiscalOperationalSnapshot"
+        }
+      ],
+      "commands": [
+        {
+          "command": "close_fiscal_year"
+        },
+        {
+          "command": "get_fiscal_year_status"
+        },
+        {
+          "command": "export_fiscal_closure_package"
+        },
+        {
+          "command": "preview_fiscal_closure_package"
+        },
+        {
+          "command": "apply_fiscal_closure_package"
+        },
+        {
+          "command": "get_fiscal_transition_history"
+        },
+        {
+          "command": "list_fiscal_package_registry"
+        },
+        {
+          "command": "update_fiscal_package_retention_status"
+        },
+        {
+          "command": "get_advanced_diagnostics_bundle"
+        },
+        {
+          "command": "verify_inventory_integrity"
+        },
+        {
+          "command": "create_fiscal_operational_snapshot"
+        }
+      ],
+      "loc": 90,
+      "exportCount": 11,
+      "commandCount": 11
+    },
+    {
+      "name": "backup",
+      "exports": [
+        {
+          "name": "createBackup"
+        },
+        {
+          "name": "listBackups"
+        },
+        {
+          "name": "issueOperationExecutionToken"
+        },
+        {
+          "name": "restoreBackup"
+        }
+      ],
+      "commands": [
+        {
+          "command": "create_backup"
+        },
+        {
+          "command": "list_backups"
+        },
+        {
+          "command": "issue_operation_execution_token"
+        },
+        {
+          "command": "restore_backup"
+        }
+      ],
+      "loc": 31,
+      "exportCount": 4,
+      "commandCount": 4
+    },
+    {
+      "name": "sync",
+      "exports": [
+        {
+          "name": "exportProductsPackage"
+        },
+        {
+          "name": "exportDailyReportPackage"
+        },
+        {
+          "name": "exportMonthlySummaryPackage"
+        },
+        {
+          "name": "exportUnitNodePackage"
+        },
+        {
+          "name": "exportStockMovementsPackage"
+        },
+        {
+          "name": "importProductsPackage"
+        },
+        {
+          "name": "importDailyReportPackage"
+        },
+        {
+          "name": "importUnitNodePackage"
+        },
+        {
+          "name": "importMonthlySummaryPackage"
+        },
+        {
+          "name": "importStockMovementsPackage"
+        }
+      ],
+      "commands": [
+        {
+          "command": "export_products_package"
+        },
+        {
+          "command": "export_daily_report_package"
+        },
+        {
+          "command": "export_monthly_summary_package"
+        },
+        {
+          "command": "export_unit_node_package"
+        },
+        {
+          "command": "export_stock_movements_package"
+        },
+        {
+          "command": "import_products_package"
+        },
+        {
+          "command": "import_daily_report_package"
+        },
+        {
+          "command": "import_unit_node_package"
+        },
+        {
+          "command": "import_monthly_summary_package"
+        },
+        {
+          "command": "import_stock_movements_package"
+        }
+      ],
+      "loc": 46,
+      "exportCount": 10,
+      "commandCount": 10
+    },
+    {
+      "name": "orders",
+      "exports": [
+        {
+          "name": "createSupplierOrder"
+        },
+        {
+          "name": "confirmOrder"
+        },
+        {
+          "name": "updateSupplierOrder"
+        },
+        {
+          "name": "deleteSupplierOrder"
+        },
+        {
+          "name": "getSupplierOrder"
+        },
+        {
+          "name": "getSupplierOrderItems"
+        },
+        {
+          "name": "listSupplierOrders"
+        },
+        {
+          "name": "createOrder"
+        }
+      ],
+      "commands": [
+        {
+          "command": "create_supplier_order"
+        },
+        {
+          "command": "confirm_order"
+        },
+        {
+          "command": "update_supplier_order"
+        },
+        {
+          "command": "delete_supplier_order"
+        },
+        {
+          "command": "get_supplier_order"
+        },
+        {
+          "command": "get_supplier_order_items"
+        },
+        {
+          "command": "list_supplier_orders"
+        },
+        {
+          "command": "create_order"
+        }
+      ],
+      "loc": 39,
+      "exportCount": 8,
+      "commandCount": 8
+    },
+    {
+      "name": "user",
+      "exports": [
+        {
+          "name": "login"
+        },
+        {
+          "name": "changePassword"
+        }
+      ],
+      "commands": [
+        {
+          "command": "login"
+        },
+        {
+          "command": "change_password"
+        }
+      ],
+      "loc": 11,
+      "exportCount": 2,
+      "commandCount": 2
+    },
+    {
+      "name": "session",
+      "exports": [
+        {
+          "name": "logout"
+        },
+        {
+          "name": "checkSession"
+        },
+        {
+          "name": "getCurrentUser"
+        },
+        {
+          "name": "touchSession"
+        },
+        {
+          "name": "getSettings"
+        },
+        {
+          "name": "configureAsWilaya"
+        },
+        {
+          "name": "isConfigured"
+        }
+      ],
+      "commands": [
+        {
+          "command": "logout"
+        },
+        {
+          "command": "check_session"
+        },
+        {
+          "command": "get_current_user"
+        },
+        {
+          "command": "touch_session"
+        },
+        {
+          "command": "get_settings"
+        },
+        {
+          "command": "configure_as_wilaya"
+        },
+        {
+          "command": "is_configured"
+        }
+      ],
+      "loc": 31,
+      "exportCount": 7,
+      "commandCount": 7
+    },
+    {
+      "name": "consumption",
+      "exports": [
+        {
+          "name": "createDailyReport"
+        },
+        {
+          "name": "previewDailyConsumptionFifo"
+        },
+        {
+          "name": "createMealConsumption"
+        },
+        {
+          "name": "getDailyReport"
+        },
+        {
+          "name": "listDailyReports"
+        },
+        {
+          "name": "getDailyConsumption"
+        },
+        {
+          "name": "calculateMealCost"
+        },
+        {
+          "name": "calculateMealRate"
+        },
+        {
+          "name": "recordConsumption"
+        }
+      ],
+      "commands": [
+        {
+          "command": "create_daily_report"
+        },
+        {
+          "command": "preview_daily_consumption_fifo"
+        },
+        {
+          "command": "get_daily_report"
+        },
+        {
+          "command": "list_daily_reports"
+        },
+        {
+          "command": "get_daily_consumption"
+        },
+        {
+          "command": "calculate_meal_cost"
+        },
+        {
+          "command": "calculate_meal_rate"
+        },
+        {
+          "command": "record_consumption"
+        }
+      ],
+      "loc": 56,
+      "exportCount": 9,
+      "commandCount": 8
+    },
+    {
+      "name": "report",
+      "exports": [
+        {
+          "name": "getMonthlySummary"
+        },
+        {
+          "name": "listFiscalYears"
+        },
+        {
+          "name": "listWilayaReports"
+        },
+        {
+          "name": "generateReports"
+        },
+        {
+          "name": "getReportData"
+        },
+        {
+          "name": "exportDailyReportExcel"
+        },
+        {
+          "name": "exportMonthlySummaryExcel"
+        },
+        {
+          "name": "exportAllUnitsMonthlyStatusExcel"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_monthly_summary"
+        },
+        {
+          "command": "list_fiscal_years"
+        },
+        {
+          "command": "list_wilaya_reports"
+        },
+        {
+          "command": "generate_reports"
+        },
+        {
+          "command": "get_report_data"
+        },
+        {
+          "command": "export_daily_report_excel"
+        },
+        {
+          "command": "export_monthly_summary_excel"
+        },
+        {
+          "command": "export_all_units_monthly_status_excel"
+        }
+      ],
+      "loc": 53,
+      "exportCount": 8,
+      "commandCount": 8
+    },
+    {
+      "name": "dashboard",
+      "exports": [
+        {
+          "name": "getBuildInfo"
+        },
+        {
+          "name": "getRecentTelemetry"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_build_info"
+        },
+        {
+          "command": "get_recent_telemetry"
+        }
+      ],
+      "loc": 11,
+      "exportCount": 2,
+      "commandCount": 2
+    },
+    {
+      "name": "observability",
+      "exports": [
+        {
+          "name": "getAuditChainStatus"
+        },
+        {
+          "name": "getAuditHealth"
+        },
+        {
+          "name": "getSystemHealth"
+        },
+        {
+          "name": "getSyncHealth"
+        },
+        {
+          "name": "getConflictSummary"
+        },
+        {
+          "name": "listSyncConflicts"
+        },
+        {
+          "name": "resolveSyncConflict"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_audit_chain_status"
+        },
+        {
+          "command": "get_audit_health"
+        },
+        {
+          "command": "get_system_health"
+        },
+        {
+          "command": "get_sync_health"
+        },
+        {
+          "command": "get_conflict_summary"
+        },
+        {
+          "command": "list_sync_conflicts"
+        },
+        {
+          "command": "resolve_sync_conflict"
+        }
+      ],
+      "loc": 34,
+      "exportCount": 7,
+      "commandCount": 7
+    }
+  ]
+}
