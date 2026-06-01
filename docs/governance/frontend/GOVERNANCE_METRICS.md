@@ -1,7 +1,7 @@
 # Governance Metrics Dashboard
 
 Generated: 2026-06-01 (v1.2.0 Release)
-Snapshot: v5-freeze
+Snapshot: v5-freeze (Governance v2)
 
 ---
 
@@ -9,31 +9,28 @@ Snapshot: v5-freeze
 
 | Metric | Value |
 |--------|-------|
-| Total governance rules | 47 |
-| Active rules | 47 (100%) |
-| ERROR severity rules | 35 |
-| WARNING severity rules | 12 |
-| Deferred rules | 0 |
+| Governance model | v2 — Invariant-based |
+| Total invariants | 5 |
+| Total enforcement points | ~47 (FE-100–FE-167) |
 | Active suppressions | 9 |
 | Expired suppressions | 0 |
-| Governance approvals | 6 |
+| Governance approvals | 7 |
 | Architecture drift events | 0 |
 | Certification versions | 6 (v1–v6) |
 | Governance snapshots | 4 |
-| Governance documents | 10 |
+| Governance documents | 11 |
 
 ---
 
-## Rule Distribution by Group
+## Invariant Distribution
 
-| Group | Rules | ERROR | WARNING |
-|-------|-------|-------|---------|
-| GROUP 24 — Frontend Governance (FE-100–FE-151) | 24 | 18 | 6 |
-| GROUP 25 — Projection Purity (FE-141–FE-149) | 9 | 8 | 1 |
-| GROUP 26 — Domain Isolation (FE-152–FE-157) | 6 | 4 | 2 |
-| GROUP 27 — Continuous Governance (FE-158–FE-163) | 5 | 3 | 2 |
-| GROUP 28 — Release Governance (FE-165–FE-167) | 3 | 2 | 1 |
-| **Total** | **47** | **35** | **12** |
+| Invariant | Enforces | Severity |
+|-----------|----------|----------|
+| A — Contract Boundary | FE-111, FE-112, FE-113, FE-114, FE-116, FE-120, FE-136, FE-138, FE-153, FE-154 | ERROR |
+| B — Projection Integrity | FE-141, FE-142, FE-143, FE-145, FE-146, FE-147, FE-148, FE-152, FE-157 | ERROR |
+| C — Runtime Safety | FE-100, FE-100B, FE-100C, FE-105A, FE-105B, FE-121, FE-122, FE-149, FE-150, FE-151, FE-162 | ERROR/WARNING |
+| D — Architecture Graph | FE-131, FE-132, FE-155, FE-156, FE-158, FE-159, FE-160, FE-163 | ERROR/WARNING |
+| META — Governance Freeze | FE-165, FE-166, FE-167 | ERROR/WARNING |
 
 ---
 
@@ -47,6 +44,7 @@ Snapshot: v5-freeze
 | v4 | 2026-06-01 | Continuous governance + snapshots |
 | v5 | 2026-06-01 | Governance freeze + release certification |
 | v6 | 2026-06-01 | v1.2.0 release — 6 atomic commits, 9 release gates verified |
+| v6 (Governance v2) | 2026-06-01 | Governance v2 — 5 invariants replace 47 micro-rules |
 
 ---
 

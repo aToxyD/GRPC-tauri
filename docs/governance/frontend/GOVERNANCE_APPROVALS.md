@@ -21,6 +21,7 @@ Tracks architecture-affecting decisions and governance approvals for the fronten
 | 2026-06-01 | Phase 5 — Governance freeze and release certification | FE-165, FE-166, FE-167 | governance-certification | v5-freeze |
 | 2026-06-01 | Governance snapshots frozen at v5-freeze baseline | FE-158, FE-166 | governance-certification | v5-freeze |
 | 2026-06-01 | v1.2.0 release certification — 6 atomic commits, all 9 release gates pass | FE-165, FE-166, FE-167 | governance-certification | v5-freeze |
+| 2026-06-01 | Governance v2 — 47 micro-rules replaced by 5 invariants (invariant-based governance) | All FE rules (FE-100–FE-167) | governance-certification | v5-freeze |
 
 ---
 

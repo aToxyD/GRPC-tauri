@@ -1779,355 +1779,10 @@ checkRule(
 );
 
 // ============================================================
-// GROUP 24 — Frontend Governance Rules (FE-100–FE-151)
-// Certification rules for v1.2.0 frontend governance.
-// @see docs/governance/frontend/FRONTEND_CERTIFICATION_RULES.md
 // ============================================================
-
-// FE-100: Every $state() declaration must have a // @category marker
-// Scans the preceding lines for @category comment (handles single-line gaps for blank/comment lines)
-checkRule(
-    "FE-100 Error: $state() declaration without @category marker (each $state() needs // @category marker)",
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/components/**/*.svelte", "src/lib/**/*.ts"],
-    /\$state\(/,
-    (line, index, lines) => {
-        if (line.includes("@category")) return true;
-        for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
-            const trimmed = lines[i].trim();
-            if (trimmed === "") continue;
-            if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
-            if (trimmed.startsWith("//")) continue;
-            break;
-        }
-        return false;
-    },
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.") && !f.includes("/e2e/")
-);
-
-// FE-100B: Every $derived() and $derived.by() declaration must have a // @category marker
-checkRule(
-    "FE-100B Error: $derived() / $derived.by() declaration without @category marker (each $derived() needs // @category marker)",
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/components/**/*.svelte", "src/lib/**/*.ts"],
-    /\$derived(?:\.\w+)?\s*\(/,
-    (line, index, lines) => {
-        if (line.includes("@category")) return true;
-        for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
-            const trimmed = lines[i].trim();
-            if (trimmed === "") continue;
-            if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
-            if (trimmed.startsWith("//")) continue;
-            break;
-        }
-        return false;
-    },
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.") && !f.includes("/e2e/")
-);
-
-// FE-105A: writable() requires @category annotation
-checkRule(
-    "FE-105A Error: writable() without @category marker (each writable() needs // @category marker)",
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/components/**/*.svelte", "src/lib/**/*.ts"],
-    /writable\(/,
-    (line, index, lines) => {
-        if (line.includes("@category")) return true;
-        for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
-            const trimmed = lines[i].trim();
-            if (trimmed === "") continue;
-            if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
-            if (trimmed.startsWith("//")) continue;
-            break;
-        }
-        return false;
-    },
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.") && !f.includes("/e2e/")
-);
-
-// FE-105B: readable() requires @category annotation
-checkRule(
-    "FE-105B Error: readable() without @category marker (each readable() needs // @category marker)",
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/components/**/*.svelte", "src/lib/**/*.ts"],
-    /readable\(/,
-    (line, index, lines) => {
-        if (line.includes("@category")) return true;
-        for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
-            const trimmed = lines[i].trim();
-            if (trimmed === "") continue;
-            if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
-            if (trimmed.startsWith("//")) continue;
-            break;
-        }
-        return false;
-    },
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.") && !f.includes("/e2e/")
-);
-
-// FE-100C: Module-level reactive state should be categorized (warning)
-// Detects `let` declarations involved in reactive assignments without @category
-{
-    const patterns = ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/components/**/*.svelte", "src/lib/**/*.ts"];
-    const scannedFiles = new Set<string>();
-    let ruleViolations = 0;
-    const matches: { file: string; line: number; content: string }[] = [];
-
-    for (const pattern of patterns) {
-        const glob = new Glob(pattern);
-        for (const file of glob.scanSync(".")) {
-            const normalizedFile = file.replace(/\\/g, "/");
-            if (scannedFiles.has(normalizedFile)) continue;
-            scannedFiles.add(normalizedFile);
-
-            if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.") || file.includes("/e2e/")) continue;
-
-            const content = readFileSync(file, "utf-8");
-            const lines = content.split("\n");
-
-            lines.forEach((line, index) => {
-                if (line.trim().startsWith("//")) return;
-                // Look for let declarations that are reactive candidates
-                const letMatch = line.match(/^\s*(?:export\s+)?let\s+(\w+)\s*(?::\s*\w+\s*)?=/);
-                if (!letMatch) return;
-
-                const varName = letMatch[1];
-                // Check if this variable participates in reactive patterns
-                // Check nearby lines for $: assignments, $derived, or store subscriptions
-                const isReactive = content.includes(`$: ${varName}`) ||
-                                   content.includes(`${varName} = $derived`) ||
-                                   content.includes(`${varName}.subscribe`) ||
-                                   content.includes(`$${varName}`);
-
-                if (!isReactive) return;
-
-                // Check for @category on preceding lines
-                let hasCategory = false;
-                for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
-                    const trimmed = lines[i].trim();
-                    if (trimmed === "") continue;
-                    if (trimmed.startsWith("//") && trimmed.includes("@category")) {
-                        hasCategory = true;
-                        break;
-                    }
-                    if (trimmed.startsWith("//")) continue;
-                    break;
-                }
-                if (!hasCategory && !line.includes("@category")) {
-                    matches.push({ file, line: index + 1, content: line.trim() });
-                    ruleViolations++;
-                }
-            });
-        }
-    }
-
-    if (ruleViolations > 0) {
-        console.log(`⚠️ ${colors.yellow}FE-100C Warning: Module-level reactive state without @category marker${colors.reset}`);
-        matches.forEach((m) => {
-            console.log(`  ${m.file}:${m.line} → ${m.content}`);
-        });
-        warnings++;
-    }
-}
-
-// FE-103: Direct invoke() only permitted in contract files and tauri.ts
-// Alias of existing Rule 27 — reference kept for certification traceability.
-// Rule 27 already enforces this; FE-103 is its certification mapping.
-
-// FE-111: All contract files must exist (error — full contract coverage required)
-{
-    const expectedContracts = [
-        "consumption", "inventory", "report", "session", "user",
-        "orders", "sync", "backup", "metrics", "audit",
-        "observability", "fiscal", "dashboard", "platform",
-    ];
-    const existingContracts = new Set(
-        [...new Glob("src/lib/contracts/*.contract.ts").scanSync(".")]
-            .map(f => f.replace(/^.*\/(\w+)\.contract\.ts$/, "$1"))
-    );
-    const missing = expectedContracts.filter(d => !existingContracts.has(d));
-    if (missing.length > 0) {
-        console.log(`❌ ${colors.red}FE-111 Error: Required contract files missing for domains: ${missing.join(", ")}${colors.reset}`);
-        console.log(`  → Target: src/lib/contracts/<domain>.contract.ts`);
-        violations++;
-    }
-}
-
-// FE-136: Contract barrel must exist
-{
-    if (![...new Glob("src/lib/contracts/index.ts").scanSync(".")].length) {
-        console.log(`❌ ${colors.red}FE-136 Error: Required contract barrel file missing: src/lib/contracts/index.ts${colors.reset}`);
-        violations++;
-    }
-}
-
-// FE-112: Contract file must export at least one safeInvoke wrapper
-// Scans existing contract files for safeInvoke usage. No-op while contract files
-// do not exist (FE-111 covers the gap).
-{
-    const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
-    let fe112Violations = 0;
-    for (const file of contractGlob.scanSync(".")) {
-        const content = readFileSync(file, "utf-8");
-        if (!content.includes("safeInvoke")) {
-            console.log(`⚠️ ${colors.yellow}FE-112 Warning: ${file} does not export any safeInvoke wrapper${colors.reset}`);
-            fe112Violations++;
-        }
-    }
-    if (fe112Violations > 0) warnings++;
-}
-
-// FE-121: Every page must call createRuntimeScope() and dispose in onDestroy
-// Hardened v3: extracts scope variable name, verifies consistency, detects fake dispose.
-{
-    const pageGlob = new Glob("src/pages/**/*.svelte");
-    let fe121Errors = 0;
-    let fe121Warnings = 0;
-    for (const file of pageGlob.scanSync(".")) {
-        const normalized = file.toLowerCase().replace(/\\/g, "/");
-        if (normalized.includes("notfoundpage.svelte")) continue;
-        const content = readFileSync(file, "utf-8");
-        // Extract variable name from const <name> = createRuntimeScope()
-        const scopeMatch = content.match(/const\s+(\w+)\s*=\s*createRuntimeScope\(\)/);
-        const hasScope = !!scopeMatch;
-        if (!hasScope) {
-            if (content.includes("createRuntimeScope")) {
-                console.log(`❌ ${colors.red}FE-121 Error: ${file} — createRuntimeScope() must be assigned to a const variable (e.g. const scope = createRuntimeScope())${colors.reset}`);
-                fe121Errors++;
-            } else {
-                console.log(`❌ ${colors.red}FE-121 Error: ${file} missing createRuntimeScope()${colors.reset}`);
-                fe121Errors++;
-            }
-            continue;
-        }
-        const varName = scopeMatch[1];
-        // Detect fake dispose: varName.dispose = <anything> (override instead of call)
-        const fakeDisposeRe = new RegExp(varName + '\\.dispose\\s*=\\s*(?=[^=])');
-        for (let i = 0; i < content.split("\n").length; i++) {
-            const line = content.split("\n")[i];
-            if (fakeDisposeRe.test(line)) {
-                console.log(`❌ ${colors.red}FE-121 Error: ${file} — fake dispose override detected: ${line.trim()}${colors.reset}`);
-                fe121Errors++;
-            }
-        }
-        // Detect inconsistent variable naming (other variables using .dispose)
-        const allDisposeVars = [...content.matchAll(/(\w+)\.dispose\s*\(/g)].map(m => m[1]);
-        const otherVars = [...new Set(allDisposeVars.filter(v => v !== varName))];
-        if (otherVars.length > 0) {
-            console.log(`⚠️ ${colors.yellow}FE-121 Warning: ${file} — dispose called on '${otherVars.join("', '")}' but createRuntimeScope assigned to '${varName}'${colors.reset}`);
-            fe121Warnings++;
-        }
-        // Verify varName.dispose() is inside onDestroy()
-        const lines = content.split("\n");
-        let disposeInOnDestroy = false;
-        for (let i = 0; i < lines.length; i++) {
-            if (/onDestroy\s*\(\s*\(\s*\)\s*=>\s*\{/.test(lines[i])) {
-                let braceDepth = 0;
-                let inBlock = false;
-                for (let j = i; j < lines.length; j++) {
-                    for (const ch of lines[j]) {
-                        if (ch === '{') { braceDepth++; inBlock = true; }
-                        else if (ch === '}') { braceDepth--; }
-                    }
-                    if (inBlock && lines[j].includes(varName + ".dispose")) {
-                        disposeInOnDestroy = true;
-                        break;
-                    }
-                    if (inBlock && braceDepth === 0) break;
-                }
-                if (disposeInOnDestroy) break;
-            }
-        }
-        if (!disposeInOnDestroy) {
-            const simpleRe = new RegExp('onDestroy\\s*\\(\\s*\\(\\s*\\)\\s*=>\\s*' + varName + '\\.dispose\\s*\\(');
-            if (simpleRe.test(content)) {
-                disposeInOnDestroy = true;
-            }
-        }
-        if (!disposeInOnDestroy) {
-            console.log(`⚠️ ${colors.yellow}FE-121 Warning: ${file} has createRuntimeScope (var: ${varName}) but ${varName}.dispose() not found inside onDestroy()${colors.reset}`);
-            fe121Warnings++;
-        }
-    }
-    violations += fe121Errors;
-    warnings += fe121Warnings;
-}
-
-// FE-122: createOperation/createOperationGuard should receive RuntimeScope
-// Catches cases where createOperation is called without { scope } argument.
-// Excludes function definitions (export function createOperation(...)) and imports.
-checkRule(
-    "FE-122: createOperation or createOperationGuard without RuntimeScope (must pass { scope })",
-    ["src/pages/**/*.svelte", "src/lib/**/*.ts"],
-    /createOperation(?:Guard)?\s*\(\s*(?!\{)/,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        if (line.match(/^\s*(export\s+)?function\s+createOperation/)) return true;
-        if (line.includes("createOperation({")) return true;
-        if (line.includes("createOperationGuard({")) return true;
-        if (line.includes("import ")) return true;
-        if (line.includes("type CreateOperation")) return true;
-        return false;
-    },
-    "warning",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-149: session.ts must use createRuntimeScope for all timers and listeners
-// Verify session.ts references createRuntimeScope, scope.setInterval/scope.setTimeout/scope.addListener.
-{
-    const sessionFile = "src/lib/session.ts";
-    const content = readFileSync(sessionFile, "utf-8");
-    const fe149Errors: string[] = [];
-    if (!content.includes("createRuntimeScope")) fe149Errors.push("missing createRuntimeScope import/usage");
-    if (!content.includes("scope.setInterval") && !content.includes("scope.setTimeout")) {
-        fe149Errors.push("no scope timer methods found (setInterval/setTimeout must go through RuntimeScope)");
-    }
-    if (!content.includes("scope.addListener")) fe149Errors.push("no scope.addListener found (listeners must go through RuntimeScope)");
-    if (fe149Errors.length > 0) {
-        console.log(`❌ ${colors.red}FE-149 Error: session.ts violates RuntimeScope requirements:${colors.reset}`);
-        fe149Errors.forEach(e => console.log(`  → ${e}`));
-        violations++;
-    }
-}
-
-// FE-150: No module-level mutable timer or listener references outside RuntimeScope
-// Detects module-level `let` declarations with timer-related types.
-// Only flags `export let` (unambiguously module-level). Function-local `let` is excluded.
-checkRule(
-    "FE-150: Module-level mutable timer/listener reference (use RuntimeScope instead)",
-    ["src/lib/**/*.ts", "src/lib/**/*.js"],
-    /^\s*export\s+let\s+\w+\s*[?]?\s*:\s*(number|null\s*\|?\s*number|ReturnType<typeof\s+set(?:Timeout|Interval)>)/,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        if (line.includes("scope.")) return true;
-        return false;
-    },
-    "error",
-    (f) => {
-        const n = f.toLowerCase().replace(/\\/g, "/");
-        if (n.includes("/tests/") || n.includes(".test.") || n.includes(".spec.")) return false;
-        return true;
-    }
-);
-
-// FE-151: Touch/scroll/wheel listeners should use { passive: true }
-checkRule(
-    "FE-151: addEventListener with touch/scroll/wheel missing { passive: true }",
-    ["src/**/*.svelte", "src/**/*.ts", "src/**/*.js"],
-    /\.addEventListener\s*\(\s*(['"`])(touch|scroll|wheel)\1/,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        if (line.includes("passive: true")) return true;
-        if (/scope\.addListener/.test(line)) return true;
-        return false;
-    },
-    "warning",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.") && !f.includes("/e2e/")
-);
-
-// ============================================================
-// GROUP 25 — Projection Purity Frontend Rules
+// INVARIANT-BASED GOVERNANCE (v2)
+// Replaces ~47 FE micro-rules (Groups 24-28) with 5 invariants
+// @see docs/governance/frontend/GOVERNANCE_V2_SPEC.md
 // ============================================================
 
 // Suppression helper: creates an excludeLines callback that supports
@@ -2140,199 +1795,6 @@ function suppressExclude(tag: string): (line: string, index: number, lines: stri
         return false;
     };
 }
-
-// FE-141: Division on projection values (ERROR with suppression support)
-checkRule(
-    `FE-141 Error: Division on projection values detected (suspicious business computation) — suppress with [arch:allow-fe141]`,
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte"],
-    /\/(?=[^;]*\b(cost|average|beneficiar|quantity|total|price)\b)/i,
-    suppressExclude("fe141"),
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-142: Frontend must not compute line totals (ERROR with suppression support)
-checkRule(
-    `FE-142 Error: Multiplication on projection values detected (must not compute line totals) — suppress with [arch:allow-fe142]`,
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
-    /\*(?=[^;]*\b(unit_cost|unitCost|price|cost|quantity|amount|beneficiaries)\b)/i,
-    suppressExclude("fe142"),
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-143: Frontend must not reconstruct aggregate costs (ERROR with suppression support)
-checkRule(
-    `FE-143 Error: Addition on cost values detected (must not reconstruct aggregate costs) — suppress with [arch:allow-fe143]`,
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
-    /\+(?=[^;]*\b(cost|total_cost|predicted_fifo_cost)\b)/i,
-    suppressExclude("fe143"),
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-145: Frontend must not compute consumption arithmetic (ERROR with suppression support)
-checkRule(
-    `FE-145 Error: Consumption arithmetic detected (must consume from backend projections) — suppress with [arch:allow-fe145]`,
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
-    /[\+\-\*\/](?=[^;]*\b(consumed|planned|mealCount|meal_count|portion|remaining|portionCount)\b)/i,
-    suppressExclude("fe145"),
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-146: Frontend must not recompute averages (ERROR with suppression support)
-checkRule(
-    `FE-146 Error: Average recomputation detected (must consume from backend projections) — suppress with [arch:allow-fe146]`,
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
-    /\b(average|mealAverage|dailyAverage|avg)\s*(?=[:=])|(?<=\/)\s*\b(beneficiaries|count|days)\b/,
-    suppressExclude("fe146"),
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-147: Frontend must not reassemble projections (ERROR with suppression support)
-checkRule(
-    `FE-147 Error: Projection reassembly detected (must consume from backend projections) — suppress with [arch:allow-fe147]`,
-    ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
-    /(\.\.\.\w*project|\.\.\.\w*forecast|\.\.\.\w*report|Object\.assign\([^)]*project)/i,
-    suppressExclude("fe147"),
-    "error",
-    (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
-);
-
-// FE-148: Detect long $derived computation chains (ERROR with suppression)
-{
-    const fe148tag = "[arch:allow-fe148]";
-    const patterns = ["src/pages/**/*.svelte", "src/components/**/*.svelte"];
-    const scannedFiles = new Set<string>();
-    let ruleViolations = 0;
-    const matches: { file: string; line: number; content: string }[] = [];
-
-    for (const pattern of patterns) {
-        const glob = new Glob(pattern);
-        for (const file of glob.scanSync(".")) {
-            const normalizedFile = file.replace(/\\/g, "/");
-            if (scannedFiles.has(normalizedFile)) continue;
-            scannedFiles.add(normalizedFile);
-
-            if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.")) continue;
-
-            const content = readFileSync(file, "utf-8");
-            const lines = content.split("\n");
-
-            lines.forEach((line, index) => {
-                if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return;
-                if (line.includes(fe148tag)) return;
-                if (index > 0 && lines[index - 1].includes(fe148tag)) return;
-                const derivedCount = (line.match(/\$derived(?:\.\w+)?\s*\(/g) || []).length;
-                if (derivedCount >= 2) {
-                    matches.push({ file, line: index + 1, content: line.trim() });
-                    ruleViolations++;
-                }
-            });
-        }
-    }
-
-    if (ruleViolations > 0) {
-        console.log(`❌ ${colors.red}FE-148 Error: Long $derived computation chain detected (possible semantic leakage) — suppress with [arch:allow-fe148]${colors.reset}`);
-        matches.forEach((m) => {
-            console.log(`  ${m.file}:${m.line} → ${m.content}`);
-        });
-        violations++;
-    }
-}
-
-// FE-149: Projection purity suppression validation (ERROR)
-// Ensures every [arch:allow-fe*] tag has justification, no duplicates, and no unused tags.
-{
-    const fePatterns = ["fe141", "fe142", "fe143", "fe145", "fe146", "fe147", "fe148"];
-    const glob = new Glob("src/**/*.{svelte,ts,js}");
-    const allTags: { tag: string; file: string; line: number; justification: string }[] = [];
-    let fe149Errors = 0;
-
-    for (const file of glob.scanSync(".")) {
-        if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.") || file.includes("/e2e/")) continue;
-        const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
-
-        for (let i = 0; i < lines.length; i++) {
-            for (const pat of fePatterns) {
-                const marker = `[arch:allow-${pat}]`;
-                if (lines[i].includes(marker)) {
-                    // Extract justification: text before the tag or after it
-                    const tagIdx = lines[i].indexOf(marker);
-                    const beforeTag = lines[i].substring(0, tagIdx).replace(/^\s*\/\/\s*/, "").replace(/^\s*<!--\s*/, "").trim();
-                    const afterTag = lines[i].substring(tagIdx + marker.length).replace(/-->\s*$/, "").trim();
-                    const justification = afterTag || beforeTag;
-                    allTags.push({ tag: pat, file, line: i + 1, justification });
-                }
-            }
-        }
-    }
-
-    // Check 1: empty justification
-    for (const t of allTags) {
-        if (!t.justification) {
-            console.log(`❌ ${colors.red}FE-149 Error: Empty suppression — ${t.file}:${t.line} (${t.tag}) — must include justification text${colors.reset}`);
-            fe149Errors++;
-        }
-    }
-
-    // Check 2: duplicate consecutive identical tags on adjacent lines (cargo-cult)
-    for (let i = 1; i < allTags.length; i++) {
-        const a = allTags[i - 1];
-        const b = allTags[i];
-        if (a.tag === b.tag && a.justification === b.justification && a.file === b.file && Math.abs(a.line - b.line) <= 2) {
-            console.log(`❌ ${colors.red}FE-149 Error: Duplicate suppression — ${b.file}:${b.line} (${b.tag}: "${b.justification}") — same tag+justification on adjacent line${colors.reset}`);
-            fe149Errors++;
-        }
-    }
-
-    // Check 3: unused tag detection — verify there is actually a matching rule that could be suppressed
-    // This is best-effort: we check that a matching FE-14x rule would fire on the tagged line or the next line.
-    const rulePatterns: Record<string, RegExp> = {
-        fe141: /\/(?=[^;]*\b(cost|average|beneficiar|quantity|total|price)\b)/i,
-        fe142: /\*(?=[^;]*\b(unit_cost|unitCost|price|cost|quantity|amount|beneficiaries)\b)/i,
-        fe143: /\+(?=[^;]*\b(cost|total_cost|predicted_fifo_cost)\b)/i,
-        fe145: /[\+\-\*\/](?=[^;]*\b(consumed|planned|mealCount|meal_count|portion|remaining|portionCount)\b)/i,
-        fe146: /\b(average|mealAverage|dailyAverage|avg)\s*(?=[:=])|(?<=\/)\s*\b(beneficiaries|count|days)\b/,
-        fe147: /(\.\.\.\w*project|\.\.\.\w*forecast|\.\.\.\w*report|Object\.assign\([^)]*project)/i,
-        fe148: /\$derived(?:\.\w+)?\s*\(/,
-    };
-
-    for (const t of allTags) {
-        if (t.tag === "fe148") continue; // FE-148 operates on $derived count, not single-line regex
-        const regex = rulePatterns[t.tag];
-        if (!regex) continue;
-        try {
-            const content = readFileSync(t.file, "utf-8");
-            const lines = content.split("\n");
-            const lineIdx = t.line - 1;
-            // Check the tagged line and the next line (since suppression may be on line before violation)
-            const linesToCheck = [lineIdx, lineIdx + 1].filter(idx => idx < lines.length);
-            let matchesFound = false;
-            for (const idx of linesToCheck) {
-                if (regex.test(lines[idx])) {
-                    matchesFound = true;
-                    break;
-                }
-            }
-            if (!matchesFound) {
-                console.log(`⚠️ ${colors.yellow}FE-149 Warning: Potentially unused suppression — ${t.file}:${t.line} (${t.tag}) — no matching violation pattern detected nearby${colors.reset}`);
-                fe149Errors++; // Count as error since it's unused
-            }
-        } catch { /* skip if file can't be read */ }
-    }
-
-    if (fe149Errors > 0) {
-        violations += fe149Errors;
-    }
-}
-
-// ============================================================
-// GROUP 26 — Architectural Convergence & Domain Isolation
-// ============================================================
 
 // Domain ownership registry: maps each domain to its contract functions,
 // owned pages, and allowed cross-domain exceptions.
@@ -2425,96 +1887,115 @@ const DOMAIN_REGISTRY: Record<string, {
 // The universal cross-domain functions any page may import without restriction
 const UNIVERSAL_ALLOWED = ["getSettings"];
 
-// FE-152: Projection Ownership Enforcement (ERROR)
-// Pages may only consume projections through their owning contract domain.
-{
-    const allDomainFns = new Set<string>();
-    const fnToDomain = new Map<string, string>();
-    for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
-        for (const fn of reg.functions) {
-            allDomainFns.add(fn);
-            fnToDomain.set(fn, domain);
-        }
-        for (const fn of reg.crossDomainExceptions) {
-            allDomainFns.add(fn);
-        }
+// -----------------------------------------------------------
+// INVARIANT A — CONTRACT_BOUNDARY
+// All IPC must flow through /src/lib/contracts/*.contract.ts only.
+// Suppression: [arch:allow-invariant-a] or [arch:allow-fe1*]
+// -----------------------------------------------------------
+function scanContractBoundary(): { violations: number; warnings: number } {
+    let v = 0;
+    let w = 0;
+
+    // FE-111: All contract files must exist
+    const expectedContracts = [
+        "consumption", "inventory", "report", "session", "user",
+        "orders", "sync", "backup", "metrics", "audit",
+        "observability", "fiscal", "dashboard", "platform",
+    ];
+    const existingContracts = new Set(
+        [...new Glob("src/lib/contracts/*.contract.ts").scanSync(".")]
+            .map(f => f.replace(/^.*\/(\w+)\.contract\.ts$/, "$1"))
+    );
+    const missing = expectedContracts.filter(d => !existingContracts.has(d));
+    if (missing.length > 0) {
+        console.log(`❌ ${colors.red}FE-111 Error: Required contract files missing for domains: ${missing.join(", ")}${colors.reset}`);
+        console.log(`  → Target: src/lib/contracts/<domain>.contract.ts`);
+        v++;
     }
 
-    const pageGlob = new Glob("src/pages/**/*.svelte");
-    let fe152Errors = 0;
-    const pageToDomain = new Map<string, string[]>();
-    for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
-        for (const p of reg.pages) {
-            const existing = pageToDomain.get(p) || [];
-            existing.push(domain);
-            pageToDomain.set(p, existing);
-        }
+    // FE-136: Contract barrel must exist
+    if (![...new Glob("src/lib/contracts/index.ts").scanSync(".")].length) {
+        console.log(`❌ ${colors.red}FE-136 Error: Required contract barrel file missing: src/lib/contracts/index.ts${colors.reset}`);
+        v++;
     }
 
-    for (const file of pageGlob.scanSync(".")) {
-        const normalizedFile = file.replace(/\\/g, "/");
-        if (normalizedFile.includes("/tests/") || normalizedFile.includes("/e2e/")) continue;
-        const fileName = normalizedFile.split("/").pop()?.replace(".svelte", "") || "";
-        if (fileName === "NotFoundPage" || fileName === "App") continue;
-
+    // FE-112: Contract file must export at least one safeInvoke wrapper
+    const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
+    let fe112Warnings = 0;
+    for (const file of contractGlob.scanSync(".")) {
         const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
-
-        // Extract imported functions from the barrel
-        const importMatch = content.match(/from\s+['"]\.\.?\/lib\/contracts['"]/);
-        if (!importMatch) continue; // not using contracts
-
-        // Find which domain functions are imported
-        const pageFileMatches: string[] = [];
-        for (const fn of allDomainFns) {
-            // Check if function name appears (as identifier, not as substring)
-            const regex = new RegExp(`\\b${fn}\\b`);
-            if (regex.test(content)) {
-                pageFileMatches.push(fn);
-            }
-        }
-
-        // Check each function
-        const pageDomains = pageToDomain.get(fileName) || [];
-        const errors: string[] = [];
-
-        for (const fn of pageFileMatches) {
-            if (UNIVERSAL_ALLOWED.includes(fn)) continue;
-            const domain = fnToDomain.get(fn);
-            if (!domain) continue;
-            // Check if function is from one of the page's domains or a cross-domain exception of those domains
-            let isAllowed = pageDomains.includes(domain);
-            if (!isAllowed) {
-                // Check cross-domain exceptions for each of the page's domains
-                for (const pd of pageDomains) {
-                    if ((DOMAIN_REGISTRY[pd]?.crossDomainExceptions || []).includes(fn)) {
-                        isAllowed = true;
-                        break;
-                    }
-                }
-            }
-            if (!isAllowed) {
-                errors.push(`${fn} (owned by ${domain})`);
-            }
-        }
-
-        if (errors.length > 0) {
-            console.log(`❌ ${colors.red}FE-152 Error: ${fileName} imports projection functions from non-owned domain: ${errors.join(", ")}${colors.reset}`);
-            fe152Errors++;
+        if (!content.includes("safeInvoke")) {
+            console.log(`⚠️ ${colors.yellow}FE-112 Warning: ${file} does not export any safeInvoke wrapper${colors.reset}`);
+            fe112Warnings++;
         }
     }
+    if (fe112Warnings > 0) w++;
 
-    if (fe152Errors > 0) {
-        violations += fe152Errors;
-    }
-}
+    // FE-114: Every exported contract function must have explicit typed return value
+    checkRule(
+        "FE-114 Error: Contract function missing explicit typed return value (must declare : Promise<...>)",
+        ["src/lib/contracts/*.contract.ts"],
+        /export\s+(async\s+)?function\s+\w+\s*\([^)]*\)\s*(?!:\s*Promise)/,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            return false;
+        },
+        "error"
+    );
+    checkRule(
+        "FE-114 Error: Contract arrow function missing explicit typed return value (must declare : Promise<...>)",
+        ["src/lib/contracts/*.contract.ts"],
+        /export\s+(const|let|var)\s+\w+\s*=\s*async\s*\([^)]*\)\s*(?!:\s*Promise)/,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            return false;
+        },
+        "error"
+    );
 
-// FE-153: Contract Ownership Enforcement (ERROR)
-// Each IPC command may appear in exactly one contract.
-{
-    const glob = new Glob("src/lib/contracts/*.contract.ts");
+    // FE-116: Contracts must not import other contracts
+    checkRule(
+        "FE-116 Error: Contract importing another contract (contracts must be isolated)",
+        ["src/lib/contracts/*.contract.ts"],
+        /from\s+['"]\.\/(\w+)\.contract['"]|from\s+['"]\.\.\/contracts\//,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            return false;
+        },
+        "error"
+    );
+
+    // FE-120: Contracts must not import Svelte runtime
+    checkRule(
+        "FE-120 Error: Contract importing Svelte runtime (contracts must be runtime-independent)",
+        ["src/lib/contracts/*.contract.ts"],
+        /from\s+['"]svelte/,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            return false;
+        },
+        "error"
+    );
+
+    // FE-138: Components must not access IPC directly
+    checkRule(
+        "FE-138 Error: Component accessing IPC directly (must receive data via props from pages)",
+        ["src/components/**/*.svelte", "src/lib/components/**/*.svelte"],
+        /from\s+['"]\.\.?\/lib\/(tauri|contracts)/,
+        (line, index, lines) => {
+            if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return true;
+            if (line.includes("[arch:allow-component-ipc]")) return true;
+            if (line.includes("[arch:allow-component-ipc-ghost]")) return true;
+            if (index > 0 && lines[index - 1].includes("[arch:allow-component-ipc]")) return true;
+            if (index > 0 && lines[index - 1].includes("[arch:allow-component-ipc-ghost]")) return true;
+            return false;
+        },
+        "error"
+    );
+
+    // FE-153: Contract Ownership Enforcement — each IPC command in exactly one contract
     const cmdToContracts = new Map<string, string[]>();
-    for (const file of glob.scanSync(".")) {
+    for (const file of contractGlob.scanSync(".")) {
         const content = readFileSync(file, "utf-8");
         const matches = [...content.matchAll(/safeInvoke(?:<\s*\w+(?:\s*\[\s*\w+\s*(?:,\s*\w+\s*)?\]\s*)?\s*>)?\s*\(\s*'([^']+)'/g)];
         for (const m of matches) {
@@ -2523,867 +2004,1104 @@ const UNIVERSAL_ALLOWED = ["getSettings"];
             cmdToContracts.get(cmd)!.push(file);
         }
     }
-
-    let fe153Errors = 0;
     for (const [cmd, contracts] of cmdToContracts) {
         if (contracts.length > 1) {
             console.log(`❌ ${colors.red}FE-153 Error: IPC command '${cmd}' appears in multiple contracts: ${contracts.join(", ")}${colors.reset}`);
-            fe153Errors++;
+            v++;
         }
     }
 
-    if (fe153Errors > 0) {
-        violations += fe153Errors;
-    }
-}
-
-// FE-154: Barrel Integrity (ERROR)
-// contracts/index.ts must export every contract. No page may bypass the barrel.
-{
-    let fe154Errors = 0;
-
-    // Check barrel exports all contracts
+    // FE-154: Barrel Integrity
     const barrelPath = "src/lib/contracts/index.ts";
     try {
         const barrelContent = readFileSync(barrelPath, "utf-8");
-        const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
         for (const file of contractGlob.scanSync(".")) {
             const contractName = file.replace(/^.*\/(\w+)\.contract\.ts$/, "$1");
             if (!barrelContent.includes(contractName)) {
                 console.log(`❌ ${colors.red}FE-154 Error: ${contractName}.contract.ts not re-exported from ${barrelPath}${colors.reset}`);
-                fe154Errors++;
+                v++;
             }
         }
+    } catch { /* barrel missing — handled by FE-136 */ }
 
-    } catch { /* barrel missing */ }
-
-    // Check no page bypasses the barrel by importing contract files directly
-    const pageGlob = new Glob("src/pages/**/*.svelte");
-    for (const file of pageGlob.scanSync(".")) {
-        const content = readFileSync(file, "utf-8");
-        // Check for direct imports to contract files
-        const directImport = content.match(/from\s+['"].*\/contracts\/\w+\.contract['"]/);
-        if (directImport) {
-            console.log(`❌ ${colors.red}FE-154 Error: ${file} bypasses barrel — direct contract import: ${directImport[1]}${colors.reset}`);
-            fe154Errors++;
-        }
-    }
-
-    // Also check components and lib files
-    const libGlob = new Glob("src/{components,lib}/**/*.{svelte,ts}");
-    for (const file of libGlob.scanSync(".")) {
-        if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.")) continue;
-        const content = readFileSync(file, "utf-8");
-        const directImport = content.match(/from\s+['"].*\/contracts\/\w+\.contract['"]/);
-        if (directImport) {
-            console.log(`❌ ${colors.red}FE-154 Error: ${file} bypasses barrel — direct contract import: ${directImport[1]}${colors.reset}`);
-            fe154Errors++;
-        }
-    }
-
-    if (fe154Errors > 0) {
-        violations += fe154Errors;
-    }
-}
-
-// FE-155: Architecture Drift Detection (WARNING)
-// Detect orphan contracts, projections, pages, components.
-{
-    const fe155Warnings: string[] = [];
-
-    // Check orphan pages: pages not registered in App.svelte router
-    try {
-        const appContent = readFileSync("src/App.svelte", "utf-8");
-        const pageGlob = new Glob("src/pages/**/*.svelte");
-        for (const file of pageGlob.scanSync(".")) {
-            const fileName = file.split("/").pop()?.replace(".svelte", "") || "";
-            if (fileName === "NotFoundPage") continue;
-            // Check if filename appears in App.svelte routes
-            if (!appContent.includes(fileName)) {
-                fe155Warnings.push(`Orphan page: ${file} — not registered in App.svelte router`);
-            }
-        }
-    } catch { /* no App.svelte */ }
-
-    // Check orphan contracts: contracts with zero consumers among pages
-    const pageGlob = new Glob("src/pages/**/*.svelte");
-    const allPageContent: string[] = [];
-    for (const file of pageGlob.scanSync(".")) {
-        if (file.includes("/tests/")) continue;
-        allPageContent.push(readFileSync(file, "utf-8"));
-    }
-    const allPageContentJoined = allPageContent.join("\n");
-
-    const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
-    for (const file of contractGlob.scanSync(".")) {
-        const contractName = file.replace(/^.*\/(\w+)\.contract\.ts$/, "$1");
-        if (contractName === "platform") continue; // platform is intentionally empty
-        // Check if any exported function from this contract is used by any page
-        const contractContent = readFileSync(file, "utf-8");
-        const exports = [...contractContent.matchAll(/export\s+async\s+function\s+(\w+)/g)].map(m => m[1]);
-        const used = exports.some(fn => new RegExp(`\\b${fn}\\b`).test(allPageContentJoined));
-        if (!used) {
-            fe155Warnings.push(`Orphan contract: ${file} — no page consumes any exported function`);
-        }
-    }
-
-    if (fe155Warnings.length > 0) {
-        console.log(`⚠️ ${colors.yellow}FE-155 Warning: Architecture drift detected${colors.reset}`);
-        for (const w of fe155Warnings) {
-            console.log(`  ⚠️ ${w}`);
-        }
-        warnings += fe155Warnings.length;
-    }
-}
-
-// FE-156: Contract Size Governance (WARNING)
-// Max 50 exported functions, max 500 LOC, max 1 domain per contract.
-{
-    let fe156Warnings = 0;
-    const glob = new Glob("src/lib/contracts/*.contract.ts");
-    for (const file of glob.scanSync(".")) {
-        const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
-        const loc = lines.length;
-        const exportCount = (content.match(/export\s+async\s+function\s+\w+/g) || []).length;
-
-        if (exportCount > 50) {
-            console.log(`⚠️ ${colors.yellow}FE-156 Warning: ${file} has ${exportCount} exported functions (max 50)${colors.reset}`);
-            fe156Warnings++;
-        }
-        if (loc > 500) {
-            console.log(`⚠️ ${colors.yellow}FE-156 Warning: ${file} has ${loc} lines (max 500)${colors.reset}`);
-            fe156Warnings++;
-        }
-    }
-
-    if (fe156Warnings > 0) {
-        warnings += fe156Warnings;
-    }
-}
-
-// FE-157: Projection Surface Governance (ERROR)
-// Projection types must not contain computed/derived/calculated/helper fields
-// introduced solely for frontend convenience.
-{
-    const typeFiles = [
-        "src/lib/types.ts",
-        ...Array.from(new Glob("src/lib/contracts/*.contract.ts").scanSync(".")),
-    ];
-    let fe157Errors = 0;
-
-    // Known backend-computed projection fields that are legitimate (originate from backend computation engine)
-    const FE157_ALLOWLIST = new Set(["computed_closing", "computed_at", "reported_closing"]);
-
-    for (const file of typeFiles) {
-        const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            // Look for interface fields with suspicious names
-            const fieldMatch = line.match(/^\s+(\w[\w]*)\s*[?]?\s*:\s*.*;/);
-            if (fieldMatch) {
-                const fieldName = fieldMatch[1];
-                if (FE157_ALLOWLIST.has(fieldName)) continue;
-                const fieldLower = fieldName.toLowerCase();
-                // Check for frontend-convenience field names
-                if (["computed", "derived", "helper"].includes(fieldLower) ||
-                    fieldLower.startsWith("computed_") || fieldLower.startsWith("derived_") || fieldLower.startsWith("helper_")) {
-                    console.log(`❌ ${colors.red}FE-157 Error: ${file}:${i + 1} — field '${fieldName}' suggests frontend-convenience computation (projection purity violation)${colors.reset}`);
-                    fe157Errors++;
-                }
-            }
-            // Also check for "calculated" field names (more specific to avoid false positives)
-            const calcMatch = line.match(/^\s+(\w*[Cc]alculated\w*)\s*[?]?\s*:/);
-            if (calcMatch) {
-                console.log(`❌ ${colors.red}FE-157 Error: ${file}:${i + 1} — field '${calcMatch[1]}' suggests frontend-convenience calculation (projection purity violation)${colors.reset}`);
-                fe157Errors++;
-            }
-        }
-    }
-
-    // Also check consumption component types
-    try {
-        const content = readFileSync("src/components/consumption/types.ts", "utf-8");
-        const lines = content.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const fieldMatch = line.match(/^\s+(\w[\w]*)\s*[?]?\s*:\s*.*;/);
-            if (fieldMatch) {
-                const fieldName = fieldMatch[1].toLowerCase();
-                if (["computed", "derived", "helper"].includes(fieldName) ||
-                    fieldName.startsWith("computed_") || fieldName.startsWith("derived_") || fieldName.startsWith("helper_")) {
-                    console.log(`❌ ${colors.red}FE-157 Error: src/components/consumption/types.ts:${i + 1} — field '${fieldMatch[1]}' suggests frontend-convenience computation (projection purity violation)${colors.reset}`);
-                    fe157Errors++;
-                }
-            }
-        }
-    } catch { /* skip */ }
-
-    if (fe157Errors > 0) {
-        violations += fe157Errors;
-    }
-}
-
-// FE-114: Every exported contract function must have explicit typed return value
-// Detects `export async function foo()` without `: Promise<...>` or `export const foo = async () =>` without type annotation
-checkRule(
-    "FE-114 Error: Contract function missing explicit typed return value (must declare : Promise<...>)",
-    ["src/lib/contracts/*.contract.ts"],
-    /export\s+(async\s+)?function\s+\w+\s*\([^)]*\)\s*(?!:\s*Promise)/,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        return false;
-    },
-    "error"
-);
-// Also check `export const foo = async (): ...` pattern - ensure type annotation exists after parens
-checkRule(
-    "FE-114 Error: Contract arrow function missing explicit typed return value (must declare : Promise<...>)",
-    ["src/lib/contracts/*.contract.ts"],
-    /export\s+(const|let|var)\s+\w+\s*=\s*async\s*\([^)]*\)\s*(?!:\s*Promise)/,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        return false;
-    },
-    "error"
-);
-
-// FE-116: Contracts must not import other contracts
-checkRule(
-    "FE-116 Error: Contract importing another contract (contracts must be isolated)",
-    ["src/lib/contracts/*.contract.ts"],
-    /from\s+['"]\.\/(\w+)\.contract['"]|from\s+['"]\.\.\/contracts\//,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        return false;
-    },
-    "error"
-);
-
-// FE-120: Contracts must not import Svelte runtime
-checkRule(
-    "FE-120 Error: Contract importing Svelte runtime (contracts must be runtime-independent)",
-    ["src/lib/contracts/*.contract.ts"],
-    /from\s+['"]svelte/,
-    (line) => {
-        if (line.trim().startsWith("//")) return true;
-        return false;
-    },
-    "error"
-);
-
-// FE-131: Page must not import another page
-checkRule(
-    "FE-131 Error: Page importing another page (pages must be independent)",
-    ["src/pages/**/*.svelte"],
-    /import\s+.*from\s+['"]\.\.?\/pages\//,
-    (line) => {
-        if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return true;
-        return false;
-    },
-    "error"
-);
-
-// FE-132: Component must not import a page
-checkRule(
-    "FE-132 Error: Component importing a page (components must not depend on pages)",
-    ["src/components/**/*.svelte", "src/lib/components/**/*.svelte"],
-    /import\s+.*from\s+['"].*pages\//,
-    (line) => {
-        if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return true;
-        return false;
-    },
-    "error"
-);
-
-// FE-138: Components must not access IPC directly
-// Components must not import from contracts, tauri, or use safeInvoke/invoke
-// Exception: [arch:allow-component-ipc] for window-management-only imports (getAppWindow, listenToResize)
-// Exception: [arch:allow-component-ipc-ghost] for documented governance debt to be fixed
-checkRule(
-    "FE-138 Error: Component accessing IPC directly (must receive data via props from pages)",
-    ["src/components/**/*.svelte", "src/lib/components/**/*.svelte"],
-    /from\s+['"]\.\.?\/lib\/(tauri|contracts)/,
-    (line, index, lines) => {
-        if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return true;
-        if (line.includes("[arch:allow-component-ipc]")) return true;
-        if (line.includes("[arch:allow-component-ipc-ghost]")) return true;
-        if (index > 0 && lines[index - 1].includes("[arch:allow-component-ipc]")) return true;
-        if (index > 0 && lines[index - 1].includes("[arch:allow-component-ipc-ghost]")) return true;
-        return false;
-    },
-    "error"
-);
-
-
-
-// ============================================================
-// GROUP 27 — Continuous Governance & Change Control (Phase 4B)
-// ============================================================
-
-// FE-158: Governance Drift Detection (ERROR)
-// Compare current governance state against certified snapshots.
-{
-    const snapshotDir = "docs/governance/frontend/baselines";
-    const snapshots = [
-        { file: "contracts.snapshot.json", name: "contract" },
-        { file: "domain-ownership.snapshot.json", name: "domain-ownership" },
-        { file: "projection-ownership.snapshot.json", name: "projection-ownership" },
-        { file: "import-graph.snapshot.json", name: "import-graph" },
-    ];
-
-    let fe158Errors = 0;
-
-    // Phase 1: Validate all snapshots exist and are valid JSON
-    for (const snap of snapshots) {
-        try {
-            const content = readFileSync(`${snapshotDir}/${snap.file}`, "utf-8");
-            JSON.parse(content);
-        } catch {
-            console.log(`❌ ${colors.red}FE-158 Error: Governance snapshot missing or invalid: ${snap.file}${colors.reset}`);
-            fe158Errors++;
-        }
-    }
-
-    // Phase 2: Compare contracts snapshot with current state
-    try {
-        const contractSnap = JSON.parse(readFileSync(`${snapshotDir}/contracts.snapshot.json`, "utf-8"));
-        const currentContracts: Record<string, { exports: string[]; loc: number }> = {};
-        const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
-        for (const file of contractGlob.scanSync(".")) {
+    const barrelBypassPattern = /from\s+['"].*\/contracts\/\w+\.contract['"]/;
+    for (const pattern of ["src/pages/**/*.svelte", "src/{components,lib}/**/*.{svelte,ts}"]) {
+        const glob = new Glob(pattern);
+        for (const file of glob.scanSync(".")) {
+            if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.")) continue;
             const content = readFileSync(file, "utf-8");
-            const name = file.split("/").pop()!.replace(".contract.ts", "");
-            const exports = [...content.matchAll(/export\s+async\s+function\s+(\w+)/g)].map((m) => m[1]);
-            const loc = content.split("\n").length;
-            currentContracts[name] = { exports, loc };
-        }
-
-        for (const snapContract of contractSnap.contracts || []) {
-            const current = currentContracts[snapContract.name];
-            if (!current) {
-                console.log(`❌ ${colors.red}FE-158 Error: Contract '${snapContract.name}' exists in snapshot but not in current codebase (governance drift)${colors.reset}`);
-                fe158Errors++;
-                continue;
-            }
-            for (const exportEntry of snapContract.exports || []) {
-                if (!current.exports.includes(exportEntry.name)) {
-                    console.log(`❌ ${colors.red}FE-158 Error: Contract '${snapContract.name}' lost export '${exportEntry.name}' (governance drift — requires snapshot update)${colors.reset}`);
-                    fe158Errors++;
-                }
+            const directImport = content.match(barrelBypassPattern);
+            if (directImport) {
+                console.log(`❌ ${colors.red}FE-154 Error: ${file} bypasses barrel — direct contract import: ${directImport[1]}${colors.reset}`);
+                v++;
             }
         }
+    }
 
-        for (const name of Object.keys(currentContracts)) {
-            const snapExists = (contractSnap.contracts || []).some((c: any) => c.name === name);
-            if (!snapExists) {
-                console.log(`❌ ${colors.red}FE-158 Error: New contract '${name}' not in governance snapshot (governance drift — requires snapshot update)${colors.reset}`);
-                fe158Errors++;
+    return { violations: v, warnings: w };
+}
+
+// -----------------------------------------------------------
+// INVARIANT B — PROJECTION_INTEGRITY
+// The frontend must never perform business arithmetic.
+// Suppression: [arch:allow-invariant-b] or [arch:allow-fe14*]
+// -----------------------------------------------------------
+function scanProjectionIntegrity(): { violations: number; warnings: number } {
+    let v = 0;
+    let w = 0;
+
+    // FE-141: Division on projection values
+    checkRule(
+        `FE-141 Error: Division on projection values detected — suppress with [arch:allow-fe141]`,
+        ["src/pages/**/*.svelte", "src/components/**/*.svelte"],
+        /\/(?=[^;]*\b(cost|average|beneficiar|quantity|total|price)\b)/i,
+        suppressExclude("fe141"),
+        "error",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-142: Frontend must not compute line totals
+    checkRule(
+        `FE-142 Error: Multiplication on projection values detected — suppress with [arch:allow-fe142]`,
+        ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
+        /\*(?=[^;]*\b(unit_cost|unitCost|price|cost|quantity|amount|beneficiaries)\b)/i,
+        suppressExclude("fe142"),
+        "error",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-143: Frontend must not reconstruct aggregate costs
+    checkRule(
+        `FE-143 Error: Addition on cost values detected — suppress with [arch:allow-fe143]`,
+        ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
+        /\+(?=[^;]*\b(cost|total_cost|predicted_fifo_cost)\b)/i,
+        suppressExclude("fe143"),
+        "error",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-145: Frontend must not compute consumption arithmetic
+    checkRule(
+        `FE-145 Error: Consumption arithmetic detected — suppress with [arch:allow-fe145]`,
+        ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
+        /[\+\-\*\/](?=[^;]*\b(consumed|planned|mealCount|meal_count|portion|remaining|portionCount)\b)/i,
+        suppressExclude("fe145"),
+        "error",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-146: Frontend must not recompute averages
+    checkRule(
+        `FE-146 Error: Average recomputation detected — suppress with [arch:allow-fe146]`,
+        ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
+        /\b(average|mealAverage|dailyAverage|avg)\s*(?=[:=])|(?<=\/)\s*\b(beneficiaries|count|days)\b/,
+        suppressExclude("fe146"),
+        "error",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-147: Frontend must not reassemble projections
+    checkRule(
+        `FE-147 Error: Projection reassembly detected — suppress with [arch:allow-fe147]`,
+        ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/**/*.ts"],
+        /(\.\.\.\w*project|\.\.\.\w*forecast|\.\.\.\w*report|Object\.assign\([^)]*project)/i,
+        suppressExclude("fe147"),
+        "error",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-148: Detect long $derived computation chains
+    {
+        const fe148tag = "[arch:allow-fe148]";
+        const patterns = ["src/pages/**/*.svelte", "src/components/**/*.svelte"];
+        const scannedFiles = new Set<string>();
+        let ruleViolations = 0;
+        const matches: { file: string; line: number; content: string }[] = [];
+
+        for (const pattern of patterns) {
+            const glob = new Glob(pattern);
+            for (const file of glob.scanSync(".")) {
+                const normalizedFile = file.replace(/\\/g, "/");
+                if (scannedFiles.has(normalizedFile)) continue;
+                scannedFiles.add(normalizedFile);
+                if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.")) continue;
+
+                const content = readFileSync(file, "utf-8");
+                const lines = content.split("\n");
+
+                lines.forEach((line, index) => {
+                    if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return;
+                    if (line.includes(fe148tag)) return;
+                    if (index > 0 && lines[index - 1].includes(fe148tag)) return;
+                    const derivedCount = (line.match(/\$derived(?:\.\w+)?\s*\(/g) || []).length;
+                    if (derivedCount >= 2) {
+                        matches.push({ file, line: index + 1, content: line.trim() });
+                        ruleViolations++;
+                    }
+                });
             }
         }
-    } catch { /* snapshot missing — handled in Phase 1 */ }
 
-    // Phase 3: Compare domain-ownership snapshot with current state
-    try {
-        const domainSnap = JSON.parse(readFileSync(`${snapshotDir}/domain-ownership.snapshot.json`, "utf-8"));
-        const currentPages: Record<string, string[]> = {};
+        if (ruleViolations > 0) {
+            console.log(`❌ ${colors.red}FE-148 Error: Long $derived computation chain detected — suppress with [arch:allow-fe148]${colors.reset}`);
+            matches.forEach((m) => console.log(`  ${m.file}:${m.line} → ${m.content}`));
+            v++;
+        }
+    }
+
+    // FE-152: Projection Ownership Enforcement — pages may only consume through owning domain
+    {
+        const allDomainFns = new Set<string>();
+        const fnToDomain = new Map<string, string>();
+        for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
+            for (const fn of reg.functions) { allDomainFns.add(fn); fnToDomain.set(fn, domain); }
+            for (const fn of reg.crossDomainExceptions) { allDomainFns.add(fn); }
+        }
+
         const pageGlob = new Glob("src/pages/**/*.svelte");
+        let fe152Errors = 0;
+        const pageToDomain = new Map<string, string[]>();
+        for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
+            for (const p of reg.pages) {
+                const existing = pageToDomain.get(p) || [];
+                existing.push(domain);
+                pageToDomain.set(p, existing);
+            }
+        }
+
         for (const file of pageGlob.scanSync(".")) {
-            if (file.includes("/tests/")) continue;
+            const normalizedFile = file.replace(/\\/g, "/");
+            if (normalizedFile.includes("/tests/") || normalizedFile.includes("/e2e/")) continue;
+            const fileName = normalizedFile.split("/").pop()?.replace(".svelte", "") || "";
+            if (fileName === "NotFoundPage" || fileName === "App") continue;
+
             const content = readFileSync(file, "utf-8");
-            const name = file.split("/").pop()!.replace(".svelte", "");
-            const fnMatches = [...content.matchAll(/\b(\w+)\s*\(/g)].map((m) => m[1]);
-            const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
-            const allExports = new Set<string>();
-            for (const cf of contractGlob.scanSync(".")) {
-                const cc = readFileSync(cf, "utf-8");
-                for (const e of cc.matchAll(/export\s+async\s+function\s+(\w+)/g)) allExports.add(e[1]);
+            const importMatch = content.match(/from\s+['"]\.\.?\/lib\/contracts['"]/);
+            if (!importMatch) continue;
+
+            const pageFileMatches: string[] = [];
+            for (const fn of allDomainFns) {
+                if (new RegExp(`\\b${fn}\\b`).test(content)) pageFileMatches.push(fn);
             }
-            currentPages[name] = fnMatches.filter((fn) => allExports.has(fn));
-        }
 
-        for (const [page, snapFns] of Object.entries(domainSnap.pages || {})) {
-            const currentFns = currentPages[page] || [];
-            for (const snapFn of snapFns as string[]) {
-                if (!currentFns.includes(snapFn)) {
-                    console.log(`❌ ${colors.red}FE-158 Error: Page '${page}' no longer uses function '${snapFn}' from domain snapshot (governance drift)${colors.reset}`);
-                    fe158Errors++;
-                }
-            }
-        }
-    } catch { /* snapshot missing — handled in Phase 1 */ }
+            const pageDomains = pageToDomain.get(fileName) || [];
+            const errors: string[] = [];
 
-    if (fe158Errors > 0) {
-        violations += fe158Errors;
-    }
-}
-
-// FE-159: Contract Mutation Detection (ERROR)
-// Detect functions moved between contracts or duplicated across contracts.
-{
-    const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
-    const fnToContracts = new Map<string, string[]>();
-
-    for (const file of contractGlob.scanSync(".")) {
-        const content = readFileSync(file, "utf-8");
-        const name = file.split("/").pop()!.replace(".contract.ts", "");
-        const exports = [...content.matchAll(/export\s+async\s+function\s+(\w+)/g)].map((m) => m[1]);
-        for (const fn of exports) {
-            if (!fnToContracts.has(fn)) fnToContracts.set(fn, []);
-            fnToContracts.get(fn)!.push(name);
-        }
-    }
-
-    let fe159Errors = 0;
-
-    for (const [fn, contracts] of fnToContracts) {
-        if (contracts.length > 1) {
-            console.log(`❌ ${colors.red}FE-159 Error: Function '${fn}' is duplicated across contracts: ${contracts.join(", ")} (contract mutation)${colors.reset}`);
-            fe159Errors++;
-        }
-    }
-
-    if (fe159Errors > 0) {
-        violations += fe159Errors;
-    }
-}
-
-// FE-160: Projection Mutation Detection (WARNING)
-// Detect projection field changes compared to snapshot.
-{
-    let fe160Warnings = 0;
-
-    try {
-        const snapContent = readFileSync("docs/governance/frontend/baselines/projection-ownership.snapshot.json", "utf-8");
-        const snapshot = JSON.parse(snapContent);
-        const snapTypes = new Map(snapshot.types.map((t: any) => [t.name, t]));
-
-        const content = readFileSync("src/lib/types.ts", "utf-8");
-        const lines = content.split("\n");
-        let currentType: { name: string; kind: string; fields: string[] } | null = null;
-        const currentTypes = new Map<string, { name: string; kind: string; fields: string[] }>();
-        let typeAliasLine = false;
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const ifaceMatch = line.match(/^export\s+(interface|type)\s+(\w+)/);
-            if (ifaceMatch) {
-                if (currentType) {
-                    currentTypes.set(currentType.name, currentType);
-                }
-                currentType = { name: ifaceMatch[2], kind: ifaceMatch[1], fields: [] };
-                typeAliasLine = ifaceMatch[1] === "type";
-                continue;
-            }
-            if (currentType) {
-                const fieldMatch = line.match(/^\s+(\w[\w\?]*)\s*[?]?\s*:\s*(.+?);/);
-                if (fieldMatch) {
-                    const fieldName = fieldMatch[1].replace("?", "");
-                    if (!["id", "created_at", "updated_at"].includes(fieldName)) {
-                        currentType.fields.push(fieldName);
+            for (const fn of pageFileMatches) {
+                if (UNIVERSAL_ALLOWED.includes(fn)) continue;
+                const domain = fnToDomain.get(fn);
+                if (!domain) continue;
+                let isAllowed = pageDomains.includes(domain);
+                if (!isAllowed) {
+                    for (const pd of pageDomains) {
+                        if ((DOMAIN_REGISTRY[pd]?.crossDomainExceptions || []).includes(fn)) { isAllowed = true; break; }
                     }
                 }
-                // Type aliases end on the same line (no closing brace needed)
-                if (typeAliasLine) {
-                    currentTypes.set(currentType.name, currentType);
-                    currentType = null;
-                    typeAliasLine = false;
-                    continue;
-                }
-                if (/^\}/.test(line.trim()) || /^\};/.test(line.trim())) {
-                    currentTypes.set(currentType.name, currentType);
-                    currentType = null;
-                }
+                if (!isAllowed) errors.push(`${fn} (owned by ${domain})`);
             }
-        }
-        if (currentType) {
-            currentTypes.set(currentType.name, currentType);
-        }
 
-        for (const [name, snapshotType] of snapTypes) {
-            const currentDef = currentTypes.get(name);
-            if (!currentDef) {
-                console.log(`⚠️ ${colors.yellow}FE-160 Warning: Projection type '${name}' removed from current codebase (projection mutation)${colors.reset}`);
-                fe160Warnings++;
-                continue;
-            }
-            const currentFields = currentDef.fields;
-            for (const field of currentFields) {
-                if (!snapshotType.fields.some((f: any) => f.name === field)) {
-                    console.log(`⚠️ ${colors.yellow}FE-160 Warning: Projection '${name}' — new field '${field}' added (projection surface evolution)${colors.reset}`);
-                    fe160Warnings++;
-                }
-            }
-            for (const snapField of snapshotType.fields) {
-                if (!currentFields.includes(snapField.name)) {
-                    console.log(`⚠️ ${colors.yellow}FE-160 Warning: Projection '${name}' — field '${snapField.name}' removed (projection mutation)${colors.reset}`);
-                    fe160Warnings++;
-                }
+            if (errors.length > 0) {
+                console.log(`❌ ${colors.red}FE-152 Error: ${fileName} imports projection functions from non-owned domain: ${errors.join(", ")}${colors.reset}`);
+                fe152Errors++;
             }
         }
-
-        for (const name of currentTypes.keys()) {
-            if (!snapTypes.has(name)) {
-                console.log(`⚠️ ${colors.yellow}FE-160 Warning: New projection type '${name}' not in governance snapshot (projection surface evolution)${colors.reset}`);
-                fe160Warnings++;
-            }
-        }
-    } catch { /* skip if snapshot missing */ }
-
-    if (fe160Warnings > 0) {
-        warnings += fe160Warnings;
+        if (fe152Errors > 0) v += fe152Errors;
     }
+
+    // FE-157: Projection Surface Governance — no computed/derived/helper fields
+    {
+        const typeFiles = [
+            "src/lib/types.ts",
+            ...Array.from(new Glob("src/lib/contracts/*.contract.ts").scanSync(".")),
+        ];
+        let fe157Errors = 0;
+        const FE157_ALLOWLIST = new Set(["computed_closing", "computed_at", "reported_closing"]);
+
+        for (const file of typeFiles) {
+            const content = readFileSync(file, "utf-8");
+            const lines = content.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const fieldMatch = line.match(/^\s+(\w[\w]*)\s*[?]?\s*:\s*.*;/);
+                if (fieldMatch) {
+                    const fieldName = fieldMatch[1];
+                    if (FE157_ALLOWLIST.has(fieldName)) continue;
+                    const fieldLower = fieldName.toLowerCase();
+                    if (["computed", "derived", "helper"].includes(fieldLower) ||
+                        fieldLower.startsWith("computed_") || fieldLower.startsWith("derived_") || fieldLower.startsWith("helper_")) {
+                        console.log(`❌ ${colors.red}FE-157 Error: ${file}:${i + 1} — field '${fieldName}' suggests frontend-convenience computation${colors.reset}`);
+                        fe157Errors++;
+                    }
+                }
+                const calcMatch = line.match(/^\s+(\w*[Cc]alculated\w*)\s*[?]?\s*:/);
+                if (calcMatch) {
+                    console.log(`❌ ${colors.red}FE-157 Error: ${file}:${i + 1} — field '${calcMatch[1]}' suggests frontend-convenience calculation${colors.reset}`);
+                    fe157Errors++;
+                }
+            }
+        }
+
+        try {
+            const content = readFileSync("src/components/consumption/types.ts", "utf-8");
+            const lines = content.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const fieldMatch = line.match(/^\s+(\w[\w]*)\s*[?]?\s*:\s*.*;/);
+                if (fieldMatch) {
+                    const fieldName = fieldMatch[1].toLowerCase();
+                    if (["computed", "derived", "helper"].includes(fieldName) ||
+                        fieldName.startsWith("computed_") || fieldName.startsWith("derived_") || fieldName.startsWith("helper_")) {
+                        console.log(`❌ ${colors.red}FE-157 Error: src/components/consumption/types.ts:${i + 1} — field '${fieldMatch[1]}' suggests frontend-convenience computation${colors.reset}`);
+                        fe157Errors++;
+                    }
+                }
+            }
+        } catch { /* skip */ }
+
+        if (fe157Errors > 0) v += fe157Errors;
+    }
+
+    return { violations: v, warnings: w };
 }
 
-// FE-162: Suppression Lifecycle Governance (ERROR)
-// Every suppression must include Reason, Date, Owner metadata.
-{
-    const fePatterns = ["fe141", "fe142", "fe143", "fe145", "fe146", "fe147", "fe148"];
-    const glob = new Glob("src/**/*.{svelte,ts,js}");
-    let fe162Errors = 0;
-    let fe162ExpiredErrors = 0;
+// -----------------------------------------------------------
+// INVARIANT C — RUNTIME_SAFETY
+// All reactive state and side effects must be governed.
+// Suppression: [arch:allow-invariant-c] or [arch:allow-fe1*]
+// -----------------------------------------------------------
+function scanRuntimeSafety(): { violations: number; warnings: number } {
+    let v = 0;
+    let w = 0;
 
-    for (const file of glob.scanSync(".")) {
-        if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.") || file.includes("/e2e/")) continue;
-        const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
+    const fileFilter = (f: string) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.") && !f.includes("/e2e/");
+    const srcPatterns = ["src/pages/**/*.svelte", "src/components/**/*.svelte", "src/lib/components/**/*.svelte", "src/lib/**/*.ts"];
 
-        for (let i = 0; i < lines.length; i++) {
-            for (const pat of fePatterns) {
-                const marker = `[arch:allow-${pat}]`;
-                if (lines[i].includes(marker)) {
-                    const line = lines[i];
-                    const hasReason = /\bReason\s*:/i.test(line);
-                    const hasDate = /\bDate\s*:\s*\d{4}-\d{2}-\d{2}/.test(line);
-                    const hasOwner = /\bOwner\s*:/i.test(line);
+    // FE-100: Every $state() must have a // @category marker
+    checkRule(
+        "FE-100 Error: $state() declaration without @category marker",
+        srcPatterns,
+        /\$state\(/,
+        (line, index, lines) => {
+            if (line.includes("@category")) return true;
+            for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
+                const trimmed = lines[i].trim();
+                if (trimmed === "") continue;
+                if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
+                if (trimmed.startsWith("//")) continue;
+                break;
+            }
+            return false;
+        },
+        "error",
+        fileFilter
+    );
 
-                    if (!hasReason || !hasDate || !hasOwner) {
-                        console.log(`❌ ${colors.red}FE-162 Error: ${file}:${i + 1} — suppression '${marker}' missing metadata. Required: Reason: <text>; Date: <YYYY-MM-DD>; Owner: <name>${colors.reset}`);
-                        fe162Errors++;
-                    } else {
-                        const dateMatch = line.match(/Date\s*:\s*(\d{4}-\d{2}-\d{2})/);
-                        if (dateMatch) {
-                            const date = new Date(dateMatch[1]);
-                            const now = new Date();
-                            const diffMs = now.getTime() - date.getTime();
-                            const diffDays = diffMs / (1000 * 60 * 60 * 24);
-                            if (diffDays > 90) {
-                                console.log(`❌ ${colors.red}FE-162 Error: ${file}:${i + 1} — suppression '${marker}' expired (${Math.floor(diffDays)} days old, max 90). Must be reviewed and renewed.${colors.reset}`);
-                                fe162ExpiredErrors++;
+    // FE-100B: Every $derived() / $derived.by() must have a // @category marker
+    checkRule(
+        "FE-100B Error: $derived() / $derived.by() declaration without @category marker",
+        srcPatterns,
+        /\$derived(?:\.\w+)?\s*\(/,
+        (line, index, lines) => {
+            if (line.includes("@category")) return true;
+            for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
+                const trimmed = lines[i].trim();
+                if (trimmed === "") continue;
+                if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
+                if (trimmed.startsWith("//")) continue;
+                break;
+            }
+            return false;
+        },
+        "error",
+        fileFilter
+    );
+
+    // FE-100C: Module-level reactive let must have @category
+    {
+        const scannedFiles = new Set<string>();
+        let ruleViolations = 0;
+        const matches: { file: string; line: number; content: string }[] = [];
+
+        for (const pattern of srcPatterns) {
+            const glob = new Glob(pattern);
+            for (const file of glob.scanSync(".")) {
+                const normalizedFile = file.replace(/\\/g, "/");
+                if (scannedFiles.has(normalizedFile)) continue;
+                scannedFiles.add(normalizedFile);
+                if (!fileFilter(normalizedFile)) continue;
+
+                const content = readFileSync(file, "utf-8");
+                const lines = content.split("\n");
+
+                lines.forEach((line, index) => {
+                    if (line.trim().startsWith("//")) return;
+                    const letMatch = line.match(/^\s*(?:export\s+)?let\s+(\w+)\s*(?::\s*\w+\s*)?=/);
+                    if (!letMatch) return;
+                    const varName = letMatch[1];
+                    const isReactive = content.includes(`$: ${varName}`) ||
+                        content.includes(`${varName} = $derived`) ||
+                        content.includes(`${varName}.subscribe`) ||
+                        content.includes(`$${varName}`);
+                    if (!isReactive) return;
+                    let hasCategory = false;
+                    for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
+                        const trimmed = lines[i].trim();
+                        if (trimmed === "") continue;
+                        if (trimmed.startsWith("//") && trimmed.includes("@category")) { hasCategory = true; break; }
+                        if (trimmed.startsWith("//")) continue;
+                        break;
+                    }
+                    if (!hasCategory && !line.includes("@category")) {
+                        matches.push({ file, line: index + 1, content: line.trim() });
+                        ruleViolations++;
+                    }
+                });
+            }
+        }
+
+        if (ruleViolations > 0) {
+            console.log(`⚠️ ${colors.yellow}FE-100C Warning: Module-level reactive state without @category marker${colors.reset}`);
+            matches.forEach((m) => console.log(`  ${m.file}:${m.line} → ${m.content}`));
+            w++;
+        }
+    }
+
+    // FE-105A: writable() requires @category annotation
+    checkRule(
+        "FE-105A Error: writable() without @category marker",
+        srcPatterns,
+        /writable\(/,
+        (line, index, lines) => {
+            if (line.includes("@category")) return true;
+            for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
+                const trimmed = lines[i].trim();
+                if (trimmed === "") continue;
+                if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
+                if (trimmed.startsWith("//")) continue;
+                break;
+            }
+            return false;
+        },
+        "error",
+        fileFilter
+    );
+
+    // FE-105B: readable() requires @category annotation
+    checkRule(
+        "FE-105B Error: readable() without @category marker",
+        srcPatterns,
+        /readable\(/,
+        (line, index, lines) => {
+            if (line.includes("@category")) return true;
+            for (let i = index - 1; i >= Math.max(0, index - 3); i--) {
+                const trimmed = lines[i].trim();
+                if (trimmed === "") continue;
+                if (trimmed.startsWith("//") && trimmed.includes("@category")) return true;
+                if (trimmed.startsWith("//")) continue;
+                break;
+            }
+            return false;
+        },
+        "error",
+        fileFilter
+    );
+
+    // FE-121: Every page must call createRuntimeScope() and dispose in onDestroy
+    {
+        const pageGlob = new Glob("src/pages/**/*.svelte");
+        let fe121Errors = 0;
+        let fe121Warnings = 0;
+        for (const file of pageGlob.scanSync(".")) {
+            const normalized = file.toLowerCase().replace(/\\/g, "/");
+            if (normalized.includes("notfoundpage.svelte")) continue;
+            const content = readFileSync(file, "utf-8");
+            const scopeMatch = content.match(/const\s+(\w+)\s*=\s*createRuntimeScope\(\)/);
+            const hasScope = !!scopeMatch;
+            if (!hasScope) {
+                if (content.includes("createRuntimeScope")) {
+                    console.log(`❌ ${colors.red}FE-121 Error: ${file} — createRuntimeScope() must be assigned to a const variable${colors.reset}`);
+                    fe121Errors++;
+                } else {
+                    console.log(`❌ ${colors.red}FE-121 Error: ${file} missing createRuntimeScope()${colors.reset}`);
+                    fe121Errors++;
+                }
+                continue;
+            }
+            const varName = scopeMatch[1];
+            const fakeDisposeRe = new RegExp(varName + '\\.dispose\\s*=\\s*(?=[^=])');
+            for (let i = 0; i < content.split("\n").length; i++) {
+                const line = content.split("\n")[i];
+                if (fakeDisposeRe.test(line)) {
+                    console.log(`❌ ${colors.red}FE-121 Error: ${file} — fake dispose override detected: ${line.trim()}${colors.reset}`);
+                    fe121Errors++;
+                }
+            }
+            const allDisposeVars = [...content.matchAll(/(\w+)\.dispose\s*\(/g)].map(m => m[1]);
+            const otherVars = [...new Set(allDisposeVars.filter(v => v !== varName))];
+            if (otherVars.length > 0) {
+                console.log(`⚠️ ${colors.yellow}FE-121 Warning: ${file} — dispose called on '${otherVars.join("', '")}' but createRuntimeScope assigned to '${varName}'${colors.reset}`);
+                fe121Warnings++;
+            }
+            const lines = content.split("\n");
+            let disposeInOnDestroy = false;
+            for (let i = 0; i < lines.length; i++) {
+                if (/onDestroy\s*\(\s*\(\s*\)\s*=>\s*\{/.test(lines[i])) {
+                    let braceDepth = 0;
+                    let inBlock = false;
+                    for (let j = i; j < lines.length; j++) {
+                        for (const ch of lines[j]) {
+                            if (ch === '{') { braceDepth++; inBlock = true; }
+                            else if (ch === '}') { braceDepth--; }
+                        }
+                        if (inBlock && lines[j].includes(varName + ".dispose")) { disposeInOnDestroy = true; break; }
+                        if (inBlock && braceDepth === 0) break;
+                    }
+                    if (disposeInOnDestroy) break;
+                }
+            }
+            if (!disposeInOnDestroy) {
+                const simpleRe = new RegExp('onDestroy\\s*\\(\\s*\\(\\s*\\)\\s*=>\\s*' + varName + '\\.dispose\\s*\\(');
+                if (simpleRe.test(content)) disposeInOnDestroy = true;
+            }
+            if (!disposeInOnDestroy) {
+                console.log(`⚠️ ${colors.yellow}FE-121 Warning: ${file} has createRuntimeScope (var: ${varName}) but ${varName}.dispose() not found inside onDestroy()${colors.reset}`);
+                fe121Warnings++;
+            }
+        }
+        v += fe121Errors;
+        w += fe121Warnings;
+    }
+
+    // FE-122: createOperation/createOperationGuard should receive RuntimeScope
+    checkRule(
+        "FE-122: createOperation or createOperationGuard without RuntimeScope (must pass { scope })",
+        ["src/pages/**/*.svelte", "src/lib/**/*.ts"],
+        /createOperation(?:Guard)?\s*\(\s*(?!\{)/,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            if (line.match(/^\s*(export\s+)?function\s+createOperation/)) return true;
+            if (line.includes("createOperation({") || line.includes("createOperationGuard({")) return true;
+            if (line.includes("import ")) return true;
+            if (line.includes("type CreateOperation")) return true;
+            return false;
+        },
+        "warning",
+        (f) => !f.includes("/tests/") && !f.includes(".test.") && !f.includes(".spec.")
+    );
+
+    // FE-149: session.ts must use createRuntimeScope for all timers and listeners
+    {
+        const sessionFile = "src/lib/session.ts";
+        const content = readFileSync(sessionFile, "utf-8");
+        const fe149Errors: string[] = [];
+        if (!content.includes("createRuntimeScope")) fe149Errors.push("missing createRuntimeScope import/usage");
+        if (!content.includes("scope.setInterval") && !content.includes("scope.setTimeout")) {
+            fe149Errors.push("no scope timer methods found");
+        }
+        if (!content.includes("scope.addListener")) fe149Errors.push("no scope.addListener found");
+        if (fe149Errors.length > 0) {
+            console.log(`❌ ${colors.red}FE-149 Error: session.ts violates RuntimeScope requirements:${colors.reset}`);
+            fe149Errors.forEach(e => console.log(`  → ${e}`));
+            v++;
+        }
+    }
+
+    // FE-150: No module-level mutable timer/listener references outside RuntimeScope
+    checkRule(
+        "FE-150: Module-level mutable timer/listener reference (use RuntimeScope instead)",
+        ["src/lib/**/*.ts", "src/lib/**/*.js"],
+        /^\s*export\s+let\s+\w+\s*[?]?\s*:\s*(number|null\s*\|?\s*number|ReturnType<typeof\s+set(?:Timeout|Interval)>)/,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            if (line.includes("scope.")) return true;
+            return false;
+        },
+        "error",
+        (f) => {
+            const n = f.toLowerCase().replace(/\\/g, "/");
+            if (n.includes("/tests/") || n.includes(".test.") || n.includes(".spec.")) return false;
+            return true;
+        }
+    );
+
+    // FE-151: Touch/scroll/wheel listeners should use { passive: true }
+    checkRule(
+        "FE-151: addEventListener with touch/scroll/wheel missing { passive: true }",
+        ["src/**/*.svelte", "src/**/*.ts", "src/**/*.js"],
+        /\.addEventListener\s*\(\s*(['"`])(touch|scroll|wheel)\1/,
+        (line) => {
+            if (line.trim().startsWith("//")) return true;
+            if (line.includes("passive: true")) return true;
+            if (/scope\.addListener/.test(line)) return true;
+            return false;
+        },
+        "warning",
+        fileFilter
+    );
+
+    // Suppression validation (FE-149 + FE-162 lifecycle)
+    {
+        const fePatterns = ["fe141", "fe142", "fe143", "fe145", "fe146", "fe147", "fe148"];
+        const glob = new Glob("src/**/*.{svelte,ts,js}");
+        const allTags: { tag: string; file: string; line: number; justification: string }[] = [];
+        let fe149Errors = 0;
+        let fe162Errors = 0;
+        let fe162ExpiredErrors = 0;
+
+        for (const file of glob.scanSync(".")) {
+            if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.") || file.includes("/e2e/")) continue;
+            const content = readFileSync(file, "utf-8");
+            const lines = content.split("\n");
+
+            for (let i = 0; i < lines.length; i++) {
+                for (const pat of fePatterns) {
+                    const marker = `[arch:allow-${pat}]`;
+                    if (lines[i].includes(marker)) {
+                        // FE-149: Collect for justification check
+                        const tagIdx = lines[i].indexOf(marker);
+                        const beforeTag = lines[i].substring(0, tagIdx).replace(/^\s*\/\/\s*/, "").replace(/^\s*<!--\s*/, "").trim();
+                        const afterTag = lines[i].substring(tagIdx + marker.length).replace(/-->\s*$/, "").trim();
+                        const justification = afterTag || beforeTag;
+                        allTags.push({ tag: pat, file, line: i + 1, justification });
+
+                        // FE-162: Check metadata
+                        const hasReason = /\bReason\s*:/i.test(lines[i]);
+                        const hasDate = /\bDate\s*:\s*\d{4}-\d{2}-\d{2}/.test(lines[i]);
+                        const hasOwner = /\bOwner\s*:/i.test(lines[i]);
+                        if (!hasReason || !hasDate || !hasOwner) {
+                            console.log(`❌ ${colors.red}FE-162 Error: ${file}:${i + 1} — suppression '${marker}' missing metadata. Required: Reason, Date, Owner${colors.reset}`);
+                            fe162Errors++;
+                        } else {
+                            const dateMatch = lines[i].match(/Date\s*:\s*(\d{4}-\d{2}-\d{2})/);
+                            if (dateMatch) {
+                                const date = new Date(dateMatch[1]);
+                                const now = new Date();
+                                const diffMs = now.getTime() - date.getTime();
+                                const diffDays = diffMs / (1000 * 60 * 60 * 24);
+                                if (diffDays > 90) {
+                                    console.log(`❌ ${colors.red}FE-162 Error: ${file}:${i + 1} — suppression '${marker}' expired (${Math.floor(diffDays)} days old, max 90)${colors.reset}`);
+                                    fe162ExpiredErrors++;
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        // FE-149: Check empty justification
+        for (const t of allTags) {
+            if (!t.justification) {
+                console.log(`❌ ${colors.red}FE-149 Error: Empty suppression — ${t.file}:${t.line} (${t.tag}) — must include justification text${colors.reset}`);
+                fe149Errors++;
+            }
+        }
+
+        // FE-149: Check duplicate consecutive identical tags
+        for (let i = 1; i < allTags.length; i++) {
+            const a = allTags[i - 1];
+            const b = allTags[i];
+            if (a.tag === b.tag && a.justification === b.justification && a.file === b.file && Math.abs(a.line - b.line) <= 2) {
+                console.log(`❌ ${colors.red}FE-149 Error: Duplicate suppression — ${b.file}:${b.line} (${b.tag}) — same tag+justification on adjacent line${colors.reset}`);
+                fe149Errors++;
+            }
+        }
+
+        if (fe149Errors > 0) v += fe149Errors;
+        if (fe162Errors > 0 || fe162ExpiredErrors > 0) v += fe162Errors + fe162ExpiredErrors;
     }
 
-    if (fe162Errors > 0 || fe162ExpiredErrors > 0) {
-        violations += fe162Errors + fe162ExpiredErrors;
-    }
+    return { violations: v, warnings: w };
 }
 
-// FE-163: Dead Governance Artifact Detection (WARNING)
-// Detect unused ownership entries, registry entries, suppressions, and exceptions.
-{
-    let fe163Warnings = 0;
+// -----------------------------------------------------------
+// INVARIANT D — ARCHITECTURE_GRAPH
+// The system's import graph and layer structure must remain stable.
+// Suppression: [arch:allow-invariant-d] or [arch:allow-fe15*]
+// -----------------------------------------------------------
+function scanArchitectureGraph(): { violations: number; warnings: number } {
+    let v = 0;
+    let w = 0;
 
-    // Check for unused pages registered in DOMAIN_REGISTRY that don't exist
-    const existingPages = new Set(
-        [...new Glob("src/pages/**/*.svelte").scanSync(".")]
-            .map((f) => f.split("/").pop()!.replace(".svelte", ""))
-            .filter((n) => n !== "NotFoundPage" && n !== "App"),
+    // FE-131: Page must not import another page
+    checkRule(
+        "FE-131 Error: Page importing another page (pages must be independent)",
+        ["src/pages/**/*.svelte"],
+        /import\s+.*from\s+['"]\.\.?\/pages\//,
+        (line) => {
+            if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return true;
+            return false;
+        },
+        "error"
     );
 
-    for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
-        for (const page of reg.pages) {
-            if (!existingPages.has(page)) {
-                console.log(`⚠️ ${colors.yellow}FE-163 Warning: Dead governance entry — page '${page}' registered for domain '${domain}' but no such page exists${colors.reset}`);
-                fe163Warnings++;
+    // FE-132: Component must not import a page
+    checkRule(
+        "FE-132 Error: Component importing a page (components must not depend on pages)",
+        ["src/components/**/*.svelte", "src/lib/components/**/*.svelte"],
+        /import\s+.*from\s+['"].*pages\//,
+        (line) => {
+            if (line.trim().startsWith("//") || line.trim().startsWith("<!--")) return true;
+            return false;
+        },
+        "error"
+    );
+
+    // FE-155: Architecture Drift Detection — orphan pages/contracts
+    {
+        const fe155Warnings: string[] = [];
+        try {
+            const appContent = readFileSync("src/App.svelte", "utf-8");
+            const pageGlob = new Glob("src/pages/**/*.svelte");
+            for (const file of pageGlob.scanSync(".")) {
+                const fileName = file.split("/").pop()?.replace(".svelte", "") || "";
+                if (fileName === "NotFoundPage") continue;
+                if (!appContent.includes(fileName)) {
+                    fe155Warnings.push(`Orphan page: ${file} — not registered in App.svelte router`);
+                }
             }
+        } catch { /* no App.svelte */ }
+
+        const pageGlob = new Glob("src/pages/**/*.svelte");
+        const allPageContent: string[] = [];
+        for (const file of pageGlob.scanSync(".")) {
+            if (file.includes("/tests/")) continue;
+            allPageContent.push(readFileSync(file, "utf-8"));
+        }
+        const allPageContentJoined = allPageContent.join("\n");
+
+        const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
+        for (const file of contractGlob.scanSync(".")) {
+            const contractName = file.replace(/^.*\/(\w+)\.contract\.ts$/, "$1");
+            if (contractName === "platform") continue;
+            const contractContent = readFileSync(file, "utf-8");
+            const exports = [...contractContent.matchAll(/export\s+async\s+function\s+(\w+)/g)].map(m => m[1]);
+            const used = exports.some(fn => new RegExp(`\\b${fn}\\b`).test(allPageContentJoined));
+            if (!used) {
+                fe155Warnings.push(`Orphan contract: ${file} — no page consumes any exported function`);
+            }
+        }
+
+        if (fe155Warnings.length > 0) {
+            console.log(`⚠️ ${colors.yellow}FE-155 Warning: Architecture drift detected${colors.reset}`);
+            for (const ww of fe155Warnings) console.log(`  ⚠️ ${ww}`);
+            w += fe155Warnings.length;
         }
     }
 
-    // Check for unused functions in domain registry
-    const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
-    const allExistingExports = new Set<string>();
-    for (const file of contractGlob.scanSync(".")) {
-        const content = readFileSync(file, "utf-8");
-        for (const m of content.matchAll(/export\s+async\s+function\s+(\w+)/g)) {
-            allExistingExports.add(m[1]);
-        }
-    }
-
-    for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
-        for (const fn of reg.functions) {
-            if (!allExistingExports.has(fn)) {
-                console.log(`⚠️ ${colors.yellow}FE-163 Warning: Dead governance entry — function '${fn}' registered for domain '${domain}' but no such export exists${colors.reset}`);
-                fe163Warnings++;
+    // FE-156: Contract Size Governance — max 50 exports, max 500 LOC
+    {
+        let fe156Warnings = 0;
+        const glob = new Glob("src/lib/contracts/*.contract.ts");
+        for (const file of glob.scanSync(".")) {
+            const content = readFileSync(file, "utf-8");
+            const loc = content.split("\n").length;
+            const exportCount = (content.match(/export\s+async\s+function\s+\w+/g) || []).length;
+            if (exportCount > 50) {
+                console.log(`⚠️ ${colors.yellow}FE-156 Warning: ${file} has ${exportCount} exported functions (max 50)${colors.reset}`);
+                fe156Warnings++;
+            }
+            if (loc > 500) {
+                console.log(`⚠️ ${colors.yellow}FE-156 Warning: ${file} has ${loc} lines (max 500)${colors.reset}`);
+                fe156Warnings++;
             }
         }
-        for (const fn of reg.crossDomainExceptions) {
-            if (!allExistingExports.has(fn) && fn !== "") {
-                console.log(`⚠️ ${colors.yellow}FE-163 Warning: Unused cross-domain exception — '${fn}' in domain '${domain}' does not correspond to any existing export${colors.reset}`);
-                fe163Warnings++;
-            }
-        }
+        if (fe156Warnings > 0) w += fe156Warnings;
     }
 
-    // Check for unused suppressions (arch:allow-fe* tags where the rule would not fire)
-    const fePatterns = ["fe141", "fe142", "fe143", "fe145", "fe146", "fe147", "fe148"];
-    const rulePatterns: Record<string, RegExp> = {
-        fe141: /\/(?=[^;]*\b(cost|average|beneficiar|quantity|total|price)\b)/i,
-        fe142: /\*(?=[^;]*\b(unit_cost|unitCost|price|cost|quantity|amount|beneficiaries)\b)/i,
-        fe143: /\+(?=[^;]*\b(cost|total_cost|predicted_fifo_cost)\b)/i,
-        fe145: /[\+\-\*\/](?=[^;]*\b(consumed|planned|mealCount|meal_count|portion|remaining|portionCount)\b)/i,
-        fe146: /\b(average|mealAverage|dailyAverage|avg)\s*(?=[:=])|(?<=\/)\s*\b(beneficiaries|count|days)\b/,
-        fe147: /(\.\.\.\w*project|\.\.\.\w*forecast|\.\.\.\w*report|Object\.assign\([^)]*project)/i,
-        fe148: /\$derived(?:\.\w+)?\s*\(/,
-    };
+    // FE-158: Governance Drift Detection — compare current state against snapshots
+    {
+        const snapshotDir = "docs/governance/frontend/baselines";
+        const snapshots = [
+            { file: "contracts.snapshot.json", name: "contract" },
+            { file: "domain-ownership.snapshot.json", name: "domain-ownership" },
+            { file: "projection-ownership.snapshot.json", name: "projection-ownership" },
+            { file: "import-graph.snapshot.json", name: "import-graph" },
+        ];
 
-    const searchGlob = new Glob("src/**/*.{svelte,ts,js}");
-    for (const file of searchGlob.scanSync(".")) {
-        if (file.includes("/tests/") || file.includes(".test.") || file.includes(".spec.") || file.includes("/e2e/")) continue;
-        const content = readFileSync(file, "utf-8");
-        const lines = content.split("\n");
+        let fe158Errors = 0;
 
-        for (let i = 0; i < lines.length; i++) {
-            for (const pat of fePatterns) {
-                const marker = `[arch:allow-${pat}]`;
-                if (lines[i].includes(marker)) {
-                    if (pat === "fe148") continue;
-                    const regex = rulePatterns[pat];
-                    if (!regex) continue;
-                    const fileLines = content.split("\n");
-                    const linesToCheck = [i, i + 1].filter((idx) => idx < fileLines.length);
-                    let matchesFound = false;
-                    for (const idx of linesToCheck) {
-                        if (regex.test(fileLines[idx])) {
-                            matchesFound = true;
-                            break;
-                        }
-                    }
-                    if (!matchesFound) {
-                        console.log(`⚠️ ${colors.yellow}FE-163 Warning: Unused suppression — ${file}:${i + 1} (${pat}) — no matching violation pattern detected nearby${colors.reset}`);
-                        fe163Warnings++;
+        for (const snap of snapshots) {
+            try { JSON.parse(readFileSync(`${snapshotDir}/${snap.file}`, "utf-8")); }
+            catch {
+                console.log(`❌ ${colors.red}FE-158 Error: Governance snapshot missing or invalid: ${snap.file}${colors.reset}`);
+                fe158Errors++;
+            }
+        }
+
+        try {
+            const contractSnap = JSON.parse(readFileSync(`${snapshotDir}/contracts.snapshot.json`, "utf-8"));
+            const currentContracts: Record<string, { exports: string[]; loc: number }> = {};
+            const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
+            for (const file of contractGlob.scanSync(".")) {
+                const content = readFileSync(file, "utf-8");
+                const name = file.split("/").pop()!.replace(".contract.ts", "");
+                const exports = [...content.matchAll(/export\s+async\s+function\s+(\w+)/g)].map((m) => m[1]);
+                currentContracts[name] = { exports, loc: content.split("\n").length };
+            }
+
+            for (const snapContract of contractSnap.contracts || []) {
+                const current = currentContracts[snapContract.name];
+                if (!current) {
+                    console.log(`❌ ${colors.red}FE-158 Error: Contract '${snapContract.name}' exists in snapshot but not in current codebase${colors.reset}`);
+                    fe158Errors++;
+                    continue;
+                }
+                for (const exportEntry of snapContract.exports || []) {
+                    if (!current.exports.includes(exportEntry.name)) {
+                        console.log(`❌ ${colors.red}FE-158 Error: Contract '${snapContract.name}' lost export '${exportEntry.name}' (governance drift)${colors.reset}`);
+                        fe158Errors++;
                     }
                 }
             }
-        }
+
+            for (const name of Object.keys(currentContracts)) {
+                if (!(contractSnap.contracts || []).some((c: any) => c.name === name)) {
+                    console.log(`❌ ${colors.red}FE-158 Error: New contract '${name}' not in governance snapshot${colors.reset}`);
+                    fe158Errors++;
+                }
+            }
+        } catch { /* snapshot missing — handled above */ }
+
+        try {
+            const domainSnap = JSON.parse(readFileSync(`${snapshotDir}/domain-ownership.snapshot.json`, "utf-8"));
+            const currentPages: Record<string, string[]> = {};
+            const pageGlob = new Glob("src/pages/**/*.svelte");
+            for (const file of pageGlob.scanSync(".")) {
+                if (file.includes("/tests/")) continue;
+                const content = readFileSync(file, "utf-8");
+                const name = file.split("/").pop()!.replace(".svelte", "");
+                const fnMatches = [...content.matchAll(/\b(\w+)\s*\(/g)].map((m) => m[1]);
+                const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
+                const allExports = new Set<string>();
+                for (const cf of contractGlob.scanSync(".")) {
+                    const cc = readFileSync(cf, "utf-8");
+                    for (const e of cc.matchAll(/export\s+async\s+function\s+(\w+)/g)) allExports.add(e[1]);
+                }
+                currentPages[name] = fnMatches.filter((fn) => allExports.has(fn));
+            }
+
+            for (const [page, snapFns] of Object.entries(domainSnap.pages || {})) {
+                const currentFns = currentPages[page] || [];
+                for (const snapFn of snapFns as string[]) {
+                    if (!currentFns.includes(snapFn)) {
+                        console.log(`❌ ${colors.red}FE-158 Error: Page '${page}' no longer uses function '${snapFn}' from domain snapshot${colors.reset}`);
+                        fe158Errors++;
+                    }
+                }
+            }
+        } catch { /* snapshot missing */ }
+
+        if (fe158Errors > 0) v += fe158Errors;
     }
 
-    if (fe163Warnings > 0) {
-        warnings += fe163Warnings;
+    // FE-159: Contract Mutation Detection — functions duplicated across contracts
+    {
+        const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
+        const fnToContracts = new Map<string, string[]>();
+        for (const file of contractGlob.scanSync(".")) {
+            const content = readFileSync(file, "utf-8");
+            const name = file.split("/").pop()!.replace(".contract.ts", "");
+            const exports = [...content.matchAll(/export\s+async\s+function\s+(\w+)/g)].map((m) => m[1]);
+            for (const fn of exports) {
+                if (!fnToContracts.has(fn)) fnToContracts.set(fn, []);
+                fnToContracts.get(fn)!.push(name);
+            }
+        }
+        let fe159Errors = 0;
+        for (const [fn, contracts] of fnToContracts) {
+            if (contracts.length > 1) {
+                console.log(`❌ ${colors.red}FE-159 Error: Function '${fn}' is duplicated across contracts: ${contracts.join(", ")} (contract mutation)${colors.reset}`);
+                fe159Errors++;
+            }
+        }
+        if (fe159Errors > 0) v += fe159Errors;
     }
+
+    // FE-160: Projection Mutation Detection — projection field changes vs snapshot
+    {
+        let fe160Warnings = 0;
+        try {
+            const snapContent = readFileSync("docs/governance/frontend/baselines/projection-ownership.snapshot.json", "utf-8");
+            const snapshot = JSON.parse(snapContent);
+            const snapTypes = new Map(snapshot.types.map((t: any) => [t.name, t]));
+
+            const content = readFileSync("src/lib/types.ts", "utf-8");
+            const lines = content.split("\n");
+            let currentType: { name: string; kind: string; fields: string[] } | null = null;
+            const currentTypes = new Map<string, { name: string; kind: string; fields: string[] }>();
+            let typeAliasLine = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const ifaceMatch = line.match(/^export\s+(interface|type)\s+(\w+)/);
+                if (ifaceMatch) {
+                    if (currentType) currentTypes.set(currentType.name, currentType);
+                    currentType = { name: ifaceMatch[2], kind: ifaceMatch[1], fields: [] };
+                    typeAliasLine = ifaceMatch[1] === "type";
+                    continue;
+                }
+                if (currentType) {
+                    const fieldMatch = line.match(/^\s+(\w[\w\?]*)\s*[?]?\s*:\s*(.+?);/);
+                    if (fieldMatch) {
+                        const fieldName = fieldMatch[1].replace("?", "");
+                        if (!["id", "created_at", "updated_at"].includes(fieldName)) {
+                            currentType.fields.push(fieldName);
+                        }
+                    }
+                    if (typeAliasLine) {
+                        currentTypes.set(currentType.name, currentType);
+                        currentType = null;
+                        typeAliasLine = false;
+                        continue;
+                    }
+                    if (/^\}/.test(line.trim()) || /^\};/.test(line.trim())) {
+                        currentTypes.set(currentType.name, currentType);
+                        currentType = null;
+                    }
+                }
+            }
+            if (currentType) currentTypes.set(currentType.name, currentType);
+
+            for (const [name, snapshotType] of snapTypes) {
+                const currentDef = currentTypes.get(name);
+                if (!currentDef) {
+                    console.log(`⚠️ ${colors.yellow}FE-160 Warning: Projection type '${name}' removed from current codebase (projection mutation)${colors.reset}`);
+                    fe160Warnings++;
+                    continue;
+                }
+                const currentFields = currentDef.fields;
+                for (const field of currentFields) {
+                    if (!snapshotType.fields.some((f: any) => f.name === field)) {
+                        console.log(`⚠️ ${colors.yellow}FE-160 Warning: Projection '${name}' — new field '${field}' added (projection surface evolution)${colors.reset}`);
+                        fe160Warnings++;
+                    }
+                }
+                for (const snapField of snapshotType.fields) {
+                    if (!currentFields.includes(snapField.name)) {
+                        console.log(`⚠️ ${colors.yellow}FE-160 Warning: Projection '${name}' — field '${snapField.name}' removed (projection mutation)${colors.reset}`);
+                        fe160Warnings++;
+                    }
+                }
+            }
+
+            for (const name of currentTypes.keys()) {
+                if (!snapTypes.has(name)) {
+                    console.log(`⚠️ ${colors.yellow}FE-160 Warning: New projection type '${name}' not in governance snapshot (projection surface evolution)${colors.reset}`);
+                    fe160Warnings++;
+                }
+            }
+        } catch { /* skip if snapshot missing */ }
+
+        if (fe160Warnings > 0) w += fe160Warnings;
+    }
+
+    // FE-163: Dead Governance Artifact Detection
+    {
+        let fe163Warnings = 0;
+
+        const existingPages = new Set(
+            [...new Glob("src/pages/**/*.svelte").scanSync(".")]
+                .map((f) => f.split("/").pop()!.replace(".svelte", ""))
+                .filter((n) => n !== "NotFoundPage" && n !== "App"),
+        );
+
+        for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
+            for (const page of reg.pages) {
+                if (!existingPages.has(page)) {
+                    console.log(`⚠️ ${colors.yellow}FE-163 Warning: Dead governance entry — page '${page}' registered for domain '${domain}' but no such page exists${colors.reset}`);
+                    fe163Warnings++;
+                }
+            }
+        }
+
+        const contractGlob = new Glob("src/lib/contracts/*.contract.ts");
+        const allExistingExports = new Set<string>();
+        for (const file of contractGlob.scanSync(".")) {
+            const content = readFileSync(file, "utf-8");
+            for (const m of content.matchAll(/export\s+async\s+function\s+(\w+)/g)) allExistingExports.add(m[1]);
+        }
+
+        for (const [domain, reg] of Object.entries(DOMAIN_REGISTRY)) {
+            for (const fn of reg.functions) {
+                if (!allExistingExports.has(fn)) {
+                    console.log(`⚠️ ${colors.yellow}FE-163 Warning: Dead governance entry — function '${fn}' registered for domain '${domain}' but no such export exists${colors.reset}`);
+                    fe163Warnings++;
+                }
+            }
+            for (const fn of reg.crossDomainExceptions) {
+                if (!allExistingExports.has(fn) && fn !== "") {
+                    console.log(`⚠️ ${colors.yellow}FE-163 Warning: Unused cross-domain exception — '${fn}' in domain '${domain}' does not correspond to any existing export${colors.reset}`);
+                    fe163Warnings++;
+                }
+            }
+        }
+
+        if (fe163Warnings > 0) w += fe163Warnings;
+    }
+
+    return { violations: v, warnings: w };
 }
 
-// ============================================================
-// GROUP 28 — Governance Freeze & Release Certification (Phase 5)
-// ============================================================
+// -----------------------------------------------------------
+// META-INVARIANT — GOVERNANCE_FREEZE
+// The governance system itself is frozen and externally verifiable.
+// Not suppressible.
+// -----------------------------------------------------------
+function scanGovernanceFreeze(): { violations: number; warnings: number } {
+    let v = 0;
+    let w = 0;
 
-// FE-165: Release Gate (ERROR)
-// A release build cannot be certified when check_arch.ts fails, snapshot drift exists,
-// or governance approval is missing.
-{
-    const snapshotDir = "docs/governance/frontend/baselines";
-    let fe165Errors = 0;
+    // FE-165: Release Gate — required governance artifacts exist
+    {
+        const snapshotDir = "docs/governance/frontend/baselines";
+        let fe165Errors = 0;
 
-    // Check 1: All snapshots exist and are valid JSON
-    const requiredSnapshots = [
-        "contracts.snapshot.json",
-        "domain-ownership.snapshot.json",
-        "projection-ownership.snapshot.json",
-        "import-graph.snapshot.json",
-    ];
-    for (const snap of requiredSnapshots) {
+        const requiredSnapshots = [
+            "contracts.snapshot.json", "domain-ownership.snapshot.json",
+            "projection-ownership.snapshot.json", "import-graph.snapshot.json",
+        ];
+        for (const snap of requiredSnapshots) {
+            try { JSON.parse(readFileSync(`${snapshotDir}/${snap}`, "utf-8")); }
+            catch {
+                console.log(`❌ ${colors.red}FE-165 Error: Release gate — governance snapshot missing or invalid: ${snap}${colors.reset}`);
+                fe165Errors++;
+            }
+        }
+
+        const requiredDocs = [
+            { path: "docs/governance/frontend/GOVERNANCE_APPROVALS.md", check: (c: string) => c.includes("## Approvals") },
+            { path: "docs/governance/frontend/GOVERNANCE_FREEZE.md", check: (_c: string) => true },
+            { path: "docs/governance/frontend/RELEASE_CERTIFICATION_CHECKLIST.md", check: (_c: string) => true },
+            { path: "docs/governance/frontend/GOVERNANCE_METRICS.md", check: (_c: string) => true },
+            { path: "docs/governance/frontend/GOVERNANCE_COVERAGE_REPORT.md", check: (c: string) => c.includes("Coverage Metrics") },
+            { path: "docs/governance/frontend/FRONTEND_CERTIFICATION_v6.md", check: (c: string) => c.includes("Status:") },
+        ];
+
+        for (const doc of requiredDocs) {
+            try {
+                const content = readFileSync(doc.path, "utf-8");
+                if (!doc.check(content)) {
+                    console.log(`❌ ${colors.red}FE-165 Error: Release gate — ${doc.path} missing required content${colors.reset}`);
+                    fe165Errors++;
+                }
+            } catch {
+                console.log(`❌ ${colors.red}FE-165 Error: Release gate — ${doc.path} missing${colors.reset}`);
+                fe165Errors++;
+            }
+        }
+
+        if (fe165Errors > 0) v += fe165Errors;
+    }
+
+    // FE-166: Snapshot Approval Enforcement
+    {
+        let fe166Errors = 0;
+        const snapshotDir = "docs/governance/frontend/baselines";
+        const snapshots = [
+            { file: "contracts.snapshot.json" },
+            { file: "domain-ownership.snapshot.json" },
+            { file: "projection-ownership.snapshot.json" },
+            { file: "import-graph.snapshot.json" },
+        ];
+
+        for (const snap of snapshots) {
+            try {
+                const parsed = JSON.parse(readFileSync(`${snapshotDir}/${snap.file}`, "utf-8"));
+                if (!parsed.generated) {
+                    console.log(`❌ ${colors.red}FE-166 Error: ${snap.file} missing 'generated' timestamp (not a valid governance snapshot)${colors.reset}`);
+                    fe166Errors++;
+                }
+            } catch { /* missing snapshots handled by FE-165 */ }
+        }
+
         try {
-            const content = readFileSync(`${snapshotDir}/${snap}`, "utf-8");
-            JSON.parse(content);
-        } catch {
-            console.log(`❌ ${colors.red}FE-165 Error: Release gate — governance snapshot missing or invalid: ${snap}${colors.reset}`);
-            fe165Errors++;
-        }
-    }
-
-    // Check 2: Governance approval registry exists
-    try {
-        const approvalContent = readFileSync("docs/governance/frontend/GOVERNANCE_APPROVALS.md", "utf-8");
-        if (!approvalContent.includes("## Approvals")) {
-            console.log(`❌ ${colors.red}FE-165 Error: Release gate — GOVERNANCE_APPROVALS.md missing required ## Approvals section${colors.reset}`);
-            fe165Errors++;
-        }
-    } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — GOVERNANCE_APPROVALS.md missing${colors.reset}`);
-        fe165Errors++;
-    }
-
-    // Check 3: Governance freeze document exists
-    try {
-        readFileSync("docs/governance/frontend/GOVERNANCE_FREEZE.md", "utf-8");
-    } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — GOVERNANCE_FREEZE.md missing${colors.reset}`);
-        fe165Errors++;
-    }
-
-    // Check 4: Release certification checklist exists
-    try {
-        readFileSync("docs/governance/frontend/RELEASE_CERTIFICATION_CHECKLIST.md", "utf-8");
-    } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — RELEASE_CERTIFICATION_CHECKLIST.md missing${colors.reset}`);
-        fe165Errors++;
-    }
-
-    // Check 5: Governance metrics dashboard exists
-    try {
-        readFileSync("docs/governance/frontend/GOVERNANCE_METRICS.md", "utf-8");
-    } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — GOVERNANCE_METRICS.md missing${colors.reset}`);
-        fe165Errors++;
-    }
-
-    // Check 6: Current certification exists
-    try {
-        const certContent = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v6.md", "utf-8");
-        if (!certContent.includes("Status:")) {
-            console.log(`❌ ${colors.red}FE-165 Error: Release gate — FRONTEND_CERTIFICATION_v6.md missing Status section${colors.reset}`);
-            fe165Errors++;
-        }
-    } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — FRONTEND_CERTIFICATION_v6.md missing${colors.reset}`);
-        fe165Errors++;
-    }
-
-    // Check 7: All FE rules pass (this rule runs at the end, so violations from other rules
-    // will already be counted; this check is about required artifacts existing)
-    // Check that the governance coverage report exists
-    try {
-        const coverageContent = readFileSync("docs/governance/frontend/GOVERNANCE_COVERAGE_REPORT.md", "utf-8");
-        if (!coverageContent.includes("Coverage Metrics")) {
-            console.log(`❌ ${colors.red}FE-165 Error: Release gate — GOVERNANCE_COVERAGE_REPORT.md missing Coverage Metrics section${colors.reset}`);
-            fe165Errors++;
-        }
-    } catch {
-        console.log(`❌ ${colors.red}FE-165 Error: Release gate — GOVERNANCE_COVERAGE_REPORT.md missing${colors.reset}`);
-        fe165Errors++;
-    }
-
-    if (fe165Errors > 0) {
-        violations += fe165Errors;
-    }
-}
-
-// FE-166: Snapshot Approval Enforcement (ERROR)
-// Any snapshot modification must reference GOVERNANCE_APPROVALS.md.
-{
-    let fe166Errors = 0;
-
-    // Check that each snapshot contains a reference to the baseline version
-    const snapshotDir = "docs/governance/frontend/baselines";
-    const snapshots = [
-        { file: "contracts.snapshot.json", label: "contracts" },
-        { file: "domain-ownership.snapshot.json", label: "domain-ownership" },
-        { file: "projection-ownership.snapshot.json", label: "projection-ownership" },
-        { file: "import-graph.snapshot.json", label: "import-graph" },
-    ];
-
-    for (const snap of snapshots) {
-        try {
-            const content = readFileSync(`${snapshotDir}/${snap.file}`, "utf-8");
-            const parsed = JSON.parse(content);
-            // Verify the snapshot has a generated timestamp (indicates it's a real snapshot)
-            if (!parsed.generated) {
-                console.log(`❌ ${colors.red}FE-166 Error: ${snap.file} missing 'generated' timestamp (not a valid governance snapshot)${colors.reset}`);
+            const approvalsContent = readFileSync("docs/governance/frontend/GOVERNANCE_APPROVALS.md", "utf-8");
+            if (!approvalsContent.includes("snapshot") && !approvalsContent.includes("Snapshot")) {
+                console.log(`❌ ${colors.red}FE-166 Error: GOVERNANCE_APPROVALS.md contains no snapshot-related approvals${colors.reset}`);
                 fe166Errors++;
             }
-        } catch {
-            // Missing snapshots handled by FE-165
-        }
+        } catch { /* handled by FE-165 */ }
+
+        if (fe166Errors > 0) v += fe166Errors;
     }
 
-    // Check that GOVERNANCE_APPROVALS.md references the snapshots
-    try {
-        const approvalsContent = readFileSync("docs/governance/frontend/GOVERNANCE_APPROVALS.md", "utf-8");
-        // Verify at least one approval entry references snapshots
-        if (!approvalsContent.includes("snapshot") && !approvalsContent.includes("Snapshot")) {
-            console.log(`❌ ${colors.red}FE-166 Error: GOVERNANCE_APPROVALS.md contains no snapshot-related approvals (required: snapshot changes must be approved)${colors.reset}`);
-            fe166Errors++;
+    // FE-167: Certification Consistency
+    {
+        let fe167Warnings = 0;
+
+        try {
+            const v6Content = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v6.md", "utf-8");
+            if (!v6Content.includes("v5-freeze")) {
+                console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v6.md does not reference snapshot version 'v5-freeze'${colors.reset}`);
+                fe167Warnings++;
+            }
+            if (!v6Content.includes("v6")) {
+                console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v6.md does not reference version 'v6'${colors.reset}`);
+                fe167Warnings++;
+            }
+        } catch { /* handled by FE-165 */ }
+
+        try {
+            const freezeContent = readFileSync("docs/governance/frontend/GOVERNANCE_FREEZE.md", "utf-8");
+            if (!freezeContent.includes("v5.0.0") && !freezeContent.includes("v5")) {
+                console.log(`⚠️ ${colors.yellow}FE-167 Warning: GOVERNANCE_FREEZE.md does not reference version 'v5'${colors.reset}`);
+                fe167Warnings++;
+            }
+        } catch { /* handled by FE-165 */ }
+
+        try {
+            const metricsContent = readFileSync("docs/governance/frontend/GOVERNANCE_METRICS.md", "utf-8");
+            if (!metricsContent.includes("v5-freeze")) {
+                console.log(`⚠️ ${colors.yellow}FE-167 Warning: GOVERNANCE_METRICS.md does not reference snapshot version 'v5-freeze'${colors.reset}`);
+                fe167Warnings++;
+            }
+        } catch { /* handled by FE-165 */ }
+
+        try {
+            const approvalsContent = readFileSync("docs/governance/frontend/GOVERNANCE_APPROVALS.md", "utf-8");
+            if (!approvalsContent.includes("v5") && !approvalsContent.includes("Phase 5")) {
+                console.log(`⚠️ ${colors.yellow}FE-167 Warning: GOVERNANCE_APPROVALS.md does not reference version v5 or Phase 5${colors.reset}`);
+                fe167Warnings++;
+            }
+        } catch { /* handled by FE-165 */ }
+
+        const certFiles = [
+            "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v1.md",
+            "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v2.md",
+            "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v3.md",
+            "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v4.md",
+            "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v5.md",
+        ];
+        for (const f of certFiles) {
+            try { readFileSync(f, "utf-8"); }
+            catch {
+                console.log(`⚠️ ${colors.yellow}FE-167 Warning: Archived certification file missing: ${f}${colors.reset}`);
+                fe167Warnings++;
+            }
         }
-    } catch {
-        // Missing approvals handled by FE-165
+
+        if (fe167Warnings > 0) w += fe167Warnings;
     }
 
-    if (fe166Errors > 0) {
-        violations += fe166Errors;
-    }
+    return { violations: v, warnings: w };
 }
 
-// FE-167: Certification Consistency (WARNING)
-// Verify certification version, snapshot version, registry version remain synchronized.
-{
-    let fe167Warnings = 0;
+// -----------------------------------------------------------
+// Execute all 5 invariant scans
+// -----------------------------------------------------------
 
-    // Check 1: Certification files reference consistent versions
-    // v6 should reference v5-freeze snapshot version
-    try {
-        const v6Content = readFileSync("docs/governance/frontend/FRONTEND_CERTIFICATION_v6.md", "utf-8");
-        if (!v6Content.includes("v5-freeze")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v6.md does not reference snapshot version 'v5-freeze'${colors.reset}`);
-            fe167Warnings++;
-        }
-        if (!v6Content.includes("v6")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: FRONTEND_CERTIFICATION_v6.md does not reference version 'v6'${colors.reset}`);
-            fe167Warnings++;
-        }
-    } catch { /* handled by FE-165 */ }
+const invariantResults = [
+    { name: "INVARIANT A — Contract Boundary", result: scanContractBoundary() },
+    { name: "INVARIANT B — Projection Integrity", result: scanProjectionIntegrity() },
+    { name: "INVARIANT C — Runtime Safety", result: scanRuntimeSafety() },
+    { name: "INVARIANT D — Architecture Graph", result: scanArchitectureGraph() },
+    { name: "META — Governance Freeze", result: scanGovernanceFreeze() },
+];
 
-    // Check 2: Governance freeze references consistent version
-    try {
-        const freezeContent = readFileSync("docs/governance/frontend/GOVERNANCE_FREEZE.md", "utf-8");
-        if (!freezeContent.includes("v5.0.0") && !freezeContent.includes("v5")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: GOVERNANCE_FREEZE.md does not reference version 'v5'${colors.reset}`);
-            fe167Warnings++;
-        }
-    } catch { /* handled by FE-165 */ }
-
-    // Check 3: Governance metrics references consistent version
-    try {
-        const metricsContent = readFileSync("docs/governance/frontend/GOVERNANCE_METRICS.md", "utf-8");
-        if (!metricsContent.includes("v5-freeze")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: GOVERNANCE_METRICS.md does not reference snapshot version 'v5-freeze'${colors.reset}`);
-            fe167Warnings++;
-        }
-    } catch { /* handled by FE-165 */ }
-
-    // Check 4: Governance approvals references consistent version
-    try {
-        const approvalsContent = readFileSync("docs/governance/frontend/GOVERNANCE_APPROVALS.md", "utf-8");
-        if (!approvalsContent.includes("v5") && !approvalsContent.includes("Phase 5")) {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: GOVERNANCE_APPROVALS.md does not reference version v5 or Phase 5${colors.reset}`);
-            fe167Warnings++;
-        }
-    } catch { /* handled by FE-165 */ }
-
-    // Check 5: All archived certification files exist
-    const certFiles = [
-        "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v1.md",
-        "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v2.md",
-        "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v3.md",
-        "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v4.md",
-        "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v5.md",
-    ];
-    for (const f of certFiles) {
-        try {
-            readFileSync(f, "utf-8");
-        } catch {
-            console.log(`⚠️ ${colors.yellow}FE-167 Warning: Archived certification file missing: ${f}${colors.reset}`);
-            fe167Warnings++;
-        }
-    }
-
-    if (fe167Warnings > 0) {
-        warnings += fe167Warnings;
-    }
+for (const ir of invariantResults) {
+    violations += ir.result.violations;
+    warnings += ir.result.warnings;
 }
 
 // ============================================================
