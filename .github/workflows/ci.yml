@@ -73,11 +73,17 @@ jobs:
       - name: Cargo check
         run: cargo check
         working-directory: src-tauri
+      - name: Free disk space before test
+        run: |
+          df -h
+          rm -rf target/debug/incremental
+          rm -rf dist
+        working-directory: src-tauri
       - name: Cargo test
         run: cargo test --verbose
         working-directory: src-tauri
         env:
-          RUSTFLAGS: -C link-args=-fuse-ld=mold
+          RUSTFLAGS: -C linker=mold
 
   architectural-governance:
     name: Architectural governance
