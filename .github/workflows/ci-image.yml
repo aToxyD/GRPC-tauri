@@ -2,10 +2,6 @@ name: Build CI image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - 'ci-image/**'
 
 permissions:
   contents: read
