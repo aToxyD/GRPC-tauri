@@ -21,6 +21,10 @@ pub trait RateLimiterStore: Send + Sync {
     fn delete_key(&self, key: &str) -> Result<(), String>;
     fn get_all_attempts(&self) -> Result<Vec<(String, PersistedAttemptInfo)>, String>;
     fn cleanup_old_entries(&self, window_secs: u64) -> Result<(), String>;
+    /// Checkpoint WAL before shutdown to ensure data integrity.
+    fn checkpoint(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// In-memory implementation for tests (preserves existing unit test behaviour).

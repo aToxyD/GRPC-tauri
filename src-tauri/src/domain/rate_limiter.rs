@@ -253,6 +253,13 @@ impl RateLimiter {
         let _ = self.store.cleanup_old_entries(0);
     }
 
+    /// Checkpoint the underlying store before shutdown to ensure WAL data is persisted.
+    pub fn shutdown(&self) {
+        if let Err(e) = self.store.checkpoint() {
+            log::warn!(target: "grpc::runtime", "rate limiter checkpoint failed on shutdown: {}", e);
+        }
+    }
+
     pub fn get_total_failed_attempts(&self) -> u32 {
         self.store
             .get_all_attempts()

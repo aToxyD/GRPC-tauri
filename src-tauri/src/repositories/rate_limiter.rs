@@ -107,6 +107,13 @@ impl RateLimiterStore for RateLimiterRepository {
         Ok(result)
     }
 
+    fn checkpoint(&self) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_row| Ok(()))
+            .map_err(|e| format!("WAL checkpoint failed: {}", e))?;
+        Ok(())
+    }
+
     fn cleanup_old_entries(&self, window_secs: u64) -> Result<(), String> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

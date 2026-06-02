@@ -173,10 +173,15 @@ fn main() {
         }))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .on_window_event(|window, event| {
+        .on_window_event(move |window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                // Close database connection when window is destroyed
                 if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    // Checkpoint rate limiter connection before closing
+                    if let Ok(rl_guard) = state.rate_limiter.lock() {
+                        rl_guard.shutdown();
+                    }
+
+                    // Close database connection when window is destroyed
                     if let Ok(mut db_guard) = state.db.lock() {
                         // Force a checkpoint before closing to ensure WAL data is committed
                         if let Some(db) = db_guard.as_ref() {
@@ -189,6 +194,12 @@ fn main() {
                         // Take the database out of the Option to properly close it
                         let _ = db_guard.take();
                     }
+
+                    // Clean up WAL and SHM files after both connections are closed
+                    let wal_path = db_path.with_extension("db-wal");
+                    let shm_path = db_path.with_extension("db-shm");
+                    let _ = std::fs::remove_file(&wal_path);
+                    let _ = std::fs::remove_file(&shm_path);
                 }
             }
         })
