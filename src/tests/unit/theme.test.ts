@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { theme, toggleTheme, initializeTheme } from '../../lib/theme';
 
@@ -14,36 +14,35 @@ import { theme, toggleTheme, initializeTheme } from '../../lib/theme';
  * - prefers-reduced-motion (لا يؤثر على الثيم لكن مرتبط بالوصول)
  */
 describe('نظام الثيم — Theme System', () => {
+	let store: Map<string, string>;
+
 	beforeEach(() => {
-		// محاكاة localStorage
-		const store = new Map<string, string>();
-		vi.stubGlobal('localStorage', {
+		store = new Map<string, string>();
+		globalThis.localStorage = {
 			getItem: (key: string) => store.get(key) || null,
 			setItem: (key: string, value: string) => store.set(key, value),
 			clear: () => store.clear(),
 			removeItem: (key: string) => store.delete(key),
-		});
+		} as unknown as Storage;
 
-		// محاكاة matchMedia (النظام: فاتح افتراضياً)
-		vi.stubGlobal('matchMedia', (query: string) => ({
+		globalThis.matchMedia = (query: string) => ({
 			matches: false,
 			media: query,
 			onchange: null,
-			addListener: vi.fn(),
-			removeListener: vi.fn(),
-			addEventListener: vi.fn(),
-			removeEventListener: vi.fn(),
-			dispatchEvent: vi.fn(),
-		}));
+			addListener: () => {},
+			removeListener: () => {},
+			addEventListener: () => {},
+			removeEventListener: () => {},
+			dispatchEvent: () => false,
+		});
 
-		// تهيئة DOM نظيف
 		document.documentElement.className = '';
-		// الثيم الافتراضي في المتجر: داكن
 		theme.set('dark');
 	});
 
 	afterEach(() => {
-		vi.unstubAllGlobals();
+		document.documentElement.className = '';
+		store.clear();
 	});
 
 	// ─── 1. الثيم الافتراضي ──────────────────────────────────────
@@ -55,10 +54,15 @@ describe('نظام الثيم — Theme System', () => {
 
 	// ─── 2. تفضيل النظام — داكن ───────────────────────────────────
 	it('يجب تفعيل الثيم الداكن عند تفضيل النظام له', () => {
-		vi.stubGlobal('matchMedia', (query: string) => ({
+		globalThis.matchMedia = (query: string) => ({
 			matches: query === '(prefers-color-scheme: dark)',
 			media: query,
-		}));
+			addListener: () => {},
+			removeListener: () => {},
+			addEventListener: () => {},
+			removeEventListener: () => {},
+			dispatchEvent: () => false,
+		});
 		initializeTheme();
 		expect(get(theme)).toBe('dark');
 		expect(document.documentElement.classList.contains('dark')).toBe(true);
@@ -67,10 +71,15 @@ describe('نظام الثيم — Theme System', () => {
 	// ─── 3. تفضيل النظام — فاتح مع غياب تفضيل محفوظ ─────────────
 	it('يجب تفعيل الثيم الداكن كـ fallback حتى عند تفضيل النظام الفاتح', () => {
 		// لا يوجد تفضيل محفوظ، والنظام فاتح → يجب أن يبقى داكناً (افتراضي المنصة)
-		vi.stubGlobal('matchMedia', (query: string) => ({
-			matches: false, // النظام: فاتح
+		globalThis.matchMedia = (query: string) => ({
+			matches: false,
 			media: query,
-		}));
+			addListener: () => {},
+			removeListener: () => {},
+			addEventListener: () => {},
+			removeEventListener: () => {},
+			dispatchEvent: () => false,
+		});
 		initializeTheme();
 		expect(get(theme)).toBe('dark');
 	});
@@ -89,7 +98,7 @@ describe('نظام الثيم — Theme System', () => {
 	// ─── 5. التفضيل المحفوظ يتجاوز تفضيل النظام ──────────────────
 	it('يجب أن يأخذ الثيم المحفوظ الأولوية على تفضيل النظام', () => {
 		localStorage.setItem('theme', 'light');
-		vi.stubGlobal('matchMedia', () => ({ matches: true })); // النظام: داكن
+		globalThis.matchMedia = () => ({ matches: true, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
 
 		initializeTheme();
 		expect(get(theme)).toBe('light');
@@ -99,7 +108,7 @@ describe('نظام الثيم — Theme System', () => {
 	// ─── 6. الثيم الداكن المحفوظ يُستعاد بشكل صحيح ───────────────
 	it('يجب استعادة الثيم الداكن المحفوظ بعد إعادة التشغيل', () => {
 		localStorage.setItem('theme', 'dark');
-		vi.stubGlobal('matchMedia', () => ({ matches: false })); // النظام: فاتح
+		globalThis.matchMedia = () => ({ matches: false, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
 
 		initializeTheme();
 		expect(get(theme)).toBe('dark');

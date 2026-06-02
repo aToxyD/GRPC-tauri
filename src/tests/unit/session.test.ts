@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { createRuntimeScope } from '../../lib/runtimeCleanup';
 import type { RuntimeScope } from '../../lib/runtimeCleanup';
@@ -38,7 +38,6 @@ describe('Session Store', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.useFakeTimers();
         vi.spyOn(console, 'error').mockImplementation(() => {});
         currentUser.set(null);
         sessionState.set({
@@ -51,14 +50,13 @@ describe('Session Store', () => {
     afterEach(() => {
         sessionScope.dispose();
         cleanupSessionManagement();
-        vi.useRealTimers();
     });
 
     describe('bootstrapSession', () => {
         it('should fetch user from backend and set it', async () => {
             const user = { username: 'testuser', role: 'admin' };
             mockInvoke.mockResolvedValueOnce(user);
-            mockInvoke.mockResolvedValueOnce({ is_active: true, is_expired: false, should_warn: false, remaining_minutes: 60 }); // Initial check_session
+            mockInvoke.mockResolvedValueOnce({ is_active: true, is_expired: false, should_warn: false, remaining_minutes: 60 });
             
             const result = await bootstrapSession(sessionScope);
             
@@ -79,7 +77,7 @@ describe('Session Store', () => {
 
     describe('logout flow', () => {
         it('should call backend logout and redirect', async () => {
-            mockInvoke.mockResolvedValueOnce(null); // backend logout response
+            mockInvoke.mockResolvedValueOnce(null);
             
             await logout();
             
@@ -110,35 +108,29 @@ describe('Session Store', () => {
             
             await checkSession();
             
-            // Check session manually triggers status handler if integrated properly.
-            // Wait, checkSession returns the status, but interval handles it. 
-            // Let's test the status handling by starting monitoring.
-            
-            // Re-bootstrap to start monitoring
-            mockInvoke.mockResolvedValueOnce({ username: 'test' }); // get_user
-            mockInvoke.mockResolvedValueOnce({ is_active: false, is_expired: true, should_warn: false }); // check_session
-            mockInvoke.mockResolvedValueOnce(null); // logout
+            mockInvoke.mockResolvedValueOnce({ username: 'test' });
+            mockInvoke.mockResolvedValueOnce({ is_active: false, is_expired: true, should_warn: false });
+            mockInvoke.mockResolvedValueOnce(null);
             
             await bootstrapSession(sessionScope);
             
-            // allow promises and microtasks to resolve
-            await vi.advanceTimersByTimeAsync(10);
+            await new Promise((r) => setTimeout(r, 10));
             
             expect(mockShowError).toHaveBeenCalledWith('الرجاء تسجيل الدخول مرة أخرى', 'انتهت الجلسة');
             expect(mockPush).toHaveBeenCalledWith('/login');
         });
 
         it('should warn when session is about to expire', async () => {
-            mockInvoke.mockResolvedValueOnce({ username: 'test' }); // get_user
+            mockInvoke.mockResolvedValueOnce({ username: 'test' });
             mockInvoke.mockResolvedValueOnce({ 
                 is_active: true, 
                 is_expired: false, 
                 should_warn: true, 
                 remaining_minutes: 4 
-            }); // check_session
+            });
             
             await bootstrapSession(sessionScope);
-            await vi.advanceTimersByTimeAsync(10);
+            await new Promise((r) => setTimeout(r, 10));
             
             expect(mockShowWarning).toHaveBeenCalled();
             expect(get(sessionState).warningShown).toBe(true);

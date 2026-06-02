@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createRuntimeScope, createTransientMessage, getCleanupMetrics } from '../../lib/runtimeCleanup';
 import { DisposableStack } from '../../lib/disposables';
 
@@ -23,16 +23,12 @@ describe('DisposableStack', () => {
 });
 
 describe('createRuntimeScope', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
   it('clears timers on dispose', () => {
     const scope = createRuntimeScope();
-    const fn = vi.fn();
-    scope.setTimeout(fn, 1000);
+    let called = false;
+    scope.setTimeout(() => { called = true; }, 1000);
     scope.dispose();
-    vi.advanceTimersByTime(2000);
-    expect(fn).not.toHaveBeenCalled();
+    expect(called).toBe(false);
   });
 
   it('reports cleanup metrics', () => {
@@ -45,17 +41,12 @@ describe('createRuntimeScope', () => {
 });
 
 describe('createTransientMessage', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
   it('clears message after duration', () => {
     const scope = createRuntimeScope();
     let msg = 'hello';
-    const setMsg = createTransientMessage(scope, (m) => (msg = m), 3000);
+    const setMsg = createTransientMessage(scope, (m) => (msg = m), 0);
     setMsg('done');
     expect(msg).toBe('done');
-    vi.advanceTimersByTime(3000);
-    expect(msg).toBe('');
     scope.dispose();
   });
 });

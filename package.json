@@ -15,8 +15,10 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest run",
-    "test:ui": "bun test src/lib/operationSafety.test.ts",
+    "test:unit": "bun test src/tests/unit/*.test.ts scripts/governance/tests/ src/tests/integration/governance.test.ts",
+    "test:components": "vitest run",
     "test:e2e": "playwright test",
+    "postinstall": "bun scripts/patch-svelte-spa-router.ts",
     "ci": "bun scripts/run_ci.ts"
   },
   "packageManager": "bun@1.3.9",

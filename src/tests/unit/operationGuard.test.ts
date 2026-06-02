@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
 import { createOperation, createOperationGuard } from '../../lib/operationGuard';
 import { createRuntimeScope } from '../../lib/runtimeCleanup';
@@ -38,21 +38,25 @@ describe('operationGuard with runtime scope', () => {
   });
 
   it('guard prevents double submit', async () => {
-    vi.useFakeTimers();
     const scope = createRuntimeScope();
     const { guard } = createOperationGuard({ scope });
     let calls = 0;
-    const p1 = guard(async () => {
-      calls++;
-      await new Promise((r) => setTimeout(r, 50));
-    });
+    let release1: () => void;
+    const p1 = guard(
+      () =>
+        new Promise<void>((resolve) => {
+          calls++;
+          release1 = resolve;
+        })
+    );
     const p2 = guard(async () => {
       calls++;
     });
-    await vi.advanceTimersByTimeAsync(60);
+    // Small delay to let both guard calls process
+    await new Promise((r) => setTimeout(r, 1));
+    release1!();
     await Promise.all([p1, p2]);
     expect(calls).toBe(1);
     scope.dispose();
-    vi.useRealTimers();
   });
 });
