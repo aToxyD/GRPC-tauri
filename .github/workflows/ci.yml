@@ -76,8 +76,9 @@ jobs:
       - name: Free disk space before test
         run: |
           df -h
+          cargo clean -p grpc 2>/dev/null || true
           rm -rf target/debug/incremental
-          rm -rf dist
+          rm -rf ../dist
         working-directory: src-tauri
       - name: Cargo test
         run: cargo test --verbose
