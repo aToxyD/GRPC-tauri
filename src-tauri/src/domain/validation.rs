@@ -1,22 +1,20 @@
 use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::*;
 use chrono::{NaiveDate, Utc};
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// HTML tag regex for sanitization
-    static ref HTML_REGEX: Regex = Regex::new(r"<[^>]+>").expect("Invalid HTML regex pattern");
+static HTML_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<[^>]+>").expect("Invalid HTML regex pattern"));
 
-    /// Multiple spaces regex for normalization
-    static ref SPACE_REGEX: Regex = Regex::new(r"\s+").expect("Invalid space regex pattern");
+static SPACE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s+").expect("Invalid space regex pattern"));
 
-    /// Alphanumeric code regex for unit validation
-    static ref CODE_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9]+$").expect("Invalid code regex pattern");
+static CODE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9]+$").expect("Invalid code regex pattern"));
 
-    /// Username regex for validation
-    static ref USERNAME_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9_]+$").expect("Invalid username regex pattern");
-}
+static USERNAME_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_]+$").expect("Invalid username regex pattern"));
 
 /// Sanitize a string input by trimming and removing dangerous patterns
 pub fn sanitize_string(input: &str) -> String {

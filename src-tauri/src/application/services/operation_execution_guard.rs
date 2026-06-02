@@ -12,7 +12,7 @@ use crate::repositories::executor::DbExecutor;
 use crate::repositories::RepositoryProvider;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 const THROTTLE_WINDOW: Duration = Duration::from_millis(2000);
@@ -43,13 +43,13 @@ impl GuardedOperation {
 }
 
 pub struct OperationExecutionGuard {
-    last_executions: Mutex<HashMap<String, Instant>>,
+    last_executions: RwLock<HashMap<String, Instant>>,
 }
 
 impl Default for OperationExecutionGuard {
     fn default() -> Self {
         Self {
-            last_executions: Mutex::new(HashMap::new()),
+            last_executions: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -120,7 +120,7 @@ impl OperationExecutionGuard {
         let key = operation.throttle_key();
         let map = self
             .last_executions
-            .lock()
+            .read()
             .map_err(|e| AppError::Internal(format!("execution guard lock: {}", e)))?;
         if let Some(last) = map.get(&key) {
             if last.elapsed() < THROTTLE_WINDOW {
@@ -139,7 +139,7 @@ impl OperationExecutionGuard {
     }
 
     pub fn record_execution(&self, operation: GuardedOperation) {
-        if let Ok(mut map) = self.last_executions.lock() {
+        if let Ok(mut map) = self.last_executions.write() {
             map.insert(operation.throttle_key(), Instant::now());
         }
     }

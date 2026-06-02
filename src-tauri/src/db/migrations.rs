@@ -29,6 +29,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Audit schema evolution: structured columns, dual-write, keyset indexes",
             include_str!("migrations/004_audit_schema_evolution.sql"),
         ),
+        (
+            5,
+            "Rate limiter persistence for login attempt tracking across restarts",
+            include_str!("migrations/005_rate_limiter.sql"),
+        ),
     ]
 }
 

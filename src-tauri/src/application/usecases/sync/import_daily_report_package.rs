@@ -146,9 +146,8 @@ pub fn execute(
         meals: meal_results,
         daily_summary: DailyConsumptionSummary::default(),
     };
-    let imported = SyncImportExecutionService::new(executor).import_daily_reports(vec![
-        report_result,
-    ])?;
+    let imported =
+        SyncImportExecutionService::new(executor).import_daily_reports(vec![report_result])?;
     registry.mark_imported(&package_id)?;
 
     Ok(ImportDailyReportPackageOutcome {

@@ -79,7 +79,7 @@ pub struct UnitMonthlySnapshot {
 impl UnitMonthlySnapshot {
     /// Calculate variance percentage
     pub fn variance_percentage(&self) -> f64 {
-        if self.reported_closing != 0.0 {
+        if self.reported_closing.abs() > f64::EPSILON {
             (self.variance / self.reported_closing) * 100.0
         } else {
             0.0

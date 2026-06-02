@@ -7,32 +7,35 @@ pub trait PasswordHashPort: Send + Sync {
     fn verify_password(&self, password: &str, node_id: &str, hash: &str) -> Result<bool, String>;
 }
 
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// HTML tag regex for XSS prevention
-    static ref HTML_REGEX: Regex = Regex::new(r"<[^>]+>").expect("Invalid HTML regex");
+static HTML_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<[^>]+>").expect("Invalid HTML regex"));
 
-    /// JavaScript protocol regex
-    static ref JS_PROTOCOL_REGEX: Regex = Regex::new(r"(?i)javascript:").expect("Invalid JS regex");
+static JS_PROTOCOL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)javascript:").expect("Invalid JS regex"));
 
-    /// Data URI regex for XSS prevention
-    static ref DATA_URI_REGEX: Regex = Regex::new(r"(?i)data:[^;]*;base64,").expect("Invalid data URI regex");
+static DATA_URI_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)data:[^;]*;base64,").expect("Invalid data URI regex"));
 
-    /// SQL injection patterns
-    static ref SQL_PATTERNS: Vec<Regex> = vec![
+static SQL_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    vec![
         Regex::new(r"(?i)(--|#|/\*|\*/)").expect("SQL comment regex"),
-        Regex::new(r"(?i)(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|WHERE|FROM|TABLE|DATABASE)\s+").expect("SQL keyword regex"),
+        Regex::new(
+            r"(?i)(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|WHERE|FROM|TABLE|DATABASE)\s+",
+        )
+        .expect("SQL keyword regex"),
         Regex::new(r"(?i)(;\s*--|;\s*#)").expect("SQL ending regex"),
-    ];
+    ]
+});
 
-    /// Path traversal patterns (case-insensitive for URL encoding)
-    static ref PATH_TRAVERSAL_REGEX: Regex = Regex::new(r"(?i)\.\./|\.\.\\|%2e%2e/|%2e%2e%5c|%2e%2e%2f|%2e%2e%2F").expect("Path traversal regex");
+static PATH_TRAVERSAL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\.\./|\.\.\\|%2e%2e/|%2e%2e%5c|%2e%2e%2f|%2e%2e%2F")
+        .expect("Path traversal regex")
+});
 
-    /// Multiple spaces regex
-    static ref SPACE_REGEX: Regex = Regex::new(r"\s+").expect("Space regex");
-}
+static SPACE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("Space regex"));
 
 /// Comprehensive input sanitization for user inputs
 pub fn sanitize_input(input: &str) -> String {

@@ -6,10 +6,12 @@
 //! - حد أقصى للمحاولات (5 محاولات افتراضياً)
 //! - فترة صلاحية (5 دقائق افتراضياً)
 //! - تنظيف تلقائي للمدخلات القديمة
+//! - تخزين مستمر في SQLite عبر RateLimiterStore (للمحافظة على الإعدادات عبر إعادة التشغيل)
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use crate::domain::ports::rate_limiter_store::{
+    InMemoryRateLimiterStore, PersistedAttemptInfo, RateLimiterStore,
+};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// فترة الحظر بعد تجاوز المحاولات (5 دقائق)
 const DEFAULT_WINDOW_SECS: u64 = 300;
@@ -17,303 +19,271 @@ const DEFAULT_WINDOW_SECS: u64 = 300;
 /// الحد الأقصى للمحاولات المسموح بها
 const DEFAULT_MAX_ATTEMPTS: u32 = 5;
 
+fn now_epoch() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
 /// معلومات تتبع المحاولات لكل مفتاح (IP أو username)
 #[derive(Debug, Clone)]
 struct AttemptInfo {
-    /// عدد المحاولات الفاشلة في النافذة الحالية
     count: u32,
-    /// عدد المحاولات الناجحة (يحفظ حتى بعد نجاح الدخول)
     successful_count: u32,
-    /// إجمالي المحاولات الفاشلة تاريخياً (لا يُعاد تعيينه عند النجاح)
     total_failed_count: u32,
-    /// وقت أول محاولة فاشلة في النافذة الحالية
-    first_attempt: Instant,
-    /// وقت آخر محاولة
-    last_attempt: Instant,
+    /// Unix epoch seconds of first failed attempt in the current window
+    first_attempt_at: i64,
+    /// Unix epoch seconds of most recent attempt
+    last_attempt_at: i64,
 }
 
 impl AttemptInfo {
     fn new() -> Self {
-        let now = Instant::now();
+        let now = now_epoch();
         Self {
             count: 1,
             successful_count: 0,
             total_failed_count: 1,
-            first_attempt: now,
-            last_attempt: now,
+            first_attempt_at: now,
+            last_attempt_at: now,
         }
     }
 
     fn new_with_success() -> Self {
-        let now = Instant::now();
+        let now = now_epoch();
         Self {
             count: 0,
             successful_count: 1,
             total_failed_count: 0,
-            first_attempt: now,
-            last_attempt: now,
+            first_attempt_at: now,
+            last_attempt_at: now,
         }
     }
 
-    /// التحقق مما إذا كانت النافذة قد انتهت
-    fn is_window_expired(&self, window_duration: Duration) -> bool {
-        self.first_attempt.elapsed() > window_duration
+    fn is_window_expired(&self, window_secs: u64) -> bool {
+        let elapsed = now_epoch().saturating_sub(self.first_attempt_at) as u64;
+        elapsed > window_secs
     }
 
-    /// إعادة تعيين العداد (يحتفظ بالنجاحات)
     fn reset(&mut self) {
-        let now = Instant::now();
+        let now = now_epoch();
         self.count = 1;
-        self.first_attempt = now;
-        self.last_attempt = now;
+        self.first_attempt_at = now;
+        self.last_attempt_at = now;
     }
 
-    /// تسجيل محاولة ناجحة
     fn record_success(&mut self) {
         self.successful_count += 1;
-        self.last_attempt = Instant::now();
+        self.last_attempt_at = now_epoch();
     }
 
-    /// زيادة عدد المحاولات
     fn increment(&mut self) {
         self.count += 1;
         self.total_failed_count += 1;
-        self.last_attempt = Instant::now();
+        self.last_attempt_at = now_epoch();
+    }
+}
+
+impl From<&AttemptInfo> for PersistedAttemptInfo {
+    fn from(info: &AttemptInfo) -> Self {
+        Self {
+            count: info.count,
+            successful_count: info.successful_count,
+            total_failed_count: info.total_failed_count,
+            first_attempt_at: info.first_attempt_at,
+            last_attempt_at: info.last_attempt_at,
+        }
+    }
+}
+
+impl From<PersistedAttemptInfo> for AttemptInfo {
+    fn from(info: PersistedAttemptInfo) -> Self {
+        Self {
+            count: info.count,
+            successful_count: info.successful_count,
+            total_failed_count: info.total_failed_count,
+            first_attempt_at: info.first_attempt_at,
+            last_attempt_at: info.last_attempt_at,
+        }
     }
 }
 
 /// مدير Rate Limiting
 pub struct RateLimiter {
-    /// مخزن المحاولات (مفتاح -> معلومات)
-    attempts: Mutex<HashMap<String, AttemptInfo>>,
-    /// فترة النافذة الزمنية
-    window_duration: Duration,
-    /// الحد الأقصى للمحاولات
+    store: Box<dyn RateLimiterStore>,
+    window_secs: u64,
     max_attempts: u32,
 }
 
 impl RateLimiter {
-    /// إنشاء Rate Limiter جديد بالإعدادات الافتراضية
+    /// إنشاء Rate Limiter جديد بالإعدادات الافتراضية (في الذاكرة)
     pub fn new() -> Self {
         Self {
-            attempts: Mutex::new(HashMap::new()),
-            window_duration: Duration::from_secs(DEFAULT_WINDOW_SECS),
+            store: Box::new(InMemoryRateLimiterStore::new()),
+            window_secs: DEFAULT_WINDOW_SECS,
             max_attempts: DEFAULT_MAX_ATTEMPTS,
         }
     }
 
-    /// إنشاء Rate Limiter بإعدادات مخصصة
+    /// إنشاء Rate Limiter بإعدادات مخصصة (في الذاكرة)
     pub fn with_settings(window_secs: u64, max_attempts: u32) -> Self {
         Self {
-            attempts: Mutex::new(HashMap::new()),
-            window_duration: Duration::from_secs(window_secs),
+            store: Box::new(InMemoryRateLimiterStore::new()),
+            window_secs,
             max_attempts,
         }
     }
 
-    /// التحقق مما إذا كان المفتاح مسموحاً له بالمحاولة
-    ///
-    /// # Arguments
-    /// * `key` - المفتاح (عادةً IP address أو username)
-    ///
-    /// # Returns
-    /// * `true` إذا كان مسموحاً بالمحاولة
-    /// * `false` إذا تم تجاوز الحد
-    pub fn is_allowed(&self, key: &str) -> bool {
-        let mut attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-
-        // تنظيف المدخلات القديمة (كل 100 محاولة)
-        if attempts.len() > 100 {
-            self.cleanup_old_entries(&mut attempts);
+    /// إنشاء Rate Limiter مع مخزن محدد (للإنتاجية مع SQLite)
+    pub fn with_store(
+        store: Box<dyn RateLimiterStore>,
+        window_secs: u64,
+        max_attempts: u32,
+    ) -> Self {
+        Self {
+            store,
+            window_secs,
+            max_attempts,
         }
+    }
 
-        if let Some(info) = attempts.get(key) {
-            // إذا انتهت النافذة الزمنية، أعد التعيين
-            if info.is_window_expired(self.window_duration) {
+    pub fn is_allowed(&self, key: &str) -> bool {
+        if let Ok(Some(tracked)) = self.store.get_attempt(key) {
+            let info = AttemptInfo::from(tracked);
+            if info.is_window_expired(self.window_secs) {
                 return true;
             }
-
-            // التحقق من عدم تجاوز الحد
             if info.count >= self.max_attempts {
                 return false;
             }
         }
-
         true
     }
 
-    /// تسجيل محاولة فاشلة
-    ///
-    /// # Arguments
-    /// * `key` - المفتاح (IP address أو username)
     pub fn record_failure(&self, key: &str) {
-        let mut attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+        let mut info = match self.store.get_attempt(key) {
+            Ok(Some(existing)) => AttemptInfo::from(existing),
+            _ => {
+                let _ = self
+                    .store
+                    .upsert_attempt(key, &PersistedAttemptInfo::from(&AttemptInfo::new()));
+                return;
+            }
         };
 
-        match attempts.get_mut(key) {
-            Some(info) => {
-                if info.is_window_expired(self.window_duration) {
-                    info.reset();
-                } else {
-                    info.increment();
-                }
-            }
-            None => {
-                attempts.insert(key.to_string(), AttemptInfo::new());
-            }
+        if info.is_window_expired(self.window_secs) {
+            info.reset();
+        } else {
+            info.increment();
         }
+        let _ = self
+            .store
+            .upsert_attempt(key, &PersistedAttemptInfo::from(&info));
     }
 
-    /// تسجيل محاولة ناجحة (يحتفظ بالسجل)
-    ///
-    /// # Arguments
-    /// * `key` - المفتاح (IP address أو username)
     pub fn record_success(&self, key: &str) {
-        let mut attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+        let mut info = match self.store.get_attempt(key) {
+            Ok(Some(existing)) => AttemptInfo::from(existing),
+            _ => {
+                let _ = self.store.upsert_attempt(
+                    key,
+                    &PersistedAttemptInfo::from(&AttemptInfo::new_with_success()),
+                );
+                return;
+            }
         };
 
-        match attempts.get_mut(key) {
-            Some(info) => {
-                info.record_success();
-                // Reset failed count after successful login
-                info.count = 0;
-            }
-            None => {
-                attempts.insert(key.to_string(), AttemptInfo::new_with_success());
-            }
-        }
+        info.record_success();
+        info.count = 0;
+        let _ = self
+            .store
+            .upsert_attempt(key, &PersistedAttemptInfo::from(&info));
     }
 
-    /// الحصول على إجمالي المحاولات الناجحة لجميع المستخدمين
     pub fn get_total_successful_attempts(&self) -> u32 {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        attempts.values().map(|info| info.successful_count).sum()
+        self.store
+            .get_all_attempts()
+            .map(|items| items.iter().map(|(_, info)| info.successful_count).sum())
+            .unwrap_or(0)
     }
 
-    /// الحصول على إجمالي جميع المحاولات (ناجحة + فاشلة)
     pub fn get_total_attempts(&self) -> u32 {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        attempts
-            .values()
-            .map(|info| info.total_failed_count + info.successful_count)
-            .sum()
-    }
-
-    /// الحصول على الوقت المتبقي للحظر (بالثواني)
-    ///
-    /// # Arguments
-    /// * `key` - المفتاح (IP address أو username)
-    ///
-    /// # Returns
-    /// * `Some(u64)` - الوقت المتبقي بالثواني
-    /// * `None` - إذا لم يكن المفتاح محظوراً
-    pub fn get_remaining_lockout_secs(&self, key: &str) -> Option<u64> {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-
-        if let Some(info) = attempts.get(key) {
-            if info.count >= self.max_attempts && !info.is_window_expired(self.window_duration) {
-                let elapsed = info.first_attempt.elapsed();
-                let remaining = self.window_duration.saturating_sub(elapsed);
-                return Some(remaining.as_secs());
-            }
-        }
-
-        None
-    }
-
-    /// الحصول على عدد المحاولات المتبقية
-    ///
-    /// # Arguments
-    /// * `key` - المفتاح (IP address أو username)
-    ///
-    /// # Returns
-    /// * `u32` - عدد المحاولات المتبقية
-    pub fn get_remaining_attempts(&self, key: &str) -> u32 {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-
-        if let Some(info) = attempts.get(key) {
-            if info.is_window_expired(self.window_duration) {
-                return self.max_attempts;
-            }
-            return self.max_attempts.saturating_sub(info.count);
-        }
-
-        self.max_attempts
-    }
-
-    /// تنظيف المدخلات القديمة
-    fn cleanup_old_entries(&self, attempts: &mut HashMap<String, AttemptInfo>) {
-        let keys_to_remove: Vec<String> = attempts
-            .iter()
-            .filter(|(_, info)| info.is_window_expired(self.window_duration))
-            .map(|(key, _)| key.clone())
-            .collect();
-
-        for key in keys_to_remove {
-            attempts.remove(&key);
-        }
-    }
-
-    /// إعادة تعيين جميع العدادات (مفيد للاختبارات)
-    pub fn reset_all(&self) {
-        let mut attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        attempts.clear();
-    }
-
-    /// الحصول على إجمالي المحاولات الفاشلة لجميع المستخدمين (تاريخياً)
-    pub fn get_total_failed_attempts(&self) -> u32 {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        attempts.values().map(|info| info.total_failed_count).sum()
-    }
-
-    /// الحصول على عدد المستخدمين المسجلين حالياً (المحظورين أو غير المحظورين)
-    pub fn get_tracked_users_count(&self) -> usize {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        attempts.len()
-    }
-
-    /// الحصول على عدد المستخدمين المحظورين حالياً
-    pub fn get_locked_users_count(&self) -> usize {
-        let attempts = match self.attempts.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        attempts
-            .values()
-            .filter(|info| {
-                info.count >= self.max_attempts && !info.is_window_expired(self.window_duration)
+        self.store
+            .get_all_attempts()
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|(_, info)| info.total_failed_count + info.successful_count)
+                    .sum()
             })
-            .count()
+            .unwrap_or(0)
     }
-    /// الحصول على إحصائيات الدخول
+
+    pub fn get_remaining_lockout_secs(&self, key: &str) -> Option<u64> {
+        match self.store.get_attempt(key) {
+            Ok(Some(info)) => {
+                let now = now_epoch();
+                if info.count >= self.max_attempts {
+                    let elapsed = now.saturating_sub(info.first_attempt_at) as u64;
+                    if elapsed < self.window_secs {
+                        return Some(self.window_secs.saturating_sub(elapsed));
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    pub fn get_remaining_attempts(&self, key: &str) -> u32 {
+        match self.store.get_attempt(key) {
+            Ok(Some(info)) => {
+                let now = now_epoch();
+                if now.saturating_sub(info.first_attempt_at) as u64 > self.window_secs {
+                    return self.max_attempts;
+                }
+                self.max_attempts.saturating_sub(info.count)
+            }
+            _ => self.max_attempts,
+        }
+    }
+
+    pub fn reset_all(&self) {
+        let _ = self.store.cleanup_old_entries(0);
+    }
+
+    pub fn get_total_failed_attempts(&self) -> u32 {
+        self.store
+            .get_all_attempts()
+            .map(|items| items.iter().map(|(_, info)| info.total_failed_count).sum())
+            .unwrap_or(0)
+    }
+
+    pub fn get_tracked_users_count(&self) -> usize {
+        self.store
+            .get_all_attempts()
+            .map(|items| items.len())
+            .unwrap_or(0)
+    }
+
+    pub fn get_locked_users_count(&self) -> usize {
+        match self.store.get_all_attempts() {
+            Ok(items) => {
+                let now = now_epoch();
+                items
+                    .iter()
+                    .filter(|(_, info)| {
+                        info.count >= self.max_attempts
+                            && (now.saturating_sub(info.first_attempt_at) as u64)
+                                <= self.window_secs
+                    })
+                    .count()
+            }
+            _ => 0,
+        }
+    }
+
     pub fn get_metrics(&self) -> crate::models::LoginMetrics {
         crate::application::services::SystemStatsService::get_login_metrics(self)
     }
@@ -339,14 +309,12 @@ mod tests {
 
     #[test]
     fn test_rate_limiter_blocks_after_max_attempts() {
-        let limiter = RateLimiter::with_settings(60, 3); // 3 محاولات في دقيقة
+        let limiter = RateLimiter::with_settings(60, 3);
 
-        // 3 محاولات فاشلة
         limiter.record_failure("user1");
         limiter.record_failure("user1");
         limiter.record_failure("user1");
 
-        // الرابعة يجب أن تُمنع
         assert!(!limiter.is_allowed("user1"));
     }
 
@@ -358,7 +326,6 @@ mod tests {
         limiter.record_failure("user1");
         assert!(!limiter.is_allowed("user1"));
 
-        // محاولة ناجحة تعيد التعيين
         limiter.record_success("user1");
         assert!(limiter.is_allowed("user1"));
     }
@@ -380,12 +347,10 @@ mod tests {
     fn test_different_keys_independent() {
         let limiter = RateLimiter::with_settings(60, 2);
 
-        // user1 يتجاوز الحد
         limiter.record_failure("user1");
         limiter.record_failure("user1");
         assert!(!limiter.is_allowed("user1"));
 
-        // user2 غير متأثر
         assert!(limiter.is_allowed("user2"));
     }
 }

@@ -4,8 +4,8 @@
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
 use crate::application::services::{
-    AuditService, AuditTxService, OperationalSessionService, SessionEndReason, SettingsService,
-    UserService,
+    AuditService, AuditTxService, LoginPolicy, OperationalSessionService, SessionEndReason,
+    SettingsService, UserService,
 };
 use crate::commands::common::{
     db_mut_or_command_error, user_ctx_from_parts, user_ctx_from_session,
@@ -82,17 +82,9 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
                 .map_err(into_command_error)?;
             let requires_configuration = !settings.configured;
 
-            // Enforce Wilaya login restrictions
-            if settings.node_type == crate::models::NodeType::Wilaya
-                && user.role == crate::models::UserRole::User
-            {
-                return Err(into_command_error(AppError::Validation(
-                    ValidationError::InvalidFormat {
-                        field: "login".to_string(),
-                        message: "المستخدم العادي غير مصرح له بتسجيل الدخول في عقدة الولاية"
-                            .to_string(),
-                    },
-                )));
+            // Enforce login authorization policy
+            if let Err(e) = LoginPolicy::check_login_allowed(&settings.node_type, &user.role) {
+                return Err(into_command_error(AppError::BusinessLogic(e)));
             }
 
             // Create session

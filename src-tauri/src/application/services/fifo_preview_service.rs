@@ -103,8 +103,11 @@ impl<'a> FifoPreviewService<'a> {
         let mut total_consumed: HashMap<String, f64> = HashMap::new();
         let mut total_portions: HashMap<String, Vec<ConsumedLayerPortion>> = HashMap::new();
 
-        let section_by_type: HashMap<&str, &MealSectionInput> =
-            input.meals.iter().map(|s| (s.meal_type.as_str(), s)).collect();
+        let section_by_type: HashMap<&str, &MealSectionInput> = input
+            .meals
+            .iter()
+            .map(|s| (s.meal_type.as_str(), s))
+            .collect();
 
         for computed_meal in &computation.meals {
             let mut product_previews = Vec::new();
@@ -145,8 +148,10 @@ impl<'a> FifoPreviewService<'a> {
                 })
                 // [arch:allow-unwrap-or] legitimate fallback — no section means zero beneficiaries (no meal served)
                 .unwrap_or(0);
-            let meal_average =
-                DailyReportMeal::compute_meal_average(computed_meal.total_cost, total_beneficiaries);
+            let meal_average = DailyReportMeal::compute_meal_average(
+                computed_meal.total_cost,
+                total_beneficiaries,
+            );
             meal_previews.push(MealFifoPreview {
                 meal_type: computed_meal.meal_type.as_str().to_string(),
                 predicted_fifo_cost: computed_meal.total_cost,
@@ -200,16 +205,14 @@ impl<'a> FifoPreviewService<'a> {
                 _ => {}
             }
         }
-        daily_summary.total_daily_beneficiaries =
-            daily_summary.breakfast_beneficiaries
-                + daily_summary.lunch_beneficiaries
-                + daily_summary.dinner_beneficiaries;
+        daily_summary.total_daily_beneficiaries = daily_summary.breakfast_beneficiaries
+            + daily_summary.lunch_beneficiaries
+            + daily_summary.dinner_beneficiaries;
         daily_summary.total_daily_cost =
             daily_summary.breakfast_cost + daily_summary.lunch_cost + daily_summary.dinner_cost;
-        daily_summary.daily_average =
-            daily_summary.breakfast_average
-                + daily_summary.lunch_average
-                + daily_summary.dinner_average;
+        daily_summary.daily_average = daily_summary.breakfast_average
+            + daily_summary.lunch_average
+            + daily_summary.dinner_average;
 
         Ok(DailyFifoConsumptionPreview {
             predicted_fifo_cost: computation.total_cost,
@@ -231,7 +234,11 @@ impl<'a> FifoPreviewService<'a> {
         for (product_id, quantity) in stock_by_product {
             let portions = fifo_repo.preview_consume_fifo(unit_id, product_id, *quantity)?;
             let cost: f64 = portions.iter().map(|p| p.total_cost).sum();
-            let unit_cost = if *quantity > 0.0 { cost / *quantity } else { 0.0 };
+            let unit_cost = if *quantity > 0.0 {
+                cost / *quantity
+            } else {
+                0.0
+            };
             previews.push(ProductFifoPreview {
                 product_id: product_id.clone(),
                 quantity: *quantity,

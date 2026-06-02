@@ -19,6 +19,7 @@ pub mod inventory;
 pub mod opening_balances;
 pub mod orders;
 pub mod products;
+pub mod rate_limiter;
 pub mod reports;
 pub mod sessions;
 pub mod settings;
@@ -46,6 +47,7 @@ pub use inventory::InventoryRepository;
 pub use opening_balances::OpeningBalanceRepository;
 pub use orders::OrderRepository;
 pub use products::ProductRepository;
+pub use rate_limiter::RateLimiterRepository;
 pub use reports::ReportRepository;
 pub use sessions::SessionRepository;
 pub use settings::SettingsRepository;
@@ -79,6 +81,7 @@ impl crate::architecture::Repository for SessionRepository<'_> {}
 impl crate::architecture::Repository for TelemetryRepository<'_> {}
 impl crate::architecture::Repository for TimelineRepository<'_> {}
 impl crate::architecture::Repository for FiscalPackageRegistryRepository<'_> {}
+impl crate::architecture::Repository for RateLimiterRepository {}
 impl crate::architecture::Repository for FifoLayerRepository<'_> {}
 
 /// Centralized provider for repositories to avoid manual construction in the service layer.

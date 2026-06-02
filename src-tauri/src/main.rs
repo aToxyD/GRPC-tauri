@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use grpc_lib::commands::{self, AppState};
+use grpc_lib::db::apply_pragma_settings;
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::rate_limiter::RateLimiter;
+use grpc_lib::repositories::rate_limiter::RateLimiterRepository;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -49,15 +51,28 @@ fn main() {
         }
     };
 
-    // Initialize rate limiter for login protection
-    let rate_limiter = RateLimiter::new();
-
     // 🚫 Settings cache removed - authorization always reads from DB directly
 
     let db_path = match db.get_connection_path() {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Failed to resolve database path: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize persisted rate limiter with a dedicated connection
+    let rate_limiter = match rusqlite::Connection::open(&db_path) {
+        Ok(rl_conn) => {
+            if let Err(e) = apply_pragma_settings(&rl_conn) {
+                eprintln!("Failed to apply rate limiter connection pragmas: {}", e);
+                std::process::exit(1);
+            }
+            let store = Box::new(RateLimiterRepository::new(rl_conn));
+            RateLimiter::with_store(store, 300, 5)
+        }
+        Err(e) => {
+            eprintln!("Failed to open rate limiter database connection: {}", e);
             std::process::exit(1);
         }
     };

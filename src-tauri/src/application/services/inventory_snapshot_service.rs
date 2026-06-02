@@ -128,7 +128,8 @@ impl<'a> InventorySnapshotService<'a> {
             let variance = reported_closing - computed_closing;
 
             // منتج جديد في أول شهر
-            let is_new_product_first_month = opening_stock == 0.0 && total_in > 0.0;
+            let is_new_product_first_month =
+                opening_stock.abs() < f64::EPSILON && total_in > f64::EPSILON;
 
             let has_balance_anomaly = if is_new_product_first_month {
                 false
