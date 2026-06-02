@@ -7,6 +7,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "check:arch": "bun scripts/check_arch.ts",
     "check:fe": "bun scripts/check_arch.ts",
+    "check:obs": "bun scripts/check_arch.ts --obs",
     "check:all": "bun run check:fe && bun run check",
     "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
     "dev": "vite dev",

@@ -17,6 +17,9 @@
  * @see docs/architecture/0013-observability-layer.md
  * @see docs/architecture/0030-adr-exception-governance.md
  * @see docs/architecture/adr_exception_registry.md
+ *
+ * Flags:
+ *   --obs, --observability   Generate governance observability reports (informational only)
  */
 
 import { Glob } from "bun";

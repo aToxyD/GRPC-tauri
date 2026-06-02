@@ -6,8 +6,10 @@ import { scanProjectionIntegrity } from "./invariants/projectionIntegrity";
 import { scanRuntimeSafety } from "./invariants/runtimeSafety";
 import { scanArchitectureGraph } from "./invariants/architectureGraph";
 import { scanGovernanceFreeze } from "./invariants/governanceFreeze";
+import { runObservability } from "./observability/index";
 
 const VERBOSE = process.argv.includes("--verbose");
+const OBSERVABILITY = process.argv.includes("--observability") || process.argv.includes("--obs");
 
 interface Scanner {
   name: string;
@@ -42,6 +44,17 @@ export function runGovernanceAudit(): void {
     cacheMisses: cache.misses,
     invariantTimings: timings,
   };
+
+  // Run observability reports before reporting violations (informational only)
+  if (OBSERVABILITY) {
+    try {
+      const errorCount = allViolations.filter((v) => v.severity === "ERROR").length;
+      const warningCount = allViolations.filter((v) => v.severity === "WARNING").length;
+      runObservability(metrics, errorCount, warningCount);
+    } catch (e) {
+      console.error("  ⚠️  Observability report generation failed (non-blocking):", e);
+    }
+  }
 
   reportViolations(allViolations, metrics, VERBOSE);
 }
