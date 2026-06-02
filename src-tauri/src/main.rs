@@ -176,9 +176,11 @@ fn main() {
         .on_window_event(move |window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = window.app_handle().try_state::<AppState>() {
-                    // Checkpoint rate limiter connection before closing
-                    if let Ok(rl_guard) = state.rate_limiter.lock() {
+                    // Checkpoint and close rate limiter connection
+                    if let Ok(mut rl_guard) = state.rate_limiter.lock() {
                         rl_guard.shutdown();
+                        // Replace with in-memory rate limiter to drop the persisted connection
+                        *rl_guard = grpc_lib::domain::rate_limiter::RateLimiter::new();
                     }
 
                     // Close database connection when window is destroyed

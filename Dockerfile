@@ -23,6 +23,8 @@ WORKDIR /workspace
 
 # --- Layer 1: Install JS dependencies (cached unless bun.lock changes) ---
 COPY package.json bun.lock ./
+# Copy scripts first so postinstall script (scripts/patch-svelte-spa-router.ts) can run
+COPY scripts/ ./scripts/
 RUN bun install --frozen-lockfile --cache-dir /workspace/.bun-cache
 
 # --- Layer 2: Copy remaining source and build frontend ---
