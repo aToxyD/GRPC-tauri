@@ -57,6 +57,7 @@ describe('نظام الثيم — Theme System', () => {
 		globalThis.matchMedia = (query: string) => ({
 			matches: query === '(prefers-color-scheme: dark)',
 			media: query,
+			onchange: null,
 			addListener: () => {},
 			removeListener: () => {},
 			addEventListener: () => {},
@@ -74,6 +75,7 @@ describe('نظام الثيم — Theme System', () => {
 		globalThis.matchMedia = (query: string) => ({
 			matches: false,
 			media: query,
+			onchange: null,
 			addListener: () => {},
 			removeListener: () => {},
 			addEventListener: () => {},
@@ -98,7 +100,7 @@ describe('نظام الثيم — Theme System', () => {
 	// ─── 5. التفضيل المحفوظ يتجاوز تفضيل النظام ──────────────────
 	it('يجب أن يأخذ الثيم المحفوظ الأولوية على تفضيل النظام', () => {
 		localStorage.setItem('theme', 'light');
-		globalThis.matchMedia = () => ({ matches: true, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
+		globalThis.matchMedia = () => ({ matches: true, media: '', onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
 
 		initializeTheme();
 		expect(get(theme)).toBe('light');
@@ -108,7 +110,7 @@ describe('نظام الثيم — Theme System', () => {
 	// ─── 6. الثيم الداكن المحفوظ يُستعاد بشكل صحيح ───────────────
 	it('يجب استعادة الثيم الداكن المحفوظ بعد إعادة التشغيل', () => {
 		localStorage.setItem('theme', 'dark');
-		globalThis.matchMedia = () => ({ matches: false, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
+		globalThis.matchMedia = () => ({ matches: false, media: '', onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
 
 		initializeTheme();
 		expect(get(theme)).toBe('dark');

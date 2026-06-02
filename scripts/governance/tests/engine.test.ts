@@ -2,14 +2,15 @@ import { describe, it, expect } from "bun:test";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import type { Violation, InvariantName } from "../types";
 
 // ----------------------------------------------------------
 // types.ts
 // ----------------------------------------------------------
 describe("types", () => {
   it("should define InvariantName types", async () => {
-    const mod = await import("../types");
-    const violation: mod.Violation = {
+    await import("../types");
+    const violation: Violation = {
       invariant: "CONTRACT_BOUNDARY",
       severity: "ERROR",
       file: "test.ts",
@@ -22,8 +23,8 @@ describe("types", () => {
   });
 
   it("should accept all invariant names", async () => {
-    const mod = await import("../types");
-    const names: mod.InvariantName[] = [
+    await import("../types");
+    const names: InvariantName[] = [
       "CONTRACT_BOUNDARY",
       "PROJECTION_INTEGRITY",
       "RUNTIME_SAFETY",
@@ -31,7 +32,7 @@ describe("types", () => {
       "GOVERNANCE_FREEZE",
     ];
     for (const name of names) {
-      const v: mod.Violation = {
+      const v: Violation = {
         invariant: name,
         severity: "WARNING",
         file: "",
@@ -235,7 +236,7 @@ describe("reporter", () => {
       invariantTimings: [],
     });
 
-    expect(exitCode).toBe(0);
+    expect(exitCode!).toBe(0);
     process.exit = origExit;
   });
 });

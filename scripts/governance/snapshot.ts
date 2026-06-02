@@ -154,7 +154,7 @@ export function compareProjectionSnapshot(
     return violations;
   }
 
-  const snapTypes = new Map(snapshot.types.map((t: any) => [t.name, t]));
+  const snapTypes = new Map<string, { name: string; kind: string; fields: { name: string }[] }>(snapshot.types.map((t: any) => [t.name, t]));
   const content = cache.get("src/lib/types.ts");
   const lines = content.split("\n");
   let currentType: { name: string; kind: string; fields: string[] } | null = null;

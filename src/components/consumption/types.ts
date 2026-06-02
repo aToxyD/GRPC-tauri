@@ -19,6 +19,12 @@ export type ConsumptionProductRow = {
   stock: number;
 };
 
+export type MealPreview = {
+  totalBeneficiaries: number;
+  totalCost: number;
+  mealAverage: number;
+};
+
 export const MEAL_OPTIONS: { id: MealType; label: string }[] = [
   { id: 'breakfast', label: 'الفطور' },
   { id: 'lunch', label: 'الغداء' },

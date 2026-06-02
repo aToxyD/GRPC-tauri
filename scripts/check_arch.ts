@@ -41,7 +41,7 @@ function checkRule(
     name: string,
     patterns: string[],
     regex: RegExp,
-    excludeLines: (line: string) => boolean,
+    excludeLines: (line: string, index: number, lines: string[]) => boolean,
     severity: "error" | "warning" = "error",
     fileFilter?: (filename: string) => boolean
 ) {
