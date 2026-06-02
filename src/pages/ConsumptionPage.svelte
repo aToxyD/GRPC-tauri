@@ -330,7 +330,7 @@
             <MealSection
               mealId={activeMeal}
               mealLabel={activeMealLabel}
-              form={mealForms[activeMeal]}
+              bind:form={mealForms[activeMeal]}
               preview={activeMealPreview}
               productRows={consumptionItems}
               fifoCosts={activeMealFifoCosts}

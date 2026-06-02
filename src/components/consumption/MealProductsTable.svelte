@@ -2,7 +2,7 @@
   import AppInput from '../../lib/components/ui/AppInput.svelte';
   import AppTable from '../../lib/components/ui/AppTable.svelte';
   import AppEmptyState from '../../lib/components/ui/AppEmptyState.svelte';
-  import type { MealType, ProductFifoPreview } from '../../lib/types';
+  import type { MealType } from '../../lib/types';
   import type { ConsumptionProductRow } from './types';
 
   let {
@@ -10,19 +10,21 @@
     quantities = $bindable<Record<string, string>>({}),
     rows = [],
     disabled = false,
-    fifoCosts = [],
+    fifoCosts = {} as Record<string, { unitCost: number; lineTotal: number }>,
     isPreview = true,
   }: {
     mealId: MealType;
     quantities?: Record<string, string>;
     rows?: ConsumptionProductRow[];
     disabled?: boolean;
-    fifoCosts?: ProductFifoPreview[];
+    fifoCosts?: Record<string, { unitCost: number; lineTotal: number }>;
     isPreview?: boolean;
   } = $props();
 
-  function fifoFor(productId: string): ProductFifoPreview | undefined {
-    return fifoCosts.find((f) => f.product_id === productId);
+  function fifoFor(productId: string): { unit_cost: number; predicted_fifo_cost: number } | undefined {
+    const cost = fifoCosts[productId];
+    if (!cost) return undefined;
+    return { unit_cost: cost.unitCost, predicted_fifo_cost: cost.lineTotal };
   }
 
   function unitCostLabel(productId: string): string {

@@ -9,14 +9,25 @@
   // [arch:allow-fe146] Reason: type definition mirroring backend projection shape; Date: 2026-06-01; Owner: governance-team
   type ActiveMealSummary = { totalBeneficiaries: number; totalCost: number; mealAverage: number };
 
-  export let mealId: MealType;
-  export let mealLabel: string;
-  export let form: MealFormState;
-  export let preview: ActiveMealSummary | null = null;
-  export let productRows: ConsumptionProductRow[] = [];
-  export let disabled = false;
-  export let isPreview = true;
-  export let fifoCosts: ProductFifoPreview[] = [];
+  let {
+    mealId,
+    mealLabel,
+    form = $bindable(),
+    preview = null,
+    productRows = [],
+    disabled = false,
+    isPreview = true,
+    fifoCosts = {} as Record<string, { unitCost: number; lineTotal: number }>,
+  }: {
+    mealId: MealType;
+    mealLabel: string;
+    form: MealFormState;
+    preview: ActiveMealSummary | null;
+    productRows: ConsumptionProductRow[];
+    disabled: boolean;
+    isPreview: boolean;
+    fifoCosts: Record<string, { unitCost: number; lineTotal: number }>;
+  } = $props();
 </script>
 
 <AppCard>
