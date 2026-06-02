@@ -8,6 +8,7 @@ RUN apt-get update \
     curl ca-certificates build-essential \
     libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
     libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+    mold \
   && rm -rf /var/lib/apt/lists/*
 
 # Install pinned bun version for reproducibility

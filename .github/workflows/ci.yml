@@ -76,6 +76,8 @@ jobs:
       - name: Cargo test
         run: cargo test --verbose
         working-directory: src-tauri
+        env:
+          RUSTFLAGS: -C link-args=-fuse-ld=mold
 
   architectural-governance:
     name: Architectural governance
