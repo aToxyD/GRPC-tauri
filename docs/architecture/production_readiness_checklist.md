@@ -349,7 +349,7 @@ cd src-tauri && rg "Connection::open" --type rust | grep -v target/ | grep -v te
 | 7. No Wall-Clock | ✅ PASS | Rules enforced; 9 UTC sites tagged with ADR references (ADR-0005, ADR-0007, ADR-0014) |
 | 8. No Async Runtime | ✅ PASS | Only 2 async `fn` in backup commands (Tauri IPC contract) |
 | 9. No Background Threads | ✅ PASS | No `thread::spawn` in production code; no polling loops |
-| 10. Single-Writer SQLite | ✅ PASS | Formalized in `docs/policies/sqlite_connection_policy.md` and ADR-0029 |
+| 10. Single-Writer SQLite | ✅ PASS | Formalized in `docs/architecture/sqlite_connection_policy.md` and ADR-0029 |
 | 11. ADRs Reviewed | ✅ PASS | 27 ADRs unified in `ADR_INDEX.md`; 26 arch:allow tags registered with ADR references |
 | 12. Governance Review | ☐ PENDING | Requires human stakeholder sign-off |
 
@@ -357,9 +357,9 @@ cd src-tauri && rg "Connection::open" --type rust | grep -v target/ | grep -v te
 
 ### Resolved Gaps (Phase 8)
 1. ✅ **ADR exception expiry**: 26 `arch:allow-` tags registered in `adr_exception_registry.md` with creation dates, expiration dates, ADR references, and owners
-2. ✅ **Two ADR numbering schemes**: Unified in `ADR_INDEX.md` with cross-reference map; legacy `docs/adr/` preserved
+2. ✅ **Two ADR numbering schemes**: Unified in `ADR_INDEX.md` with cross-reference map; legacy ADRs consolidated into `docs/architecture/`
 3. ✅ **`arch:allow-` tag ADR linkage**: All 26 tags now reference specific ADR numbers (see ADR-NNNN)
-4. ✅ **Connection::open exceptions**: Formalized in `docs/policies/sqlite_connection_policy.md` and ADR-0029
+4. ✅ **Connection::open exceptions**: Formalized in `docs/architecture/sqlite_connection_policy.md` and ADR-0029
 5. ✅ **CI enforcement**: `check_arch.ts` Rule 123 enforces ADR references on all `[arch:allow-*]` tags; Rule 124/125 enforce documentation
 
 ### Remaining Accepted Debt

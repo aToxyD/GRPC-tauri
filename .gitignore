@@ -45,3 +45,17 @@ backups/
 .opencode/
 
 AGENTS.md
+
+# Lockfile
+package-lock.json
+
+# Auto-generated governance observability snapshots
+docs/governance/frontend/GOVERNANCE_TIMELINE.md
+docs/governance/frontend/GOVERNANCE_TELEMETRY.md
+docs/governance/frontend/GOVERNANCE_HEALTH_SCORE.md
+docs/governance/frontend/CHANGE_IMPACT.md
+docs/governance/frontend/DEAD_ARTIFACTS.md
+docs/governance/frontend/SELF_AUDIT.md
+docs/governance/frontend/GOVERNANCE_ENGINE_METRICS.md
+docs/governance/frontend/GOVERNANCE_COVERAGE_REPORT.md
+docs/governance/frontend/.governance-telemetry.json

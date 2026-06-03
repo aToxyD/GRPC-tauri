@@ -4,7 +4,7 @@
 
 **All ADRs live under `docs/architecture/`** using the naming convention `NNNN-title.md` (4-digit zero-padded number, kebab-case title).
 
-The legacy `docs/adr/` directory contains ADR-001 through ADR-007, which have been migrated into the unified numbering below. Both locations are preserved; the canonical source is `docs/architecture/`.
+ADR-001 through ADR-007 have been migrated into the unified numbering below as ADR-0021 through ADR-0027. The canonical source is `docs/architecture/`.
 
 ---
 
@@ -37,7 +37,7 @@ The legacy `docs/adr/` directory contains ADR-001 through ADR-007, which have be
 
 ### Series 0021–0030: Determinism & Governance (Stabilized)
 
-These ADRs were originally created in `docs/adr/` (as ADR-001 through ADR-007) and are cross-referenced here by their unified number.
+These ADRs were originally created as ADR-001 through ADR-007 and are cross-referenced here by their unified number.
 
 | ADR | Legacy Ref | File | Title | Status | Date | Owner |
 |-----|-----------|------|-------|--------|------|-------|
@@ -61,15 +61,17 @@ These ADRs were originally created in `docs/adr/` (as ADR-001 through ADR-007) a
 
 ## Cross-Reference Map
 
-| Legacy Path | Unified Number | Notes |
-|-------------|---------------|-------|
-| `docs/adr/ADR-001-fifo-determinism.md` | ADR-0021 | Supersedes — preserved in place |
-| `docs/adr/ADR-002-domain-event-ordering.md` | ADR-0022 | Supersedes — preserved in place |
-| `docs/adr/ADR-003-reproducible-reporting.md` | ADR-0023 | Supersedes — preserved in place |
-| `docs/adr/ADR-004-audit-dual-write.md` | ADR-0024 | Supersedes — preserved in place |
-| `docs/adr/ADR-005-sqlite-single-writer.md` | ADR-0025 | Supersedes — preserved in place |
-| `docs/adr/ADR-006-no-async-runtime.md` | ADR-0026 | Supersedes — preserved in place |
-| `docs/adr/ADR-007-runtime-evaluation-purity.md` | ADR-0027 | Supersedes — preserved in place |
+The following legacy ADRs have been consolidated:
+
+| Legacy Ref | Unified Number | Canonical File |
+|-----------|---------------|----------------|
+| ADR-001 | ADR-0021 | `0021-fifo-determinism.md` |
+| ADR-002 | ADR-0022 | `0022-domain-event-ordering.md` |
+| ADR-003 | ADR-0023 | `0023-reproducible-reporting.md` |
+| ADR-004 | ADR-0024 | `0024-audit-dual-write.md` |
+| ADR-005 | ADR-0025 | `0025-sqlite-single-writer.md` |
+| ADR-006 | ADR-0026 | `0026-no-async-runtime.md` |
+| ADR-007 | ADR-0027 | `0027-runtime-evaluation-purity.md` |
 
 ---
 
@@ -80,7 +82,6 @@ These ADRs were originally created in `docs/adr/` (as ADR-001 through ADR-007) a
 3. **Statuses:** Draft → Proposed → Accepted → Deprecated → Superseded
 4. **All ADRs must have:** status, date, owner
 5. **Superseded ADRs:** Must reference `superseded_by` in front matter
-6. **Historical preservation:** No ADR is ever deleted. Legacy `docs/adr/` directory is preserved for backward reference.
 
 ---
 
