@@ -22,6 +22,25 @@ pub struct RestoreResult {
     pub success: bool,
 }
 
+/// Immediate result of WAL checkpoint, captured inside a single-guard scope.
+/// No audit or telemetry writes happen inside the guard scope to avoid deadlock.
+enum CheckpointOutcome {
+    Success {
+        db_path: PathBuf,
+        wal_frames_before: i32,
+        checkpointed_frames: i32,
+        wal_frames_after: i32,
+    },
+    Failed {
+        error_msg: String,
+        log_line: String,
+    },
+    Incomplete {
+        error_msg: String,
+        log_line: String,
+    },
+}
+
 /// Create immediate backup - AUDITED SYSTEM OPERATION
 #[tauri::command]
 pub async fn create_backup(state: State<'_, AppState>) -> Result<String, String> {
@@ -36,7 +55,13 @@ pub async fn create_backup(state: State<'_, AppState>) -> Result<String, String>
     };
     state.touch_session();
 
-    let db_path = {
+    // SAFETY:
+    // std::sync::Mutex is non-reentrant.
+    // The DB guard acquired below MUST be dropped before any subsequent
+    // state.get_db() call on the same thread.
+    // Audit and telemetry writes are deferred until after the guard scope
+    // has ended.
+    let checkpoint_outcome = {
         let mut guard = state.get_db().map_err(into_command_error)?;
         let db = db_mut_or_command_error(guard.as_mut())?;
 
@@ -54,94 +79,106 @@ pub async fn create_backup(state: State<'_, AppState>) -> Result<String, String>
                 ))
             });
 
-        let (wal_frames_before, checkpointed_frames, wal_frames_after) = match checkpoint_result {
-            Ok(result) => result,
-            Err(e) => {
-                let error_msg = format!("WAL checkpoint execution failed: {}", e);
-                log::error!(
-                    target: "grpc::backup",
-                    "[CHECKPOINT_FAILED] db_path={} error={}",
-                    db.get_connection_path().unwrap_or_else(|_| PathBuf::from("unknown")).display(),
-                    error_msg
-                );
-
-                // Log audit event for checkpoint failure
-                if let Ok(guard) = state.get_db() {
-                    if let Ok(db_ref) = db_ref_or_command_error(guard.as_ref()) {
-                        let _ = crate::application::services::AuditService::new(db_ref.executor())
-                            .log_failure(
-                                &session_user_id,
-                                &session_username,
-                                AuditAction::BackupCheckpointFailed,
-                                crate::domain::audit::EntityType::System,
-                                None,
-                                &error_msg,
-                                Some(&session_id),
-                            );
+        match checkpoint_result {
+            Ok((wal_frames_before, checkpointed_frames, wal_frames_after)) => {
+                if wal_frames_after > 0 {
+                    let error_msg = format!(
+                        "WAL checkpoint incomplete: {} frames remain after checkpoint (checkpointed {}/{})",
+                        wal_frames_after, checkpointed_frames, wal_frames_before
+                    );
+                    let log_line = format!(
+                        "[CHECKPOINT_INCOMPLETE] db_path={} wal_frames_before={} checkpointed_frames={} wal_frames_after={} result_state=failed",
+                        db.get_connection_path().unwrap_or_else(|_| PathBuf::from("unknown")).display(),
+                        wal_frames_before,
+                        checkpointed_frames,
+                        wal_frames_after
+                    );
+                    CheckpointOutcome::Incomplete {
+                        error_msg,
+                        log_line,
+                    }
+                } else {
+                    CheckpointOutcome::Success {
+                        db_path: db
+                            .get_connection_path()
+                            .map_err(|e| into_command_error(AppError::Internal(e.to_string())))?,
+                        wal_frames_before,
+                        checkpointed_frames,
+                        wal_frames_after,
                     }
                 }
-
-                return Err(into_command_error(AppError::Internal(error_msg)));
             }
-        };
+            Err(e) => {
+                let error_msg = format!("WAL checkpoint execution failed: {}", e);
+                let log_line = format!(
+                    "[CHECKPOINT_FAILED] db_path={} error={}",
+                    db.get_connection_path()
+                        .unwrap_or_else(|_| PathBuf::from("unknown"))
+                        .display(),
+                    error_msg
+                );
+                CheckpointOutcome::Failed {
+                    error_msg,
+                    log_line,
+                }
+            }
+        }
+        // DB guard drops here — no state.get_db() is alive at this point.
+    };
 
-        // Verify WAL was fully checkpointed
-        if wal_frames_after > 0 {
-            let error_msg = format!(
-                "WAL checkpoint incomplete: {} frames remain after checkpoint (checkpointed {}/{})",
-                wal_frames_after, checkpointed_frames, wal_frames_before
-            );
-            log::error!(
+    // Handle checkpoint outcome outside the guard scope.
+    let db_path = match checkpoint_outcome {
+        CheckpointOutcome::Success {
+            db_path,
+            wal_frames_before,
+            checkpointed_frames,
+            wal_frames_after,
+        } => {
+            log::info!(
                 target: "grpc::backup",
-                "[CHECKPOINT_INCOMPLETE] db_path={} wal_frames_before={} checkpointed_frames={} wal_frames_after={} result_state=failed",
-                db.get_connection_path().unwrap_or_else(|_| PathBuf::from("unknown")).display(),
+                "[CHECKPOINT_SUCCESS] db_path={} wal_frames_before={} checkpointed_frames={} wal_frames_after={} result_state=success",
+                db_path.display(),
                 wal_frames_before,
                 checkpointed_frames,
                 wal_frames_after
             );
-
-            // Log audit event for incomplete checkpoint
-            if let Ok(guard) = state.get_db() {
-                if let Ok(db_ref) = db_ref_or_command_error(guard.as_ref()) {
-                    let _ = crate::application::services::AuditService::new(db_ref.executor())
-                        .log_failure(
-                            &session_user_id,
-                            &session_username,
-                            AuditAction::BackupCheckpointFailed,
-                            crate::domain::audit::EntityType::System,
-                            None,
-                            &error_msg,
-                            Some(&session_id),
-                        );
-                }
-            }
-
+            let _ = write_checkpoint_telemetry(
+                &state,
+                &session_user_id,
+                wal_frames_before,
+                checkpointed_frames,
+                wal_frames_after,
+            );
+            db_path
+        }
+        CheckpointOutcome::Failed {
+            error_msg,
+            log_line,
+        } => {
+            log::error!(target: "grpc::backup", "{}", log_line);
+            let _ = write_checkpoint_audit(
+                &state,
+                &session_user_id,
+                &session_username,
+                &error_msg,
+                &session_id,
+            );
             return Err(into_command_error(AppError::Internal(error_msg)));
         }
-
-        log::info!(
-            target: "grpc::backup",
-            "[CHECKPOINT_SUCCESS] db_path={} wal_frames_before={} checkpointed_frames={} wal_frames_after={} result_state=success",
-            db.get_connection_path().unwrap_or_else(|_| PathBuf::from("unknown")).display(),
-            wal_frames_before,
-            checkpointed_frames,
-            wal_frames_after
-        );
-
-        let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
-            crate::application::services::TelemetryEventType::WalCheckpoint,
-            crate::application::services::TelemetryOutcome::Success,
-            None,
-            Some(serde_json::json!({
-                "wal_frames_before": wal_frames_before,
-                "checkpointed_frames": checkpointed_frames,
-                "wal_frames_after": wal_frames_after
-            })),
-            Some(&session_user_id),
-        );
-
-        db.get_connection_path()
-            .map_err(|e| into_command_error(AppError::Internal(e.to_string())))?
+        CheckpointOutcome::Incomplete {
+            error_msg,
+            log_line,
+        } => {
+            log::error!(target: "grpc::backup", "{}", log_line);
+            let _ = write_checkpoint_audit(
+                &state,
+                &session_user_id,
+                &session_username,
+                &error_msg,
+                &session_id,
+            );
+            return Err(into_command_error(AppError::Internal(error_msg)));
+        }
     };
 
     let backup_manager = SqliteBackupAdapter::new(&db_path, state.crypto_port);
@@ -167,18 +204,7 @@ pub async fn create_backup(state: State<'_, AppState>) -> Result<String, String>
     let path_str = match path_str_res {
         Ok(p) => p.to_string_lossy().to_string(),
         Err(e) => {
-            if let Ok(guard) = state.get_db() {
-                if let Ok(db) = db_ref_or_command_error(guard.as_ref()) {
-                    let _ = crate::application::services::TelemetryService::new(db.executor())
-                        .record_event(
-                            crate::application::services::TelemetryEventType::Backup,
-                            crate::application::services::TelemetryOutcome::Failure,
-                            Some(duration),
-                            Some(serde_json::json!({ "error": e })),
-                            Some(&session_user_id),
-                        );
-                }
-            }
+            let _ = write_backup_telemetry(&state, &session_user_id, duration, false, Some(&e));
             return Err(e);
         }
     };
@@ -189,35 +215,117 @@ pub async fn create_backup(state: State<'_, AppState>) -> Result<String, String>
         path_str
     );
 
-    {
-        if let Ok(guard) = state.get_db() {
-            if let Ok(db) = db_ref_or_command_error(guard.as_ref()) {
-                let _ = crate::application::services::TelemetryService::new(db.executor())
-                    .record_event(
-                        crate::application::services::TelemetryEventType::Backup,
-                        crate::application::services::TelemetryOutcome::Success,
-                        Some(duration),
-                        Some(serde_json::json!({ "path": path_str })),
-                        Some(&session_user_id),
-                    );
-
-                let _ = crate::application::services::AuditService::new(db.executor()).log_success(
-                    &session_user_id,
-                    &session_username,
-                    AuditAction::CreateBackup,
-                    crate::domain::audit::EntityType::System,
-                    Some(&path_str),
-                    Some("Database Backup"),
-                    None,
-                    None,
-                    Some(&session_id),
-                    None,
-                );
-            }
-        }
-    }
+    let _ = write_backup_telemetry(&state, &session_user_id, duration, true, None);
+    let _ = write_backup_audit(
+        &state,
+        &session_user_id,
+        &session_username,
+        &path_str,
+        &session_id,
+    );
 
     Ok(path_str)
+}
+
+/// Write WAL checkpoint telemetry — safe to call without a live DB guard.
+fn write_checkpoint_telemetry(
+    state: &AppState,
+    session_user_id: &str,
+    wal_frames_before: i32,
+    checkpointed_frames: i32,
+    wal_frames_after: i32,
+) -> Result<(), ()> {
+    let guard = state.get_db().map_err(|_| ())?;
+    let db = db_ref_or_command_error(guard.as_ref()).map_err(|_| ())?;
+    let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
+        crate::application::services::TelemetryEventType::WalCheckpoint,
+        crate::application::services::TelemetryOutcome::Success,
+        None,
+        Some(serde_json::json!({
+            "wal_frames_before": wal_frames_before,
+            "checkpointed_frames": checkpointed_frames,
+            "wal_frames_after": wal_frames_after
+        })),
+        Some(session_user_id),
+    );
+    Ok(())
+}
+
+/// Write checkpoint audit failure — safe to call without a live DB guard.
+fn write_checkpoint_audit(
+    state: &AppState,
+    session_user_id: &str,
+    session_username: &str,
+    error_msg: &str,
+    session_id: &str,
+) -> Result<(), ()> {
+    let guard = state.get_db().map_err(|_| ())?;
+    let db = db_ref_or_command_error(guard.as_ref()).map_err(|_| ())?;
+    let _ = crate::application::services::AuditService::new(db.executor()).log_failure(
+        session_user_id,
+        session_username,
+        AuditAction::BackupCheckpointFailed,
+        crate::domain::audit::EntityType::System,
+        None,
+        error_msg,
+        Some(session_id),
+    );
+    Ok(())
+}
+
+/// Write backup telemetry — safe to call without a live DB guard.
+fn write_backup_telemetry(
+    state: &AppState,
+    session_user_id: &str,
+    duration: i64,
+    success: bool,
+    error: Option<&str>,
+) -> Result<(), ()> {
+    let guard = state.get_db().map_err(|_| ())?;
+    let db = db_ref_or_command_error(guard.as_ref()).map_err(|_| ())?;
+    let outcome = if success {
+        crate::application::services::TelemetryOutcome::Success
+    } else {
+        crate::application::services::TelemetryOutcome::Failure
+    };
+    let details = if let Some(err) = error {
+        serde_json::json!({ "error": err })
+    } else {
+        serde_json::json!({})
+    };
+    let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
+        crate::application::services::TelemetryEventType::Backup,
+        outcome,
+        Some(duration),
+        Some(details),
+        Some(session_user_id),
+    );
+    Ok(())
+}
+
+/// Write backup audit — safe to call without a live DB guard.
+fn write_backup_audit(
+    state: &AppState,
+    session_user_id: &str,
+    session_username: &str,
+    path_str: &str,
+    session_id: &str,
+) -> Result<(), ()> {
+    let guard = state.get_db().map_err(|_| ())?;
+    let db = db_ref_or_command_error(guard.as_ref()).map_err(|_| ())?;
+    let _ = crate::application::services::AuditService::new(db.executor()).log_success(
+        session_user_id,
+        session_username,
+        AuditAction::CreateBackup,
+        crate::domain::audit::EntityType::System,
+        Some(path_str),
+        Some("Database Backup"),
+        None,
+        None,
+        Some(session_id),
+        None,
+    );
+    Ok(())
 }
 
 /// List available backups

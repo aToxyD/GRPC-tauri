@@ -43,14 +43,21 @@ pub fn create_test_session(
     role: &str,
 ) -> grpc_lib::domain::session::CurrentSession {
     let role = grpc_lib::models::UserRole::from(role.to_string());
+    let now = chrono::Utc::now();
     grpc_lib::domain::session::CurrentSession {
         user_id: user_id.to_string(),
         username: username.to_string(),
-        user_role: role,
+        user_role: role.clone(),
         session_id: uuid::Uuid::new_v4().to_string(),
-        created_at: chrono::Utc::now(),
-        last_activity: chrono::Utc::now(),
+        created_at: now,
+        last_activity: now,
         timeout_minutes: 30,
+        user_snapshot: grpc_lib::domain::session::UserSnapshot {
+            id: user_id.to_string(),
+            username: username.to_string(),
+            role,
+            created_at: now,
+        },
     }
 }
 

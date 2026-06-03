@@ -88,5 +88,6 @@ These ADRs were originally created in `docs/adr/` (as ADR-001 through ADR-007) a
 
 | ADR Range | Purpose |
 |-----------|---------|
-| 0031–0099 | Available for future governance ADRs |
+| 0031 | `0031-rate-limiter-persistence.md` | Rate Limiter Persistence | Accepted | 2026-06-03 | Infrastructure |
+| 0032–0099 | Available for future governance ADRs |
 | 0100–9999 | Available for domain/feature ADRs |

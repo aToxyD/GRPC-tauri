@@ -17,6 +17,17 @@ pub const SESSION_TIMEOUT_MINUTES: i64 = 30;
 /// وقت التحذير قبل انتهاء الجلسة (5 دقائق)
 pub const SESSION_WARNING_MINUTES: i64 = 5;
 
+/// Snapshot of stable user data captured at login.
+/// Eliminates a DB round-trip on every get_current_user call.
+/// Fields match exactly what the frontend consumes.
+#[derive(Debug, Clone)]
+pub struct UserSnapshot {
+    pub id: String,
+    pub username: String,
+    pub role: UserRole,
+    pub created_at: DateTime<Utc>,
+}
+
 /// معلومات الجلسة الحالية
 #[derive(Debug, Clone)]
 pub struct CurrentSession {
@@ -27,11 +38,17 @@ pub struct CurrentSession {
     pub created_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub timeout_minutes: i64,
+    pub user_snapshot: UserSnapshot,
 }
 
 impl CurrentSession {
     /// إنشاء جلسة جديدة
-    pub fn new(user_id: String, username: String, user_role: UserRole) -> Self {
+    pub fn new(
+        user_id: String,
+        username: String,
+        user_role: UserRole,
+        user_snapshot: UserSnapshot,
+    ) -> Self {
         let now = Utc::now();
         Self {
             user_id,
@@ -41,6 +58,7 @@ impl CurrentSession {
             created_at: now,
             last_activity: now,
             timeout_minutes: SESSION_TIMEOUT_MINUTES,
+            user_snapshot,
         }
     }
 
@@ -79,10 +97,24 @@ mod tests {
     use std::thread::sleep;
     use std::time::Duration;
 
+    fn make_snapshot() -> UserSnapshot {
+        UserSnapshot {
+            id: "user_123".to_string(),
+            username: "admin".to_string(),
+            role: UserRole::Admin,
+            created_at: Utc::now(),
+        }
+    }
+
     #[test]
     fn test_session_creation() {
-        let session =
-            CurrentSession::new("user_123".to_string(), "admin".to_string(), UserRole::Admin);
+        let snapshot = make_snapshot();
+        let session = CurrentSession::new(
+            "user_123".to_string(),
+            "admin".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
 
         assert_eq!(session.user_id, "user_123");
         assert_eq!(session.username, "admin");
@@ -94,8 +126,13 @@ mod tests {
 
     #[test]
     fn test_session_touch_resets_timer() {
-        let mut session =
-            CurrentSession::new("user_123".to_string(), "admin".to_string(), UserRole::Admin);
+        let snapshot = make_snapshot();
+        let mut session = CurrentSession::new(
+            "user_123".to_string(),
+            "admin".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
 
         let first_activity = session.last_activity;
         sleep(Duration::from_millis(100));
@@ -107,8 +144,13 @@ mod tests {
 
     #[test]
     fn test_session_remaining_minutes() {
-        let session =
-            CurrentSession::new("user_123".to_string(), "admin".to_string(), UserRole::Admin);
+        let snapshot = make_snapshot();
+        let session = CurrentSession::new(
+            "user_123".to_string(),
+            "admin".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
 
         let remaining = session.remaining_minutes();
         assert!(remaining > 0);
@@ -117,8 +159,13 @@ mod tests {
 
     #[test]
     fn test_session_duration_tracking() {
-        let session =
-            CurrentSession::new("user_123".to_string(), "admin".to_string(), UserRole::Admin);
+        let snapshot = make_snapshot();
+        let session = CurrentSession::new(
+            "user_123".to_string(),
+            "admin".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
 
         let duration = session.duration_minutes();
         assert!(duration >= 0);
@@ -126,8 +173,13 @@ mod tests {
 
     #[test]
     fn test_session_should_warn() {
-        let mut session =
-            CurrentSession::new("user_123".to_string(), "admin".to_string(), UserRole::Admin);
+        let snapshot = make_snapshot();
+        let mut session = CurrentSession::new(
+            "user_123".to_string(),
+            "admin".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
 
         // New session should not warn
         assert!(!session.should_warn());

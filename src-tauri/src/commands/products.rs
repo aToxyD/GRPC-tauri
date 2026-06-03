@@ -130,15 +130,25 @@ mod tests {
     use super::*;
     use crate::commands::types::AppState;
     use crate::db::ConnectionFactory;
-    use crate::domain::session::CurrentSession;
+    use crate::domain::session::{CurrentSession, UserSnapshot};
     use crate::models::CreateProductRequest;
     use crate::models::UserRole;
 
     fn setup_admin_state() -> AppState {
         let db = ConnectionFactory::new_for_test().unwrap();
         let state = AppState::new_for_test(db);
-        let session =
-            CurrentSession::new("admin1".to_string(), "admin1".to_string(), UserRole::Admin);
+        let snapshot = UserSnapshot {
+            id: "admin1".to_string(),
+            username: "admin1".to_string(),
+            role: UserRole::Admin,
+            created_at: chrono::Utc::now(),
+        };
+        let session = CurrentSession::new(
+            "admin1".to_string(),
+            "admin1".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
         if let Ok(mut s) = state.current_session.lock() {
             *s = Some(session);
         }

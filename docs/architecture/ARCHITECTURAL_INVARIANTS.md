@@ -84,4 +84,31 @@
   يجب على أي وكيل ذكاء اصطناعي يعمل على هذا النظام قراءة هذا الميثاق والتحقق التلقائي من توافق التعديلات المقترحة مع ثوابت المعمارية المذكورة قبل تقديم أي حل برمجي. يُحظر كتابة كود يضعف مستويات الأمان أو يتجاوز مستويات التجريد المعتمدة.
 
 * **الالتزام بالتوثيق والأدلة المادية:**
-  يجب أن يصاحب كل ميزة جديدة أو تعديل هيكلي تحديث ملائم للوثائق التقنية وسجل التحقق من الادعاءات الفنية (Claim Verification Matrix) مع تقديم أدلة ملموسة من الكود والاختبارات تؤكد عدم حدوث أي انجراف أو إضعاف للمعايير المعتمدة.
+    يجب أن يصاحب كل ميزة جديدة أو تعديل هيكلي تحديث ملائم للوثائق التقنية وسجل التحقق من الادعاءات الفنية (Claim Verification Matrix) مع تقديم أدلة ملموسة من الكود والاختبارات تؤكد عدم حدوث أي انجراف أو إضعاف للمعايير المعتمدة.
+
+---
+
+## 5. Float Equality for Domain Quantities (INV-F1)
+
+Direct `==` or `!=` comparisons on `f64`/`f32` values that represent
+domain quantities (prices, stock levels, costs, ratios) are forbidden.
+
+Use epsilon-based comparisons:
+
+- Comparison to zero:
+  `value.abs() < f64::EPSILON`
+
+- Comparison to another value:
+  `(a - b).abs() < f64::EPSILON`
+
+Rationale:
+
+Floating-point arithmetic may produce values such as
+`0.000000000001` instead of `0.0`,
+causing silent inventory and financial calculation errors.
+
+Enforcement:
+
+- cargo clippy
+- architecture checks
+- code review

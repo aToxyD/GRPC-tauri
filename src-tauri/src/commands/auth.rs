@@ -12,7 +12,7 @@ use crate::commands::common::{
 };
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
-use crate::domain::session::CurrentSession;
+use crate::domain::session::{CurrentSession, UserSnapshot};
 use crate::errors::{into_command_error, AppError, ValidationError};
 use crate::models::{LoginRequest, LoginResponse, SessionStatus, User};
 use tauri::State;
@@ -87,9 +87,19 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
                 return Err(into_command_error(AppError::BusinessLogic(e)));
             }
 
-            // Create session
-            let session =
-                CurrentSession::new(user.id.clone(), user.username.clone(), user.role.clone());
+            // Create session with login-time snapshot (avoids DB round-trip)
+            let snapshot = UserSnapshot {
+                id: user.id.clone(),
+                username: user.username.clone(),
+                role: user.role.clone(),
+                created_at: user.created_at,
+            };
+            let session = CurrentSession::new(
+                user.id.clone(),
+                user.username.clone(),
+                user.role.clone(),
+                snapshot,
+            );
             let session_id = session.session_id.clone();
             if let Ok(mut current_session) = state.current_session.lock() {
                 *current_session = Some(session);
@@ -260,14 +270,19 @@ pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> 
         return Ok(None);
     }
 
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
+    // Read from login-time snapshot.
+    // Role/user changes take effect on next login by design.
+    let snapshot = &session.user_snapshot;
+    let user = User {
+        id: snapshot.id.clone(),
+        username: snapshot.username.clone(),
+        password_hash: String::new(),
+        role: snapshot.role.clone(),
+        created_at: snapshot.created_at,
+        node_id: String::new(),
+    };
 
-    let user = UserService::new(db.executor(), state.password_port.as_ref())
-        .get_user_by_username(&session.username)
-        .map_err(into_command_error)?;
-
-    Ok(user)
+    Ok(Some(user))
 }
 
 /// Check session status

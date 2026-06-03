@@ -1637,7 +1637,6 @@ dependencies = [
  "fern",
  "hex",
  "hmac",
- "lazy_static",
  "log",
  "rand",
  "regex",

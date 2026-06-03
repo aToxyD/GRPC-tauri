@@ -63,14 +63,21 @@ fn test_session_lifecycle() {
     use grpc_lib::domain::session::CurrentSession;
     use grpc_lib::models::UserRole;
 
+    let now = Utc::now();
     let session = CurrentSession {
         user_id: "U001".to_string(),
         username: "admin".to_string(),
         user_role: UserRole::Admin,
         session_id: "sess_123".to_string(),
-        created_at: Utc::now(),
-        last_activity: Utc::now(),
+        created_at: now,
+        last_activity: now,
         timeout_minutes: 30,
+        user_snapshot: grpc_lib::domain::session::UserSnapshot {
+            id: "U001".to_string(),
+            username: "admin".to_string(),
+            role: UserRole::Admin,
+            created_at: now,
+        },
     };
 
     assert!(!session.is_expired()); // Check if expired
