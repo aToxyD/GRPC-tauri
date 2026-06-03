@@ -158,7 +158,7 @@ v1.2.0 migrates the frontend from its current operational-but-unhardened state t
 | E6 | `scripts/check_arch.ts` | Implement FE-149 through FE-151 (Timer/Scope) | Self-verifying |
 | E7 | `package.json` | Add `"check:fe": "bun run scripts/check_arch.ts"` script | Manual |
 | E8 | `.github/workflows/` | Add CI job `frontend-architecture` that runs `check:fe` | CI log |
-| E9 | `docs/architecture/` | Create ADR-0031 through ADR-0037 | Manual review |
+| E9 | `docs/architecture/` | Create ADR-0031 (done); ADR-0032–0037 CANCELLED — not implemented in v1.2.0 | Manual review |
 | E10 | `docs/architecture/adr_exception_registry.md` | Register ADR exceptions for false positives | Manual review |
 
 **Files affected:**
@@ -286,5 +286,5 @@ v1.2.0 migration is complete when:
 4. **Phase 3 complete** — Contract files created, tauri.ts and types.ts refactored (M15-M22)
 5. **Phase 3 complete** — Dashboard filtering moved to backend (M23-M24)
 6. **Phase 4 active** — All FE-100 through FE-151 rules present in `scripts/check_arch.ts` with zero violations in CI
-7. **All new ADRs documented** — ADR-0031 through ADR-0037 accepted
+7. **ADRs documented** — ADR-0031 accepted; ADR-0032–0037 DEFERRED (not implemented in v1.2.0 baseline)
 8. **Architecture check passes** — `bun run check:arch` returns zero violations, zero warnings

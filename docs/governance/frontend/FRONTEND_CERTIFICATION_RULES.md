@@ -265,7 +265,7 @@ Gate 5 — **Projection Purity**
 - [ ] All migration items M1–M14 complete
 - [ ] Zero violations on `bun run check:fe`
 - [ ] Zero violations on `bun run check:arch`
-- [ ] All ADR-0031 through ADR-0037 documented
+- [ ] ADR-0031 documented; ADR-0032–0037 CANCELLED / DEFERRED (not implemented in v1.2.0 baseline)
 - [ ] All ADR exceptions registered with review dates
 - [ ] CI pipeline includes `check:fe` job
 - [ ] CI pipeline blocks merge on violations

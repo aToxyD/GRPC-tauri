@@ -90,5 +90,6 @@ The following legacy ADRs have been consolidated:
 | ADR Range | Purpose |
 |-----------|---------|
 | 0031 | `0031-rate-limiter-persistence.md` | Rate Limiter Persistence | Accepted | 2026-06-03 | Infrastructure |
-| 0032–0099 | Available for future governance ADRs |
+| 0032–0037 | CANCELLED / DEFERRED | Not implemented in v1.2.0 baseline | — | — | — |
+| 0038–0099 | Available for future governance ADRs |
 | 0100–9999 | Available for domain/feature ADRs |
