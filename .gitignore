@@ -44,8 +44,6 @@ backups/
 # OpenCode
 .opencode/
 
-AGENTS.md
-
 # Lockfile
 package-lock.json
 
