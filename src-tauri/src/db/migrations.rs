@@ -11,7 +11,7 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
     vec![
         (
             1,
-            "Initial schema creation (including Observability)",
+            "Initial schema creation",
             include_str!("migrations/001_initial.sql"),
         ),
     ]
