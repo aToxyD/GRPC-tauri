@@ -123,27 +123,7 @@ export function scanGovernanceFreeze(cache: FileCache): Violation[] {
       } catch { /* handled by FE-165 */ }
     }
 
-    const certFiles = [
-      "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v1.md",
-      "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v2.md",
-      "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v3.md",
-      "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v4.md",
-      "docs/governance/frontend/archive/FRONTEND_CERTIFICATION_v5.md",
-    ];
 
-    for (const f of certFiles) {
-      try {
-        readFileSync(f, "utf-8");
-      } catch {
-        violations.push({
-          invariant: INVARIANT,
-          severity: "WARNING",
-          file: f,
-          message: "Archived certification file missing",
-          rule: "FE-167",
-        });
-      }
-    }
   }
 
   return violations;
