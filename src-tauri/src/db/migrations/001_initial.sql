@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS fifo_stock_layers (
     qty_remaining REAL NOT NULL CHECK(qty_remaining >= 0),
     received_at TEXT NOT NULL,
     created_by TEXT NOT NULL,
+    origin_fiscal_year INTEGER NOT NULL DEFAULT 0,
     CHECK(qty_remaining <= qty_original)
 );
 
@@ -343,7 +344,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
     error_message TEXT,
     metadata TEXT,
     previous_hash TEXT,
-    entry_hash TEXT
+    entry_hash TEXT,
+    event_type TEXT,
+    actor_id TEXT,
+    target_type TEXT,
+    target_id TEXT,
+    fiscal_year INTEGER,
+    before_snapshot TEXT,
+    after_snapshot TEXT,
+    node_id TEXT,
+    details TEXT
 );
 
 CREATE TABLE IF NOT EXISTS audit_summary (
@@ -511,6 +521,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
 CREATE INDEX IF NOT EXISTS idx_audit_status ON audit_log(status);
+CREATE INDEX IF NOT EXISTS idx_audit_target_entity ON audit_log(target_type, target_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_actor_timestamp ON audit_log(actor_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_fiscal_event ON audit_log(fiscal_year, event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_keyset ON audit_log(timestamp, id);
 
 -- Sync
 CREATE INDEX IF NOT EXISTS idx_import_audit_events_package ON import_audit_events (package_id, occurred_at);
@@ -596,5 +610,42 @@ CREATE TRIGGER IF NOT EXISTS trg_stock_movements_updated_at AFTER UPDATE ON stoc
 INSERT OR IGNORE INTO settings (id, node_type, current_year, configured) VALUES (1, 'UNCONFIGURED', 2026, 0);
 INSERT OR IGNORE INTO users (id, username, password_hash, role, created_at, node_id) VALUES ('system', 'system', 'disabled', 'System', datetime('now'), 'system');
 INSERT OR IGNORE INTO fiscal_year_status (year, status, opened_at) VALUES (CAST(strftime('%Y', 'now') AS INTEGER), 'open', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
+
+-- =============================================================================
+-- 11. DOMAIN EVENTS (MIGRATION 003)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS domain_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id TEXT NOT NULL,
+    sequence_number INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    event_body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(transaction_id, sequence_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_domain_events_replay
+    ON domain_events(transaction_id, sequence_number);
+
+CREATE INDEX IF NOT EXISTS idx_domain_events_category
+    ON domain_events(category, transaction_id, sequence_number);
+
+CREATE INDEX IF NOT EXISTS idx_domain_events_created_at
+    ON domain_events(created_at);
+
+-- =============================================================================
+-- 12. RATE LIMITER (MIGRATION 005)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS rate_limiter_attempts (
+    key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0,
+    successful_count INTEGER NOT NULL DEFAULT 0,
+    total_failed_count INTEGER NOT NULL DEFAULT 0,
+    first_attempt_at INTEGER NOT NULL,
+    last_attempt_at INTEGER NOT NULL
+);
 
 

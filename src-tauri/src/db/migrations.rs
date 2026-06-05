@@ -14,26 +14,6 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Initial schema creation (including Observability)",
             include_str!("migrations/001_initial.sql"),
         ),
-        (
-            2,
-            "Add origin_fiscal_year to fifo_stock_layers for carry-forward audit",
-            include_str!("migrations/002_origin_fiscal_year.sql"),
-        ),
-        (
-            3,
-            "Create domain_events table for deterministic event persistence",
-            include_str!("migrations/003_domain_events.sql"),
-        ),
-        (
-            4,
-            "Audit schema evolution: structured columns, dual-write, keyset indexes",
-            include_str!("migrations/004_audit_schema_evolution.sql"),
-        ),
-        (
-            5,
-            "Rate limiter persistence for login attempt tracking across restarts",
-            include_str!("migrations/005_rate_limiter.sql"),
-        ),
     ]
 }
 
