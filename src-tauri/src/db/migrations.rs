@@ -8,13 +8,11 @@ use crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use rusqlite::{params, Connection};
 
 fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
-    vec![
-        (
-            1,
-            "Initial schema creation",
-            include_str!("migrations/001_initial.sql"),
-        ),
-    ]
+    vec![(
+        1,
+        "Initial schema creation",
+        include_str!("migrations/001_initial.sql"),
+    )]
 }
 
 /// Latest schema version expected after all embedded migrations have run.
