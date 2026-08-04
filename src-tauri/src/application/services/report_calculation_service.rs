@@ -58,7 +58,7 @@ impl<'a> ReportCalculationService<'a> {
         match report_type.as_str() {
             "daily" => {
                 let start = year
-                    .and_then(|y| month.map(|m| (y, m)))
+                    .zip(month)
                     .and_then(|(y, m)| NaiveDate::from_ymd_opt(y, m as u32, 1));
 
                 let end = year.and_then(|y| {
@@ -108,7 +108,7 @@ impl<'a> ReportCalculationService<'a> {
             }
             "stock" => {
                 let start_date = year
-                    .and_then(|y| month.map(|m| (y, m)))
+                    .zip(month)
                     .and_then(|(y, m)| NaiveDate::from_ymd_opt(y, m as u32, 1))
                     .map(|d| d.to_string());
 

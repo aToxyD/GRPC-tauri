@@ -47,6 +47,10 @@ pub enum AppError {
     #[error("Internal error: {0}")]
     Internal(String),
 
+    /// أخطاء الإعداد (Configuration) — متغير بيئة إلزامي غير موجود
+    #[error("Configuration error: {0}")]
+    Configuration(String),
+
     /// أخطاء تحويل التواريخ
     #[error("Date parse error: {0}")]
     DateParse(String),
