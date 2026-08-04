@@ -41,3 +41,15 @@ export interface EngineMetricsData {
   warnings: number;
   generationTimeMs: number;
 }
+
+export interface CoverageBucket {
+  label: string;
+  covered: number;
+  total: number;
+}
+
+export interface CoverageReportData {
+  ipcIsolationViolations: number;
+  buckets: CoverageBucket[];
+  overallCoverage: number;
+}

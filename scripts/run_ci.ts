@@ -1,6 +1,9 @@
 import { spawnSync } from "child_process";
 
 const steps = [
+  // Generate governance observability reports first (gitignored artifacts
+  // required by the FE-165 release gate, e.g. GOVERNANCE_COVERAGE_REPORT.md)
+  { name: "Governance Observability Reports", cmd: "bun", args: ["run", "check:obs"] },
   { name: "Architectural Checks", cmd: "bun", args: ["run", "check:arch"] },
   { name: "Svelte Type & Diagnostics Checks", cmd: "bun", args: ["run", "check"] },
   { name: "Frontend Unit & Integration Tests", cmd: "bun", args: ["run", "test"] },

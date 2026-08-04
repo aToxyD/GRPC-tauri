@@ -17,6 +17,7 @@ import { analyzeChangeImpact, generateChangeImpactReport } from "./changeImpact"
 import { generateTimelineReport } from "./timeline";
 import { detectDeadArtifacts, generateDeadArtifactsReport } from "./deadArtifacts";
 import { collectEngineMetrics, generateEngineMetricsReport } from "./engineMetrics";
+import { computeCoverageReport, generateCoverageReport } from "./coverageReport";
 import type { ExecutionMetrics } from "../types";
 
 const DOCS_DIR = "docs/governance/frontend";
@@ -39,6 +40,7 @@ export function runObservability(
   timelineFile: string;
   deadArtifactsFile: string;
   engineMetricsFile: string;
+  coverageReportFile: string;
 } {
   const start = performance.now();
   const cache = new FileCache();
@@ -59,6 +61,7 @@ export function runObservability(
     warnings ?? 0,
     start,
   );
+  const coverageReportData = computeCoverageReport(cache);
 
   // Generate reports
   const telemetryReport = generateTelemetryReport(telemetryData);
@@ -67,6 +70,7 @@ export function runObservability(
   const changeImpactReport = generateChangeImpactReport(changeImpacts);
   const deadArtifactsReport = generateDeadArtifactsReport(deadArtifacts);
   const engineMetricsReport = generateEngineMetricsReport(engineMetricsData);
+  const coverageReport = generateCoverageReport(coverageReportData);
 
   // Write files
   const telemetryFile = `${DOCS_DIR}/GOVERNANCE_TELEMETRY.md`;
@@ -76,6 +80,7 @@ export function runObservability(
   const timelineFile = `${DOCS_DIR}/GOVERNANCE_TIMELINE.md`;
   const deadArtifactsFile = `${DOCS_DIR}/DEAD_ARTIFACTS.md`;
   const engineMetricsFile = `${DOCS_DIR}/GOVERNANCE_ENGINE_METRICS.md`;
+  const coverageReportFile = `${DOCS_DIR}/GOVERNANCE_COVERAGE_REPORT.md`;
 
   writeFileSync(telemetryFile, telemetryReport);
   writeFileSync(healthScoreFile, healthScoreReport);
@@ -84,6 +89,7 @@ export function runObservability(
   writeFileSync(timelineFile, timelineReport);
   writeFileSync(deadArtifactsFile, deadArtifactsReport);
   writeFileSync(engineMetricsFile, engineMetricsReport);
+  writeFileSync(coverageReportFile, coverageReport);
 
   console.log("\n\x1b[36m\x1b[1mGovernance Observability Reports Generated:\x1b[0m");
   console.log(`  📊 ${telemetryFile}`);
@@ -93,6 +99,7 @@ export function runObservability(
   console.log(`  📅 ${timelineFile}`);
   console.log(`  💀 ${deadArtifactsFile}`);
   console.log(`  ⚡ ${engineMetricsFile}`);
+  console.log(`  📊 ${coverageReportFile}`);
 
   return {
     telemetryFile,
@@ -102,6 +109,7 @@ export function runObservability(
     timelineFile,
     deadArtifactsFile,
     engineMetricsFile,
+    coverageReportFile,
   };
 }
 
