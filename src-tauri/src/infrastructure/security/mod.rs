@@ -278,22 +278,237 @@ pub fn get_sync_security_diagnostics() -> AppResult<crate::models::SyncSecurityD
 }
 
 #[cfg(test)]
-mod signing_key_id_tests {
-    use super::resolve_active_signing_key_id;
+mod key_resolution_tests {
+    use super::*;
+    use crate::errors::AppError;
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    const VALID_APP_KEY: &str = "AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ";
+
+    fn b64(bytes: &[u8]) -> String {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+        STANDARD.encode(bytes)
+    }
+
+    fn clear_key_env() {
+        std::env::remove_var("GRPC_ENV");
+        std::env::remove_var("GRPC_APP_KEY");
+        std::env::remove_var("GRPC_PACKAGE_SIGNING_KEY");
+        std::env::remove_var("GRPC_ACTIVE_SIGNING_KEY_ID");
+    }
+
+    fn valid_sign_env() -> String {
+        b64(&[42u8; 32])
+    }
+
+    // ---- resolve_app_encryption_key_impl ----
+
+    #[test]
+    fn app_key_valid_env_returns_trimmed_in_both_modes() {
+        for allow in [true, false] {
+            let got = resolve_app_encryption_key_impl(
+                Some(format!("  {}  ", VALID_APP_KEY)),
+                allow,
+            )
+            .expect("valid key accepted");
+            assert_eq!(got, VALID_APP_KEY);
+        }
+    }
+
+    #[test]
+    fn app_key_malformed_prefix_is_validation_error_in_both_modes() {
+        for allow in [true, false] {
+            let err =
+                resolve_app_encryption_key_impl(Some("NOT-AN-AGE-KEY".into()), allow).unwrap_err();
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "malformed key must be a validation error, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn app_key_missing_with_dev_fallback_returns_embedded_key() {
+        let got = resolve_app_encryption_key_impl(None, true).expect("dev fallback allowed");
+        assert_eq!(got, DEV_AGE_KEY);
+    }
+
+    #[test]
+    fn app_key_missing_without_dev_fallback_is_configuration_error() {
+        let err = resolve_app_encryption_key_impl(None, false).unwrap_err();
+        assert!(
+            matches!(err, AppError::Configuration(_)),
+            "missing key must be a configuration error, got {err:?}"
+        );
+    }
+
+    // ---- resolve_package_signing_key_32_impl ----
+
+    #[test]
+    fn signing_key_valid_env_returns_bytes_in_both_modes() {
+        let b64 = valid_sign_env();
+        for allow in [true, false] {
+            let got = resolve_package_signing_key_32_impl(Some(b64.clone()), allow)
+                .expect("valid key accepted");
+            assert_eq!(got, [42u8; 32]);
+        }
+    }
+
+    #[test]
+    fn signing_key_invalid_base64_is_validation_error_in_both_modes() {
+        for allow in [true, false] {
+            let err = resolve_package_signing_key_32_impl(Some("!!!not-base64!!!".into()), allow)
+                .unwrap_err();
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "invalid base64 must be a validation error, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn signing_key_wrong_length_is_validation_error_in_both_modes() {
+        let short = b64(&[1u8; 16]);
+        for allow in [true, false] {
+            let err =
+                resolve_package_signing_key_32_impl(Some(short.clone()), allow).unwrap_err();
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "wrong key size must be a validation error, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn signing_key_missing_with_dev_fallback_returns_zero_key_only_in_debug() {
+        let got = resolve_package_signing_key_32_impl(None, true).expect("dev fallback allowed");
+        assert_eq!(got, [0u8; 32]);
+    }
+
+    #[test]
+    fn signing_key_missing_without_dev_fallback_is_configuration_error_and_never_zero_key() {
+        let err = resolve_package_signing_key_32_impl(None, false).unwrap_err();
+        // Release semantics: missing key must fail closed (configuration error).
+        // No code path in release may return the all-zero dev fallback key.
+        assert!(
+            matches!(err, AppError::Configuration(_)),
+            "missing key must be a configuration error, got {err:?}"
+        );
+    }
+
+    // ---- validate_production_security_environment ----
+
+    #[test]
+    fn validate_skips_when_not_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "development");
+        assert!(validate_production_security_environment().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_missing_app_key_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        let err = validate_production_security_environment().unwrap_err();
+        assert!(
+            err.contains("GRPC_APP_KEY") && err.starts_with("Configuration error:"),
+            "missing app key must be a configuration error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_missing_signing_key_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        let err = validate_production_security_environment().unwrap_err();
+        assert!(
+            err.contains("GRPC_PACKAGE_SIGNING_KEY") && err.starts_with("Configuration error:"),
+            "missing signing key must be a configuration error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_malformed_signing_key_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", "not-base64!!");
+        let err = validate_production_security_environment().unwrap_err();
+        assert!(
+            err.starts_with("Validation error:"),
+            "malformed key must be a validation error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_wrong_size_signing_key_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", b64(&[0u8; 16]));
+        let err = validate_production_security_environment().unwrap_err();
+        assert!(
+            err.contains("exactly 32 bytes") && err.starts_with("Validation error:"),
+            "wrong key size must be a validation error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_valid_keys_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        assert!(validate_production_security_environment().is_ok());
+    }
+
+    // ---- public wrappers (debug build: env honored, fallback available) ----
+
+    #[test]
+    fn public_resolve_app_encryption_key_honors_env_first() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        assert_eq!(
+            resolve_app_encryption_key().expect("env key used"),
+            VALID_APP_KEY
+        );
+    }
+
+    #[test]
+    fn public_resolve_package_signing_key_honors_env_first() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        assert_eq!(
+            resolve_package_signing_key_32().expect("env key used"),
+            [42u8; 32]
+        );
+    }
+
+    // ---- pre-existing signing-key-id resolution ----
+
     #[test]
     fn active_signing_key_missing_env_is_none() {
         let _g = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GRPC_ACTIVE_SIGNING_KEY_ID");
+        clear_key_env();
         assert_eq!(resolve_active_signing_key_id(), None);
     }
 
     #[test]
     fn active_signing_key_empty_or_whitespace_is_none() {
         let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
         std::env::set_var("GRPC_ACTIVE_SIGNING_KEY_ID", "");
         assert_eq!(resolve_active_signing_key_id(), None);
         std::env::set_var("GRPC_ACTIVE_SIGNING_KEY_ID", "   ");
@@ -303,6 +518,7 @@ mod signing_key_id_tests {
     #[test]
     fn active_signing_key_present_trimmed() {
         let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
         std::env::set_var("GRPC_ACTIVE_SIGNING_KEY_ID", "  prod-key-1  ");
         assert_eq!(
             resolve_active_signing_key_id().as_deref(),
