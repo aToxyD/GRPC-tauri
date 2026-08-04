@@ -11,6 +11,13 @@ use grpc_lib::models::{ConsumptionItemInput, DailyReportInput, MealSectionInput,
 use grpc_lib::repositories::{FifoLayerRepository, RepositoryProvider};
 use uuid::Uuid;
 
+/// Report dates must fall within the last 365 days (validate_daily_report_input
+/// in domain/validation.rs). Computed relative to now so these tests never
+/// become time-bombs as the calendar advances.
+fn recent_report_date() -> chrono::NaiveDate {
+    chrono::Utc::now().date_naive() - chrono::Duration::days(30)
+}
+
 fn setup_unit_product_layers(
     db: &grpc_lib::db::Database,
     unit_cost: f64,
@@ -181,7 +188,7 @@ fn preview_matches_actual_multi_meal_layer_allocation() {
     let (unit_id, product_id) = setup_two_layers(&db);
 
     let input = DailyReportInput {
-        date: chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
+        date: recent_report_date(),
         meals: vec![
             MealSectionInput {
                 meal_type: MealType::Breakfast,
@@ -306,7 +313,7 @@ fn preview_order_independence_matches_saved() {
 
     // Case A: [Breakfast, Lunch] (natural order)
     let input_a = DailyReportInput {
-        date: chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
+        date: recent_report_date(),
         meals: vec![
             MealSectionInput {
                 meal_type: MealType::Breakfast,
@@ -337,7 +344,7 @@ fn preview_order_independence_matches_saved() {
 
     // Case B: [Lunch, Breakfast] (reversed order)
     let input_b = DailyReportInput {
-        date: chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
+        date: recent_report_date(),
         meals: vec![
             MealSectionInput {
                 meal_type: MealType::Lunch,
