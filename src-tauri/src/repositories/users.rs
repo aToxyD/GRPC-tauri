@@ -99,6 +99,29 @@ impl<'a> UserRepository<'a> {
         Ok(())
     }
 
+    /// Insert a user only when the username does not already exist.
+    ///
+    /// Returns `true` when a new row was inserted, `false` when the username
+    /// already existed. Never overwrites existing credentials or credential
+    /// material. Used by the startup admin-seeding path so that repeated
+    /// launches are idempotent with respect to credentials.
+    pub fn insert_user_if_absent(
+        &self,
+        id: &str,
+        username: &str,
+        password_hash: &str,
+        role: UserRole,
+        node_id: &str,
+        now: &str,
+    ) -> Result<bool, AppError> {
+        let affected = self.executor.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at, node_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(username) DO NOTHING",
+            params![id, username, password_hash, &role.to_string(), now, node_id, now],
+        )?;
+        Ok(affected > 0)
+    }
+
     /// Insert raw user data from imported package (pre-hashed password)
     pub fn insert_raw_user(
         &self,

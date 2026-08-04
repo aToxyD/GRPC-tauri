@@ -58,7 +58,19 @@ impl<'a> UserService<'a> {
         user_repo.change_password(user_id, &password_hash, &now)
     }
 
+    /// Seed the default administrator on first launch only.
+    ///
+    /// Bootstrap invariant: startup is idempotent with respect to
+    /// administrator credentials. When an `admin` user already exists
+    /// (including a soft-deleted one) no credential material is created,
+    /// hashed, or overwritten. The atomic `insert_user_if_absent` is the
+    /// authoritative guard against concurrent seeding.
     pub fn create_default_admin(&self) -> Result<(), AppError> {
+        let existing = self.executor.users().get_user_by_username("admin")?;
+        if existing.is_some() {
+            return Ok(());
+        }
+
         let node_id = SettingsNodeIdentityProvider::new(self.executor)
             .current_node_id()
             .unwrap_or_else(|_| "WILAYA".to_string());
@@ -69,7 +81,7 @@ impl<'a> UserService<'a> {
 
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        self.executor.users().upsert_user(
+        self.executor.users().insert_user_if_absent(
             &id,
             "admin",
             &password_hash,
