@@ -29,3 +29,4 @@
 - [دليل المزامنة (Sync Runbook)](../sync-runbook.md)
 - [إجراءات التعامل مع أخطاء الإنتاج](../runbooks/production-error-handling.md)
 - [إجراءات أمان مفاتيح الإنتاج](../runbooks/security-production-keys.md)
+- [تهيئة المسؤول الافتراضي (Admin Bootstrap)](../runbooks/admin-bootstrap.md)
