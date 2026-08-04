@@ -96,31 +96,54 @@ pub fn resolve_app_encryption_key() -> AppResult<String> {
     )
 }
 
-pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
-    use base64::engine::general_purpose::STANDARD;
-    use base64::Engine;
+/// Shared core for `resolve_package_signing_key_32`.
+///
+/// `allow_dev_fallback` is threaded explicitly so both debug and release
+/// semantics are testable in a single (debug) test binary.
+fn resolve_package_signing_key_32_impl(
+    env_raw: Option<String>,
+    allow_dev_fallback: bool,
+) -> AppResult<[u8; 32]> {
+    match env_raw {
+        Some(raw) => {
+            use base64::engine::general_purpose::STANDARD;
+            use base64::Engine;
 
-    let env = std::env::var("GRPC_PACKAGE_SIGNING_KEY")
-        .map_err(|_| AppError::Internal("GRPC_PACKAGE_SIGNING_KEY is missing".to_string()));
-    if let Ok(raw) = env {
-        let bytes = STANDARD.decode(raw.trim()).map_err(|e| {
-            log::error!(target: "grpc::security", "Failed to decode Base64 GRPC_PACKAGE_SIGNING_KEY: {}", e);
-            AppError::Internal("GRPC_PACKAGE_SIGNING_KEY must be a valid Base64 string".to_string())
-        })?;
+            let bytes = STANDARD.decode(raw.trim()).map_err(|e| {
+                log::error!(target: "grpc::security", "Failed to decode Base64 GRPC_PACKAGE_SIGNING_KEY: {}", e);
+                AppError::Validation(ValidationError::InvalidFormat {
+                    field: "GRPC_PACKAGE_SIGNING_KEY".into(),
+                    message: "must be a valid Base64 string".into(),
+                })
+            })?;
 
-        if bytes.len() != 32 {
-            log::error!(target: "grpc::security", "GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes (got {})", bytes.len());
-            return Err(AppError::Internal(
-                "GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes".to_string(),
-            ));
+            if bytes.len() != 32 {
+                log::error!(target: "grpc::security", "GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes (got {})", bytes.len());
+                return Err(AppError::Validation(ValidationError::InvalidFormat {
+                    field: "GRPC_PACKAGE_SIGNING_KEY".into(),
+                    message: format!("must decode to exactly 32 bytes (got {})", bytes.len()),
+                }));
+            }
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&bytes[..32]);
+            Ok(key)
         }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&bytes[..32]);
-        return Ok(key);
+        None if allow_dev_fallback => {
+            log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_PACKAGE_SIGNING_KEY missing — using all-zero dev fallback key. NOT FOR PRODUCTION.");
+            Ok([0u8; 32])
+        }
+        None => Err(AppError::Configuration(
+            "GRPC_PACKAGE_SIGNING_KEY is required; the development fallback key is forbidden outside debug builds"
+                .to_string(),
+        )),
     }
+}
 
-    log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_PACKAGE_SIGNING_KEY missing — using all-zero dev fallback key. DO NOT USE IN PRODUCTION.");
-    Ok([0u8; 32])
+pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
+    resolve_package_signing_key_32_impl(
+        std::env::var("GRPC_PACKAGE_SIGNING_KEY").ok(),
+        cfg!(debug_assertions),
+    )
 }
 
 /// Active signing key id for **new** package exports. `None` preserves legacy packages (no id in metadata).
