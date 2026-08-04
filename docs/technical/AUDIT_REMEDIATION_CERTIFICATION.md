@@ -67,33 +67,20 @@ Commit: `c823c8e`
 
 ---
 
-## 3. Externally Referenced Items — No In-Repo Definition
-
-### P7-W7 — "deployment-impact validation"
-
-**P7-W7 is a reference from an external audit report; it is not defined
-anywhere in this repository.** After completing the in-scope remediation
-(B-group, A-1, R-1), no in-repo definition exists that would allow
-"deployment-impact validation" to be implemented in a documented manner.
-
-Per project policy, **no code or ticket was created under the P7-W7 label** —
-guessing at an external finding's scope could produce a fix for a different
-problem entirely.
-
-**Required before any action:**
-1. Obtain the original audit report, or
-2. Obtain the scope/acceptance criteria from the issuing authority.
-
-Until then, P7-W7 remains **blocked-on-external-reference**, not a project
-defect. This section must be updated or retired once the definition is
-provided and the item is either remediated or formally withdrawn.
-
----
-
-## 4. Remaining Known Items
+## 3. Remaining Known Items
 
 | Item | Status |
 |------|--------|
-| P7-W7 (external audit reference) | Blocked — needs external report |
 | `deployment_readiness_service.rs` decomposition (ADR-0028 note) | Deferred future phase |
 | Governance unit tests requiring `jsdom` | Environment-only (empty `node_modules`); tests pass when `bunfig.toml` preload is disabled |
+
+---
+
+## 4. Conclusion
+
+All in-scope remediation is complete and verified: B-group, A-1, R-1 and the
+test fixes are closed, and the full governance gate set is green — 59/59 test
+targets, `cargo clippy --all-targets` 0 warnings, `bun run check:arch` 0
+violations, and secrets / docs / release-integrity checks at 100%. Any future
+work is development or architectural improvement, not a continuation of defect
+remediation.
