@@ -12,3 +12,4 @@ export * from './observability.contract';
 export * from './fiscal.contract';
 export * from './dashboard.contract';
 export * from './platform.contract';
+export * from './identity.contract';

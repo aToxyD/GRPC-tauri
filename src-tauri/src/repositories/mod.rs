@@ -13,6 +13,7 @@ pub mod fiscal_package_registry;
 pub mod fiscal_snapshots;
 pub mod fiscal_transitions;
 pub mod fiscal_year_status;
+pub mod identity_store;
 pub mod import_audit_events;
 pub mod integrity;
 pub mod inventory;
@@ -20,6 +21,7 @@ pub mod opening_balances;
 pub mod orders;
 pub mod products;
 pub mod rate_limiter;
+pub mod registry_snapshots;
 pub mod reports;
 pub mod sessions;
 pub mod settings;
@@ -41,6 +43,7 @@ pub use fiscal_package_registry::{FiscalPackageRegistryEntry, FiscalPackageRegis
 pub use fiscal_snapshots::FiscalSnapshotRepository;
 pub use fiscal_transitions::FiscalTransitionRepository;
 pub use fiscal_year_status::FiscalYearStatusRepository;
+pub use identity_store::IdentityStoreRepository;
 pub use import_audit_events::ImportAuditEventsRepository;
 pub use integrity::IntegrityRepository;
 pub use inventory::InventoryRepository;
@@ -48,6 +51,7 @@ pub use opening_balances::OpeningBalanceRepository;
 pub use orders::OrderRepository;
 pub use products::ProductRepository;
 pub use rate_limiter::RateLimiterRepository;
+pub use registry_snapshots::{RegistrySnapshotRow, RegistrySnapshotsRepository};
 pub use reports::ReportRepository;
 pub use sessions::SessionRepository;
 pub use settings::SettingsRepository;
@@ -71,6 +75,7 @@ impl crate::architecture::Repository for FiscalYearStatusRepository<'_> {}
 impl crate::architecture::Repository for FiscalSnapshotRepository<'_> {}
 impl crate::architecture::Repository for FiscalTransitionRepository<'_> {}
 impl crate::architecture::Repository for ImportAuditEventsRepository<'_> {}
+impl crate::architecture::Repository for IdentityStoreRepository<'_> {}
 impl crate::architecture::Repository for UnitRepository<'_> {}
 impl crate::architecture::Repository for OrderRepository<'_> {}
 impl crate::architecture::Repository for ReportRepository<'_> {}
@@ -82,6 +87,7 @@ impl crate::architecture::Repository for TelemetryRepository<'_> {}
 impl crate::architecture::Repository for TimelineRepository<'_> {}
 impl crate::architecture::Repository for FiscalPackageRegistryRepository<'_> {}
 impl crate::architecture::Repository for RateLimiterRepository {}
+impl crate::architecture::Repository for RegistrySnapshotsRepository<'_> {}
 impl crate::architecture::Repository for FifoLayerRepository<'_> {}
 
 /// Centralized provider for repositories to avoid manual construction in the service layer.
@@ -104,6 +110,7 @@ pub trait RepositoryProvider<'a> {
     fn units(&self) -> UnitRepository<'a>;
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a>;
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a>;
+    fn identity_store(&self) -> IdentityStoreRepository<'a>;
     fn system(&self) -> SystemRepository<'a>;
     fn sync_conflicts(&self) -> SyncConflictRepository<'a>;
     fn integrity(&self) -> IntegrityRepository<'a>;
@@ -112,6 +119,7 @@ pub trait RepositoryProvider<'a> {
     fn timeline(&self) -> TimelineRepository<'a>;
     fn fiscal_package_registry(&self) -> FiscalPackageRegistryRepository<'a>;
     fn fifo_layers(&self) -> FifoLayerRepository<'a>;
+    fn registry_snapshots(&self) -> RegistrySnapshotsRepository<'a>;
 }
 
 impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
@@ -166,6 +174,9 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a> {
         ImportAuditEventsRepository::new(*self)
     }
+    fn identity_store(&self) -> IdentityStoreRepository<'a> {
+        IdentityStoreRepository::new(*self)
+    }
     fn system(&self) -> SystemRepository<'a> {
         SystemRepository::new(*self)
     }
@@ -189,5 +200,8 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn fifo_layers(&self) -> FifoLayerRepository<'a> {
         FifoLayerRepository::new(*self)
+    }
+    fn registry_snapshots(&self) -> RegistrySnapshotsRepository<'a> {
+        RegistrySnapshotsRepository::new(*self)
     }
 }

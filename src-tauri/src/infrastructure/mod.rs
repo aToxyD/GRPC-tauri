@@ -6,6 +6,7 @@
 pub mod backup;
 pub mod db;
 pub mod export;
+pub mod identity;
 pub mod logging;
 pub mod security;
 pub mod sqlite_observability;

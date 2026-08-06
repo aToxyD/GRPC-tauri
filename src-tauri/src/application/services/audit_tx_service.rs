@@ -31,6 +31,21 @@ impl AuditTxService {
     where
         F: FnOnce(&TxContext) -> Result<T, AppError>,
     {
+        Self::execute_with_audit_metadata(db, action, user_ctx, None, f)
+    }
+
+    /// Like `execute_with_audit`, with an explicit `metadata` JSON payload on the
+    /// audit entry (e.g. `{"auth_method": "password"}` telemetry, B5).
+    pub fn execute_with_audit_metadata<F, T>(
+        db: &mut Database,
+        action: AuditAction,
+        user_ctx: &UserContext,
+        metadata: Option<serde_json::Value>,
+        f: F,
+    ) -> Result<T, AppError>
+    where
+        F: FnOnce(&TxContext) -> Result<T, AppError>,
+    {
         let conn = &mut db.conn;
         let tx = conn.transaction()?;
 
@@ -64,7 +79,7 @@ impl AuditTxService {
             None,
             None,
             user_ctx.session_id.as_deref(),
-            None,
+            metadata,
         )?;
 
         // 3. Both succeeded → commit

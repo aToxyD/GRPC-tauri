@@ -17,6 +17,8 @@ pub enum Action {
     ExportStockMovementsPackage,
     ImportStockMovementsPackage,
     ImportStockMovements,
+    ImportTrustPackage,
+    ImportRegistryPackage,
 
     // Core Domain
     ManageProducts,

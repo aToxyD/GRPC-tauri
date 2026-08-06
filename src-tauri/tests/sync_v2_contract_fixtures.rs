@@ -28,6 +28,8 @@ fn monthly_fixture_package() -> SyncPackage<MonthlySummaryExportDataset> {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "contract-node".into(),
+            package_sequence: None,
+            issuer_identity_id: None,
             package_id: PackageId("contract-pkg-monthly-001".into()),
             signature_version: None,
             signing_key_id: None,

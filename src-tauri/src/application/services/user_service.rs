@@ -65,6 +65,10 @@ impl<'a> UserService<'a> {
     /// (including a soft-deleted one) no credential material is created,
     /// hashed, or overwritten. The atomic `insert_user_if_absent` is the
     /// authoritative guard against concurrent seeding.
+    //
+    // [arch:allow-bootstrap-admin] see ADR-0038 — temporary legacy path, B5
+    // deprecation window only; production seeding is removed in B6-A (RFC
+    // 2026-08-04-node-identity-trust).
     pub fn create_default_admin(&self) -> Result<(), AppError> {
         let existing = self.executor.users().get_user_by_username("admin")?;
         if existing.is_some() {
@@ -76,7 +80,7 @@ impl<'a> UserService<'a> {
             .unwrap_or_else(|_| "WILAYA".to_string());
         let password_hash = self
             .password_port
-            .hash_password("admin", &node_id)
+            .hash_password("admin", &node_id) // [arch:allow-bootstrap-admin] see ADR-0038 — B5 legacy window
             .map_err(crate::errors::AppError::Internal)?;
 
         let id = Uuid::new_v4().to_string();

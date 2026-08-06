@@ -46,14 +46,7 @@ impl PackageBuilder {
 
         // Pass A: Calculate Integrity Hash
         // Remove hash and signature before hashing
-        if let Some(meta) = package_val
-            .get_mut("metadata")
-            .and_then(|m| m.as_object_mut())
-        {
-            meta.remove("integrity_hash");
-            meta.remove("signature");
-        }
-        let canonical_for_hash = super::canonical_json::canonical_json_bytes(&package_val)?;
+        let canonical_for_hash = super::canonical_json::canonical_bytes_for_integrity(&package_val)?;
         let hash = super::integrity::Sha256PackageHasher.hash(&canonical_for_hash)?;
 
         // Update value with hash
@@ -69,7 +62,7 @@ impl PackageBuilder {
 
         // Pass B: Calculate Signature
         // Sign includes integrity_hash but not signature itself
-        let canonical_for_sig = super::canonical_json::canonical_json_bytes(&package_val)?;
+        let canonical_for_sig = super::canonical_json::canonical_bytes_for_signature(&package_val)?;
         let signature = signer.sign(&canonical_for_sig)?;
 
         // Update value with signature

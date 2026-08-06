@@ -8,11 +8,33 @@ use crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use rusqlite::{params, Connection};
 
 fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
-    vec![(
-        1,
-        "Initial schema creation",
-        include_str!("migrations/001_initial.sql"),
-    )]
+    vec![
+        (
+            1,
+            "Initial schema creation",
+            include_str!("migrations/001_initial.sql"),
+        ),
+        (
+            2,
+            "Identity Store (RFC 2026-08-04-node-identity-trust, ADR-0038)",
+            include_str!("migrations/002_identity_store.sql"),
+        ),
+        (
+            3,
+            "Identity certificate signature (ADR-0039 §6)",
+            include_str!("migrations/003_certificate_signature.sql"),
+        ),
+        (
+            4,
+            "Sync transport ordering ledger (RFC 2026-08-04 §3.4.1, ADR-0038, B4)",
+            include_str!("migrations/004_sync_issuer_sequence.sql"),
+        ),
+        (
+            5,
+            "Registry fleet-state snapshots (RFC 2026-08-04 §3.9, B4)",
+            include_str!("migrations/005_registry_snapshots.sql"),
+        ),
+    ]
 }
 
 /// Latest schema version expected after all embedded migrations have run.

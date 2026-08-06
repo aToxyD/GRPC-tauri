@@ -4,15 +4,12 @@
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
 use crate::application::services::{
-    AuditService, AuditTxService, LoginPolicy, OperationalSessionService, SessionEndReason,
-    SettingsService, UserService,
+    AuditService, AuditTxService, OperationalSessionService, SessionEndReason,
+    SessionEstablishmentService, UserService,
 };
-use crate::commands::common::{
-    db_mut_or_command_error, user_ctx_from_parts, user_ctx_from_session,
-};
+use crate::commands::common::{db_mut_or_command_error, user_ctx_from_parts, user_ctx_from_session};
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
-use crate::domain::session::{CurrentSession, UserSnapshot};
 use crate::errors::{into_command_error, AppError, ValidationError};
 use crate::models::{LoginRequest, LoginResponse, SessionStatus, User};
 use tauri::State;
@@ -60,76 +57,57 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
         .map_err(into_command_error)?;
 
     if let Some(user) = user {
-        // Node-bound password verification
-        let valid = password_port
-            .verify_password(&request.password, &user.node_id, &user.password_hash)
-            .map_err(|e| {
-                into_command_error(AppError::Internal(format!(
-                    "Password verification failed: {}",
-                    e
-                )))
-            })?;
-
-        if valid {
-            // Reset rate limiter on success
-            if let Ok(rl) = state.rate_limiter.lock() {
-                rl.record_success(&request.username);
-            }
-
-            // Get settings
-            let settings = SettingsService::new(db.executor())
-                .get_settings()
-                .map_err(into_command_error)?;
-            let requires_configuration = !settings.configured;
-
-            // Enforce login authorization policy
-            if let Err(e) = LoginPolicy::check_login_allowed(&settings.node_type, &user.role) {
-                return Err(into_command_error(AppError::BusinessLogic(e)));
-            }
-
-            // Create session with login-time snapshot (avoids DB round-trip)
-            let snapshot = UserSnapshot {
-                id: user.id.clone(),
-                username: user.username.clone(),
-                role: user.role.clone(),
-                created_at: user.created_at,
-            };
-            let session = CurrentSession::new(
-                user.id.clone(),
-                user.username.clone(),
-                user.role.clone(),
-                snapshot,
+        // Identity-only credential guard (B5): an EMPTY password hash means the
+        // account authenticates exclusively through Challenge–Response
+        // (`.adminkey`). The password path rejects it explicitly — a malformed
+        // `PasswordHash::new("")` would otherwise surface as an internal error.
+        if user.password_hash.is_empty() {
+            log::warn!(
+                target: "grpc::auth",
+                "password login rejected: user={} has an identity-only credential (empty password hash)",
+                request.username
             );
-            let session_id = session.session_id.clone();
-            if let Ok(mut current_session) = state.current_session.lock() {
-                *current_session = Some(session);
-            }
+        } else {
+            // Node-bound password verification
+            let valid = password_port
+                .verify_password(&request.password, &user.node_id, &user.password_hash)
+                .map_err(|e| {
+                    into_command_error(AppError::Internal(format!(
+                        "Password verification failed: {}",
+                        e
+                    )))
+                })?;
 
-            // Log successful login (Atomic Audit) + operational session metadata
-            let user_ctx = user_ctx_from_parts(&user.id, &user.username, Some(&session_id));
-            if let Err(e) =
-                AuditTxService::execute_with_audit(db, AuditAction::Login, &user_ctx, |tx| {
-                    OperationalSessionService::new(tx.executor).begin_session(
-                        &session_id,
-                        &user.id,
-                        &user.username,
-                    )
-                })
-            {
-                log::error!(
-                    target: "grpc::audit",
-                    "AUDIT WRITE FAILED [login] user={} err={:?}",
-                    &user.username,
-                    e
+            if valid {
+                // Reset rate limiter on success
+                if let Ok(rl) = state.rate_limiter.lock() {
+                    rl.record_success(&request.username);
+                }
+
+                // Shared session path: settings + login policy + atomic Login audit +
+                // operational begin_session (single source of truth, ADR-0038/B3).
+                let established =
+                    SessionEstablishmentService::establish(db, &user, None, "password")
+                        .map_err(into_command_error)?;
+                if let Ok(mut current_session) = state.current_session.lock() {
+                    *current_session = Some(established.session);
+                }
+
+                // Deprecation telemetry (B5): the legacy password path is tagged so
+                // the additive window is measurable; removal lands in B6.
+                log::warn!(
+                    target: "grpc::auth",
+                    "LEGACY_PASSWORD_LOGIN: user={} auth_method=password (B6 will remove the legacy path)",
+                    request.username
                 );
-            }
 
-            return Ok(LoginResponse {
-                success: true,
-                user: Some(user),
-                message: "تم تسجيل الدخول بنجاح".to_string(),
-                requires_configuration,
-            });
+                return Ok(LoginResponse {
+                    success: true,
+                    user: Some(user),
+                    message: "تم تسجيل الدخول بنجاح".to_string(),
+                    requires_configuration: established.requires_configuration,
+                });
+            }
         }
     }
 

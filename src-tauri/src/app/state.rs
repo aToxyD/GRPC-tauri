@@ -7,6 +7,7 @@ use crate::application::services::{
     SystemMaintenanceHandle, SystemMaintenanceState,
 };
 use crate::db::Database;
+use crate::domain::identity::IdentityChallengeState;
 use crate::domain::rate_limiter::RateLimiter;
 use crate::domain::security::PasswordHashPort;
 use crate::domain::session::CurrentSession;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub maintenance: SystemMaintenanceHandle,
 
     pub current_session: Arc<Mutex<Option<CurrentSession>>>,
+    pub identity_challenge: Arc<Mutex<IdentityChallengeState>>,
     pub crypto_port: AgeFileEncryptionProvider,
     pub password_port: Arc<dyn PasswordHashPort>,
     pub process_start_time: std::time::Instant,
@@ -38,6 +40,7 @@ impl AppState {
             maintenance: SystemMaintenanceHandle::new(SystemMaintenanceState::Normal),
 
             current_session: Arc::new(Mutex::new(None)),
+            identity_challenge: Arc::new(Mutex::new(IdentityChallengeState::default())),
             crypto_port: AgeFileEncryptionProvider::new(),
             password_port: Arc::new(crate::infrastructure::security::Argon2PasswordHashProvider),
             process_start_time: std::time::Instant::now(),

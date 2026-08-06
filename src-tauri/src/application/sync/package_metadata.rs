@@ -14,6 +14,15 @@ pub struct SyncPackageMetadata {
     pub created_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub integrity_hash: Option<String>,
+    /// Per-issuer transport sequence (RFC 2026-08-04 §3.4.1). Present on
+    /// trust/registry packages issued by a node identity (signature_version = 2);
+    /// `None` on legacy HMAC/V1 packages during the deprecation window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_sequence: Option<u64>,
+    /// Identity of the issuing node (RFC 2026-08-04 §3.4.1). The Transport
+    /// Guard keys on `(issuer_identity_id, package_sequence)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer_identity_id: Option<uuid::Uuid>,
     pub package_id: PackageId,
     pub schema_version: SchemaVersion,
     #[serde(default, skip_serializing_if = "Option::is_none")]

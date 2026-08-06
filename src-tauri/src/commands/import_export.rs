@@ -7,7 +7,7 @@ use crate::application::authz::Action;
 use crate::application::services::{
     record_export_with_reproducibility, AuditService, AuditTxService, DailyReportService,
     ExportReproducibilityContext, NodePackageService, ProductService, SettingsService,
-    StockMovementService, UnitService, UserService,
+    StockMovementService, SyncPackageIdentityVerificationService, UnitService, UserService,
 };
 use crate::application::services::{
     ImportReproducibilityRecord, ImportReproducibilityService, MaintenanceBlockedOperation,
@@ -19,6 +19,7 @@ use crate::application::sync::import::{
 use crate::application::sync::{
     PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
 };
+use crate::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use crate::application::usecases::exports::types::{
     DailyReportExportInput, ExportProductsInput, MonthlySummaryExportInput,
     StockMovementsExportDataset,
@@ -39,6 +40,14 @@ use crate::application::usecases::sync::import_stock_movements_package::STOCK_MO
 use crate::application::usecases::sync::import_stock_movements_package::{
     execute as apply_stock_movements_package, ImportStockMovementsPackageInput,
 };
+use crate::application::usecases::sync::import_registry_package::REGISTRY_PACKAGE_KIND;
+use crate::application::usecases::sync::import_registry_package::{
+    execute as apply_registry_package, ImportRegistryPackageInput,
+};
+use crate::application::usecases::sync::import_trust_package::TRUST_PACKAGE_KIND;
+use crate::application::usecases::sync::import_trust_package::{
+    execute as apply_trust_package, ImportTrustPackageInput,
+};
 use crate::commands::common::{
     db_mut_or_command_error, db_ref_or_command_error, user_ctx_from_session,
 };
@@ -49,7 +58,7 @@ use crate::domain::audit::AuditAction;
 use crate::domain::events::DomainEvent;
 use crate::domain::session::CurrentSession;
 use crate::domain::validation;
-use crate::errors::{into_command_error, AppError, ValidationError};
+use crate::errors::{into_command_error, AppError, BusinessLogicError, ValidationError};
 use crate::infrastructure::db::read::import_audit::{
     list_import_audit_events, ImportAuditEventProjection, ImportAuditQuery,
 };
@@ -59,12 +68,16 @@ use crate::infrastructure::db::sync_import::{
 use crate::infrastructure::security::resolve_active_signing_key_id;
 use crate::infrastructure::sync::{
     read_daily_report_package_from_file, read_monthly_summary_package_from_file,
-    read_products_package_from_file, read_stock_movements_package_from_file,
+    read_products_package_from_file, read_registry_package_from_file,
+    read_stock_movements_package_from_file, read_trust_package_from_file,
     read_unit_node_package_from_file, resolve_export_source_node_id, HmacPackageSigner,
     PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
 
-use crate::models::{DailyReportImportResult, PackageExportResult, XlsxExportResult};
+use crate::models::{
+    DailyReportImportResult, PackageExportResult, RegistryPackageImportResult,
+    TrustPackageImportResult, XlsxExportResult,
+};
 use chrono::{Datelike, Utc};
 use tauri::State;
 use uuid::Uuid;
@@ -94,16 +107,18 @@ pub fn export_products_package(
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
     let package = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-            created_at: Utc::now(),
-            source_node_id,
-            package_id: PackageId(Uuid::new_v4().to_string()),
-            signature_version: None,
-            signing_key_id: resolve_active_signing_key_id(),
-            integrity_hash: None,
-            signature: None,
-        },
+            metadata: SyncPackageMetadata {
+                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+                created_at: Utc::now(),
+                source_node_id,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                signature_version: None,
+                signing_key_id: resolve_active_signing_key_id(),
+                integrity_hash: None,
+                signature: None,
+            },
         payload: dataset.clone(),
     };
 
@@ -169,6 +184,7 @@ pub fn import_products_package(
         Action::ImportProductsPackage,
         file_path,
         PRODUCTS_PACKAGE_KIND,
+        AuditAction::ImportNodePackage,
         read_products_package_from_file,
         |executor, registry, package, session, importer_wilaya: &str| {
             let input = ImportProductsPackageInput {
@@ -198,6 +214,7 @@ pub fn import_daily_report_package(
         Action::ImportDailyReportPackage,
         file_path,
         DAILY_REPORT_PACKAGE_KIND,
+        AuditAction::ImportNodePackage,
         read_daily_report_package_from_file,
         |executor, registry, package, session, importer_wilaya: &str| {
             let input = ImportDailyReportPackageInput {
@@ -253,16 +270,18 @@ pub fn export_daily_report_package(
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
     let package = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-            created_at: Utc::now(),
-            source_node_id,
-            package_id: PackageId(Uuid::new_v4().to_string()),
-            signature_version: None,
-            signing_key_id: resolve_active_signing_key_id(),
-            integrity_hash: None,
-            signature: None,
-        },
+            metadata: SyncPackageMetadata {
+                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+                created_at: Utc::now(),
+                source_node_id,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                signature_version: None,
+                signing_key_id: resolve_active_signing_key_id(),
+                integrity_hash: None,
+                signature: None,
+            },
         payload: dataset.clone(),
     };
 
@@ -408,6 +427,7 @@ pub fn import_monthly_summary_package(
         Action::ImportMonthlySummaryPackage,
         file_path,
         MONTHLY_SUMMARY_PACKAGE_KIND,
+        AuditAction::ImportNodePackage,
         read_monthly_summary_package_from_file,
         |executor, registry, package, session, importer_wilaya: &str| {
             let usecase_input = ImportMonthlySummaryPackageInput {
@@ -595,16 +615,18 @@ pub fn export_monthly_summary_package(
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
     let package = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-            created_at: Utc::now(),
-            source_node_id,
-            package_id: PackageId(Uuid::new_v4().to_string()),
-            signature_version: None,
-            signing_key_id: resolve_active_signing_key_id(),
-            integrity_hash: None,
-            signature: None,
-        },
+            metadata: SyncPackageMetadata {
+                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+                created_at: Utc::now(),
+                source_node_id,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                signature_version: None,
+                signing_key_id: resolve_active_signing_key_id(),
+                integrity_hash: None,
+                signature: None,
+            },
         payload: dataset.clone(),
     };
 
@@ -689,16 +711,18 @@ pub fn export_unit_node_package(
         resolve_export_source_node_id(executor, &settings).map_err(into_command_error)?;
 
     let package = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-            created_at: Utc::now(),
-            source_node_id,
-            package_id: PackageId(Uuid::new_v4().to_string()),
-            signature_version: None,
-            signing_key_id: resolve_active_signing_key_id(),
-            integrity_hash: None,
-            signature: None,
-        },
+            metadata: SyncPackageMetadata {
+                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+                created_at: Utc::now(),
+                source_node_id,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                signature_version: None,
+                signing_key_id: resolve_active_signing_key_id(),
+                integrity_hash: None,
+                signature: None,
+            },
         payload: package_data,
     };
 
@@ -766,16 +790,18 @@ pub fn export_stock_movements_package(
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
     let package = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-            created_at: Utc::now(),
-            source_node_id,
-            package_id: PackageId(Uuid::new_v4().to_string()),
-            signature_version: None,
-            signing_key_id: resolve_active_signing_key_id(),
-            integrity_hash: None,
-            signature: None,
-        },
+            metadata: SyncPackageMetadata {
+                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+                created_at: Utc::now(),
+                source_node_id,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                signature_version: None,
+                signing_key_id: resolve_active_signing_key_id(),
+                integrity_hash: None,
+                signature: None,
+            },
         payload: dataset.clone(),
     };
 
@@ -825,6 +851,7 @@ pub fn import_stock_movements_package(
         Action::ImportStockMovements,
         file_path,
         STOCK_MOVEMENTS_PACKAGE_KIND,
+        AuditAction::ImportNodePackage,
         read_stock_movements_package_from_file,
         |executor, registry, package, session, importer_wilaya: &str| {
             let input = ImportStockMovementsPackageInput {
@@ -845,6 +872,71 @@ pub fn import_stock_movements_package(
     )
 }
 
+/// Import a Trust Package (certificates + revocations) from an encrypted `.sync` file.
+///
+/// B4 (RFC 2026-08-04 §3.9): kind = `trust` — the ONLY trust-distribution channel.
+/// Transport Guard (`run_import_pipeline`) enforces per-issuer sequence continuity.
+#[tauri::command]
+pub fn import_trust_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<TrustPackageImportResult, String> {
+    run_import_pipeline(
+        &state,
+        Action::ImportTrustPackage,
+        file_path,
+        TRUST_PACKAGE_KIND,
+        AuditAction::ImportTrustPackage,
+        read_trust_package_from_file,
+        |executor, registry, package, session, _importer_wilaya: &str| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: session.username.clone(),
+            };
+            let outcome = apply_trust_package(executor, registry, input)?;
+            Ok(TrustPackageImportResult {
+                certificate_count: outcome.certificate_count,
+                revocation_count: outcome.revocation_count,
+                package_id: outcome.package_id,
+                imported_by: session.username.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            })
+        },
+    )
+}
+
+/// Import a Registry Package (fleet-state snapshot) from an encrypted `.sync` file.
+///
+/// B4 (RFC 2026-08-04 §3.9): kind = `registry` — snapshot persisted verbatim (P4).
+#[tauri::command]
+pub fn import_registry_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<RegistryPackageImportResult, String> {
+    run_import_pipeline(
+        &state,
+        Action::ImportRegistryPackage,
+        file_path,
+        REGISTRY_PACKAGE_KIND,
+        AuditAction::ImportRegistryPackage,
+        read_registry_package_from_file,
+        |executor, registry, package, session, _importer_wilaya: &str| {
+            let input = ImportRegistryPackageInput {
+                package,
+                imported_by: session.username.clone(),
+            };
+            let outcome = apply_registry_package(executor, registry, input)?;
+            Ok(RegistryPackageImportResult {
+                snapshot_version: outcome.snapshot_version,
+                unit_count: outcome.unit_count,
+                package_id: outcome.package_id,
+                imported_by: session.username.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            })
+        },
+    )
+}
+
 /// Core pipeline for encrypted sync package imports.
 /// Handles: Authorization, Session Touch, Package Loading, Audit Logging (Start/Success/Failure),
 /// Transaction Orchestration (AuditTxService), and Error Mapping.
@@ -853,11 +945,12 @@ fn run_import_pipeline<T, R, L, I>(
     action: Action,
     file_path: String,
     package_kind: &str,
+    audit_action: AuditAction,
     loader: L,
     importer: I,
 ) -> Result<R, String>
 where
-    T: serde::de::DeserializeOwned + Clone + Send + Sync,
+    T: serde::de::DeserializeOwned + Clone + Send + Sync + serde::Serialize,
     L: FnOnce(
         &std::path::Path,
         &crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider,
@@ -897,6 +990,10 @@ where
     let source_node_id =
         Some(package.metadata.source_node_id.trim().to_string()).filter(|s| !s.is_empty());
 
+    // B4 transport metadata (RFC 2026-08-04 §3.4.1): per-issuer sequence ledger.
+    let package_sequence = package.metadata.package_sequence;
+    let issuer_identity_id = package.metadata.issuer_identity_id.map(|u| u.to_string());
+
     let kind = package_kind.to_string();
 
     // 4. Initial Audit Log (Start)
@@ -920,16 +1017,85 @@ where
             package_kind,
             source_node_id.as_deref(),
             imported_by_ref,
+            package_sequence,
+            issuer_identity_id.as_deref(),
         );
 
-        let out = importer(executor, &registry, package, &session, importer_wilaya)?;
+        let out = {
+            // B4 signature_version=2 verification (RFC 2026-08-04 §3.10): Ed25519
+            // node identity against the Identity Store. Runs before the Transport
+            // Guard so unauthenticated packages cannot probe sequence state.
+            SyncPackageIdentityVerificationService::verify_v2_signature(executor, &package)?;
+
+            // B4 Transport Guard (RFC 2026-08-04 §3.4.1): per-issuer sequence
+            // continuity, enforced ONLY in the import pipeline.
+            if let Some(issuer) = issuer_identity_id.as_deref() {
+                let sequence = package_sequence.ok_or_else(|| {
+                    AppError::Validation(ValidationError::InvalidFormat {
+                        field: "package_sequence".into(),
+                        message: "حزمة موقّعة بلا رقم تسلسل نقل".into(),
+                    })
+                })?;
+                let last_applied =
+                    SyncPackageIdentityVerificationService::last_applied_sequence(executor, issuer)?;
+                match TransportGuard::check(issuer, sequence, last_applied) {
+                    TransportVerdict::Accept { .. } => {}
+                    TransportVerdict::OutOfOrder { expected, got, .. } => {
+                        log::warn!(
+                            target: "grpc::import_export",
+                            "import pipeline transport guard: package_id={} issuer={} reason=OUT_OF_ORDER expected={} got={}",
+                            package_id,
+                            issuer,
+                            expected,
+                            got
+                        );
+                        return Err(AppError::BusinessLogic(
+                            BusinessLogicError::OperationNotPermitted {
+                                message: format!(
+                                    "انتهاك ترتيب النقل: المُصدِر {issuer} يُتوقّع التسلسل {expected} ووصل {got}"
+                                ),
+                            },
+                        ));
+                    }
+                    TransportVerdict::Replay { .. } => {
+                        log::warn!(
+                            target: "grpc::import_export",
+                            "import pipeline transport guard: package_id={} issuer={} reason=REPLAY sequence={}",
+                            package_id,
+                            issuer,
+                            sequence
+                        );
+                        return Err(AppError::BusinessLogic(
+                            BusinessLogicError::OperationNotPermitted {
+                                message: format!(
+                                    "إعادة بث الحزمة رقم {sequence} من المُصدِر {issuer} مرفوضة"
+                                ),
+                            },
+                        ));
+                    }
+                }
+            }
+
+            let out = importer(executor, &registry, package, &session, importer_wilaya)?;
+
+            // B4: advance the per-issuer transport ledger atomically with the import.
+            if let Some(issuer) = issuer_identity_id.as_deref() {
+                if let Some(sequence) = package_sequence {
+                    SyncPackageIdentityVerificationService::advance_issuer_sequence(
+                        executor, issuer, sequence,
+                    )?;
+                }
+            }
+
+            out
+        };
 
         // Main audit log entry (same transaction — was handled by AuditTxService)
         AuditService::new(executor).log_success(
             &session.user_id,
             &session.username,
-            AuditAction::ImportNodePackage,
-            AuditAction::ImportNodePackage.default_entity_type(),
+            audit_action.clone(),
+            audit_action.default_entity_type(),
             None,
             None,
             None,

@@ -250,6 +250,24 @@ pub struct PackageImportResult {
     pub deleted: usize,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TrustPackageImportResult {
+    pub certificate_count: usize,
+    pub revocation_count: usize,
+    pub package_id: String,
+    pub imported_by: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct RegistryPackageImportResult {
+    pub snapshot_version: u64,
+    pub unit_count: usize,
+    pub package_id: String,
+    pub imported_by: String,
+    pub timestamp: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

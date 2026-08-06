@@ -180,6 +180,30 @@ pub fn get_connection_path(conn: &Connection) -> Result<PathBuf, rusqlite::Error
 use rusqlite::Connection as SqlConnection;
 use std::path::Path;
 
+/// B5 production seeding gate (RFC 2026-08-04 / ADR-0038): a default `admin`
+/// account is seeded on startup ONLY for migrated fleets — when an `admin` row
+/// already exists — or when `GRPC_LEGACY_BOOTSTRAP=1` explicitly forces it.
+/// Fresh fleets bootstrap through the offline Root flow and never receive a
+/// hardcoded credential. The gate is pure with respect to persisted state
+/// (the env override is read separately by `legacy_bootstrap_forced`).
+pub fn should_seed_legacy_admin(db: &Database) -> bool {
+    use crate::repositories::RepositoryProvider;
+    let has_admin = db
+        .executor()
+        .users()
+        .get_user_by_username("admin")
+        .map(|u| u.is_some())
+        .unwrap_or(false);
+    has_admin || legacy_bootstrap_forced()
+}
+
+fn legacy_bootstrap_forced() -> bool {
+    match std::env::var("GRPC_LEGACY_BOOTSTRAP") {
+        Ok(v) => v == "1",
+        Err(_) => false,
+    }
+}
+
 /// Factory responsible for creating `Database` instances.
 ///
 /// All PRAGMA + migration + bootstrap behavior is considered infrastructure-level.
@@ -203,10 +227,12 @@ impl ConnectionFactory {
             .map_err(|e| AppError::Internal(format!("Migration failed: {}", e)))?;
 
         let db = Database { conn };
-        let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
-        crate::application::services::UserService::new(db.executor(), &password_port)
-            .create_default_admin()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        if should_seed_legacy_admin(&db) {
+            let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
+            crate::application::services::UserService::new(db.executor(), &password_port)
+                .create_default_admin()
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+        }
         Ok(db)
     }
 

@@ -151,10 +151,12 @@ The following contracts, boundaries, and guarantees are **frozen** and may not b
 ### 2.7 Sync Protocol
 - **🔒 Package-only transport** — no CSV, no legacy sync (ADR-0010).
 - **🔒 Canonical JSON V2** — deterministic serialization for signing and verification (ADR-0009).
-- **🔒 age::x25519 only** — `age::scrypt` forbidden (ADR-0019, Rule 38).
+- **🔒 Encrypt: two-tier secret protection (ADR-0039)** — `age::x25519` is mandatory for node-managed secrets; `age::scrypt` is permitted **exclusively** for portable operator key material (`.adminkey`) and only in `src-tauri/src/infrastructure/identity/adminkey_provider.rs` (Rule 38, amended by ADR-0039).
+- **🔒 Sign: Ed25519 node identity** — package signatures use Ed25519 (RFC 8032) bound to a node identity via `signature_version = 2` (RFC `2026-08-04-node-identity-trust`, ADR-0003). Symmetric HMAC remains only for reading legacy V1 packages during the deprecation window.
 - **🔒 Streaming encryption** — no whole-buffer `read_to_end` in security/sync paths (Rules 29, 31).
 - **🔒 Replay detection before mutation** — `ValidationGate` checks are all-or-nothing before any DB write (Rule 83-84).
 - **🔒 No nested transactions in sync** — single transaction boundary per import (Rule 89).
+- **🔒 Trust/Registry packages** — new `trust` (certificates + revocations) and `registry` (fleet state) kinds flow through `run_import_pipeline` with two independent fail-closed guards, no wall-clock (RFC `2026-08-04-node-identity-trust`): Transport Guard `(issuer_identity_id, package_sequence)` and Credential Guard `(credential_id, generation)`.
 
 ### 2.8 Production Safety
 - **🔒 Error exposure gate (ADR-0012)** — `details` field in error strings gated behind `#[cfg(debug_assertions)]`.

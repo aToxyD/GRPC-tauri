@@ -26,5 +26,7 @@ pub use encrypted_package_reader::read_monthly_summary_package_from_file;
 pub use encrypted_package_reader::read_products_package_from_file;
 pub use encrypted_package_reader::read_stock_movements_package_from_file;
 pub use encrypted_package_reader::read_unit_node_package_from_file;
+pub use encrypted_package_reader::read_trust_package_from_file;
+pub use encrypted_package_reader::read_registry_package_from_file;
 
 // Legacy byte-slice readers were removed in favor of the streaming file-based API.

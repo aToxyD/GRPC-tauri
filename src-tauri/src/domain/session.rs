@@ -49,12 +49,26 @@ impl CurrentSession {
         user_role: UserRole,
         user_snapshot: UserSnapshot,
     ) -> Self {
+        Self::new_with_session_id(None, user_id, username, user_role, user_snapshot)
+    }
+
+    /// إنشاء جلسة جديدة مع إمكانية إعادة استخدام معرّف جلسة من خارج النظام.
+    ///
+    /// Challenge–Response login (B3) reuses the challenge `session_id` as the
+    /// session id; `None` keeps the default generated UUID (password login).
+    pub fn new_with_session_id(
+        session_id: Option<String>,
+        user_id: String,
+        username: String,
+        user_role: UserRole,
+        user_snapshot: UserSnapshot,
+    ) -> Self {
         let now = Utc::now();
         Self {
             user_id,
             username,
             user_role,
-            session_id: Uuid::new_v4().to_string(),
+            session_id: session_id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             created_at: now,
             last_activity: now,
             timeout_minutes: SESSION_TIMEOUT_MINUTES,

@@ -1,8 +1,19 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
-  import { importUnitNodePackage } from '../lib/contracts';
-  import { login, getSettings, isConfigured } from '../lib/contracts';
+  import { openFile, saveFile, getAppWindow, createLogicalSize } from '../lib/tauri';
+  import {
+    importUnitNodePackage,
+    login,
+    getSettings,
+    isConfigured,
+    getIdentityStatus,
+    beginWilayaProvision,
+    finalizeWilayaProvision,
+    issueFirstAdminKey,
+    beginChallenge,
+    completeChallenge,
+  } from '../lib/contracts';
+  import type { IdentityBootstrapState } from '../lib/contracts';
   import type { LoginRequest, LoginResponse } from '../lib/types';
   import { push } from 'svelte-spa-router';
   import { showSuccess } from '../lib/notifications';
@@ -43,8 +54,57 @@
   // @category ProjectionState
   let isRateLimited = false;
 
+  // B5 identity bootstrap (RFC 2026-08-04 §3.6–3.7 / ADR-0038)
+  // @category ProjectionState
+  let identityState: IdentityBootstrapState = 'UNINITIALIZED';
+  // @category UiState
+  let authTab: 'password' | 'adminkey' = 'password';
+  // @category TransientState
+  let passphrase = '';
+  // @category TransientState
+  let bootstrapUsername = 'admin';
+  // @category TransientState
+  let bootstrapPassphrase = '';
+
+  const bootstrapOp = createOperationGuard({ scope });
+  const bootstrapLoading = bootstrapOp.loading;
+
+  // @category UiState
+  $: adminkeyAvailable =
+    identityState === 'WILAYA_ACTIVE' ||
+    identityState === 'ADMIN_PROVISIONED' ||
+    identityState === 'READY';
+  // @category UiState
+  $: bootstrapActive =
+    identityState === 'UNINITIALIZED' ||
+    identityState === 'WAITING_FOR_ROOT_CERTIFICATE' ||
+    identityState === 'WILAYA_ACTIVE';
+
   // @category UiState
   $: displayError = $loginError || localError;
+
+  function bootstrapStatusLabel(state: IdentityBootstrapState): string {
+    switch (state) {
+      case 'UNINITIALIZED':
+        return 'لم تبدأ تهيئة الهوية بعد';
+      case 'WAITING_FOR_ROOT_CERTIFICATE':
+        return 'بانتظار توقيع المرجع — استورد الشهادة الموقعة';
+      case 'WILAYA_ACTIVE':
+        return 'شهادة العقدة (WILAYA) مفعلة';
+      case 'ADMIN_PROVISIONED':
+        return 'المفتاح الإداري صدر — يمكنك تسجيل الدخول';
+      case 'READY':
+        return 'الهوية جاهزة';
+    }
+  }
+
+  async function refreshIdentityStatus() {
+    try {
+      identityState = await getIdentityStatus();
+    } catch (e) {
+      localError = 'تعذر قراءة حالة الهوية: ' + formatErrorMessage(e);
+    }
+  }
 
   onMount(async () => {
     try {
@@ -52,12 +112,13 @@
     } catch (e) {
       isAppConfigured = false;
     }
+    await refreshIdentityStatus();
     try {
       const window = getAppWindow();
       await window.setResizable(true);
       await window.setMaximizable(true);
       if (await window.isMaximized()) await window.unmaximize();
-      await window.setSize(createLogicalSize(450, 650));
+      await window.setSize(createLogicalSize(520, 820));
       await window.setResizable(false);
       await window.setMaximizable(false);
       await window.center();
@@ -86,6 +147,113 @@
     });
   }
 
+  async function handleBeginWilaya() {
+    await bootstrapOp.guard(async () => {
+      try {
+        localError = '';
+        const filePath = await saveFile({
+          defaultPath: 'grpc-wilaya-request.json',
+          filters: [{ name: 'طلب توقيع العقدة (JSON)', extensions: ['json'] }],
+        });
+        if (!filePath) return;
+        await beginWilayaProvision(filePath as string);
+        await refreshIdentityStatus();
+        showSuccess('تم إنشاء طلب التوقيع وحفظه. سلّمه إلى المرجع لاعتماد العقدة.');
+      } catch (e) {
+        localError = 'خطأ في بدء تهيئة الهوية: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  async function handleFinalizeWilaya() {
+    await bootstrapOp.guard(async () => {
+      try {
+        localError = '';
+        const selected = await openFile({
+          multiple: false,
+          filters: [{ name: 'شهادة موقعة (JSON)', extensions: ['json'] }],
+        });
+        if (!selected) return;
+        const result = await finalizeWilayaProvision(selected as string);
+        await refreshIdentityStatus();
+        const provisioned = 'Provisioned' in result;
+        showSuccess(
+          provisioned
+            ? 'تم تفعيل شهادة العقدة (WILAYA).'
+            : 'الشهادة مطابقة لما تم استيراده مسبقاً.'
+        );
+      } catch (e) {
+        localError = 'خطأ في تفعيل الشهادة: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  async function handleIssueAdminKey() {
+    if (!bootstrapUsername.trim() || !bootstrapPassphrase) {
+      localError = 'أدخل اسم المستخدم وكلمة مرور المفتاح';
+      return;
+    }
+    await bootstrapOp.guard(async () => {
+      try {
+        localError = '';
+        await issueFirstAdminKey(bootstrapUsername.trim(), bootstrapPassphrase);
+        bootstrapPassphrase = '';
+        await refreshIdentityStatus();
+        showSuccess('تم إصدار المفتاح الإداري. يمكنك الآن تسجيل الدخول عبر المفتاح.');
+      } catch (e) {
+        localError = 'خطأ في إصدار المفتاح الإداري: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  async function afterLogin(response: LoginResponse) {
+    loginAttempts = 0;
+    remainingAttempts = null;
+    isRateLimited = false;
+    setCurrentUser(response.user);
+    if (response.requires_configuration) {
+      push('/configure?nodeType=WILAYA');
+      return;
+    }
+    try {
+      const window = getAppWindow();
+      await window.setResizable(true);
+      await window.setMaximizable(true);
+      await window.maximize();
+    } catch (err) {
+      console.error('Failed to maximize window:', err);
+    }
+    try {
+      const settings = await getSettings();
+      if (settings?.node_type === 'WILAYA') push('/wilaya');
+      else if (settings?.node_type === 'UNIT') push('/unit');
+      else push('/configure');
+    } catch {
+      push('/configure');
+    }
+  }
+
+  async function handleChallengeLogin() {
+    if (!passphrase) {
+      localError = 'أدخل كلمة مرور المفتاح الإداري';
+      return;
+    }
+    if (isRateLimited) {
+      localError = `تم حظر تسجيل الدخول مؤقتاً. انتظر ${lockoutTimeRemaining || 5} دقائق`;
+      return;
+    }
+    localError = '';
+    await loginOp.run(async () => {
+      const challenge = await beginChallenge();
+      const response = await completeChallenge(challenge.session_id, passphrase);
+      if (response.success && response.user) {
+        await afterLogin(response);
+      } else {
+        throw new Error(response.message || 'فشل تسجيل الدخول عبر المفتاح الإداري');
+      }
+    });
+  }
+
   async function handleLogin() {
     if (!username || !password) {
       localError = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
@@ -101,30 +269,7 @@
       const request: LoginRequest = { username, password };
       const response: LoginResponse = await login(request);
       if (response.success && response.user) {
-        loginAttempts = 0;
-        remainingAttempts = null;
-        isRateLimited = false;
-        setCurrentUser(response.user);
-        if (response.requires_configuration) {
-          push('/configure?nodeType=WILAYA');
-        } else {
-          try {
-            const window = getAppWindow();
-            await window.setResizable(true);
-            await window.setMaximizable(true);
-            await window.maximize();
-          } catch (err) {
-            console.error('Failed to maximize window:', err);
-          }
-          try {
-            const settings = await getSettings();
-            if (settings?.node_type === 'WILAYA') push('/wilaya');
-            else if (settings?.node_type === 'UNIT') push('/unit');
-            else push('/configure');
-          } catch {
-            push('/configure');
-          }
-        }
+        await afterLogin(response);
       } else {
         const msg = response.message || 'بيانات الدخول غير صالحة';
         localError = msg;
@@ -194,7 +339,31 @@
       </div>
     {/if}
 
-    <!-- نموذج الدخول -->
+    <!-- التبويبات -->
+    <div class="flex mb-4 border-b border-gray-200 dark:border-gray-700" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={authTab === 'password'}
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {authTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        on:click={() => { authTab = 'password'; localError = ''; }}
+      >
+        كلمة المرور
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={authTab === 'adminkey'}
+        disabled={!adminkeyAvailable}
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {authTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        on:click={() => { authTab = 'adminkey'; localError = ''; }}
+      >
+        المفتاح الإداري
+      </button>
+    </div>
+
+    <!-- نموذج الدخول بكلمة المرور -->
+    {#if authTab === 'password'}
     <form class="space-y-4" on:submit|preventDefault={handleLogin} novalidate>
       <AppInput
         id="username"
@@ -231,6 +400,34 @@
         تسجيل الدخول
       </AppButton>
     </form>
+    {/if}
+
+    <!-- نموذج الدخول بالمفتاح الإداري (Challenge–Response) -->
+    {#if authTab === 'adminkey'}
+    <form class="space-y-4" on:submit|preventDefault={handleChallengeLogin} novalidate>
+      <AppInput
+        id="passphrase"
+        label="كلمة مرور المفتاح الإداري"
+        type="password"
+        bind:value={passphrase}
+        placeholder="أدخل كلمة مرور المفتاح"
+        autocomplete="current-password"
+        required
+        disabled={$loginLoading || isRateLimited || !adminkeyAvailable}
+      />
+
+      <AppButton
+        type="submit"
+        variant="primary"
+        size="lg"
+        fullWidth
+        loading={$loginLoading}
+        disabled={isRateLimited || !adminkeyAvailable}
+      >
+        تسجيل الدخول بالمفتاح
+      </AppButton>
+    </form>
+    {/if}
 
     <!-- استيراد حزمة التكوين -->
     {#if !isAppConfigured}
@@ -248,6 +445,81 @@
           </svg>
           استيراد حزمة التكوين (.unit)
         </AppButton>
+      </div>
+    {/if}
+
+    <!-- تهيئة الهوية (B5: offline Root bootstrap) -->
+    {#if bootstrapActive}
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
+        <div class="flex items-center justify-between">
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">تهيئة الهوية</p>
+          <button
+            type="button"
+            class="text-xs text-civil-blue hover:underline"
+            on:click={refreshIdentityStatus}
+          >
+            تحديث
+          </button>
+        </div>
+        <AppAlert intent="info">
+          <div class="space-y-1">
+            <p class="text-sm font-semibold">{bootstrapStatusLabel(identityState)}</p>
+            <p class="text-xs">التوقيع يتم على جهاز المرجع (Root) دون اتصال — المفتاح السري لا يغادر العقدة.</p>
+          </div>
+        </AppAlert>
+
+        {#if identityState === 'UNINITIALIZED'}
+          <AppButton
+            variant="secondary"
+            size="lg"
+            fullWidth
+            loading={$bootstrapLoading}
+            on:click={handleBeginWilaya}
+          >
+            تصدير طلب توقيع العقدة (CSR)
+          </AppButton>
+        {/if}
+
+        {#if identityState === 'WAITING_FOR_ROOT_CERTIFICATE'}
+          <AppButton
+            variant="secondary"
+            size="lg"
+            fullWidth
+            loading={$bootstrapLoading}
+            on:click={handleFinalizeWilaya}
+          >
+            استيراد الشهادة الموقعة من المرجع
+          </AppButton>
+        {/if}
+
+        {#if identityState === 'WILAYA_ACTIVE'}
+          <div class="space-y-3">
+            <AppInput
+              id="bootstrap-username"
+              label="اسم مستخدم المدير"
+              type="text"
+              bind:value={bootstrapUsername}
+              disabled={$bootstrapLoading}
+            />
+            <AppInput
+              id="bootstrap-passphrase"
+              label="كلمة مرور المفتاح الإداري"
+              type="password"
+              bind:value={bootstrapPassphrase}
+              placeholder="أنشئ كلمة مرور تحمي المفتاح"
+              disabled={$bootstrapLoading}
+            />
+            <AppButton
+              variant="primary"
+              size="lg"
+              fullWidth
+              loading={$bootstrapLoading}
+              on:click={handleIssueAdminKey}
+            >
+              إصدار المفتاح الإداري الأول
+            </AppButton>
+          </div>
+        {/if}
       </div>
     {/if}
   </AppCard>

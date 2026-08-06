@@ -71,6 +71,8 @@ mod tests {
                 schema_version: SchemaVersion::V1,
                 created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
                 source_node_id: source.into(),
+                package_sequence: None,
+                issuer_identity_id: None,
                 package_id: PackageId("p".into()),
                 signature_version: None,
                 signing_key_id: None,

@@ -1,10 +1,12 @@
 pub mod file_encryption;
+pub mod identity;
 pub mod node_identity_provider;
 pub mod password_hash_provider;
 
 use crate::errors::{AppError, AppResult, ValidationError};
 
 pub use file_encryption::AgeFileEncryptionProvider;
+pub use identity::{Ed25519SignatureVerifier, Ed25519SigningProvider};
 pub use node_identity_provider::{NodeIdentityProvider, SettingsNodeIdentityProvider};
 pub use password_hash_provider::Argon2PasswordHashProvider;
 
@@ -90,10 +92,7 @@ fn resolve_app_encryption_key_impl(
 }
 
 pub fn resolve_app_encryption_key() -> AppResult<String> {
-    resolve_app_encryption_key_impl(
-        std::env::var("GRPC_APP_KEY").ok(),
-        cfg!(debug_assertions),
-    )
+    resolve_app_encryption_key_impl(std::env::var("GRPC_APP_KEY").ok(), cfg!(debug_assertions))
 }
 
 /// Shared core for `resolve_package_signing_key_32`.
@@ -285,7 +284,8 @@ mod key_resolution_tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    const VALID_APP_KEY: &str = "AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ";
+    const VALID_APP_KEY: &str =
+        "AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ";
 
     fn b64(bytes: &[u8]) -> String {
         use base64::engine::general_purpose::STANDARD;
@@ -309,11 +309,9 @@ mod key_resolution_tests {
     #[test]
     fn app_key_valid_env_returns_trimmed_in_both_modes() {
         for allow in [true, false] {
-            let got = resolve_app_encryption_key_impl(
-                Some(format!("  {}  ", VALID_APP_KEY)),
-                allow,
-            )
-            .expect("valid key accepted");
+            let got =
+                resolve_app_encryption_key_impl(Some(format!("  {}  ", VALID_APP_KEY)), allow)
+                    .expect("valid key accepted");
             assert_eq!(got, VALID_APP_KEY);
         }
     }
@@ -373,8 +371,7 @@ mod key_resolution_tests {
     fn signing_key_wrong_length_is_validation_error_in_both_modes() {
         let short = b64(&[1u8; 16]);
         for allow in [true, false] {
-            let err =
-                resolve_package_signing_key_32_impl(Some(short.clone()), allow).unwrap_err();
+            let err = resolve_package_signing_key_32_impl(Some(short.clone()), allow).unwrap_err();
             assert!(
                 matches!(err, AppError::Validation(_)),
                 "wrong key size must be a validation error, got {err:?}"

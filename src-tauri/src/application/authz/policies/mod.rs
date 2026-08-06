@@ -30,7 +30,9 @@ pub fn authorize(
         | Action::ExportStockMovements
         | Action::ExportStockMovementsPackage
         | Action::ImportStockMovementsPackage
-        | Action::ImportStockMovements => reports::authorize_reports(principal, action, resource),
+        | Action::ImportStockMovements
+        | Action::ImportTrustPackage
+        | Action::ImportRegistryPackage => reports::authorize_reports(principal, action, resource),
 
         // ── Strict system / admin-only actions ───────────────────────────
         Action::ReadImportAudit | Action::ConfigureAsWilaya | Action::ReadAuditLog => {
@@ -40,7 +42,7 @@ pub fn authorize(
         // ── Core domain management (Admin-only) ──────────────────────────
         Action::AdminOnly
         | Action::ManageProducts
-        | Action::ManageUnits
+        | Action::ManageUnits // [arch:allow-manageunits-wilaya] see ADR-0038 (B2 adds WILAYA node-type guard)
         | Action::ManageInventory => {
             system::authorize_system(principal, Action::AdminOnly, resource)
         }

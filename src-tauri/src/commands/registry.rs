@@ -7,6 +7,13 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::login,
         commands::change_password,
         commands::get_current_user,
+        // Identity bootstrap & Challenge–Response (B5, pre-auth)
+        commands::get_identity_status,
+        commands::begin_wilaya_provision,
+        commands::finalize_wilaya_provision,
+        commands::issue_first_admin_key,
+        commands::begin_challenge,
+        commands::complete_challenge,
         // Configuration
         commands::get_settings,
         commands::configure_as_wilaya,
@@ -76,6 +83,8 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::import_unit_node_package,
         commands::import_monthly_summary_package,
         commands::import_stock_movements_package,
+        commands::import_trust_package,
+        commands::import_registry_package,
         commands::export_stock_movements_package,
         commands::get_import_audit_events,
         commands::record_consumption,

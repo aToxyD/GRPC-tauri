@@ -167,12 +167,14 @@ Every business domain and infrastructure concern maps to an exact directory. Cod
 |------|------------|
 | **Frontend isolation** | All `invoke` / `@tauri-apps/api` / `@tauri-apps/plugin-*` imports are confined to `src/lib/tauri.ts`. Direct invocation from pages, components, or any other file is a violation. |
 | **SQL confinement** | SQL strings (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) belong exclusively in `src-tauri/src/repositories/`. Zero SQL in commands, services, or domain. |
-| **Password confinement** | `verify_password_argon2` and all password hash operations are confined to `commands/auth.rs`. |
+| **Password confinement** | `verify_password_argon2` and all password hash operations are confined to `commands/auth.rs`. Identity-based authentication (Challenge–Response, Ed25519) is confined to the identity layer per RFC `2026-08-04-node-identity-trust` / ADR-0038. |
+| **Identity ownership** | Identity Store is the sole source of truth for identity state. ADMIN/UNIT/WILAYA are identities of the same class. Trust distribution flows exclusively through `trust`/`registry` packages (ADR-0038). |
 | **Domain purity** | `domain/` must not import `infrastructure/`, `application/`, or `commands/`. |
 | **Application isolation** | `application/` must not import `app/` (Tauri managed state). |
 | **AppState ownership** | `State<AppState>` may only be created, owned, or mutated within `src-tauri/src/app/`. No other layer may hold or pass `AppState` directly. |
 | **Repository isolation** | Repositories may not call other repositories. Cross-repository orchestration belongs to application services only. |
-| **Crypto algorithm** | `age::x25519` only. `age::scrypt` is forbidden (see `docs/architecture/ADR_INDEX.md`). |
+| **Crypto algorithm** | Two-tier secret protection (ADR-0039): `age::x25519` mandatory for node-managed secrets; `age::scrypt` permitted exclusively for portable operator key material (`.adminkey`) and only in `src-tauri/src/infrastructure/identity/adminkey_provider.rs`. Signing: Ed25519 (RFC 8032) bound to node identity via `signature_version = 2` (RFC `2026-08-04-node-identity-trust`, ADR-0038). |
+| **Recovery Mode** | Recovery access is operational recovery and NOT part of the identity trust chain — it issues no certificates (RFC `2026-08-04-node-identity-trust`). |
 
 ---
 

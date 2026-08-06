@@ -27,6 +27,8 @@ fn fixture_package_with_id(
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: source_node_id.to_string(),
+            package_sequence: None,
+            issuer_identity_id: None,
             package_id: PackageId(package_id.to_string()),
             signature_version: None,
             signing_key_id: None,
@@ -95,7 +97,7 @@ fn importing_same_package_id_twice_is_rejected() {
     db.with_transaction(|tx| {
         let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
         let reg =
-            SqliteImportedPackageRegistry::new(tx, MONTHLY_SUMMARY_PACKAGE_KIND, src_opt, "admin");
+            SqliteImportedPackageRegistry::new(tx, MONTHLY_SUMMARY_PACKAGE_KIND, src_opt, "admin", None, None);
         apply_monthly_summary_package(tx, &reg, input.clone())
     })
     .expect("first import ok");
@@ -109,6 +111,8 @@ fn importing_same_package_id_twice_is_rejected() {
                 MONTHLY_SUMMARY_PACKAGE_KIND,
                 src_opt,
                 "admin",
+                None,
+                None,
             );
             apply_monthly_summary_package(tx, &reg, input)
         })

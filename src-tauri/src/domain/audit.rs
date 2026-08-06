@@ -55,6 +55,8 @@ pub enum AuditAction {
     ImportMonthlyReport,
     ImportStockMovements,
     ImportNodePackage,
+    ImportTrustPackage,
+    ImportRegistryPackage,
     // Fiscal Lifecycle
     FiscalYearOpened,
     FiscalYearClosed,
@@ -108,6 +110,8 @@ impl AuditAction {
             AuditAction::ImportMonthlyReport => "ImportMonthlyReport",
             AuditAction::ImportStockMovements => "ImportStockMovements",
             AuditAction::ImportNodePackage => "ImportNodePackage",
+            AuditAction::ImportTrustPackage => "ImportTrustPackage",
+            AuditAction::ImportRegistryPackage => "ImportRegistryPackage",
             AuditAction::FiscalYearOpened => "FiscalYearOpened",
             AuditAction::FiscalYearClosed => "FiscalYearClosed",
             AuditAction::FiscalYearArchived => "FiscalYearArchived",
@@ -158,6 +162,8 @@ impl AuditAction {
             "ImportMonthlyReport" => Some(AuditAction::ImportMonthlyReport),
             "ImportStockMovements" => Some(AuditAction::ImportStockMovements),
             "ImportNodePackage" => Some(AuditAction::ImportNodePackage),
+            "ImportTrustPackage" => Some(AuditAction::ImportTrustPackage),
+            "ImportRegistryPackage" => Some(AuditAction::ImportRegistryPackage),
             "FiscalYearOpened" => Some(AuditAction::FiscalYearOpened),
             "FiscalYearClosed" => Some(AuditAction::FiscalYearClosed),
             "FiscalYearArchived" => Some(AuditAction::FiscalYearArchived),
@@ -211,6 +217,8 @@ impl AuditAction {
             AuditAction::ImportMonthlyReport => "استيراد تقرير شهري",
             AuditAction::ImportStockMovements => "استيراد حركات المخزون",
             AuditAction::ImportNodePackage => "استيراد حزمة وحدة",
+            AuditAction::ImportTrustPackage => "استيراد حزمة الثقة",
+            AuditAction::ImportRegistryPackage => "استيراد حزمة السجل",
             AuditAction::FiscalYearOpened => "فتح سنة مالية",
             AuditAction::FiscalYearClosed => "إغلاق سنة مالية",
             AuditAction::FiscalYearArchived => "أرشفة سنة مالية",
@@ -259,6 +267,11 @@ impl AuditAction {
             | AuditAction::ImportStockMovements => EntityType::DailyReport,
             AuditAction::CreateUser | AuditAction::UpdateUser => EntityType::User,
             AuditAction::Create | AuditAction::ResolveConflict => EntityType::System,
+            // B4 trust distribution (Identity Store) and registry fleet-state
+            // snapshots are system-level facts, not single-entity updates.
+            AuditAction::ImportTrustPackage | AuditAction::ImportRegistryPackage => {
+                EntityType::System
+            }
             AuditAction::FiscalYearOpened
             | AuditAction::FiscalYearClosed
             | AuditAction::FiscalYearArchived
@@ -871,6 +884,8 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
         | AuditAction::ImportMonthlyReport
         | AuditAction::ImportStockMovements
         | AuditAction::ImportNodePackage
+        | AuditAction::ImportTrustPackage
+        | AuditAction::ImportRegistryPackage
         | AuditAction::UnitNodeImport => AuditEventType::SyncEvent,
 
         // Integrity/backup failures → IntegrityEvent

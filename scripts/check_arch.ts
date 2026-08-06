@@ -571,13 +571,17 @@ checkRule(
     "error"
 );
 
-// Rule 38: age::scrypt is forbidden. System must use age::x25519 exclusively.
+// Rule 38 (amended by ADR-0039): two-tier secret protection.
+// age::x25519 is mandatory for node-managed secrets. age::scrypt is permitted
+// exclusively for portable operator key material (.adminkey), which lives only in
+// src-tauri/src/infrastructure/identity/adminkey_provider.rs.
 checkRule(
-    "Rule 38: age::scrypt is forbidden. System must use age::x25519 exclusively.",
+    "Rule 38: age::scrypt is forbidden outside infrastructure/identity/adminkey_provider.rs (ADR-0039: two-tier secret protection)",
     ["src-tauri/src/**/*.rs"],
     /age::scrypt/i,
     (line) => line.trim().startsWith("//"),
-    "error"
+    "error",
+    (file) => !file.includes("infrastructure/identity/adminkey_provider.rs")
 );
 
 // Rule 39: Ensure session touching in commands with authorization
@@ -1778,6 +1782,57 @@ checkRule(
     ["docs/architecture/adr_exception_registry.md"],
     /## Exception:/,
     (line) => true,
+    "error"
+);
+
+// ============================================================
+// GROUP 24 — Node Identity & Trust (RFC 2026-08-04-node-identity-trust, ADR-0038)
+// ============================================================
+
+// Rule 126: Asymmetric signing (Ed25519) is confined to identity layers.
+// B3 introduces Ed25519; this rule keeps it out of commands/models/repositories.
+checkRule(
+    "Rule 126: Ed25519 / asymmetric identity usage outside allowed identity layers (RFC 2026-08-04, ADR-0038)",
+    [
+        "src-tauri/src/commands/**/*.rs",
+        "src-tauri/src/models/**/*.rs",
+        "src-tauri/src/repositories/**/*.rs",
+    ],
+    /ed25519|Ed25519|ED25519/,
+    (line) => line.trim().startsWith("//"),
+    "error"
+);
+
+// Rule 127: ManageUnits must be node-type (WILAYA-only) guarded through authz.
+// Until B2 adds the node-type guard, occurrences must carry the tag.
+checkRule(
+    "Rule 127: Action::ManageUnits without WILAYA node-type guard tag (RFC 2026-08-04, ADR-0038)",
+    ["src-tauri/src/application/authz/policies/**/*.rs"],
+    /Action::ManageUnits/,
+    (line) => line.includes("[arch:allow-manageunits-wilaya]"),
+    "error"
+);
+
+// Rule 128: hardcoded default admin credential (admin/admin) must be confined
+// to the tagged legacy bootstrap path. During the B5 deprecation window the
+// only permitted occurrence is `create_default_admin`'s credential literal,
+// tagged inline with `[arch:allow-bootstrap-admin]`. The rule is closed in
+// B6-A once production seeding is removed.
+// RFC 2026-08-04-node-identity-trust §3.6 / ADR-0038.
+checkRule(
+    "Rule 128: hardcoded default admin credential (admin/admin) outside the tagged legacy bootstrap path (RFC 2026-08-04, ADR-0038)",
+    ["src-tauri/src/application/services/user_service.rs", "src-tauri/src/db/mod.rs"],
+    /hash_password\s*\(\s*"admin"/,
+    (line) => line.includes("[arch:allow-bootstrap-admin]"),
+    "error"
+);
+
+// Rule 129: signature_version must remain an Option<u16> extension point.
+checkRule(
+    "Rule 129: signature_version declaration must remain Option<u16> (RFC 2026-08-04, ADR-0038)",
+    ["src-tauri/src/application/sync/package_metadata.rs"],
+    /pub signature_version:\s*\w/,
+    (line) => line.includes("Option<u16>"),
     "error"
 );
 

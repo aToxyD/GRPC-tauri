@@ -57,6 +57,13 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0029 | `0029-secondary-sqlite-connections.md` | Secondary SQLite Connection Policy | Accepted | 2026-05-29 | Infrastructure |
 | 0030 | `0030-adr-exception-governance.md` | ADR Exception Governance Policy | Accepted | 2026-05-29 | Architecture |
 
+### Series 0038+: Identity & Trust (New)
+
+| ADR | File | Title | Status | Date | Owner |
+|-----|------|-------|--------|------|-------|
+| 0038 | `0038-node-identity-and-trust.md` | Node Identity & Trust Architecture | Accepted | 2026-08-04 | Architecture / Security |
+| 0039 | `0039-adminkey-portable-scrypt.md` | Two-Tier Secret Protection (x25519 node / scrypt `.adminkey`) | Accepted | 2026-08-04 | Architecture / Security |
+
 ---
 
 ## Cross-Reference Map
@@ -91,5 +98,5 @@ The following legacy ADRs have been consolidated:
 |-----------|---------|
 | 0031 | `0031-rate-limiter-persistence.md` | Rate Limiter Persistence | Accepted | 2026-06-03 | Infrastructure |
 | 0032–0037 | CANCELLED / DEFERRED | Not implemented in v1.2.0 baseline | — | — | — |
-| 0038–0099 | Available for future governance ADRs |
+| 0039–0099 | Available for future governance ADRs |
 | 0100–9999 | Available for domain/feature ADRs |

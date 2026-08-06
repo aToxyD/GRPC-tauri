@@ -9,6 +9,7 @@ pub mod backup;
 pub mod common;
 pub mod fiscal;
 pub mod guards;
+pub mod identity;
 pub mod import_export;
 pub mod integrity;
 pub mod inventory;
@@ -28,6 +29,9 @@ pub use types::AppState;
 
 // Re-export guards
 pub use guards::authorize_command;
+
+// Re-export identity bootstrap/challenge commands (B5)
+pub use identity::*;
 
 // Re-export auth commands (including __cmd__ generated wrappers)
 pub use auth::*;

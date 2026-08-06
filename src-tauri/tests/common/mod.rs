@@ -26,6 +26,9 @@ pub fn create_test_state() -> (AppState, TempDir) {
             grpc_lib::application::services::SystemMaintenanceState::Normal,
         ),
         current_session: Arc::new(Mutex::new(None)),
+        identity_challenge: Arc::new(Mutex::new(
+            grpc_lib::domain::identity::IdentityChallengeState::default(),
+        )),
         crypto_port:
             grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider::new(),
         password_port: Arc::new(grpc_lib::infrastructure::security::Argon2PasswordHashProvider),

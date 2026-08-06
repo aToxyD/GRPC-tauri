@@ -31,6 +31,8 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: source.into(),
+            package_sequence: None,
+            issuer_identity_id: None,
             package_id: PackageId(pkg_id.into()),
             signature_version: None,
             signing_key_id: None,
@@ -76,7 +78,7 @@ fn products_package_same_id_is_rejected_second_time() {
 
     db.with_transaction(|tx| {
         let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
-        let reg = SqliteImportedPackageRegistry::new(tx, PRODUCTS_PACKAGE_KIND, src_opt, "admin");
+        let reg = SqliteImportedPackageRegistry::new(tx, PRODUCTS_PACKAGE_KIND, src_opt, "admin", None, None);
         apply_products_package(tx, &reg, input.clone())
     })
     .expect("first ok");
@@ -85,7 +87,7 @@ fn products_package_same_id_is_rejected_second_time() {
         .with_transaction(|tx| {
             let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
             let reg =
-                SqliteImportedPackageRegistry::new(tx, PRODUCTS_PACKAGE_KIND, src_opt, "admin");
+                SqliteImportedPackageRegistry::new(tx, PRODUCTS_PACKAGE_KIND, src_opt, "admin", None, None);
             apply_products_package(tx, &reg, input)
         })
         .expect_err("second must fail");

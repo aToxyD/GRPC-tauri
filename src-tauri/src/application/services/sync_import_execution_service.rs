@@ -308,6 +308,8 @@ impl<'a> SyncImportExecutionService<'a> {
                         kind_str,
                         Some(&request.source_node_id),
                         "sync_import",
+                        None,
+                        None,
                     )
                     .map_err(|e| AppError::Internal(format!("failed to record package: {}", e)))?;
 

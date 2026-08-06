@@ -2,6 +2,52 @@
   "generated": "2026-06-01T19:14:59.732Z",
   "contracts": [
     {
+      "name": "identity",
+      "exports": [
+        {
+          "name": "getIdentityStatus"
+        },
+        {
+          "name": "beginWilayaProvision"
+        },
+        {
+          "name": "finalizeWilayaProvision"
+        },
+        {
+          "name": "issueFirstAdminKey"
+        },
+        {
+          "name": "beginChallenge"
+        },
+        {
+          "name": "completeChallenge"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_identity_status"
+        },
+        {
+          "command": "begin_wilaya_provision"
+        },
+        {
+          "command": "finalize_wilaya_provision"
+        },
+        {
+          "command": "issue_first_admin_key"
+        },
+        {
+          "command": "begin_challenge"
+        },
+        {
+          "command": "complete_challenge"
+        }
+      ],
+      "loc": 96,
+      "exportCount": 6,
+      "commandCount": 6
+    },
+    {
       "name": "metrics",
       "exports": [
         {

@@ -5,12 +5,14 @@ use crate::application::usecases::exports::types::DailyReportExportDataset;
 use crate::application::usecases::exports::types::{
     MonthlySummaryExportDataset, ProductsExportDataset, StockMovementsExportDataset,
 };
+use crate::application::usecases::sync::import_registry_package::RegistryPackagePayload;
+use crate::application::usecases::sync::import_trust_package::TrustPackagePayload;
 use crate::errors::{AppError, AppResult};
 use crate::infrastructure::MAX_IMPORT_SIZE;
 use crate::models::UnitNodePackage;
 use serde::{de::DeserializeOwned, Serialize};
 
-use super::canonical_json::canonical_json_bytes;
+use super::canonical_json::{canonical_bytes_for_integrity, canonical_bytes_for_signature};
 use super::integrity::{PackageHasher, Sha256PackageHasher};
 use super::signing::{HmacPackageSigner, PackageVerifier};
 
@@ -37,28 +39,30 @@ impl SerdeJsonSyncPackageDeserializer {
         package: &SyncPackage<T>,
         schema: SchemaVersion,
     ) -> AppResult<Vec<u8>> {
-        let mut canonical = serde_json::to_value(package).map_err(|e| {
+        let canonical = serde_json::to_value(package).map_err(|e| {
             AppError::Validation(crate::errors::ValidationError::InvalidFormat {
                 field: "sync_package".into(),
                 message: format!("تعذّر تحويل الحزمة للتحقق من السلامة: {}", e),
             })
         })?;
-        if let Some(meta_obj) = canonical
-            .get_mut("metadata")
-            .and_then(|m| m.as_object_mut())
-        {
-            meta_obj.remove("integrity_hash");
-            meta_obj.remove("signature");
-        }
         if schema >= SchemaVersion::V2 {
-            canonical_json_bytes(&canonical).map_err(|e| {
+            canonical_bytes_for_integrity(&canonical).map_err(|e| {
                 AppError::Validation(crate::errors::ValidationError::InvalidFormat {
                     field: "sync_package".into(),
                     message: format!("تعذّر التسلسل القانوني للحزمة: {}", e),
                 })
             })
         } else {
-            serde_json::to_vec(&canonical).map_err(|e| {
+            // Legacy V1: strip fields then plain serde bytes (no canonicalization).
+            let mut legacy = canonical;
+            if let Some(meta_obj) = legacy
+                .get_mut("metadata")
+                .and_then(|m| m.as_object_mut())
+            {
+                meta_obj.remove("integrity_hash");
+                meta_obj.remove("signature");
+            }
+            serde_json::to_vec(&legacy).map_err(|e| {
                 AppError::Validation(crate::errors::ValidationError::InvalidFormat {
                     field: "sync_package".into(),
                     message: format!("تعذّر تسلسل الحزمة للتحقق من السلامة: {}", e),
@@ -71,27 +75,29 @@ impl SerdeJsonSyncPackageDeserializer {
         package: &SyncPackage<T>,
         schema: SchemaVersion,
     ) -> AppResult<Vec<u8>> {
-        let mut canonical = serde_json::to_value(package).map_err(|e| {
+        let canonical = serde_json::to_value(package).map_err(|e| {
             AppError::Validation(crate::errors::ValidationError::InvalidFormat {
                 field: "sync_package".into(),
                 message: format!("تعذّر تحويل الحزمة للتحقق من التوقيع: {}", e),
             })
         })?;
-        if let Some(meta_obj) = canonical
-            .get_mut("metadata")
-            .and_then(|m| m.as_object_mut())
-        {
-            meta_obj.remove("signature");
-        }
         if schema >= SchemaVersion::V2 {
-            canonical_json_bytes(&canonical).map_err(|e| {
+            canonical_bytes_for_signature(&canonical).map_err(|e| {
                 AppError::Validation(crate::errors::ValidationError::InvalidFormat {
                     field: "sync_package".into(),
                     message: format!("تعذّر التسلسل القانوني للتوقيع: {}", e),
                 })
             })
         } else {
-            serde_json::to_vec(&canonical).map_err(|e| {
+            // Legacy V1: strip the signature then plain serde bytes.
+            let mut legacy = canonical;
+            if let Some(meta_obj) = legacy
+                .get_mut("metadata")
+                .and_then(|m| m.as_object_mut())
+            {
+                meta_obj.remove("signature");
+            }
+            serde_json::to_vec(&legacy).map_err(|e| {
                 AppError::Validation(crate::errors::ValidationError::InvalidFormat {
                     field: "sync_package".into(),
                     message: format!("تعذّر تسلسل الحزمة للتحقق من التوقيع: {}", e),
@@ -121,6 +127,16 @@ impl SerdeJsonSyncPackageDeserializer {
     }
 
     fn verify_signature<T: Serialize>(package: &SyncPackage<T>) -> AppResult<()> {
+        // B4 (RFC 2026-08-04 §3.10): signature_version = 2 (Ed25519) signatures are
+        // verified by `SyncPackageIdentityVerificationService` in the import pipeline,
+        // which owns Identity Store access. This deserializer only handles V1/legacy
+        // HMAC signatures during the deprecation window.
+        if package.metadata.signature_version
+            == Some(crate::domain::identity::SIGNATURE_VERSION_ED25519)
+        {
+            return Ok(());
+        }
+
         let signature = match package.metadata.signature.as_deref() {
             Some(s) => s,
             None => return Ok(()), // Allow missing signature for legacy compatibility
@@ -255,6 +271,24 @@ impl SerdeJsonSyncPackageDeserializer {
     pub fn unit_node_package_from_reader<R: std::io::Read>(
         reader: R,
     ) -> AppResult<SyncPackage<UnitNodePackage>> {
+        let package = Self::parse_json_from_reader(reader)?;
+        Self::verify_integrity(&package)?;
+        Self::verify_signature(&package)?;
+        Ok(package)
+    }
+
+    pub fn trust_package_from_reader<R: std::io::Read>(
+        reader: R,
+    ) -> AppResult<SyncPackage<TrustPackagePayload>> {
+        let package = Self::parse_json_from_reader(reader)?;
+        Self::verify_integrity(&package)?;
+        Self::verify_signature(&package)?;
+        Ok(package)
+    }
+
+    pub fn registry_package_from_reader<R: std::io::Read>(
+        reader: R,
+    ) -> AppResult<SyncPackage<RegistryPackagePayload>> {
         let package = Self::parse_json_from_reader(reader)?;
         Self::verify_integrity(&package)?;
         Self::verify_signature(&package)?;

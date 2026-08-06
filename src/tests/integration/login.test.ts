@@ -9,6 +9,7 @@ const mockLogin = vi.fn();
 const mockIsConfigured = vi.fn();
 const mockGetSettings = vi.fn();
 const mockImportUnitNodePackage = vi.fn();
+const mockGetIdentityStatus = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
     safeInvoke: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../../lib/contracts', () => ({
     isConfigured: (...args: any[]) => mockIsConfigured(...args),
     getSettings: (...args: any[]) => mockGetSettings(...args),
     importUnitNodePackage: (...args: any[]) => mockImportUnitNodePackage(...args),
+    getIdentityStatus: (...args: any[]) => mockGetIdentityStatus(...args),
 }));
 
 // Mock tauri plugin dialog
@@ -48,6 +50,7 @@ describe('Login Page Integration Flow', () => {
         vi.clearAllMocks();
         currentUser.set(null);
         mockIsConfigured.mockResolvedValue(true);
+        mockGetIdentityStatus.mockResolvedValue('UNINITIALIZED');
     });
 
     it('should display error if fields are submitted empty', async () => {

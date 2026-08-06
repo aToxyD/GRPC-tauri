@@ -17,6 +17,32 @@ pub fn canonical_json_bytes(value: &Value) -> AppResult<Vec<u8>> {
     Ok(out)
 }
 
+/// Canonical bytes for computing a package integrity hash (schema ≥ V2).
+///
+/// The `integrity_hash` and `signature` metadata fields are both excluded so the
+/// hash covers the envelope without self-reference (ADR-0009).
+pub fn canonical_bytes_for_integrity(value: &Value) -> AppResult<Vec<u8>> {
+    let mut v = value.clone();
+    if let Some(meta) = v.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        meta.remove("integrity_hash");
+        meta.remove("signature");
+    }
+    canonical_json_bytes(&v)
+}
+
+/// Canonical bytes for computing a package signature (schema ≥ V2).
+///
+/// The `integrity_hash` field is present (the signature covers the hash) while
+/// the `signature` field is excluded to avoid self-reference (ADR-0009,
+/// RFC 2026-08-04 §3.10).
+pub fn canonical_bytes_for_signature(value: &Value) -> AppResult<Vec<u8>> {
+    let mut v = value.clone();
+    if let Some(meta) = v.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        meta.remove("signature");
+    }
+    canonical_json_bytes(&v)
+}
+
 fn write_value(out: &mut Vec<u8>, value: &Value) -> AppResult<()> {
     match value {
         Value::Null => out.extend_from_slice(b"null"),
@@ -83,5 +109,49 @@ mod tests {
         let x = canonical_json_bytes(&v).unwrap();
         let y = canonical_json_bytes(&v).unwrap();
         assert_eq!(x, y);
+    }
+
+    #[test]
+    fn integrity_bytes_exclude_hash_and_signature() {
+        let v = json!({
+            "metadata": {"integrity_hash": "abc", "signature": "def", "x": 1},
+            "payload": [1, 2]
+        });
+        let stripped = json!({"metadata": {"x": 1}, "payload": [1, 2]});
+        assert_eq!(
+            canonical_bytes_for_integrity(&v).unwrap(),
+            canonical_json_bytes(&stripped).unwrap()
+        );
+    }
+
+    #[test]
+    fn signature_bytes_keep_hash_but_drop_signature() {
+        let v = json!({
+            "metadata": {"integrity_hash": "abc", "signature": "def", "x": 1},
+            "payload": [1, 2]
+        });
+        let stripped = json!({"metadata": {"integrity_hash": "abc", "x": 1}, "payload": [1, 2]});
+        assert_eq!(
+            canonical_bytes_for_signature(&v).unwrap(),
+            canonical_json_bytes(&stripped).unwrap()
+        );
+        // The signature envelope differs from the integrity envelope.
+        assert_ne!(
+            canonical_bytes_for_signature(&v).unwrap(),
+            canonical_bytes_for_integrity(&v).unwrap()
+        );
+    }
+
+    #[test]
+    fn helpers_are_noops_when_metadata_absent() {
+        let v = json!({"payload": []});
+        assert_eq!(
+            canonical_bytes_for_integrity(&v).unwrap(),
+            canonical_json_bytes(&v).unwrap()
+        );
+        assert_eq!(
+            canonical_bytes_for_signature(&v).unwrap(),
+            canonical_json_bytes(&v).unwrap()
+        );
     }
 }

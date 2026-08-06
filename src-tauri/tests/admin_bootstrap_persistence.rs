@@ -55,7 +55,10 @@ fn fresh_database_seeds_default_admin() {
     let admin = admin_user(&db);
     assert_eq!(admin.username, "admin");
     assert_eq!(admin.role, UserRole::Admin);
-    assert!(verify(DEFAULT_ADMIN_PASSWORD, &admin), "default admin logs in");
+    assert!(
+        verify(DEFAULT_ADMIN_PASSWORD, &admin),
+        "default admin logs in"
+    );
 }
 
 #[test]
@@ -72,9 +75,18 @@ fn restart_preserves_password_hash_and_metadata() {
     // Simulate application restart: connection is closed, then reopened.
     let db = seed(&path);
     let admin = admin_user(&db);
-    assert_eq!(admin.password_hash, hash_before, "hash must survive restart");
-    assert_eq!(admin.created_at, updated_before, "seed metadata must survive restart");
-    assert!(verify(DEFAULT_ADMIN_PASSWORD, &admin), "default password still valid");
+    assert_eq!(
+        admin.password_hash, hash_before,
+        "hash must survive restart"
+    );
+    assert_eq!(
+        admin.created_at, updated_before,
+        "seed metadata must survive restart"
+    );
+    assert!(
+        verify(DEFAULT_ADMIN_PASSWORD, &admin),
+        "default password still valid"
+    );
 }
 
 #[test]
@@ -87,7 +99,8 @@ fn modified_password_persists_across_restart() {
         let port = Argon2PasswordHashProvider;
         let svc = UserService::new(db.executor(), &port);
         let admin = admin_user(&db);
-        svc.change_password(&admin.id, MODIFIED_PASSWORD).expect("change password");
+        svc.change_password(&admin.id, MODIFIED_PASSWORD)
+            .expect("change password");
         let updated = admin_user(&db);
         (updated.id, updated.password_hash)
     };
@@ -96,8 +109,7 @@ fn modified_password_persists_across_restart() {
     let admin = admin_user(&db);
     assert_eq!(admin.id, id, "same admin row after restart");
     assert_eq!(
-        admin.password_hash,
-        new_hash,
+        admin.password_hash, new_hash,
         "modified hash must persist across restart"
     );
     assert!(
@@ -116,20 +128,21 @@ fn repeated_seeding_is_idempotent() {
     let path = dir.path().join("bootstrap.db");
 
     let db = seed(&path);
-    let port = Argon2PasswordHashProvider;
-    let svc = UserService::new(db.executor(), &port);
-
     let hash_before = admin_user(&db).password_hash;
 
+    let port = Argon2PasswordHashProvider;
+    let svc = UserService::new(db.executor(), &port);
     svc.create_default_admin().expect("re-seed 1");
     svc.create_default_admin().expect("re-seed 2");
     let db2 = seed(&path);
-    svc.create_default_admin().expect("re-seed after restart");
+    let port2 = Argon2PasswordHashProvider;
+    UserService::new(db2.executor(), &port2)
+        .create_default_admin()
+        .expect("re-seed after restart");
 
     let admin = admin_user(&db2);
     assert_eq!(
-        admin.password_hash,
-        hash_before,
+        admin.password_hash, hash_before,
         "repeated seeding must never overwrite the admin hash"
     );
     assert_eq!(
