@@ -12,6 +12,7 @@ pub mod identity_challenge_service;
 pub mod identity_bootstrap_status_service;
 pub mod identity_node_resolver;
 pub mod identity_provisioning_service;
+pub mod identity_rotation_service;
 pub mod identity_signed_export_service;
 pub mod identity_trust_anchor_service;
 pub mod inventory_snapshot_service;
@@ -51,6 +52,9 @@ pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;
 pub use identity_node_resolver::NodeIdentityResolver;
 pub use identity_provisioning_service::{
     FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult, IdentityProvisioningService,
+};
+pub use identity_rotation_service::{
+    FinalizeVerdict, IdentityRotationService, RotationOperation, RotationPlan,
 };
 pub use identity_signed_export_service::IdentitySignedExportService;
 pub use identity_trust_anchor_service::{IdentityTrustAnchorService, InstallWilayaCertificateResult};
@@ -113,6 +117,7 @@ impl crate::architecture::Service for UserService<'_> {}
 impl crate::architecture::Service for SettingsService<'_> {}
 impl crate::architecture::Service for ReportCalculationService<'_> {}
 impl crate::architecture::Service for SystemStatsService {}
+impl crate::architecture::Service for IdentityRotationService {}
 
 pub mod backup_integrity_service;
 pub use backup_integrity_service::BackupIntegrityService;
