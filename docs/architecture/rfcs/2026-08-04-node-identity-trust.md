@@ -461,6 +461,14 @@ Challenge {
 2. طول نافذة إهمال HMAC وجدول `users` (المدة الدقيقة للانتهاء).
 3. مالك حوكمة Recovery Mode وحدوده الزمنية.
 
+#### قرارات مقرّرة (B6-A)
+
+| القرار | الحكم المعتمد |
+|--------|---------------|
+| نقطة قطع التحول للمصادقة (D1) | التحول يعتمد على **وجود هوية ADMIN نشطة** (ACTIVE ADMIN certificate + `.adminkey`)، وليس على اكتمال تنظيف كلمة المرور الإرثية. `issue_first_admin_key` على عقدة إرثية ينشئ هوية ADMIN نشطة → جميع متطلبات المصادقة الجديدة قائمة، والاحتفاظ بكلمة المرور لمجرد وجود هاش ليس ذا معنى. |
+| طريقة إنهاء نافذة الإهمال (بند 2) | نافذة مسار كلمة المرور تنتهي عند B6-B: `GRPC_LEGACY_AUTH` (Introduced B6-A) يُحذف نهائيًا في B6-B ولا يبقى متغير بيئة دائمًا. جدول `users` يُقرأ فقط خلال النافذة. |
+| آلية مصادقة العقدة البديلة | تحليل/تسليم مفاتيح UNIT عبر مسار CSR موحّد (`generate_identity_request`/`sign_identity_request`/`finalize_identity_provision` — D2) في Commit ②. |
+
 ---
 
 ## 4. Impact Analysis (تحليل الأثر — العقود المجمدة المتأثرة)
@@ -560,7 +568,10 @@ Challenge {
   `run_import_pipeline`.
 - **B5:** استبدال bootstrap admin (نموذج WILAYA→ADMIN) + بدء نافذة إهمال
   `users`/كلمات المرور.
-- **B6:** قلب الافتراضي إلى `signature_version = 2` (Ed25519)؛ HMAC يبقى للقراءة فقط.
+- **B6-A:** إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (Authentication
+  Cutover عبر `IdentityAuthenticationPolicy`).
+- **B6-B:** قلب الافتراضي إلى `signature_version = 2` (Ed25519)؛ HMAC يبقى للقراءة
+  فقط؛ إزالة `GRPC_LEGACY_AUTH`/`change_password`.
 
 ### حالة التنفيذ (Progress Log)
 
@@ -572,6 +583,7 @@ Challenge {
 | B3 (Ed25519 + Challenge–Response + `.adminkey`) | ✅ مكتمل | 2026-08-05 | 21 اختبار domain + 6 اختبار repository + 7 اختبار infrastructure + 7 اختبارات تكامل `identity_trust_tests` + بوابة الواجهة الأمامية كاملة (`check`/Vitest/`tauri build`) + `check:arch` صفر تحذيرات |
 | B4 (Trust/Registry packages + الحارسان) | ✅ مكتمل | 2026-08-05 | 16 اختبار تكامل `sync_trust_registry_import_tests` + أمرا `import_trust_package`/`import_registry_package` + authz WILAYA-admin + `AuditAction` جديدان + البوابة كاملة (`cargo test`/clippy `-D warnings`/`check:arch`/svelte-check) |
 | B5 (WILAYA→ADMIN bootstrap + نافذة إهمال كلمة المرور) | ✅ مكتمل | 2026-08-05 | 16 اختبار تكامل `identity_bootstrap_tests` + `IdentityBootstrapState` + Root-pin + `get_identity_status`/`begin_wilaya_provision`/`finalize_wilaya_provision`/`issue_first_admin_key`/`begin_challenge`/`complete_challenge` + `metadata.auth_method` telemetry + بوابة كاملة (`cargo test` 633 lib + clippy `-D warnings`/`check:arch`/`check`/Vitest 86) |
+| B6-A (Authentication Cutover) | ✅ مكتمل | 2026-08-06 | `IdentityAuthenticationPolicy` كمصدر قرار وحيد + `LoginResponse.identity_challenge_required` + إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (ACTIVE cert + `.adminkey`) + `GRPC_LEGACY_AUTH` مؤقت + إزالة البذر الإنتاجي (`should_seed_legacy_admin`/`GRPC_LEGACY_BOOTSTRAP`) + إغلاق Rule 128 + الواجهة (تبويب `.adminkey` افتراضيًا عند AdminProvisioned/Ready) + بوابة كاملة (`cargo test` 633 lib + 30 تكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 
 بشكل محدد، يُغلَق B3 وفق الحالة المعتمدة:
 
@@ -637,6 +649,26 @@ Challenge {
   عند اعتماد هوية أول مسؤول فقط.
 - admin الافتراضي: لا حذف مدمر؛ يُستبدل عبر مسار bootstrap الجديد.
 - الجبهة: علامة تبويب `.adminkey` + خطوة WILAYA bootstrap على شاشة الدخول فقط.
+
+بشكل محدد، يُغلَق B6-A وفق الحالة المعتمدة:
+
+- **مصدر القرار الوحيد للمصادقة:** `IdentityAuthenticationPolicy` (طبقة
+  application) — القرار مبني على الحقيقة الأمنية (ACTIVE ADMIN cert + `.adminkey`
+  موجود) وليس على `IdentityBootstrapState` المشتقة (خاصة بالـ UI/مسار bootstrap).
+  `has_active_admin_identity` تمنع حالة lockout: شهادة دون ملف مفتاح تُبقي مسار
+  كلمة المرور مفتوحًا.
+- **بوابة تسجيل الدخول:** `commands/auth.rs::login` يرفض مسار كلمة المرور عند
+  وجود هوية ADMIN نشطة ويعيد `LoginResponse.identity_challenge_required = true`
+  (additive عبر `#[serde(default)]`).
+- **`GRPC_LEGACY_AUTH` (مؤقت):** `1` يعيد فتح مسار كلمة المرور. موثق في الكود
+  والـ ADR: Introduced B6-A / Removed B6-B / MUST NOT survive after B6-B.
+- **إزالة البذر الإنتاجي:** `ConnectionFactory::new()` لم يعد يبذر `admin/admin`؛
+  حُذف `should_seed_legacy_admin` و`GRPC_LEGACY_BOOTSTRAP`. `db::seed_default_admin`
+  (دعم اختبارات فقط) مستخدم حصريًا في `new_for_test`/`new_with_path` (DBs
+  `Uninitialized` → البوابة تُبقي كلمة المرور مفتوحة → صفر كسر في الاختبارات).
+- **إغلاق Rule 128:** مع غياب أي بذر إنتاجي، أُقفلت القاعدة بدلًا من كبتها.
+- **الواجهة:** تبويب `.adminkey` افتراضي عند `AdminProvisioned`/`Ready` + إخفاء
+  تبويب كلمة المرور + معالجة `identity_challenge_required` دفاعيًا.
 
 ---
 

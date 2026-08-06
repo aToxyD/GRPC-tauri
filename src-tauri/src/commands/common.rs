@@ -2,6 +2,23 @@ use crate::application::authz::{self, Action, Principal, ResourceContext};
 use crate::application::services::UserContext;
 use crate::domain::session::CurrentSession;
 use crate::errors::{into_command_error, AppError, ValidationError};
+use crate::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
+
+/// Default on-disk GRPC data dir (`dirs::data_dir()/GRPC`) shared by the node
+/// key store and the `.adminkey` provider.
+pub(crate) fn default_data_dir() -> crate::errors::AppResult<std::path::PathBuf> {
+    AdminKeyProvider::default_data_dir()
+}
+
+pub(crate) fn node_key_store() -> NodeKeyStore {
+    let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
+    NodeKeyStore::new(dir)
+}
+
+pub(crate) fn adminkey_provider() -> AdminKeyProvider {
+    let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
+    AdminKeyProvider::new(dir)
+}
 
 pub fn principal_from_session(session: &CurrentSession) -> Principal {
     Principal {

@@ -58,44 +58,6 @@ impl<'a> UserService<'a> {
         user_repo.change_password(user_id, &password_hash, &now)
     }
 
-    /// Seed the default administrator on first launch only.
-    ///
-    /// Bootstrap invariant: startup is idempotent with respect to
-    /// administrator credentials. When an `admin` user already exists
-    /// (including a soft-deleted one) no credential material is created,
-    /// hashed, or overwritten. The atomic `insert_user_if_absent` is the
-    /// authoritative guard against concurrent seeding.
-    //
-    // [arch:allow-bootstrap-admin] see ADR-0038 — temporary legacy path, B5
-    // deprecation window only; production seeding is removed in B6-A (RFC
-    // 2026-08-04-node-identity-trust).
-    pub fn create_default_admin(&self) -> Result<(), AppError> {
-        let existing = self.executor.users().get_user_by_username("admin")?;
-        if existing.is_some() {
-            return Ok(());
-        }
-
-        let node_id = SettingsNodeIdentityProvider::new(self.executor)
-            .current_node_id()
-            .unwrap_or_else(|_| "WILAYA".to_string());
-        let password_hash = self
-            .password_port
-            .hash_password("admin", &node_id) // [arch:allow-bootstrap-admin] see ADR-0038 — B5 legacy window
-            .map_err(crate::errors::AppError::Internal)?;
-
-        let id = Uuid::new_v4().to_string();
-        let now = Utc::now().to_rfc3339();
-        self.executor.users().insert_user_if_absent(
-            &id,
-            "admin",
-            &password_hash,
-            UserRole::Admin,
-            &node_id,
-            &now,
-        )?;
-        Ok(())
-    }
-
     pub fn get_user_by_username(
         &self,
         username: &str,

@@ -1813,19 +1813,14 @@ checkRule(
     "error"
 );
 
-// Rule 128: hardcoded default admin credential (admin/admin) must be confined
-// to the tagged legacy bootstrap path. During the B5 deprecation window the
-// only permitted occurrence is `create_default_admin`'s credential literal,
-// tagged inline with `[arch:allow-bootstrap-admin]`. The rule is closed in
-// B6-A once production seeding is removed.
+// Rule 128 (CLOSED in B6-A): No hardcoded default admin credential.
+// B5 replaced the production bootstrap path (WILAYA->ADMIN). B6-A removed the
+// production legacy seed entirely from `ConnectionFactory::new()`; the only
+// remaining `hash_password("admin"...)` occurrence is the TEST-SUPPORT factory
+// seed (`db::seed_default_admin`, used exclusively by `new_for_test` /
+// `new_with_path`). The governance concern this rule guarded no longer exists
+// in production, so the rule is retired rather than suppressed.
 // RFC 2026-08-04-node-identity-trust §3.6 / ADR-0038.
-checkRule(
-    "Rule 128: hardcoded default admin credential (admin/admin) outside the tagged legacy bootstrap path (RFC 2026-08-04, ADR-0038)",
-    ["src-tauri/src/application/services/user_service.rs", "src-tauri/src/db/mod.rs"],
-    /hash_password\s*\(\s*"admin"/,
-    (line) => line.includes("[arch:allow-bootstrap-admin]"),
-    "error"
-);
 
 // Rule 129: signature_version must remain an Option<u16> extension point.
 checkRule(

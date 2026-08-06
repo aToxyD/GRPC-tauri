@@ -70,7 +70,8 @@ describe('Login Page Integration Flow', () => {
             success: true,
             user,
             message: 'تم تسجيل الدخول',
-            requires_configuration: false
+            requires_configuration: false,
+            identity_challenge_required: false
         });
         mockGetSettings.mockResolvedValue({
             node_type: 'WILAYA',
@@ -99,7 +100,8 @@ describe('Login Page Integration Flow', () => {
             success: false,
             user: null,
             message: 'تجاوز الحد الأقصى للمحاولات المقبولة. تم الحظر مؤقتاً',
-            requires_configuration: false
+            requires_configuration: false,
+            identity_challenge_required: false
         });
 
         render(LoginPage);
@@ -115,6 +117,42 @@ describe('Login Page Integration Flow', () => {
         await waitFor(() => {
             expect(screen.getByText(/تجاوز الحد الأقصى للمحاولات المقبولة/i)).toBeInTheDocument();
             expect(get(currentUser)).toBeNull();
+        });
+    });
+
+    it('should hide the password tab and default to admin-key when the node has an ACTIVE ADMIN identity', async () => {
+        mockGetIdentityStatus.mockResolvedValue('READY');
+
+        render(LoginPage);
+
+        await waitFor(() => {
+            expect(screen.queryByText('كلمة المرور')).not.toBeInTheDocument();
+            expect(screen.getByPlaceholderText(/أدخل كلمة مرور المفتاح/i)).toBeInTheDocument();
+        });
+    });
+
+    it('should route to the admin-key tab when the backend reports identity_challenge_required', async () => {
+        mockLogin.mockResolvedValue({
+            success: false,
+            user: null,
+            message: 'عليك تسجيل الدخول باستخدام المفتاح الإداري',
+            requires_configuration: false,
+            identity_challenge_required: true
+        });
+
+        render(LoginPage);
+
+        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
+        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+
+        await fireEvent.input(usernameInput, { target: { value: 'civil_admin' } });
+        await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
+        await fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+            expect(screen.getByText(/عليك تسجيل الدخول باستخدام المفتاح الإداري/i)).toBeInTheDocument();
+            expect(screen.getByPlaceholderText(/أدخل كلمة مرور المفتاح/i)).toBeInTheDocument();
         });
     });
 });

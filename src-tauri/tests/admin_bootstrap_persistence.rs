@@ -130,15 +130,10 @@ fn repeated_seeding_is_idempotent() {
     let db = seed(&path);
     let hash_before = admin_user(&db).password_hash;
 
-    let port = Argon2PasswordHashProvider;
-    let svc = UserService::new(db.executor(), &port);
-    svc.create_default_admin().expect("re-seed 1");
-    svc.create_default_admin().expect("re-seed 2");
+    grpc_lib::db::seed_default_admin(&db).expect("re-seed 1");
+    grpc_lib::db::seed_default_admin(&db).expect("re-seed 2");
     let db2 = seed(&path);
-    let port2 = Argon2PasswordHashProvider;
-    UserService::new(db2.executor(), &port2)
-        .create_default_admin()
-        .expect("re-seed after restart");
+    grpc_lib::db::seed_default_admin(&db2).expect("re-seed after restart");
 
     let admin = admin_user(&db2);
     assert_eq!(

@@ -10,29 +10,14 @@
 use crate::application::services::{
     IdentityBootstrapStatusService, IdentityChallengeService, IdentityProvisioningService,
 };
-use crate::commands::common::{db_mut_or_command_error, db_ref_or_command_error};
+use crate::commands::common::{
+    adminkey_provider, db_mut_or_command_error, db_ref_or_command_error, node_key_store,
+};
 use crate::commands::types::AppState;
 use crate::domain::identity::{ChallengeMessage, IdentityBootstrapState, IdentityCertificate};
 use crate::errors::{into_command_error, AppError};
-use crate::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
 use crate::models::{LoginResponse, User};
 use tauri::State;
-
-/// Default on-disk GRPC data dir (`dirs::data_dir()/GRPC`) shared by the node
-/// key store and the `.adminkey` provider.
-pub(crate) fn default_data_dir() -> crate::errors::AppResult<std::path::PathBuf> {
-    AdminKeyProvider::default_data_dir()
-}
-
-pub(crate) fn node_key_store() -> NodeKeyStore {
-    let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
-    NodeKeyStore::new(dir)
-}
-
-pub(crate) fn adminkey_provider() -> AdminKeyProvider {
-    let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
-    AdminKeyProvider::new(dir)
-}
 
 fn challenge_service(state: &AppState) -> IdentityChallengeService {
     IdentityChallengeService::with_default_verifier(
@@ -187,5 +172,6 @@ pub fn complete_challenge(
         user: Some(user),
         message: "تم تسجيل الدخول بنجاح".to_string(),
         requires_configuration: established.requires_configuration,
+        identity_challenge_required: true,
     })
 }

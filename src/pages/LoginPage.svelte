@@ -59,6 +59,8 @@
   let identityState: IdentityBootstrapState = 'UNINITIALIZED';
   // @category UiState
   let authTab: 'password' | 'adminkey' = 'password';
+  // @category UiState
+  let authTabDirty = false;
   // @category TransientState
   let passphrase = '';
   // @category TransientState
@@ -69,6 +71,15 @@
   const bootstrapOp = createOperationGuard({ scope });
   const bootstrapLoading = bootstrapOp.loading;
 
+  // B6-A (ADR-0038): the legacy password path is available only while no ACTIVE
+  // ADMIN identity exists. Once the admin identity is present (ADMIN_PROVISIONED
+  // or READY) Challenge–Response is the mandatory login path — the password tab
+  // is hidden and the admin-key tab becomes the default.
+  // @category UiState
+  $: passwordLoginAvailable =
+    identityState !== 'ADMIN_PROVISIONED' && identityState !== 'READY';
+  // @category UiState
+  $: effectiveAuthTab = passwordLoginAvailable ? authTab : 'adminkey';
   // @category UiState
   $: adminkeyAvailable =
     identityState === 'WILAYA_ACTIVE' ||
@@ -268,6 +279,14 @@
     await loginOp.run(async () => {
       const request: LoginRequest = { username, password };
       const response: LoginResponse = await login(request);
+      if (response.identity_challenge_required) {
+        // The backend gate closed the password path (ACTIVE ADMIN identity).
+        // Route the operator to the admin-key challenge.
+        authTab = 'adminkey';
+        authTabDirty = true;
+        localError = response.message || 'هذه العقدة تتطلب تسجيل الدخول بالمفتاح الإداري';
+        return;
+      }
       if (response.success && response.user) {
         await afterLogin(response);
       } else {
@@ -341,29 +360,31 @@
 
     <!-- التبويبات -->
     <div class="flex mb-4 border-b border-gray-200 dark:border-gray-700" role="tablist">
+      {#if passwordLoginAvailable}
       <button
         type="button"
         role="tab"
-        aria-selected={authTab === 'password'}
-        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {authTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
-        on:click={() => { authTab = 'password'; localError = ''; }}
+        aria-selected={effectiveAuthTab === 'password'}
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {effectiveAuthTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        on:click={() => { authTab = 'password'; authTabDirty = true; localError = ''; }}
       >
         كلمة المرور
       </button>
+      {/if}
       <button
         type="button"
         role="tab"
-        aria-selected={authTab === 'adminkey'}
+        aria-selected={effectiveAuthTab === 'adminkey'}
         disabled={!adminkeyAvailable}
-        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {authTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
-        on:click={() => { authTab = 'adminkey'; localError = ''; }}
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {effectiveAuthTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        on:click={() => { authTab = 'adminkey'; authTabDirty = true; localError = ''; }}
       >
         المفتاح الإداري
       </button>
     </div>
 
     <!-- نموذج الدخول بكلمة المرور -->
-    {#if authTab === 'password'}
+    {#if effectiveAuthTab === 'password'}
     <form class="space-y-4" on:submit|preventDefault={handleLogin} novalidate>
       <AppInput
         id="username"
@@ -403,7 +424,7 @@
     {/if}
 
     <!-- نموذج الدخول بالمفتاح الإداري (Challenge–Response) -->
-    {#if authTab === 'adminkey'}
+    {#if effectiveAuthTab === 'adminkey'}
     <form class="space-y-4" on:submit|preventDefault={handleChallengeLogin} novalidate>
       <AppInput
         id="passphrase"

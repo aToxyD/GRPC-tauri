@@ -35,6 +35,10 @@
         {
           "name": "requires_configuration",
           "type": "boolean"
+        },
+        {
+          "name": "identity_challenge_required",
+          "type": "boolean"
         }
       ]
     },

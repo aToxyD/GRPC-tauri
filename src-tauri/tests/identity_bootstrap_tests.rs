@@ -24,8 +24,8 @@ use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 use grpc_lib::application::services::{
-    FinalizeWilayaProvisionResult, IdentityBootstrapStatusService, IdentityChallengeService,
-    IdentityProvisioningService,
+    FinalizeWilayaProvisionResult, IdentityAuthenticationPolicy, IdentityBootstrapStatusService,
+    IdentityChallengeService, IdentityProvisioningService,
 };
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
@@ -621,28 +621,82 @@ fn identity_only_admin_has_empty_hash_and_no_password_path() {
 }
 
 // ---------------------------------------------------------------------------
-// B5: production seeding gate decision (should_seed_legacy_admin)
+// B6-A: password login gate (IdentityAuthenticationPolicy)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn legacy_seeding_gate_decision_is_pure() {
-    use grpc_lib::db::should_seed_legacy_admin;
-
-    // A migrated fleet (an `admin` row already exists) keeps the legacy
-    // account available — the gate must open for existing rows.
+fn password_login_gate_is_sole_security_fact() {
+    // No identity material → the password path stays open.
     let node = fresh_node();
     assert!(
-        should_seed_legacy_admin(&node.db),
-        "existing admin row must keep the legacy path"
+        IdentityAuthenticationPolicy::password_login_allowed_with_override(
+            &node.db,
+            &node.adminkey_provider,
+            false,
+        )
+        .expect("policy"),
+        "unprovisioned node must keep the password path"
     );
 
-    // A fresh fleet node must NOT seed the legacy admin in production: the
-    // decision depends only on persisted state (pure — no env mutation) and a
-    // row-less DB is untouched.
+    // Full bootstrap → ACTIVE ADMIN identity (cert + `.adminkey`) → password closed.
     let mut node = fresh_node();
     remove_seeded_admin(&mut node);
+    bootstrap_wilaya(&mut node);
+    IdentityProvisioningService::new(&mut node.db)
+        .issue_first_admin_key(
+            BOOTSTRAP_USERNAME,
+            ADMIN_PASSPHRASE,
+            &node.node_key_store,
+            &node.adminkey_provider,
+            FIXED_NOW,
+        )
+        .expect("admin issued");
     assert!(
-        !should_seed_legacy_admin(&node.db),
-        "fresh fleet DB must skip legacy admin seeding"
+        IdentityAuthenticationPolicy::has_active_admin_identity(
+            &node.db,
+            &node.adminkey_provider,
+        )
+        .expect("fact"),
+        "ACTIVE ADMIN cert + `.adminkey` must be detected"
+    );
+    assert!(
+        !IdentityAuthenticationPolicy::password_login_allowed_with_override(
+            &node.db,
+            &node.adminkey_provider,
+            false,
+        )
+        .expect("policy"),
+        "ACTIVE ADMIN identity must close the password path"
+    );
+    // Temporary override (`GRPC_LEGACY_AUTH=1`) re-opens the legacy path.
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed_with_override(
+            &node.db,
+            &node.adminkey_provider,
+            true,
+        )
+        .expect("policy"),
+        "GRPC_LEGACY_AUTH override must re-open the legacy path (B6-A window)"
+    );
+
+    // Fail-safe: ACTIVE ADMIN cert WITHOUT the `.adminkey` file must NOT lock
+    // the operator out — the password path stays open (B6-A refinement 1).
+    std::fs::remove_file(node.adminkey_provider.file_path()).expect("remove adminkey");
+    assert!(
+        !IdentityAuthenticationPolicy::has_active_admin_identity(
+            &node.db,
+            &node.adminkey_provider,
+        )
+        .expect("fact"),
+        "missing `.adminkey` must disable the identity fact"
+    );
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed_with_override(
+            &node.db,
+            &node.adminkey_provider,
+            false,
+        )
+        .expect("policy"),
+        "missing `.adminkey` must keep the password path open (no lockout)"
     );
 }

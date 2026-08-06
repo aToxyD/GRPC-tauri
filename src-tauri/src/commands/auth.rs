@@ -4,10 +4,12 @@
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
 use crate::application::services::{
-    AuditService, AuditTxService, OperationalSessionService, SessionEndReason,
-    SessionEstablishmentService, UserService,
+    AuditService, AuditTxService, IdentityAuthenticationPolicy, OperationalSessionService,
+    SessionEndReason, SessionEstablishmentService, UserService,
 };
-use crate::commands::common::{db_mut_or_command_error, user_ctx_from_parts, user_ctx_from_session};
+use crate::commands::common::{
+    adminkey_provider, db_mut_or_command_error, user_ctx_from_parts, user_ctx_from_session,
+};
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError, ValidationError};
@@ -50,6 +52,34 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
     // Get database
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
+
+    // B6-A auth gate (RFC 2026-08-04 / ADR-0038): the password path is
+    // permitted only while no ACTIVE ADMIN identity exists. The decision comes
+    // exclusively from `IdentityAuthenticationPolicy` (a security fact — ACTIVE
+    // ADMIN cert + `.adminkey` present) — never from the derived bootstrap state.
+    //
+    // `GRPC_LEGACY_AUTH=1` is a Temporary compatibility override.
+    // Introduced: B6-A
+    // Removed: B6-B
+    // MUST NOT survive after B6-B.
+    let password_allowed = IdentityAuthenticationPolicy::password_login_allowed(
+        db,
+        &adminkey_provider(),
+    )
+    .map_err(into_command_error)?;
+    if !password_allowed {
+        log::warn!(
+            target: "grpc::auth",
+            "password login rejected: node has an ACTIVE ADMIN identity; Challenge–Response is mandatory"
+        );
+        return Ok(LoginResponse {
+            success: false,
+            user: None,
+            message: "عليك تسجيل الدخول باستخدام المفتاح الإداري".to_string(),
+            requires_configuration: false,
+            identity_challenge_required: true,
+        });
+    }
 
     let password_port = state.password_port.as_ref();
     let user = UserService::new(db.executor(), password_port)
@@ -106,6 +136,7 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
                     user: Some(user),
                     message: "تم تسجيل الدخول بنجاح".to_string(),
                     requires_configuration: established.requires_configuration,
+                    identity_challenge_required: false,
                 });
             }
         }
@@ -145,6 +176,7 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
         user: None,
         message: "اسم المستخدم أو كلمة المرور غير صحيحة".to_string(),
         requires_configuration: false,
+        identity_challenge_required: false,
     })
 }
 

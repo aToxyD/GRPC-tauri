@@ -9,6 +9,8 @@ export interface LoginResponse {
   user: User | null;
   message: string;
   requires_configuration: boolean;
+  /** B6-A (ADR-0038): true when the node has an ACTIVE ADMIN identity, making the admin-key Challenge–Response the mandatory login path. */
+  identity_challenge_required: boolean;
 }
 
 export interface User {

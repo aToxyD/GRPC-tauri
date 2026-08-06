@@ -99,7 +99,8 @@ algorithm_version ثابت لكل اعتماد.
 - B3: مفاتيح Ed25519 + Challenge–Response + `.adminkey`.
 - B4: حزم trust/registry + الحارسان في `run_import_pipeline`.
 - B5: استبدال bootstrap admin + نافذة إهمال users/كلمات المرور.
-- B6: قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط.
+- B6-A: إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (Authentication Cutover).
+- B6-B: قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط؛ إزالة `GRPC_LEGACY_AUTH`/`change_password`.
 
 # حالة التنفيذ
 - **B1–B5 مكتملة** (B5 بتاريخ 2026-08-05). البوابة كاملة: `cargo test` (صفر فشل —
@@ -112,3 +113,11 @@ algorithm_version ثابت لكل اعتماد.
   `issue_first_admin_key`/`begin_challenge`/`complete_challenge` مفعّلة (bootstrap
   WILAYA→ADMIN بتوقيع Root دون اتصال + `IdentityBootstrapState` + `metadata.auth_method`
   telemetry)؛ كلمة مرور الإرث تبقى صالحة خلال النافذة (additive) حتى B6.
+- **B6-A (Authentication Cutover) مكتملة** (2026-08-06): `IdentityAuthenticationPolicy`
+  هو مصدر القرار الوحيد — مسار كلمة المرور يُقفل عند وجود هوية ADMIN نشطة (ACTIVE
+  cert + `.adminkey`)؛ `LoginResponse.identity_challenge_required`؛ `GRPC_LEGACY_AUTH=1`
+  override مؤقت (Introduced B6-A / Removed B6-B / MUST NOT survive after B6-B)؛
+  إزالة البذر الإنتاجي (`should_seed_legacy_admin`/`GRPC_LEGACY_BOOTSTRAP`) وإغلاق
+  Rule 128؛ الواجهة تُخفي تبويب كلمة المرور وتجعل `.adminkey` افتراضيًا عند
+  AdminProvisioned/Ready. البوابة كاملة (633 lib + 30 ملف تكامل، clippy `-D warnings`,
+  `check:arch` صفر تحذيرات، `check` 0 أخطاء، Vitest 88/88).

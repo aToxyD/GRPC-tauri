@@ -62,6 +62,12 @@ pub struct LoginResponse {
     pub user: Option<User>,
     pub message: String,
     pub requires_configuration: bool,
+    /// B6-A (RFC 2026-08-04 / ADR-0038): true when this node has an ACTIVE
+    /// ADMIN identity, making Challenge–Response (`.adminkey`) the mandatory
+    /// login path. Additive with `#[serde(default)]` so pre-B6-A consumers of
+    /// a cached response keep deserializing.
+    #[serde(default)]
+    pub identity_challenge_required: bool,
 }
 
 /// Session status for frontend

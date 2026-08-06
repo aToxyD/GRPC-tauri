@@ -180,28 +180,48 @@ pub fn get_connection_path(conn: &Connection) -> Result<PathBuf, rusqlite::Error
 use rusqlite::Connection as SqlConnection;
 use std::path::Path;
 
-/// B5 production seeding gate (RFC 2026-08-04 / ADR-0038): a default `admin`
-/// account is seeded on startup ONLY for migrated fleets — when an `admin` row
-/// already exists — or when `GRPC_LEGACY_BOOTSTRAP=1` explicitly forces it.
-/// Fresh fleets bootstrap through the offline Root flow and never receive a
-/// hardcoded credential. The gate is pure with respect to persisted state
-/// (the env override is read separately by `legacy_bootstrap_forced`).
-pub fn should_seed_legacy_admin(db: &Database) -> bool {
+/// TEST-SUPPORT ONLY (B6-A): seed the legacy `admin/admin` account into a
+/// database.
+///
+/// RFC 2026-08-04 §3.6 / ADR-0038. Production startup NO LONGER seeds a
+/// default admin (removed in B6-A) — fresh fleets bootstrap through the
+/// offline Root flow. This helper exists exclusively for the in-memory / temp
+/// test factories (`new_for_test`, `new_with_path`) so integration tests keep
+/// a known credential while the DB is `Uninitialized` (the B6-A login gate
+/// leaves the password path open on such databases).
+///
+/// Idempotent by construction: an existing `admin` row is never overwritten.
+pub fn seed_default_admin(db: &Database) -> crate::errors::AppResult<()> {
+    use crate::domain::security::PasswordHashPort;
+    use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider;
+    use crate::infrastructure::security::SettingsNodeIdentityProvider;
+    use crate::models::UserRole;
     use crate::repositories::RepositoryProvider;
-    let has_admin = db
-        .executor()
-        .users()
-        .get_user_by_username("admin")
-        .map(|u| u.is_some())
-        .unwrap_or(false);
-    has_admin || legacy_bootstrap_forced()
-}
 
-fn legacy_bootstrap_forced() -> bool {
-    match std::env::var("GRPC_LEGACY_BOOTSTRAP") {
-        Ok(v) => v == "1",
-        Err(_) => false,
+    let existing = db.executor().users().get_user_by_username("admin")?;
+    if existing.is_some() {
+        return Ok(());
     }
+
+    let node_id = SettingsNodeIdentityProvider::new(db.executor())
+        .current_node_id()
+        .unwrap_or_else(|_| "WILAYA".to_string());
+    let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
+    let password_hash = password_port
+        .hash_password("admin", &node_id)
+        .map_err(crate::errors::AppError::Internal)?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    db.executor().users().insert_user_if_absent(
+        &id,
+        "admin",
+        &password_hash,
+        UserRole::Admin,
+        &node_id,
+        &now,
+    )?;
+    Ok(())
 }
 
 /// Factory responsible for creating `Database` instances.
@@ -227,12 +247,6 @@ impl ConnectionFactory {
             .map_err(|e| AppError::Internal(format!("Migration failed: {}", e)))?;
 
         let db = Database { conn };
-        if should_seed_legacy_admin(&db) {
-            let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
-            crate::application::services::UserService::new(db.executor(), &password_port)
-                .create_default_admin()
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-        }
         Ok(db)
     }
 
@@ -282,10 +296,7 @@ impl ConnectionFactory {
             .map_err(|e| AppError::Internal(format!("Migration failed: {}", e)))?;
 
         let db = Database { conn };
-        let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
-        crate::application::services::UserService::new(db.executor(), &password_port)
-            .create_default_admin()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        seed_default_admin(&db).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(db)
     }
 }
