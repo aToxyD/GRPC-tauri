@@ -28,6 +28,7 @@ pub mod settings;
 pub mod stock_movements;
 pub mod sync_applied_packages;
 pub mod sync_conflicts;
+pub mod sync_issuer_sequence_state;
 pub mod system;
 pub mod telemetry;
 pub mod timeline;
@@ -58,6 +59,9 @@ pub use settings::SettingsRepository;
 pub use stock_movements::StockMovementRepository;
 pub use sync_applied_packages::SyncAppliedPackagesRepository;
 pub use sync_conflicts::SyncConflictRepository;
+pub use sync_issuer_sequence_state::{
+    PendingIssuedSequence, SyncIssuerSequenceStateRepository,
+};
 pub use system::SystemRepository;
 pub use telemetry::TelemetryRepository;
 pub use timeline::TimelineRepository;
@@ -80,6 +84,7 @@ impl crate::architecture::Repository for UnitRepository<'_> {}
 impl crate::architecture::Repository for OrderRepository<'_> {}
 impl crate::architecture::Repository for ReportRepository<'_> {}
 impl crate::architecture::Repository for SyncAppliedPackagesRepository<'_> {}
+impl crate::architecture::Repository for SyncIssuerSequenceStateRepository<'_> {}
 impl crate::architecture::Repository for AuditRepository<'_> {}
 impl crate::architecture::Repository for IntegrityRepository<'_> {}
 impl crate::architecture::Repository for SessionRepository<'_> {}
@@ -109,6 +114,7 @@ pub trait RepositoryProvider<'a> {
     fn stock_movements(&self) -> StockMovementRepository<'a>;
     fn units(&self) -> UnitRepository<'a>;
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a>;
+    fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a>;
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a>;
     fn identity_store(&self) -> IdentityStoreRepository<'a>;
     fn system(&self) -> SystemRepository<'a>;
@@ -170,6 +176,9 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a> {
         SyncAppliedPackagesRepository::new(*self)
+    }
+    fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a> {
+        SyncIssuerSequenceStateRepository::new(*self)
     }
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a> {
         ImportAuditEventsRepository::new(*self)

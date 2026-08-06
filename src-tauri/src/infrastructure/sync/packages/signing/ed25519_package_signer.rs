@@ -20,20 +20,42 @@ use super::{PackageSigner, PackageVerifier};
 const ED25519_SIGNATURE_LEN: usize = 64;
 const ED25519_PUBLIC_KEY_LEN: usize = 32;
 
-/// Package signer bound to a node identity's raw 32-byte Ed25519 signing key.
-#[derive(Debug, Clone)]
+/// Package signer bound to a node identity's Ed25519 signing key.
+///
+/// `Debug` is implemented manually to hide the signing key material.
+#[derive(Clone)]
 pub struct Ed25519PackageSigner {
-    secret_key: [u8; 32],
+    provider: Ed25519SigningProvider,
+}
+
+impl std::fmt::Debug for Ed25519PackageSigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ed25519PackageSigner")
+            .field("provider", &"Ed25519SigningProvider")
+            .finish()
+    }
 }
 
 impl Ed25519PackageSigner {
+    /// Build from a raw 32-byte Ed25519 signing key (test/offline material).
     pub fn new(secret_key: [u8; 32]) -> Self {
-        Self { secret_key }
+        Self {
+            provider: Ed25519SigningProvider::new(secret_key),
+        }
+    }
+
+    /// Build from an already-resolved node signer (`ResolvedNodeIdentity`).
+    ///
+    /// `NodeIdentityResolver::resolve_local_signer` returns a provider whose
+    /// public key is R5-proven to match the ACTIVE certificate; this constructor
+    /// lets V2 exports sign with that exact key without exposing the raw secret.
+    pub fn from_provider(provider: Ed25519SigningProvider) -> Self {
+        Self { provider }
     }
 
     /// Hex-encoded public verification key — the package `signing_key_id` for V2.
     pub fn public_key_hex(&self) -> String {
-        hex::encode(Ed25519SigningProvider::new(self.secret_key).public_key())
+        hex::encode(self.provider.public_key())
     }
 
     /// `SIGNATURE_VERSION_ED25519` (2) — written into `metadata.signature_version`.
@@ -44,7 +66,8 @@ impl Ed25519PackageSigner {
 
 impl PackageSigner for Ed25519PackageSigner {
     fn sign(&self, plaintext: &[u8]) -> AppResult<String> {
-        let signature = Ed25519SigningProvider::new(self.secret_key)
+        let signature = self
+            .provider
             .sign(plaintext)
             .map_err(|e| AppError::Internal(format!("Ed25519 package signing failed: {e}")))?;
         if signature.len() != ED25519_SIGNATURE_LEN {
@@ -153,6 +176,25 @@ mod tests {
         let payload = b"canonical envelope bytes";
         let signature = signer.sign(payload).unwrap();
         assert!(verifier.verify(payload, &signature).unwrap());
+    }
+
+    #[test]
+    fn from_provider_matches_new_over_same_secret() {
+        let provider = Ed25519SigningProvider::new(SECRET_KEY);
+        let from_provider = Ed25519PackageSigner::from_provider(provider.clone());
+        let from_secret = Ed25519PackageSigner::new(SECRET_KEY);
+
+        // Same public key and identical signatures over the same bytes.
+        assert_eq!(from_provider.public_key_hex(), from_secret.public_key_hex());
+        let payload = b"canonical envelope bytes";
+        assert_eq!(
+            from_provider.sign(payload).unwrap(),
+            from_secret.sign(payload).unwrap()
+        );
+
+        // Debug must not leak the signing key material.
+        let debug = format!("{from_provider:?}");
+        assert!(!debug.contains(&format!("{SECRET_KEY:?}")), "got {debug}");
     }
 
     #[test]

@@ -12,6 +12,7 @@ const ED25519_PUBLIC_KEY_LEN: usize = 32;
 const ED25519_SIGNATURE_LEN: usize = 64;
 
 /// Signer holding an Ed25519 signing key.
+#[derive(Clone)]
 pub struct Ed25519SigningProvider {
     keypair: ed25519_dalek::SigningKey,
 }

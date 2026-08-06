@@ -34,6 +34,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Registry fleet-state snapshots (RFC 2026-08-04 §3.9, B4)",
             include_str!("migrations/005_registry_snapshots.sql"),
         ),
+        (
+            6,
+            "Producer sequence state ledger (RFC 2026-08-04 §3.4.1, ADR-0038, B6-B Commit ④)",
+            include_str!("migrations/006_issuer_sequence_state.sql"),
+        ),
     ]
 }
 
