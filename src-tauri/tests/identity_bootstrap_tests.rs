@@ -621,7 +621,7 @@ fn identity_only_admin_has_empty_hash_and_no_password_path() {
 }
 
 // ---------------------------------------------------------------------------
-// B6-A: password login gate (IdentityAuthenticationPolicy)
+// B6-A/B6-B: password login gate (IdentityAuthenticationPolicy)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -629,12 +629,8 @@ fn password_login_gate_is_sole_security_fact() {
     // No identity material → the password path stays open.
     let node = fresh_node();
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed_with_override(
-            &node.db,
-            &node.adminkey_provider,
-            false,
-        )
-        .expect("policy"),
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+            .expect("policy"),
         "unprovisioned node must keep the password path"
     );
 
@@ -660,23 +656,9 @@ fn password_login_gate_is_sole_security_fact() {
         "ACTIVE ADMIN cert + `.adminkey` must be detected"
     );
     assert!(
-        !IdentityAuthenticationPolicy::password_login_allowed_with_override(
-            &node.db,
-            &node.adminkey_provider,
-            false,
-        )
-        .expect("policy"),
+        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+            .expect("policy"),
         "ACTIVE ADMIN identity must close the password path"
-    );
-    // Temporary override (`GRPC_LEGACY_AUTH=1`) re-opens the legacy path.
-    assert!(
-        IdentityAuthenticationPolicy::password_login_allowed_with_override(
-            &node.db,
-            &node.adminkey_provider,
-            true,
-        )
-        .expect("policy"),
-        "GRPC_LEGACY_AUTH override must re-open the legacy path (B6-A window)"
     );
 
     // Fail-safe: ACTIVE ADMIN cert WITHOUT the `.adminkey` file must NOT lock
@@ -691,12 +673,8 @@ fn password_login_gate_is_sole_security_fact() {
         "missing `.adminkey` must disable the identity fact"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed_with_override(
-            &node.db,
-            &node.adminkey_provider,
-            false,
-        )
-        .expect("policy"),
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+            .expect("policy"),
         "missing `.adminkey` must keep the password path open (no lockout)"
     );
 }

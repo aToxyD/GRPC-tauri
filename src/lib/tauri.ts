@@ -52,10 +52,6 @@ export async function login(request: LoginRequest): Promise<LoginResponse> {
   return await safeInvoke('login', { request });
 }
 
-export async function changePassword(userId: string, newPassword: string): Promise<boolean> {
-  return await safeInvoke('change_password', { target_user_id: userId, new_password: newPassword });
-}
-
 // Session Management
 export async function logout(): Promise<boolean> {
   return await safeInvoke('logout');

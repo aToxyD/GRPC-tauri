@@ -556,22 +556,16 @@
       "exports": [
         {
           "name": "login"
-        },
-        {
-          "name": "changePassword"
         }
       ],
       "commands": [
         {
           "command": "login"
-        },
-        {
-          "command": "change_password"
         }
       ],
-      "loc": 11,
-      "exportCount": 2,
-      "commandCount": 2
+      "loc": 7,
+      "exportCount": 1,
+      "commandCount": 1
     },
     {
       "name": "session",

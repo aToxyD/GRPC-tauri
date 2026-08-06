@@ -119,7 +119,7 @@ export const DOMAIN_REGISTRY: Record<string, {
   user: {
     contract: "user.contract.ts",
     pages: ["LoginPage"],
-    functions: ["login", "changePassword"],
+    functions: ["login"],
     crossDomainExceptions: [],
   },
 };

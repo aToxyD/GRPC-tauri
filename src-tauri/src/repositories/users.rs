@@ -170,16 +170,6 @@ impl<'a> UserRepository<'a> {
         Ok(())
     }
 
-    /// Get user node ID
-    pub fn get_user_node_id(&self, user_id: &str) -> Result<String, AppError> {
-        let node_id: String = self.executor.query_row(
-            "SELECT COALESCE(node_id, 'WILAYA') FROM users WHERE id = ?1",
-            [user_id],
-            |row| row.get(0),
-        )?;
-        Ok(node_id)
-    }
-
     /// List all users ordered by creation date (newest first)
     pub fn list_users(&self) -> Result<Vec<User>, AppError> {
         Ok(self.executor.query_all(

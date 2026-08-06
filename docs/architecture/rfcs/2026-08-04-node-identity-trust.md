@@ -466,7 +466,7 @@ Challenge {
 | القرار | الحكم المعتمد |
 |--------|---------------|
 | نقطة قطع التحول للمصادقة (D1) | التحول يعتمد على **وجود هوية ADMIN نشطة** (ACTIVE ADMIN certificate + `.adminkey`)، وليس على اكتمال تنظيف كلمة المرور الإرثية. `issue_first_admin_key` على عقدة إرثية ينشئ هوية ADMIN نشطة → جميع متطلبات المصادقة الجديدة قائمة، والاحتفاظ بكلمة المرور لمجرد وجود هاش ليس ذا معنى. |
-| طريقة إنهاء نافذة الإهمال (بند 2) | نافذة مسار كلمة المرور تنتهي عند B6-B: `GRPC_LEGACY_AUTH` (Introduced B6-A) يُحذف نهائيًا في B6-B ولا يبقى متغير بيئة دائمًا. جدول `users` يُقرأ فقط خلال النافذة. |
+| طريقة إنهاء نافذة الإهمال (بند 2) | نافذة مسار كلمة المرور تنتهي عند B6-B: `GRPC_LEGACY_AUTH` (Introduced B6-A) يُحذف نهائيًا في B6-B ولا يبقى متغير بيئة دائمًا. **مكتمل في Commit ③**: حُذف متغير البيئة والـ override من `IdentityAuthenticationPolicy`، والبوابة أصبحت دائمة — مسار كلمة المرور يُبقي مفتوحًا فقط عند غياب هوية ADMIN نشطة (مستخدمي UNIT المحليون من `.unit` package والعقد غير المجهَّزة)، بينما عقد WILAYA ذات هوية ADMIN نشطة تُوجَّه حصريًا إلى Challenge–Response. جدول `users` يُقرأ خلال النافذة. |
 | آلية مصادقة العقدة البديلة | تحليل/تسليم مفاتيح UNIT عبر مسار CSR موحّد (`generate_identity_request`/`sign_identity_request`/`finalize_identity_provision` — D2) في Commit ②. |
 | تسليم شهادة WILAYA إلى عقدة UNIT (D2) | **خطوتان صارمتان — لا تُضمَّن أبدًا** في ملف إمداد UNIT. الترتيب: UNIT تصدّر `generate_identity_request()` → WILAYA توقّع `sign_unit_identity_request()` → UNIT تُثبّت/تحدّث شهادة WILAYA النشطة كمرساة ثقة محلية عبر `install_wilaya_certificate()` (خدمة مستقلة، لا تقرأ `NodeKeyStore`، لا تفحص حالة UNIT، لا تمسّ `IdentityBootstrapState`؛ قابلة لإعادة الاستخدام في B7 rotation) → ثم `finalize_unit_provision()`. |
 | مصدر `subject_id` لـ UNIT (D2) | يُحلّ **محليًا** على عقدة UNIT: `settings.unit_code → units.get_unit_by_code → units.id` عند توليد الـ CSR. WILAYA لا تفرض/تعيد ربطه — تتحقق فقط fail-closed أن `CSR.subject_id` يطابق صف `units` معروفًا (`units.get_unit`). |
@@ -575,8 +575,9 @@ Challenge {
   `users`/كلمات المرور.
 - **B6-A:** إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (Authentication
   Cutover عبر `IdentityAuthenticationPolicy`).
-- **B6-B:** قلب الافتراضي إلى `signature_version = 2` (Ed25519)؛ HMAC يبقى للقراءة
-  فقط؛ إزالة `GRPC_LEGACY_AUTH`/`change_password`.
+- **B6-B (جزئان مستقلان):** Commit ③ — إزالة `GRPC_LEGACY_AUTH`/`change_password`
+  وإغلاق نافذة كلمة المرور ببوابة دائمة (Authentication Final Cutover). Commit ④ —
+  قلب الافتراضي إلى `signature_version = 2` (Ed25519)؛ HMAC يبقى للقراءة فقط.
 
 ### حالة التنفيذ (Progress Log)
 
@@ -590,6 +591,7 @@ Challenge {
 | B5 (WILAYA→ADMIN bootstrap + نافذة إهمال كلمة المرور) | ✅ مكتمل | 2026-08-05 | 16 اختبار تكامل `identity_bootstrap_tests` + `IdentityBootstrapState` + Root-pin + `get_identity_status`/`begin_wilaya_provision`/`finalize_wilaya_provision`/`issue_first_admin_key`/`begin_challenge`/`complete_challenge` + `metadata.auth_method` telemetry + بوابة كاملة (`cargo test` 633 lib + clippy `-D warnings`/`check:arch`/`check`/Vitest 86) |
 | B6-A (Authentication Cutover) | ✅ مكتمل | 2026-08-06 | `IdentityAuthenticationPolicy` كمصدر قرار وحيد + `LoginResponse.identity_challenge_required` + إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (ACTIVE cert + `.adminkey`) + `GRPC_LEGACY_AUTH` مؤقت + إزالة البذر الإنتاجي (`should_seed_legacy_admin`/`GRPC_LEGACY_BOOTSTRAP`) + إغلاق Rule 128 + الواجهة (تبويب `.adminkey` افتراضيًا عند AdminProvisioned/Ready) + بوابة كاملة (`cargo test` 633 lib + 30 تكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 | Commit ② (UNIT CSR bootstrap — B6-A isolation) | ✅ مكتمل | 2026-08-06 | `NodeIdentityResolver` (R5) + `IdentityTrustAnchorService` (مرساة ثقة WILAYA مستقلة) + مسار إصدار موحّد (`sign_identity_request`/`generate_identity_request`/`sign_unit_identity_request`/`finalize_unit_provision`) + سلسلة UNIT (`Uninitialized → UnitWaitingForCertificate → UnitActive`) + 4 أوامر IPC (`begin_unit_provision`/`sign_unit_identity_request`/`finalize_unit_provision`/`install_wilaya_certificate`) + 19 اختبار تكامل UNIT (16 WILAYA دون تغيير) + الواجهة (قسم UNIT على شاشة الدخول) + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة (644 lib + كل التكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
+| Commit ③ (Authentication Final Cutover — B6-B الجزء الأول) | ✅ مكتمل | 2026-08-06 | حذف `GRPC_LEGACY_AUTH` نهائيًا (من `IdentityAuthenticationPolicy` و`commands/auth.rs`؛ لم يبقَ متغير بيئة) + إغلاق `change_password` كأمر IPC وخدمة وواجهة + بوابة دائمة: مسار كلمة المرور يبقى فقط عند غياب هوية ADMIN نشطة (مستخدمي UNIT المحليون + العقد غير المجهَّزة) + إزالة `UserService::change_password`/`get_user_node_id` + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة (644 lib + كل التكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 
 بشكل محدد، يُغلَق B3 وفق الحالة المعتمدة:
 
@@ -704,6 +706,43 @@ Challenge {
 - **4 أوامر IPC جديدة (pre-auth):** `begin_unit_provision` / `sign_unit_identity_request`
   / `finalize_unit_provision` / `install_wilaya_certificate`؛ 19 اختبار تكامل
   `identity_unit_bootstrap_tests`؛ سلسلة WILAYA الـ 16 اختبارًا دون تغيير.
+
+بشكل محدد، يُغلَق Commit ③ (Authentication Final Cutover — الجزء الأول من B6-B)
+وفق الحالة المعتمدة:
+
+- **حذف `GRPC_LEGACY_AUTH` نهائيًا:** أُزيل `legacy_auth_override()` من
+  `IdentityAuthenticationPolicy` — لم يبقَ أي متغير بيئة يفتح مسار كلمة المرور
+  (Introduced B6-A / Removed B6-B / MUST NOT survive after B6-B). `login` في
+  `commands/auth.rs` لم يعد يقرأ البيئة.
+- **بوابة دائمة:** `password_login_allowed = !has_active_admin_identity` —
+  مسار كلمة المرور يُبقي مفتوحًا فقط عند غياب هوية ADMIN نشطة (حالة أمنية:
+  ACTIVE ADMIN cert + `.adminkey`). هذا يحافظ على **Application User
+  Authentication** لمستخدمي UNIT المحليين (منشأون من `UserExport { username,
+  password_hash, role }` داخل `.unit` package) وللعقد غير المجهَّزة، بينما عقد
+  WILAYA ذات هوية ADMIN نشطة تُوجَّه حصريًا إلى **Operator Authentication**
+  (Challenge–Response / `.adminkey`). `IdentityAuthenticationPolicy` يبقى كما هو
+  بمصدر القرار الوحيد.
+- **إزالة `change_password`:** حُذف الأمر IPC `change_password` من
+  `commands/auth.rs` و`commands/registry.rs`، وحُذفت خدمة `UserService::change_password`
+  وأسلوب `get_user_node_id` من المستودع، وحُذفت دالة الواجهة `changePassword`
+  من `src/lib/tauri.ts` و`user.contract.ts` وأُعيدت معايرة
+  `contracts.snapshot.json`. يبقى `users` read-only خلال النافذة؛ `create_user`
+  والكتابة عبر `unit_service` للمستخدمين المحليين دون تغيير.
+- **الواجهة:** شاشة الدخول تحافظ على تبويب كلمة المرور لعقد UNIT وغير المجهَّزة
+  (غياب هوية ADMIN نشطة) وتبويب `.adminkey` لعقد WILAYA المجهَّزة — دون تغيير عن
+  Commit ②.
+- **اختبارات:** أُعيدت كتابة اختبار البوابة (بلا override)، وأُعيدت كتابة اختبار
+  `modified_password_persists_across_restart` لاستخدام المستودع مباشرة (بلا
+  `UserService::change_password`). البوابة كاملة: 644 lib + كل التكامل (صفر فشل) +
+  clippy `-D warnings` + `check:arch` (صفر تحذيرات) + `check` (0 أخطاء) +
+  Vitest 88/88.
+
+ملاحظة معمارية (قرار لاحق، خارج Commit ③): يوجد نموذجان متميزان للمصادقة —
+**Operator Authentication** (`.adminkey` + Challenge–Response لـ WILAYA/Admin) و
+**Application User Authentication** (اسم مستخدم/كلمة مرور لمستخدمي UNIT
+المحليين). أي إزالة مستقبلية لكلمة المرور كليًا تتطلب مشروعًا مستقلًا ينقل
+مستخدمي UNIT إلى نموذج هوية (بما يشمله من تصميم تحدّي خاص بالعقدة) — لا يحققه
+B6-B الحالي.
 
 ---
 

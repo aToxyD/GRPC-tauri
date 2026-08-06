@@ -100,7 +100,8 @@ algorithm_version ثابت لكل اعتماد.
 - B4: حزم trust/registry + الحارسان في `run_import_pipeline`.
 - B5: استبدال bootstrap admin + نافذة إهمال users/كلمات المرور.
 - B6-A: إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (Authentication Cutover).
-- B6-B: قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط؛ إزالة `GRPC_LEGACY_AUTH`/`change_password`.
+- B6-B: (Commit ③ — إزالة `GRPC_LEGACY_AUTH`/`change_password` وبوابة دائمة) ثم
+  (Commit ④ — قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط).
 
 # حالة التنفيذ
 - **B1–B5 مكتملة** (B5 بتاريخ 2026-08-05). البوابة كاملة: `cargo test` (صفر فشل —
@@ -135,3 +136,15 @@ algorithm_version ثابت لكل اعتماد.
   `identity_unit_bootstrap_tests` (سلسلة WILAYA الـ 16 دون تغيير) + قسم UNIT على شاشة
   الدخول + إعادة معايرة `contracts.snapshot.json`. البوابة كاملة (644 lib + كل التكامل،
   clippy `-D warnings`، `check:arch` صفر تحذيرات، `check` 0 أخطاء، Vitest 88/88).
+- **Commit ③ (Authentication Final Cutover — الجزء الأول من B6-B) مكتمل** (2026-08-06):
+  حذف `GRPC_LEGACY_AUTH` نهائيًا (`IdentityAuthenticationPolicy` و`commands/auth.rs` بلا
+  متغير بيئة) + إغلاق `change_password` كأمر IPC وخدمة وواجهة
+  (`UserService::change_password`/`get_user_node_id` حُذفا) + **بوابة دائمة**:
+  `password_login_allowed = !has_active_admin_identity` — مسار كلمة المرور يبقى فقط عند
+  غياب هوية ADMIN نشطة (مستخدمي UNIT المحليون من `.unit` package والعقد غير المجهَّزة)،
+  بينما عقد WILAYA ذات هوية ADMIN نشطة تُوجَّه حصريًا إلى Challenge–Response.
+  `IdentityAuthenticationPolicy` يبقى مصدر القرار الوحيد. إعادة معايرة
+  `contracts.snapshot.json` + اختبارات البوابة أُعيدت كتابتها (بلا override). البوابة
+  كاملة (644 lib + كل التكامل، clippy `-D warnings`، `check:arch` صفر تحذيرات،
+  `check` 0 أخطاء، Vitest 88/88). **الجزء الثاني من B6-B (قلب الافتراضي إلى
+  `signature_version = 2`؛ HMAC للقراءة فقط) مؤجَّل إلى Commit ④ بمشروع مستقل.**

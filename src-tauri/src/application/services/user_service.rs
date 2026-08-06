@@ -43,21 +43,6 @@ impl<'a> UserService<'a> {
         Ok(id)
     }
 
-    pub fn change_password(&self, user_id: &str, new_password: &str) -> Result<(), AppError> {
-        crate::domain::validation::validate_change_password(new_password)?;
-
-        let user_repo = self.executor.users();
-        let node_id = user_repo.get_user_node_id(user_id)?;
-
-        let password_hash = self
-            .password_port
-            .hash_password(new_password, &node_id)
-            .map_err(crate::errors::AppError::Internal)?;
-
-        let now = chrono::Utc::now().to_rfc3339();
-        user_repo.change_password(user_id, &password_hash, &now)
-    }
-
     pub fn get_user_by_username(
         &self,
         username: &str,

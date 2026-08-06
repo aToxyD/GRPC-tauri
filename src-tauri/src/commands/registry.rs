@@ -5,7 +5,6 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
     tauri::generate_handler![
         // Authentication
         commands::login,
-        commands::change_password,
         commands::get_current_user,
         // Identity bootstrap & Challenge–Response (B5, pre-auth)
         commands::get_identity_status,

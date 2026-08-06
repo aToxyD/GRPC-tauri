@@ -1,6 +1,6 @@
 //! Authentication Commands
 //!
-//! Login, logout, password management, and session handling
+//! Login, logout, and session handling
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
 use crate::application::services::{
@@ -8,7 +8,7 @@ use crate::application::services::{
     SessionEndReason, SessionEstablishmentService, UserService,
 };
 use crate::commands::common::{
-    adminkey_provider, db_mut_or_command_error, user_ctx_from_parts, user_ctx_from_session,
+    adminkey_provider, db_mut_or_command_error, user_ctx_from_parts,
 };
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
@@ -53,20 +53,19 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    // B6-A auth gate (RFC 2026-08-04 / ADR-0038): the password path is
-    // permitted only while no ACTIVE ADMIN identity exists. The decision comes
+    // Identity auth gate (RFC 2026-08-04 / ADR-0038): the password path is
+    // permitted ONLY while no ACTIVE ADMIN identity exists. The decision comes
     // exclusively from `IdentityAuthenticationPolicy` (a security fact — ACTIVE
     // ADMIN cert + `.adminkey` present) — never from the derived bootstrap state.
     //
-    // `GRPC_LEGACY_AUTH=1` is a Temporary compatibility override.
-    // Introduced: B6-A
-    // Removed: B6-B
-    // MUST NOT survive after B6-B.
-    let password_allowed = IdentityAuthenticationPolicy::password_login_allowed(
-        db,
-        &adminkey_provider(),
-    )
-    .map_err(into_command_error)?;
+    // B6-B: this gate is now PERMANENT. The temporary `GRPC_LEGACY_AUTH` override
+    // (Introduced B6-A) is removed and MUST NOT survive. Nodes without an ACTIVE
+    // ADMIN identity (UNIT local users created from the `.unit` package, and
+    // unprovisioned nodes) keep Application User Authentication; WILAYA nodes
+    // with an ACTIVE ADMIN identity route exclusively to Challenge–Response.
+    let password_allowed =
+        IdentityAuthenticationPolicy::password_login_allowed(db, &adminkey_provider())
+            .map_err(into_command_error)?;
     if !password_allowed {
         log::warn!(
             target: "grpc::auth",
@@ -123,11 +122,12 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
                     *current_session = Some(established.session);
                 }
 
-                // Deprecation telemetry (B5): the legacy password path is tagged so
-                // the additive window is measurable; removal lands in B6.
+                // Observability (B5–B6): the password path is now the permanent
+                // Application User Authentication for nodes without an ACTIVE
+                // ADMIN identity (UNIT local users / unprovisioned nodes).
                 log::warn!(
                     target: "grpc::auth",
-                    "LEGACY_PASSWORD_LOGIN: user={} auth_method=password (B6 will remove the legacy path)",
+                    "PASSWORD_LOGIN: user={} auth_method=password (Application User Authentication — node has no ACTIVE ADMIN identity)",
                     request.username
                 );
 
@@ -178,40 +178,6 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
         requires_configuration: false,
         identity_challenge_required: false,
     })
-}
-
-/// Admin password reset - Wilaya Admin Only
-#[tauri::command]
-pub fn change_password(
-    state: State<AppState>,
-    target_user_id: String,
-    new_password: String,
-) -> Result<(), String> {
-    // Validate password
-    crate::domain::validation::validate_change_password(&new_password)
-        .map_err(into_command_error)?;
-
-    let (session, _settings) = crate::commands::guards::authorize_command(
-        &state,
-        crate::application::authz::Action::AdminOnly,
-        None,
-    )
-    .map_err(into_command_error)?;
-    state.touch_session();
-
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
-
-    // Perform password change (Atomic)
-    let user_ctx = user_ctx_from_session(&session);
-
-    let password_port = state.password_port.as_ref();
-    AuditTxService::execute_with_audit(db, AuditAction::UpdateUser, &user_ctx, |tx| {
-        UserService::new(tx.executor, password_port).change_password(&target_user_id, &new_password)
-    })
-    .map_err(into_command_error)?;
-
-    Ok(())
 }
 
 /// Logout user - MUTATION with audit

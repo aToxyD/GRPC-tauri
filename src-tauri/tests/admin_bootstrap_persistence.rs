@@ -96,10 +96,14 @@ fn modified_password_persists_across_restart() {
 
     let (id, new_hash) = {
         let db = seed(&path);
-        let port = Argon2PasswordHashProvider;
-        let svc = UserService::new(db.executor(), &port);
         let admin = admin_user(&db);
-        svc.change_password(&admin.id, MODIFIED_PASSWORD)
+        // B6-B: the `UserService::change_password` reset path was removed. The
+        // repository write still exercises the persistence invariant directly.
+        let hash = Argon2PasswordHashProvider
+            .hash_password(MODIFIED_PASSWORD, &admin.node_id)
+            .expect("hash");
+        UserRepository::new(db.executor())
+            .change_password(&admin.id, &hash, &chrono::Utc::now().to_rfc3339())
             .expect("change password");
         let updated = admin_user(&db);
         (updated.id, updated.password_hash)

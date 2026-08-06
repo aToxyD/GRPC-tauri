@@ -1,4 +1,4 @@
-//! Identity authentication policy (B6-A).
+//! Identity authentication policy (B6-A → B6-B).
 //!
 //! RFC 2026-08-04-node-identity-trust / ADR-0038.
 //!
@@ -8,6 +8,15 @@
 //! `IdentityBootstrapState` projection (which is a UI / bootstrap concern only,
 //! B6-A refinement 1). A derived state may legitimately evolve; this policy is
 //! an independent, testable security rule.
+//!
+//! B6-B closes the deprecation window: the temporary `GRPC_LEGACY_AUTH` opt-in
+//! (Introduced B6-A) is removed and MUST NOT survive. The gate is now
+//! PERMANENT — the password path stays open only while no ACTIVE ADMIN identity
+//! exists. This preserves Application User Authentication for nodes that have
+//! no node identity at all (UNIT local users created from the `.unit` package's
+//! `UserExport { username, password_hash, role }`), while WILAYA nodes with an
+//! ACTIVE ADMIN identity route exclusively to Operator Authentication
+//! (Challenge–Response / `.adminkey`).
 
 use crate::db::Database;
 use crate::domain::identity::{IdentityStorePort, SubjectType};
@@ -34,35 +43,15 @@ impl IdentityAuthenticationPolicy {
         Ok(admin_cert.is_some() && adminkey_provider.exists())
     }
 
-    /// Whether the legacy password login path is permitted, honoring the
-    /// process environment (`GRPC_LEGACY_AUTH`).
+    /// Whether the legacy password login path is permitted on this node.
+    ///
+    /// Permanent gate (B6-B): the password path is permitted ONLY while no
+    /// ACTIVE ADMIN identity exists. The temporary `GRPC_LEGACY_AUTH` override
+    /// that could re-open the path during the B6-A window is removed.
     pub fn password_login_allowed(
         db: &Database,
         adminkey_provider: &AdminKeyProvider,
     ) -> AppResult<bool> {
-        Self::password_login_allowed_with_override(db, adminkey_provider, legacy_auth_override())
-    }
-
-    /// Pure decision, override threaded explicitly so the gate matrix is
-    /// unit-testable without mutating the process environment (P1).
-    pub fn password_login_allowed_with_override(
-        db: &Database,
-        adminkey_provider: &AdminKeyProvider,
-        legacy_auth_override: bool,
-    ) -> AppResult<bool> {
-        Ok(!Self::has_active_admin_identity(db, adminkey_provider)? || legacy_auth_override)
-    }
-}
-
-/// `GRPC_LEGACY_AUTH` opt-in (`1` enables).
-///
-/// Temporary compatibility override.
-/// Introduced: B6-A
-/// Removed: B6-B
-/// MUST NOT survive after B6-B.
-fn legacy_auth_override() -> bool {
-    match std::env::var("GRPC_LEGACY_AUTH") {
-        Ok(v) => v.trim() == "1",
-        Err(_) => false,
+        Ok(!Self::has_active_admin_identity(db, adminkey_provider)?)
     }
 }
