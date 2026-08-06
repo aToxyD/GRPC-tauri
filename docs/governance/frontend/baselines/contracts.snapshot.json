@@ -33,6 +33,21 @@
         },
         {
           "name": "installWilayaCertificate"
+        },
+        {
+          "name": "beginWilayaRotation"
+        },
+        {
+          "name": "finalizeWilayaRotation"
+        },
+        {
+          "name": "beginUnitRotation"
+        },
+        {
+          "name": "signUnitRotationRequest"
+        },
+        {
+          "name": "finalizeUnitRotation"
         }
       ],
       "commands": [
@@ -65,11 +80,26 @@
         },
         {
           "command": "install_wilaya_certificate"
+        },
+        {
+          "command": "begin_wilaya_rotation"
+        },
+        {
+          "command": "finalize_wilaya_rotation"
+        },
+        {
+          "command": "begin_unit_rotation"
+        },
+        {
+          "command": "sign_unit_rotation_request"
+        },
+        {
+          "command": "finalize_unit_rotation"
         }
       ],
-      "loc": 146,
-      "exportCount": 10,
-      "commandCount": 10
+      "loc": 233,
+      "exportCount": 15,
+      "commandCount": 15
     },
     {
       "name": "metrics",

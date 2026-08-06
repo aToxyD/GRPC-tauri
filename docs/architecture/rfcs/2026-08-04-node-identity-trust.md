@@ -489,6 +489,17 @@ Challenge {
 | تعريف الـ idempotency لمرساة الثقة | **نفس الشهادة حرفيًا** (`is_identical_to`): نفس `identity_id` مع `credential_id` مختلف → Fail-Closed وليس `AlreadyInstalled`. |
 | حالة bootstrap لعقدة UNIT | سلسلة UNIT مستقلة: `Uninitialized → UnitWaitingForCertificate → UnitActive`؛ لا ADMIN على عقدة UNIT إطلاقًا. `IdentityBootstrapStatusService::compute()` تتفرّع حسب `node_type` (نص خام `"UNIT"` فقط) مع **افتراض WILAYA** — بذرة `UNCONFIGURED` ليست عقدة UNIT. |
 
+#### توضيح B7: تسجيل دوران UNIT كـ **Issuer Local State** (وليس قناة توزيع)
+
+عندما توقّع WILAYA شهادة دوران UNIT عبر `sign_unit_rotation_request`، تُسجَّل النسخة
+الموقَّعة محليًا في Identity Store الخاص بـ WILAYA (افتراضيًا `SUSPENDED`، تحل محل أي
+صف `ACTIVE` سابق بنفس `subject_type`/`subject_id`). هذا التسجيل هو **حالة محلية للمُصدِر**
+(سجل تتبّع إصدار) وليس **قناة توزيع**: قناة التوزيع الوحيدة بين العقد تبقى Trust Package
+(§3.4.4). حارس الاعتماد على جانب WILAYA هو **best-effort** — إذا تقرير الحارس
+Rollback/RejectZero (نزاع توليد) تُتخطَّى المعالجة المحلية مع تحذير ولا يتعطّل التوقيع؛
+القرار الأمني النهائي يبقى عند `CredentialGuard` + `finalize_unit_rotation` على عقدة UNIT
+(fail-closed). الشهادة الموقَّعة تُسلَّم للمشغّل عبر ملف (تدفّق ملفات، لا IPC تصدير حزم).
+
 ---
 
 ## 4. Impact Analysis (تحليل الأثر — العقود المجمدة المتأثرة)
@@ -611,6 +622,8 @@ Challenge {
 | Commit ③ (Authentication Final Cutover — B6-B الجزء الأول) | ✅ مكتمل | 2026-08-06 | حذف `GRPC_LEGACY_AUTH` نهائيًا (من `IdentityAuthenticationPolicy` و`commands/auth.rs`؛ لم يبقَ متغير بيئة) + إغلاق `change_password` كأمر IPC وخدمة وواجهة + بوابة دائمة: مسار كلمة المرور يبقى فقط عند غياب هوية ADMIN نشطة (مستخدمي UNIT المحليون + العقد غير المجهَّزة) + إزالة `UserService::change_password`/`get_user_node_id` + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة (644 lib + كل التكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 | Commit ④a (بنية B6-B التحتية — سلوكيًا محايد) | ✅ مكتمل | 2026-08-06 | سجل مُنتِج `sync_issuer_sequence_state` (مفتاح `identity_id`، `begin_export`/`PendingIssuedSequence::commit` — advance-on-success) + `Ed25519PackageSigner::from_provider`/`public_key_hex` + فحص تسلسل متسلسل + `import_export.rs` دون لمس + اختبارات (7 repo + 1 signer) + بوابة كاملة |
 | Commit ④b (القطع السلوكي B6-B — `IdentitySignedExportService`) | ✅ مكتمل | 2026-08-06 | `IdentitySignedExportService::export_v2_package` (حلّل R5 fail-closed بلا تراجع HMAC + تخصيص/التزام التسلسل + توقيع Ed25519) + قلب أوامر الإنتاج الأربعة (products/daily_report/monthly_summary/stock_movements) إلى V2 بـ `issuer_identity_id`/`package_sequence`/`signature_version=2`/`signing_key_id` + `export_hash` مستقل (Uuid) عن `package_id` + `.unit` تبقى HMAC (استثناء Bootstrap) + 5 اختبارات تكامل `sync_v2_producer_export_tests` (metadata/round-trip Guard/replay/out-of-order/failed-export-reuses-sequence/rotation/unprovisioned fail-closed) + تحديث RFC/ADR-0038 + بوابة كاملة |
+| Commit ⑤a (بنية B7 التحتية — سلوكيًا محايد) | ✅ مكتمل | 2026-08-06 | `IdentityRotationService` (مخطّط/محقِّق خالص: `plan` → CSR غير موقّع لـ Rotate/Re-Issue مع `IDENTITY_ALGORITHM_PROFILE_ED25519`؛ `verify_finalize` fail-closed: Replay صفر-كتابة، R5، ربط الموضوع، ACTIVE، Credential Guard) + مرحلة مفتاح عقدة `NodeKeyStore::write_pending`/`promote_pending`/`discard_pending`/`read_pending` (ملف `node_identity.key.pending`، age::x25519، ترقية idempotent) + 12 اختبارًا + بوابة كاملة (`cargo test` 678 lib + clippy `-D warnings`/`check:arch` صفر) |
+| Commit ⑤b (القطع السلوكي B7 — credential rotation) | قيد التنفيذ | — | 5 أوامر IPC post-auth (`begin_wilaya_rotation`/`finalize_wilaya_rotation`/`begin_unit_rotation`/`sign_unit_rotation_request`/`finalize_unit_rotation`) + `IdentityRotationCoordinator` + Trust Package داخل `finalize_wilaya_rotation` (قبل ترقية السر، توقيع بالمفتاح القديم) + `Action::RotateCredential`/`ReissueCredential` + `AuditAction::IdentityRotated`/`IdentityReissued` + Issuer Local State لتسجيل UNIT + عقود الواجهة + إعادة معايرة `contracts.snapshot.json` + `identity_rotation_tests` + بوابة كاملة + `tauri build` |
 
 بشكل محدد، يُغلَق B3 وفق الحالة المعتمدة:
 

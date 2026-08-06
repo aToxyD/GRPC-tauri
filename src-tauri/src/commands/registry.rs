@@ -18,6 +18,12 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::sign_unit_identity_request,
         commands::finalize_unit_provision,
         commands::install_wilaya_certificate,
+        // Credential rotation (RFC §3.3 / §3.12, B7; post-auth)
+        commands::begin_wilaya_rotation,
+        commands::finalize_wilaya_rotation,
+        commands::begin_unit_rotation,
+        commands::sign_unit_rotation_request,
+        commands::finalize_unit_rotation,
         // Configuration
         commands::get_settings,
         commands::configure_as_wilaya,

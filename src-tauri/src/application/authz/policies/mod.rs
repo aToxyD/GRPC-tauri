@@ -85,5 +85,13 @@ pub fn authorize(
                 Err(AuthorizationError::InsufficientPermissions)
             }
         }
+
+        // ── Identity credential rotation (B7) ──────────────────────────────
+        // Same node-scoped posture as authenticated actions: WILAYA rotation /
+        // UNIT CSR signing require a WILAYA Admin; UNIT rotation requires any
+        // valid session on the UNIT node.
+        Action::RotateCredential | Action::ReissueCredential => {
+            system::authorize_authenticated(principal, resource)
+        }
     }
 }

@@ -68,6 +68,9 @@ pub enum AuditAction {
     // Fiscal Closure Package
     FiscalClosurePackageExported,
     FiscalClosurePackageApplied,
+    // Identity rotation (B7)
+    IdentityRotated,
+    IdentityReissued,
 }
 
 impl AuditAction {
@@ -121,6 +124,8 @@ impl AuditAction {
             AuditAction::FiscalWriteRejected => "FiscalWriteRejected",
             AuditAction::FiscalClosurePackageExported => "FiscalClosurePackageExported",
             AuditAction::FiscalClosurePackageApplied => "FiscalClosurePackageApplied",
+            AuditAction::IdentityRotated => "IdentityRotated",
+            AuditAction::IdentityReissued => "IdentityReissued",
         }
     }
 
@@ -173,6 +178,8 @@ impl AuditAction {
             "FiscalWriteRejected" => Some(AuditAction::FiscalWriteRejected),
             "FiscalClosurePackageExported" => Some(AuditAction::FiscalClosurePackageExported),
             "FiscalClosurePackageApplied" => Some(AuditAction::FiscalClosurePackageApplied),
+            "IdentityRotated" => Some(AuditAction::IdentityRotated),
+            "IdentityReissued" => Some(AuditAction::IdentityReissued),
             _ => None,
         }
     }
@@ -228,6 +235,8 @@ impl AuditAction {
             AuditAction::FiscalWriteRejected => "رفض كتابة مالية",
             AuditAction::FiscalClosurePackageExported => "تصدير حزمة إغلاق السنة",
             AuditAction::FiscalClosurePackageApplied => "تطبيق حزمة إغلاق السنة",
+            AuditAction::IdentityRotated => "تدوير هوية",
+            AuditAction::IdentityReissued => "إعادة إصدار هوية",
         }
     }
 
@@ -281,6 +290,8 @@ impl AuditAction {
             | AuditAction::FiscalWriteRejected
             | AuditAction::FiscalClosurePackageExported
             | AuditAction::FiscalClosurePackageApplied => EntityType::Financial,
+            // Identity rotation is a node/credential lifecycle fact (B7).
+            AuditAction::IdentityRotated | AuditAction::IdentityReissued => EntityType::System,
         }
     }
 }
@@ -893,6 +904,9 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
         | AuditAction::BackupSnapshotValidationFailed
         | AuditAction::BackupSnapshotTooSmall
         | AuditAction::BackupSnapshotIntegrityFailed => AuditEventType::IntegrityEvent,
+
+        // Identity rotation (B7) → SystemEvent (node/credential lifecycle)
+        AuditAction::IdentityRotated | AuditAction::IdentityReissued => AuditEventType::SystemEvent,
     }
 }
 

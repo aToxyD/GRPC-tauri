@@ -47,4 +47,8 @@ pub enum Action {
     // Fiscal lifecycle
     CloseFiscalYearAuthority,
     ApplyFiscalTransition,
+
+    // Identity credential rotation (B7)
+    RotateCredential,
+    ReissueCredential,
 }

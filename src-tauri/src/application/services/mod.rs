@@ -13,6 +13,7 @@ pub mod identity_bootstrap_status_service;
 pub mod identity_node_resolver;
 pub mod identity_provisioning_service;
 pub mod identity_rotation_service;
+pub mod identity_rotation_coordinator;
 pub mod identity_signed_export_service;
 pub mod identity_trust_anchor_service;
 pub mod inventory_snapshot_service;
@@ -55,6 +56,9 @@ pub use identity_provisioning_service::{
 };
 pub use identity_rotation_service::{
     FinalizeVerdict, IdentityRotationService, RotationOperation, RotationPlan,
+};
+pub use identity_rotation_coordinator::{
+    IdentityRotationCoordinator, RotationFinalizeOutcome, SignedUnitRotation,
 };
 pub use identity_signed_export_service::IdentitySignedExportService;
 pub use identity_trust_anchor_service::{IdentityTrustAnchorService, InstallWilayaCertificateResult};

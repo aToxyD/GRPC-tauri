@@ -37,6 +37,19 @@ const PROD_ROOT_PUBLIC_KEY: &str = "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=
 #[cfg(debug_assertions)]
 const DEV_ROOT_PUBLIC_KEY: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=";
 
+#[cfg(debug_assertions)]
+fn dev_key_fallback() -> AppResult<[u8; ED25519_PUBLIC_KEY_LEN]> {
+    log::warn!(target: "grpc::identity", "[DEV_SECURITY_WARNING] GRPC_ROOT_PUBLIC_KEY missing — using embedded development Root key. NOT FOR PRODUCTION.");
+    decode_root_public_key(DEV_ROOT_PUBLIC_KEY, "DEV_ROOT_PUBLIC_KEY")
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_key_fallback() -> AppResult<[u8; ED25519_PUBLIC_KEY_LEN]> {
+    Err(AppError::Internal(
+        "DEV_ROOT_PUBLIC_KEY fallback is unavailable in release builds".to_string(),
+    ))
+}
+
 fn decode_root_public_key(raw: &str, source: &str) -> AppResult<[u8; ED25519_PUBLIC_KEY_LEN]> {
     let decoded = STANDARD
         .decode(raw.trim())
@@ -59,10 +72,7 @@ fn resolve_root_public_key_impl(
             let trimmed = raw.trim().to_string();
             decode_root_public_key(&trimmed, "GRPC_ROOT_PUBLIC_KEY")
         }
-        None if allow_dev_fallback => {
-            log::warn!(target: "grpc::identity", "[DEV_SECURITY_WARNING] GRPC_ROOT_PUBLIC_KEY missing — using embedded development Root key. NOT FOR PRODUCTION.");
-            decode_root_public_key(DEV_ROOT_PUBLIC_KEY, "DEV_ROOT_PUBLIC_KEY")
-        }
+        None if allow_dev_fallback => dev_key_fallback(),
         None => decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "PROD_ROOT_PUBLIC_KEY"),
     }
 }

@@ -30,7 +30,7 @@ use crate::infrastructure::security::Ed25519SignatureVerifier;
 use uuid::Uuid;
 
 /// Rotation operation kind (RFC §3.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RotationOperation {
     /// Same `credential_id`, `generation + 1`, new public key.
     Rotate,
@@ -45,6 +45,15 @@ impl RotationOperation {
             RotationOperation::ReIssue => "RE-ISSUE",
         }
     }
+
+    /// Parse the IPC wire representation of the operation.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "ROTATE" => Some(RotationOperation::Rotate),
+            "RE-ISSUE" => Some(RotationOperation::ReIssue),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for RotationOperation {
@@ -55,7 +64,7 @@ impl std::fmt::Display for RotationOperation {
 
 /// A planned rotation: the unsigned draft certificate (the CSR) plus the
 /// transition metadata relative to the stored credential.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RotationPlan {
     pub operation: RotationOperation,
     pub previous_credential_id: Uuid,

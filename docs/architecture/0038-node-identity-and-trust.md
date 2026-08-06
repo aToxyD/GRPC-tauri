@@ -87,6 +87,27 @@ identity_id ثابت؛ credential_id ثابت عبر التدوير؛ generation
 شهادة ذاتية التوقيع؛ لا ساعة حائط في التقييم؛ Identity Store مصدر الحقيقة الوحيد؛
 algorithm_version ثابت لكل اعتماد.
 
+## 9. دوران الاعتماد (B7 — Credential Rotation)
+- **مسرحان:** `begin_*_rotation` يمرّح مفتاح عقدة جديدًا فقط (`node_identity.key.pending`،
+  age::x25519) ويصدّر CSR غير موقّع؛ المفتاح النشط يبقى موثوقًا حتى `finalize` يرتّقي
+  المرحّل. فشل التخطيط يرفض المرحّل (لا بقايا).
+- **Rotate** = نفس `credential_id` + `generation+1` + مفتاح جديد؛ **Re-Issue** =
+  `credential_id` جديد + `generation=1` (هوية ثابتة في الحالتين).
+- **Finalize fail-closed:** توقيع (Root لـ WILAYA؛ المُصدِر ACTIVE+WILAYA لـ UNIT) + R5
+  (مطابقة مفتاح العقدة للمرحّل) + ربط الموضوع + ACTIVE + Credential Guard (رفض
+  Rollback/RejectZero). Replay المطابق → صفر كتابة (idempotent).
+- **حزمة ثقة الدوران:** `finalize_wilaya_rotation` يكتب Trust Package (kind `trust`) —
+  موقَّعًا **بالمفتاح القديم** (ما زال ACTIVE وقت الكتابة، قبل ترقية السر) — إلى مسار
+  ملف يوفّره المشغّل؛ ثم يرتّقي المفتاح. أي فشل لاحق يستعيد المفتاح القديم (لا حالة
+  R5 مكسورة). لا أمر IPC لتصدير حزم (تدفّق ملفات فقط).
+- **توزيع WILAYA:** حصريًا عبر حزمة الثقة؛ **تسجيل UNIT في سجل WILAYA أثناء**
+  `sign_unit_rotation_request` هو **Issuer Local State** (سجل تتبّع إصدار، افتراضيًا
+  SUSPENDED محل ACTIVE السابق) وليس قناة توزيع — حارس الاعتماد على جانب WILAYA
+  best-effort (نزاع → تحذير + تخطٍّ دون تعطيل التوقيع)، والقرار النهائي عند
+  `finalize_unit_rotation` على UNIT (fail-closed). تفاصيل §3.12 من RFC.
+- **Authorization/Audit:** `Action::RotateCredential`/`ReissueCredential` (نفس سياسة
+  `authorize_authenticated`) + `AuditAction::IdentityRotated`/`IdentityReissued`.
+
 # النتائج المترتبة
 - توقيع قابل للتحقق (Ed25519) مرتبط بهوية العقدة بدل مفتاح env مشترك.
 - نموذج حياة مفاتيح صريح وموثّق في سجل التدقيق.
@@ -174,3 +195,18 @@ algorithm_version ثابت لكل اعتماد.
   كاملة (644 lib + كل التكامل + 5 اختبارات تكامل جديدة، clippy `-D warnings`،
   `check:arch` صفر تحذيرات، `check` 0 أخطاء، Vitest 88/88). **اكتمل بذلك الجزء
   الثاني من B6-B (قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط).**
+- **Commit ⑤a (بنية B7 التحتية — سلوكيًا محايد) مكتمل** (2026-08-06): `IdentityRotationService`
+  (مخطّط/محقِّق خالص — `plan` يصدّر CSR Rotate/Re-Issue مع
+  `IDENTITY_ALGORITHM_PROFILE_ED25519`؛ `verify_finalize` fail-closed: Replay صفر-كتابة،
+  R5، ربط الموضوع، ACTIVE، Credential Guard) + مرحلة مفتاح العقدة
+  (`NodeKeyStore::write_pending`/`promote_pending`/`discard_pending`/`read_pending` —
+  `node_identity.key.pending`، age::x25519، ترقية idempotent). البوابة كاملة (`cargo test`
+  678 lib + clippy `-D warnings` + `check:arch` صفر تحذيرات).
+- **Commit ⑤b (القطع السلوكي B7)**: `IdentityRotationCoordinator` (تنسيق
+  begin/finalize + حزمة ثقة الدوران داخل finalize + Issuer Local State لـ UNIT +
+  تثبيت/استبدال ذرّي مع استعادة المفتاح القديم عند الفشل) + 5 أوامر IPC post-auth
+  (`begin_wilaya_rotation`/`finalize_wilaya_rotation`/`begin_unit_rotation`/
+  `sign_unit_rotation_request`/`finalize_unit_rotation`) + `Action::RotateCredential`/
+  `ReissueCredential` + `AuditAction::IdentityRotated`/`IdentityReissued` + عقود الواجهة
+  + `identity_rotation_tests` + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة
+  + `tauri build`.
