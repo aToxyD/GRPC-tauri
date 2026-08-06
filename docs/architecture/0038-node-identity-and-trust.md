@@ -121,3 +121,17 @@ algorithm_version ثابت لكل اعتماد.
   Rule 128؛ الواجهة تُخفي تبويب كلمة المرور وتجعل `.adminkey` افتراضيًا عند
   AdminProvisioned/Ready. البوابة كاملة (633 lib + 30 ملف تكامل، clippy `-D warnings`,
   `check:arch` صفر تحذيرات، `check` 0 أخطاء، Vitest 88/88).
+- **Commit ② (UNIT CSR bootstrap — B6-A isolation) مكتمل** (2026-08-06): `NodeIdentityResolver`
+  (المصدر الوحيد لحل الموقّع المحلي، R5) + `IdentityTrustAnchorService` (تثبيت شهادة
+  WILAYA كمرساة ثقة محلية — خدمة مستقلة: لا تقرأ `NodeKeyStore`، لا تفحص حالة UNIT، لا
+  تمسّ `IdentityBootstrapState`؛ قابلة لإعادة الاستخدام في B7 rotation) + مسار إصدار
+  موحّد (`sign_identity_request`/`generate_identity_request`/`sign_unit_identity_request`/
+  `finalize_unit_provision` — المُصدِر يُحلّ عبر `issuer_identity_id → get_by_identity_id`
+  ثم يتحقق ACTIVE + WILAYA) + `subject_id` محلي لعقدة UNIT
+  (`settings.unit_code → units.get_unit_by_code → units.id`) + سلسلة حالة UNIT
+  (`Uninitialized → UnitWaitingForCertificate → UnitActive`، افتراض WILAYA عند
+  `UNCONFIGURED`) + 4 أوامر IPC (`begin_unit_provision`/`sign_unit_identity_request`/
+  `finalize_unit_provision`/`install_wilaya_certificate`) + 19 اختبار تكامل
+  `identity_unit_bootstrap_tests` (سلسلة WILAYA الـ 16 دون تغيير) + قسم UNIT على شاشة
+  الدخول + إعادة معايرة `contracts.snapshot.json`. البوابة كاملة (644 lib + كل التكامل،
+  clippy `-D warnings`، `check:arch` صفر تحذيرات، `check` 0 أخطاء، Vitest 88/88).

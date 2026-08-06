@@ -1,5 +1,5 @@
 {
-  "generated": "2026-06-01T19:14:59.732Z",
+  "generated": "2026-08-06T12:00:00.000Z",
   "contracts": [
     {
       "name": "identity",
@@ -21,6 +21,18 @@
         },
         {
           "name": "completeChallenge"
+        },
+        {
+          "name": "beginUnitProvision"
+        },
+        {
+          "name": "signUnitIdentityRequest"
+        },
+        {
+          "name": "finalizeUnitProvision"
+        },
+        {
+          "name": "installWilayaCertificate"
         }
       ],
       "commands": [
@@ -41,11 +53,23 @@
         },
         {
           "command": "complete_challenge"
+        },
+        {
+          "command": "begin_unit_provision"
+        },
+        {
+          "command": "sign_unit_identity_request"
+        },
+        {
+          "command": "finalize_unit_provision"
+        },
+        {
+          "command": "install_wilaya_certificate"
         }
       ],
-      "loc": 96,
-      "exportCount": 6,
-      "commandCount": 6
+      "loc": 146,
+      "exportCount": 10,
+      "commandCount": 10
     },
     {
       "name": "metrics",

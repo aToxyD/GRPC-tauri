@@ -8,13 +8,16 @@
 //! touches a Root key — only the operator-facing request/finalize files.
 
 use crate::application::services::{
-    IdentityBootstrapStatusService, IdentityChallengeService, IdentityProvisioningService,
+    FinalizeUnitProvisionResult, IdentityBootstrapStatusService, IdentityChallengeService,
+    IdentityProvisioningService, IdentityTrustAnchorService, InstallWilayaCertificateResult,
 };
 use crate::commands::common::{
     adminkey_provider, db_mut_or_command_error, db_ref_or_command_error, node_key_store,
 };
 use crate::commands::types::AppState;
-use crate::domain::identity::{ChallengeMessage, IdentityBootstrapState, IdentityCertificate};
+use crate::domain::identity::{
+    ChallengeMessage, IdentityBootstrapState, IdentityCertificate, SubjectType,
+};
 use crate::errors::{into_command_error, AppError};
 use crate::models::{LoginResponse, User};
 use tauri::State;
@@ -116,7 +119,103 @@ pub fn issue_first_admin_key(
         .map_err(into_command_error)
 }
 
-/// Begin a one-shot Challenge–Response login.
+/// Begin UNIT bootstrap: resolve the LOCAL `subject_id` (the node's own `units`
+/// row), generate the UNIT keypair, persist the node secret, and write the
+/// UNSIGNED UNIT certificate (CSR) to `request_file_path` for the operator to
+/// carry to the WILAYA node. Nothing else is persisted.
+#[tauri::command]
+pub fn begin_unit_provision(
+    state: State<AppState>,
+    request_file_path: String,
+) -> Result<IdentityCertificate, String> {
+    crate::domain::validation::validate_file_path(&request_file_path, &["json"])
+        .map_err(into_command_error)?;
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let service = IdentityProvisioningService::new(db);
+    let subject_id = service.resolve_local_unit_subject_id().map_err(into_command_error)?;
+    let request = service
+        .generate_identity_request(SubjectType::Unit, subject_id, &node_key_store())
+        .map_err(into_command_error)?;
+    let json = serde_json::to_string_pretty(&request)
+        .map_err(|e| into_command_error(AppError::Internal(format!("CSR serialization failed: {e}"))))?;
+    std::fs::write(&request_file_path, json)
+        .map_err(|e| into_command_error(AppError::Io(e)))?;
+
+    Ok(request)
+}
+
+/// WILAYA side: sign a UNIT CSR (RFC §3.12 D2). The CSR MUST be an unsigned
+/// UNIT certificate; the `subject_id` MUST match a known local unit (validated,
+/// never overridden); the ACTIVE local WILAYA signs it.
+#[tauri::command]
+pub fn sign_unit_identity_request(
+    state: State<AppState>,
+    request_json: String,
+) -> Result<IdentityCertificate, String> {
+    let request: IdentityCertificate = serde_json::from_str(&request_json)
+        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed UNIT CSR: {e}"))))?;
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    IdentityProvisioningService::new(db)
+        .sign_unit_identity_request(&request, &node_key_store())
+        .map_err(into_command_error)
+}
+
+/// Finalize UNIT bootstrap with the WILAYA-signed certificate read from
+/// `cert_file_path`. The issuer is resolved via the certificate's
+/// `issuer_identity_id` and verified (exists + ACTIVE + WILAYA). Idempotent:
+/// an identical re-presentation is a no-op.
+#[tauri::command]
+pub fn finalize_unit_provision(
+    state: State<AppState>,
+    cert_file_path: String,
+) -> Result<FinalizeUnitProvisionResult, String> {
+    crate::domain::validation::validate_file_path(&cert_file_path, &["json"])
+        .map_err(into_command_error)?;
+
+    let json = std::fs::read_to_string(&cert_file_path)
+        .map_err(|e| into_command_error(AppError::Io(e)))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
+        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed signed certificate file: {e}"))))?;
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    IdentityProvisioningService::new(db)
+        .finalize_unit_provision(&signed_cert, &node_key_store(), &now)
+        .map_err(into_command_error)
+}
+
+/// Install (or idempotently re-confirm) the ACTIVE WILAYA certificate as the
+/// UNIT's LOCAL TRUST ANCHOR (strict two-step flow, RFC §3.12). Reads the
+/// Root-signed WILAYA certificate from `cert_file_path`; never bundles it.
+#[tauri::command]
+pub fn install_wilaya_certificate(
+    state: State<AppState>,
+    cert_file_path: String,
+) -> Result<InstallWilayaCertificateResult, String> {
+    crate::domain::validation::validate_file_path(&cert_file_path, &["json"])
+        .map_err(into_command_error)?;
+
+    let json = std::fs::read_to_string(&cert_file_path)
+        .map_err(|e| into_command_error(AppError::Io(e)))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
+        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed certificate file: {e}"))))?;
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    IdentityTrustAnchorService::new(db)
+        .install_wilaya_certificate(&signed_cert, &now)
+        .map_err(into_command_error)
+}
 #[tauri::command]
 pub fn begin_challenge(state: State<AppState>) -> Result<ChallengeMessage, String> {
     let guard = state.get_db().map_err(into_command_error)?;

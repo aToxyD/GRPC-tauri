@@ -468,6 +468,11 @@ Challenge {
 | نقطة قطع التحول للمصادقة (D1) | التحول يعتمد على **وجود هوية ADMIN نشطة** (ACTIVE ADMIN certificate + `.adminkey`)، وليس على اكتمال تنظيف كلمة المرور الإرثية. `issue_first_admin_key` على عقدة إرثية ينشئ هوية ADMIN نشطة → جميع متطلبات المصادقة الجديدة قائمة، والاحتفاظ بكلمة المرور لمجرد وجود هاش ليس ذا معنى. |
 | طريقة إنهاء نافذة الإهمال (بند 2) | نافذة مسار كلمة المرور تنتهي عند B6-B: `GRPC_LEGACY_AUTH` (Introduced B6-A) يُحذف نهائيًا في B6-B ولا يبقى متغير بيئة دائمًا. جدول `users` يُقرأ فقط خلال النافذة. |
 | آلية مصادقة العقدة البديلة | تحليل/تسليم مفاتيح UNIT عبر مسار CSR موحّد (`generate_identity_request`/`sign_identity_request`/`finalize_identity_provision` — D2) في Commit ②. |
+| تسليم شهادة WILAYA إلى عقدة UNIT (D2) | **خطوتان صارمتان — لا تُضمَّن أبدًا** في ملف إمداد UNIT. الترتيب: UNIT تصدّر `generate_identity_request()` → WILAYA توقّع `sign_unit_identity_request()` → UNIT تُثبّت/تحدّث شهادة WILAYA النشطة كمرساة ثقة محلية عبر `install_wilaya_certificate()` (خدمة مستقلة، لا تقرأ `NodeKeyStore`، لا تفحص حالة UNIT، لا تمسّ `IdentityBootstrapState`؛ قابلة لإعادة الاستخدام في B7 rotation) → ثم `finalize_unit_provision()`. |
+| مصدر `subject_id` لـ UNIT (D2) | يُحلّ **محليًا** على عقدة UNIT: `settings.unit_code → units.get_unit_by_code → units.id` عند توليد الـ CSR. WILAYA لا تفرض/تعيد ربطه — تتحقق فقط fail-closed أن `CSR.subject_id` يطابق صف `units` معروفًا (`units.get_unit`). |
+| معرّف المُصدِر عند إنهاء إمداد UNIT (D2) | يُحلّ حصريًا عبر `signed_cert.issuer_identity_id → IdentityStore.get_by_identity_id(...)` ثم التحقق (موجود + `ACTIVE` + `subject_type == WILAYA`) — وليس عبر `get_active_by_subject_type(Wilaya)`. |
+| تعريف الـ idempotency لمرساة الثقة | **نفس الشهادة حرفيًا** (`is_identical_to`): نفس `identity_id` مع `credential_id` مختلف → Fail-Closed وليس `AlreadyInstalled`. |
+| حالة bootstrap لعقدة UNIT | سلسلة UNIT مستقلة: `Uninitialized → UnitWaitingForCertificate → UnitActive`؛ لا ADMIN على عقدة UNIT إطلاقًا. `IdentityBootstrapStatusService::compute()` تتفرّع حسب `node_type` (نص خام `"UNIT"` فقط) مع **افتراض WILAYA** — بذرة `UNCONFIGURED` ليست عقدة UNIT. |
 
 ---
 
@@ -584,6 +589,7 @@ Challenge {
 | B4 (Trust/Registry packages + الحارسان) | ✅ مكتمل | 2026-08-05 | 16 اختبار تكامل `sync_trust_registry_import_tests` + أمرا `import_trust_package`/`import_registry_package` + authz WILAYA-admin + `AuditAction` جديدان + البوابة كاملة (`cargo test`/clippy `-D warnings`/`check:arch`/svelte-check) |
 | B5 (WILAYA→ADMIN bootstrap + نافذة إهمال كلمة المرور) | ✅ مكتمل | 2026-08-05 | 16 اختبار تكامل `identity_bootstrap_tests` + `IdentityBootstrapState` + Root-pin + `get_identity_status`/`begin_wilaya_provision`/`finalize_wilaya_provision`/`issue_first_admin_key`/`begin_challenge`/`complete_challenge` + `metadata.auth_method` telemetry + بوابة كاملة (`cargo test` 633 lib + clippy `-D warnings`/`check:arch`/`check`/Vitest 86) |
 | B6-A (Authentication Cutover) | ✅ مكتمل | 2026-08-06 | `IdentityAuthenticationPolicy` كمصدر قرار وحيد + `LoginResponse.identity_challenge_required` + إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (ACTIVE cert + `.adminkey`) + `GRPC_LEGACY_AUTH` مؤقت + إزالة البذر الإنتاجي (`should_seed_legacy_admin`/`GRPC_LEGACY_BOOTSTRAP`) + إغلاق Rule 128 + الواجهة (تبويب `.adminkey` افتراضيًا عند AdminProvisioned/Ready) + بوابة كاملة (`cargo test` 633 lib + 30 تكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
+| Commit ② (UNIT CSR bootstrap — B6-A isolation) | ✅ مكتمل | 2026-08-06 | `NodeIdentityResolver` (R5) + `IdentityTrustAnchorService` (مرساة ثقة WILAYA مستقلة) + مسار إصدار موحّد (`sign_identity_request`/`generate_identity_request`/`sign_unit_identity_request`/`finalize_unit_provision`) + سلسلة UNIT (`Uninitialized → UnitWaitingForCertificate → UnitActive`) + 4 أوامر IPC (`begin_unit_provision`/`sign_unit_identity_request`/`finalize_unit_provision`/`install_wilaya_certificate`) + 19 اختبار تكامل UNIT (16 WILAYA دون تغيير) + الواجهة (قسم UNIT على شاشة الدخول) + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة (644 lib + كل التكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 
 بشكل محدد، يُغلَق B3 وفق الحالة المعتمدة:
 
@@ -669,6 +675,35 @@ Challenge {
 - **إغلاق Rule 128:** مع غياب أي بذر إنتاجي، أُقفلت القاعدة بدلًا من كبتها.
 - **الواجهة:** تبويب `.adminkey` افتراضي عند `AdminProvisioned`/`Ready` + إخفاء
   تبويب كلمة المرور + معالجة `identity_challenge_required` دفاعيًا.
+
+بشكل محدد، يُغلَق Commit ② (UNIT CSR bootstrap) وفق الحالة المعتمدة:
+
+- **مُحلِّل العقدة المحلي (R5):** `NodeIdentityResolver::resolve_local_signer` —
+  المصدر الوحيد لحل الموقّع المحلي (مفتاح العقدة + شهادة ACTIVE من Identity Store)؛
+  fail-closed على أي خلل (مفتاح غير موجود → `Ok(None)`؛ غير ACTIVE؛ خوارزمية خاطئة؛
+  عدم تطابق `signer.public_key() == certificate.public_key` — R5).
+- **مسار الإصدار الموحّد (D2):** `sign_identity_request` يملك ربط `issuer_identity_id`
+  + التوقيع + بيانات الاعتماد لكل شهادة يصدرها node (ADMIN/UNIT ومستقبلًا Rotate/
+  Re-Issue/Recovery). WILAYA (صادرة من Root) لا تمرّ بهذا المسار.
+  `generate_identity_request` يولّد CSR لكل `subject_type` (يُكتب المفتاح فقط عبر
+  `node_key_store`؛ حارس انتقال لمرة واحدة عند وجود مفتاح).
+- **توقيع CSR UNIT على WILAYA:** `sign_unit_identity_request` يتحقق أن `subject_type`
+  هو UNIT وأن `CSR.subject_id` يطابق `units.get_unit` (تحقق من المصدِّر، لا فرض) ثم
+  يوقّع عبر `NodeIdentityResolver` (شهادة WILAYA ACTIVE + R5).
+- **خطوتان صارمتان:** `install_wilaya_certificate` خدمة مستقلة
+  (`IdentityTrustAnchorService`) — لا تقرأ `NodeKeyStore`، لا تفحص حالة UNIT، لا تمسّ
+  `IdentityBootstrapState`؛ `AlreadyInstalled` حصريًا لنفس الشهادة حرفيًا (`is_identical_to`)،
+  وأي `identity_id` مع `credential_id` مختلف → Fail-Closed.
+- **إنهاء إمداد UNIT:** `finalize_unit_provision` يحلّ المُصدِر عبر
+  `issuer_identity_id → get_by_identity_id` ثم يتحقق (موجود + ACTIVE + WILAYA)؛ يتحقق
+  من التوقيع مقابل المفتاح العام للمُصدِر + مطابقة مفتاح العقدة + مطابقة `subject_id`
+  لصف `units` محلي. idempotent بلا كتابة عند إعادة تقديم مطابقة.
+- **سلسلة حالة UNIT:** `Uninitialized → UnitWaitingForCertificate → UnitActive`؛
+  `IdentityBootstrapStatusService::compute()` تتفرّع على النص الخام `"UNIT"`
+  (`get_node_type`)، مع افتراض WILAYA — بذرة `UNCONFIGURED` لا تُعدّ عقدة UNIT.
+- **4 أوامر IPC جديدة (pre-auth):** `begin_unit_provision` / `sign_unit_identity_request`
+  / `finalize_unit_provision` / `install_wilaya_certificate`؛ 19 اختبار تكامل
+  `identity_unit_bootstrap_tests`؛ سلسلة WILAYA الـ 16 اختبارًا دون تغيير.
 
 ---
 

@@ -14,6 +14,11 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::issue_first_admin_key,
         commands::begin_challenge,
         commands::complete_challenge,
+        // UNIT bootstrap (RFC §3.12, B6-A; pre-auth)
+        commands::begin_unit_provision,
+        commands::sign_unit_identity_request,
+        commands::finalize_unit_provision,
+        commands::install_wilaya_certificate,
         // Configuration
         commands::get_settings,
         commands::configure_as_wilaya,

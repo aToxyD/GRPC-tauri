@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// Explicit, derived bootstrap state for a node.
 ///
-/// Semantics:
+/// WILAYA chain:
 /// - `Uninitialized` — no node key generated, no CSR exported.
 /// - `WaitingForRootCertificate` — CSR exported, node secret persisted, awaiting
 ///   the offline Authority Root-signed WILAYA certificate.
@@ -22,6 +22,12 @@ use serde::{Deserialize, Serialize};
 ///   user exists; a legacy password may still be active (additive window).
 /// - `Ready` — fully bootstrapped: the linked admin user is identity-only
 ///   (empty password hash) so Challenge–Response is the sole credential.
+///
+/// UNIT chain (RFC §3.12, B6-A; never bundles the WILAYA anchor — strict
+/// two-step install):
+/// - `UnitWaitingForCertificate` — UNIT CSR exported, node secret persisted,
+///   awaiting the WILAYA-signed UNIT certificate.
+/// - `UnitActive` — WILAYA-signed UNIT certificate finalized + ACTIVE.
 ///
 /// State is derived, never stored; `Ready` vs `AdminProvisioned` is the only
 /// difference driven by the linked admin user's credential state.
@@ -33,6 +39,8 @@ pub enum IdentityBootstrapState {
     WilayaActive,
     AdminProvisioned,
     Ready,
+    UnitWaitingForCertificate,
+    UnitActive,
 }
 
 impl IdentityBootstrapState {
@@ -43,6 +51,8 @@ impl IdentityBootstrapState {
             IdentityBootstrapState::WilayaActive => "WILAYA_ACTIVE",
             IdentityBootstrapState::AdminProvisioned => "ADMIN_PROVISIONED",
             IdentityBootstrapState::Ready => "READY",
+            IdentityBootstrapState::UnitWaitingForCertificate => "UNIT_WAITING_FOR_CERTIFICATE",
+            IdentityBootstrapState::UnitActive => "UNIT_ACTIVE",
         }
     }
 
@@ -55,6 +65,10 @@ impl IdentityBootstrapState {
             "WILAYA_ACTIVE" => Some(IdentityBootstrapState::WilayaActive),
             "ADMIN_PROVISIONED" => Some(IdentityBootstrapState::AdminProvisioned),
             "READY" => Some(IdentityBootstrapState::Ready),
+            "UNIT_WAITING_FOR_CERTIFICATE" => {
+                Some(IdentityBootstrapState::UnitWaitingForCertificate)
+            }
+            "UNIT_ACTIVE" => Some(IdentityBootstrapState::UnitActive),
             _ => None,
         }
     }
@@ -64,20 +78,25 @@ impl IdentityBootstrapState {
     /// ```text
     /// Uninitialized
     ///     │
-    ///     ▼
-    /// WaitingForRootCertificate
+    ///     ├── WILAYA chain ──────────────► WaitingForRootCertificate
+    ///     │                                    │
+    ///     │                                    ▼
+    ///     │                                WilayaActive
+    ///     │                                    │
+    ///     │                                    ▼
+    ///     │                               AdminProvisioned
+    ///     │                                    │
+    ///     │                                    ▼
+    ///     │                                    Ready
     ///     │
-    ///     ▼
-    /// WilayaActive
-    ///     │
-    ///     ▼
-    /// AdminProvisioned
-    ///     │
-    ///     ▼
-    /// Ready
+    ///     └── UNIT chain ───────────────────► UnitWaitingForCertificate
+    ///                                              │
+    ///                                              ▼
+    ///                                         UnitActive
     /// ```
     ///
-    /// Any other pair — including all backward transitions — is rejected.
+    /// Any other pair — including all backward transitions and any WILAYA↔UNIT
+    /// crossing — is rejected.
     pub const fn can_transition_to(&self, next: &IdentityBootstrapState) -> bool {
         matches!(
             (self, next),
@@ -93,6 +112,12 @@ impl IdentityBootstrapState {
             ) | (
                 IdentityBootstrapState::AdminProvisioned,
                 IdentityBootstrapState::Ready
+            ) | (
+                IdentityBootstrapState::Uninitialized,
+                IdentityBootstrapState::UnitWaitingForCertificate
+            ) | (
+                IdentityBootstrapState::UnitWaitingForCertificate,
+                IdentityBootstrapState::UnitActive
             )
         )
     }
@@ -125,6 +150,19 @@ mod tests {
                 pair[1]
             );
         }
+        let unit_chain = [
+            IdentityBootstrapState::Uninitialized,
+            IdentityBootstrapState::UnitWaitingForCertificate,
+            IdentityBootstrapState::UnitActive,
+        ];
+        for pair in unit_chain.windows(2) {
+            assert!(
+                pair[0].can_transition_to(&pair[1]),
+                "{:?} -> {:?} must be allowed",
+                pair[0],
+                pair[1]
+            );
+        }
     }
 
     #[test]
@@ -135,14 +173,42 @@ mod tests {
             IdentityBootstrapState::WilayaActive,
             IdentityBootstrapState::AdminProvisioned,
             IdentityBootstrapState::Ready,
+            IdentityBootstrapState::UnitWaitingForCertificate,
+            IdentityBootstrapState::UnitActive,
         ];
-        for (idx, from) in states.iter().enumerate() {
-            for (jdx, to) in states.iter().enumerate() {
-                if jdx == idx + 1 {
+        let allowed: [(IdentityBootstrapState, IdentityBootstrapState); 6] = [
+            (
+                IdentityBootstrapState::Uninitialized,
+                IdentityBootstrapState::WaitingForRootCertificate,
+            ),
+            (
+                IdentityBootstrapState::WaitingForRootCertificate,
+                IdentityBootstrapState::WilayaActive,
+            ),
+            (
+                IdentityBootstrapState::WilayaActive,
+                IdentityBootstrapState::AdminProvisioned,
+            ),
+            (
+                IdentityBootstrapState::AdminProvisioned,
+                IdentityBootstrapState::Ready,
+            ),
+            (
+                IdentityBootstrapState::Uninitialized,
+                IdentityBootstrapState::UnitWaitingForCertificate,
+            ),
+            (
+                IdentityBootstrapState::UnitWaitingForCertificate,
+                IdentityBootstrapState::UnitActive,
+            ),
+        ];
+        for from in states {
+            for to in states {
+                if allowed.contains(&(from, to)) {
                     continue;
                 }
                 assert!(
-                    !from.can_transition_to(to),
+                    !from.can_transition_to(&to),
                     "{from:?} -> {to:?} must be rejected"
                 );
             }
@@ -157,6 +223,8 @@ mod tests {
             IdentityBootstrapState::WilayaActive,
             IdentityBootstrapState::AdminProvisioned,
             IdentityBootstrapState::Ready,
+            IdentityBootstrapState::UnitWaitingForCertificate,
+            IdentityBootstrapState::UnitActive,
         ];
         for state in states {
             assert_eq!(IdentityBootstrapState::parse(state.as_str()), Some(state));

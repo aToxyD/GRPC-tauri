@@ -10,6 +10,9 @@
     beginWilayaProvision,
     finalizeWilayaProvision,
     issueFirstAdminKey,
+    beginUnitProvision,
+    finalizeUnitProvision,
+    installWilayaCertificate,
     beginChallenge,
     completeChallenge,
   } from '../lib/contracts';
@@ -44,6 +47,8 @@
   let localError = '';
   // @category ProjectionState
   let isAppConfigured = true;
+  // @category ProjectionState
+  let isUnitNode = false;
 
   // @category ProjectionState
   let loginAttempts = 0;
@@ -86,10 +91,17 @@
     identityState === 'ADMIN_PROVISIONED' ||
     identityState === 'READY';
   // @category UiState
-  $: bootstrapActive =
-    identityState === 'UNINITIALIZED' ||
-    identityState === 'WAITING_FOR_ROOT_CERTIFICATE' ||
-    identityState === 'WILAYA_ACTIVE';
+  $: wilayaBootstrapActive =
+    !isUnitNode &&
+    (identityState === 'UNINITIALIZED' ||
+      identityState === 'WAITING_FOR_ROOT_CERTIFICATE' ||
+      identityState === 'WILAYA_ACTIVE');
+  // @category UiState
+  $: unitBootstrapActive =
+    isUnitNode &&
+    (identityState === 'UNINITIALIZED' ||
+      identityState === 'UNIT_WAITING_FOR_CERTIFICATE' ||
+      identityState === 'UNIT_ACTIVE');
 
   // @category UiState
   $: displayError = $loginError || localError;
@@ -106,6 +118,19 @@
         return 'المفتاح الإداري صدر — يمكنك تسجيل الدخول';
       case 'READY':
         return 'الهوية جاهزة';
+      case 'UNIT_WAITING_FOR_CERTIFICATE':
+        return 'بانتظار شهادة WILAYA — استورد الشهادة الموقعة';
+      case 'UNIT_ACTIVE':
+        return 'هوية الوحدة مفعلة';
+    }
+  }
+
+  async function refreshNodeType() {
+    try {
+      const settings = await getSettings();
+      isUnitNode = settings.configured && settings.node_type === 'UNIT';
+    } catch {
+      isUnitNode = false;
     }
   }
 
@@ -123,6 +148,7 @@
     } catch (e) {
       isAppConfigured = false;
     }
+    await refreshNodeType();
     await refreshIdentityStatus();
     try {
       const window = getAppWindow();
@@ -150,6 +176,8 @@
         if (selected) {
           await importUnitNodePackage(selected as string);
           isAppConfigured = true;
+          await refreshNodeType();
+          await refreshIdentityStatus();
           showSuccess('تم استيراد حزمة التكوين بنجاح! يمكنك الآن تسجيل الدخول.');
         }
       } catch (e) {
@@ -213,6 +241,73 @@
         showSuccess('تم إصدار المفتاح الإداري. يمكنك الآن تسجيل الدخول عبر المفتاح.');
       } catch (e) {
         localError = 'خطأ في إصدار المفتاح الإداري: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  // UNIT bootstrap (RFC §3.12, B6-A) — strict two-step: the WILAYA certificate
+  // is NEVER bundled; the operator installs it as the local trust anchor and
+  // then finalizes the UNIT certificate, both in dedicated steps.
+  async function handleBeginUnit() {
+    await bootstrapOp.guard(async () => {
+      try {
+        localError = '';
+        const filePath = await saveFile({
+          defaultPath: 'grpc-unit-request.json',
+          filters: [{ name: 'طلب توقيع الوحدة (JSON)', extensions: ['json'] }],
+        });
+        if (!filePath) return;
+        await beginUnitProvision(filePath as string);
+        await refreshIdentityStatus();
+        showSuccess('تم إنشاء طلب توقيع الوحدة وحفظه. سلّمه إلى عقدة WILAYA للاعتماد.');
+      } catch (e) {
+        localError = 'خطأ في بدء تهيئة الوحدة: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  async function handleInstallWilayaCert() {
+    await bootstrapOp.guard(async () => {
+      try {
+        localError = '';
+        const selected = await openFile({
+          multiple: false,
+          filters: [{ name: 'شهادة WILAYA (JSON)', extensions: ['json'] }],
+        });
+        if (!selected) return;
+        const result = await installWilayaCertificate(selected as string);
+        await refreshIdentityStatus();
+        const installed = 'Installed' in result;
+        showSuccess(
+          installed
+            ? 'تم تثبيت شهادة WILAYA كمرساة ثقة محلية.'
+            : 'الشهادة مطابقة لما تم تثبيته مسبقاً.'
+        );
+      } catch (e) {
+        localError = 'خطأ في تثبيت شهادة WILAYA: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  async function handleFinalizeUnit() {
+    await bootstrapOp.guard(async () => {
+      try {
+        localError = '';
+        const selected = await openFile({
+          multiple: false,
+          filters: [{ name: 'شهادة موقعة (JSON)', extensions: ['json'] }],
+        });
+        if (!selected) return;
+        const result = await finalizeUnitProvision(selected as string);
+        await refreshIdentityStatus();
+        const provisioned = 'Provisioned' in result;
+        showSuccess(
+          provisioned
+            ? 'تم تفعيل هوية الوحدة.'
+            : 'الشهادة مطابقة لما تم استيراده مسبقاً.'
+        );
+      } catch (e) {
+        localError = 'خطأ في تفعيل هوية الوحدة: ' + formatErrorMessage(e);
       }
     });
   }
@@ -470,7 +565,7 @@
     {/if}
 
     <!-- تهيئة الهوية (B5: offline Root bootstrap) -->
-    {#if bootstrapActive}
+    {#if wilayaBootstrapActive}
       <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium text-gray-700 dark:text-gray-300">تهيئة الهوية</p>
@@ -540,6 +635,69 @@
               إصدار المفتاح الإداري الأول
             </AppButton>
           </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- تهيئة هوية الوحدة (RFC §3.12 / B6-A: strict two-step, trust anchor غير مضمّنة) -->
+    {#if unitBootstrapActive}
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
+        <div class="flex items-center justify-between">
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">تهيئة هوية الوحدة</p>
+          <button
+            type="button"
+            class="text-xs text-civil-blue hover:underline"
+            on:click={refreshIdentityStatus}
+          >
+            تحديث
+          </button>
+        </div>
+        <AppAlert intent="info">
+          <div class="space-y-1">
+            <p class="text-sm font-semibold">{bootstrapStatusLabel(identityState)}</p>
+            <p class="text-xs">توقّع عقدة WILAYA شهادة الوحدة. المفتاح السري لا يغادر العقدة، وشهادة WILAYA (مرساة الثقة) تُثبَّت في خطوة مستقلة.</p>
+          </div>
+        </AppAlert>
+
+        {#if identityState === 'UNINITIALIZED'}
+          <AppButton
+            variant="secondary"
+            size="lg"
+            fullWidth
+            loading={$bootstrapLoading}
+            on:click={handleBeginUnit}
+          >
+            تصدير طلب توقيع الوحدة (CSR)
+          </AppButton>
+        {/if}
+
+        {#if identityState === 'UNIT_WAITING_FOR_CERTIFICATE'}
+          <div class="space-y-3">
+            <AppButton
+              variant="secondary"
+              size="lg"
+              fullWidth
+              loading={$bootstrapLoading}
+              on:click={handleInstallWilayaCert}
+            >
+              الخطوة 1: تثبيت شهادة WILAYA (مرساة الثقة)
+            </AppButton>
+            <AppButton
+              variant="secondary"
+              size="lg"
+              fullWidth
+              loading={$bootstrapLoading}
+              on:click={handleFinalizeUnit}
+            >
+              الخطوة 2: استيراد شهادة الوحدة الموقعة
+            </AppButton>
+          </div>
+        {/if}
+
+        {#if identityState === 'UNIT_ACTIVE'}
+          <AppAlert intent="success">
+            <p class="text-sm font-semibold">هوية الوحدة مفعلة — يمكنك تسجيل الدخول.</p>
+          </AppAlert>
         {/if}
       </div>
     {/if}

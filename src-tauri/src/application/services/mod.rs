@@ -10,7 +10,9 @@ pub mod fiscal_validation_service;
 pub mod identity_authentication_policy;
 pub mod identity_challenge_service;
 pub mod identity_bootstrap_status_service;
+pub mod identity_node_resolver;
 pub mod identity_provisioning_service;
+pub mod identity_trust_anchor_service;
 pub mod inventory_snapshot_service;
 pub mod login_policy;
 pub mod monthly_report_service;
@@ -45,7 +47,11 @@ pub use fiscal_validation_service::FiscalValidationService;
 pub use identity_authentication_policy::IdentityAuthenticationPolicy;
 pub use identity_challenge_service::IdentityChallengeService;
 pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;
-pub use identity_provisioning_service::{FinalizeWilayaProvisionResult, IdentityProvisioningService};
+pub use identity_node_resolver::NodeIdentityResolver;
+pub use identity_provisioning_service::{
+    FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult, IdentityProvisioningService,
+};
+pub use identity_trust_anchor_service::{IdentityTrustAnchorService, InstallWilayaCertificateResult};
 pub use inventory_snapshot_service::InventorySnapshotService;
 pub use login_policy::LoginPolicy;
 pub use monthly_report_service::MonthlyReportService;

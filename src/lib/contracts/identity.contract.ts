@@ -10,7 +10,9 @@ export type IdentityBootstrapState =
   | 'WAITING_FOR_ROOT_CERTIFICATE'
   | 'WILAYA_ACTIVE'
   | 'ADMIN_PROVISIONED'
-  | 'READY';
+  | 'READY'
+  | 'UNIT_WAITING_FOR_CERTIFICATE'
+  | 'UNIT_ACTIVE';
 
 export type IdentitySubjectType = 'WILAYA' | 'UNIT' | 'ADMIN';
 
@@ -34,6 +36,14 @@ export interface IdentityCertificateDto {
 export type FinalizeWilayaProvisionResultDto =
   | { Provisioned: IdentityCertificateDto }
   | { AlreadyProvisioned: IdentityCertificateDto };
+
+export type FinalizeUnitProvisionResultDto =
+  | { Provisioned: IdentityCertificateDto }
+  | { AlreadyProvisioned: IdentityCertificateDto };
+
+export type InstallWilayaCertificateResultDto =
+  | { Installed: IdentityCertificateDto }
+  | { AlreadyInstalled: IdentityCertificateDto };
 
 export interface ChallengeMessageDto {
   protocol_version: number;
@@ -79,6 +89,46 @@ export async function issueFirstAdminKey(
     subject_username: subjectUsername,
     passphrase,
   });
+}
+
+/**
+ * Begin UNIT bootstrap (RFC §3.12, B6-A): resolve the LOCAL `subject_id` (the
+ * node's own `units` row), generate the UNIT keypair, persist the node secret,
+ * and write the UNSIGNED UNIT certificate (CSR) to `requestFile`.
+ */
+export async function beginUnitProvision(requestFile: string): Promise<IdentityCertificateDto> {
+  return await safeInvoke('begin_unit_provision', { request_file_path: requestFile });
+}
+
+/**
+ * WILAYA side: sign a UNIT CSR. The CSR's `subject_id` is validated against the
+ * local `units` table (never overridden); the ACTIVE local WILAYA signs it.
+ * Pass the CSR payload JSON (not a file path).
+ */
+export async function signUnitIdentityRequest(requestJson: string): Promise<IdentityCertificateDto> {
+  return await safeInvoke('sign_unit_identity_request', { request_json: requestJson });
+}
+
+/**
+ * Finalize UNIT bootstrap with the WILAYA-signed certificate read from
+ * `certFile`. The issuer is resolved via `issuer_identity_id` and verified
+ * (exists + ACTIVE + WILAYA). Idempotent.
+ */
+export async function finalizeUnitProvision(
+  certFile: string,
+): Promise<FinalizeUnitProvisionResultDto> {
+  return await safeInvoke('finalize_unit_provision', { cert_file_path: certFile });
+}
+
+/**
+ * Install (or idempotently re-confirm) the ACTIVE WILAYA certificate as the
+ * UNIT's LOCAL TRUST ANCHOR (strict two-step flow, RFC §3.12). Reads the
+ * Root-signed WILAYA certificate from `certFile`.
+ */
+export async function installWilayaCertificate(
+  certFile: string,
+): Promise<InstallWilayaCertificateResultDto> {
+  return await safeInvoke('install_wilaya_certificate', { cert_file_path: certFile });
 }
 
 /** Begin a one-shot Challenge–Response login. */
