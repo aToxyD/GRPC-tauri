@@ -6,8 +6,9 @@
 use crate::application::authz::Action;
 use crate::application::services::{
     record_export_with_reproducibility, AuditService, AuditTxService, DailyReportService,
-    ExportReproducibilityContext, NodePackageService, ProductService, SettingsService,
-    StockMovementService, SyncPackageIdentityVerificationService, UnitService, UserService,
+    ExportReproducibilityContext, IdentitySignedExportService, NodePackageService, ProductService,
+    SettingsService, StockMovementService, SyncPackageIdentityVerificationService, UnitService,
+    UserService,
 };
 use crate::application::services::{
     ImportReproducibilityRecord, ImportReproducibilityService, MaintenanceBlockedOperation,
@@ -49,13 +50,14 @@ use crate::application::usecases::sync::import_trust_package::{
     execute as apply_trust_package, ImportTrustPackageInput,
 };
 use crate::commands::common::{
-    db_mut_or_command_error, db_ref_or_command_error, user_ctx_from_session,
+    db_mut_or_command_error, db_ref_or_command_error, node_key_store, user_ctx_from_session,
 };
 use crate::commands::guards::{authorize_command, require_maintenance_allows};
 use crate::commands::reports::build_report_scope;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::domain::events::DomainEvent;
+use crate::domain::identity::SubjectType;
 use crate::domain::session::CurrentSession;
 use crate::domain::validation;
 use crate::errors::{into_command_error, AppError, BusinessLogicError, ValidationError};
@@ -82,6 +84,16 @@ use chrono::{Datelike, Utc};
 use tauri::State;
 use uuid::Uuid;
 
+/// Map the node's operational type to the identity subject used by the local
+/// signer resolver. `NodeType` has exactly `Unit`/`Wilaya`, so the mapping is
+/// total for configured nodes.
+fn export_subject_type(node_type: crate::models::NodeType) -> SubjectType {
+    match node_type {
+        crate::models::NodeType::Unit => SubjectType::Unit,
+        crate::models::NodeType::Wilaya => SubjectType::Wilaya,
+    }
+}
+
 /// Export products catalog as an encrypted **sync package** (`.sync`) — intended for Wilaya → Units distribution.
 #[tauri::command]
 pub fn export_products_package(
@@ -106,30 +118,14 @@ pub fn export_products_package(
     let source_node_id =
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
-    let package = SyncPackage {
-            metadata: SyncPackageMetadata {
-                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-                created_at: Utc::now(),
-                source_node_id,
-                package_sequence: None,
-                issuer_identity_id: None,
-                package_id: PackageId(Uuid::new_v4().to_string()),
-                signature_version: None,
-                signing_key_id: resolve_active_signing_key_id(),
-                integrity_hash: None,
-                signature: None,
-            },
-        payload: dataset.clone(),
-    };
-
-    let builder = PackageBuilder::new();
-    builder
-        .build_encrypted_stream_path(
-            &package,
-            &SerdeJsonSyncPackageSerializer,
-            &HmacPackageSigner,
-            &state.crypto_port,
+    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_package(
+            dataset.clone(),
+            &source_node_id,
+            "products",
             std::path::Path::new(&file_path),
+            export_subject_type(settings.node_type),
+            &state.crypto_port,
         )
         .map_err(into_command_error)?;
 
@@ -139,7 +135,9 @@ pub fn export_products_package(
         file_path
     );
 
-    let export_hash = package.metadata.package_id.0.clone();
+    // B6-B: export_hash is a UNIQUE fiscal-tracking identifier, independent of
+    // the transport `package_id` — no code path joins the two (RFC §5 ④b).
+    let export_hash = Uuid::new_v4().to_string();
     let result = PackageExportResult::success(
         file_path.clone(),
         dataset.product_rows.len(),
@@ -243,7 +241,7 @@ pub fn export_daily_report_package(
     report_id: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
-    let (session, _settings) =
+    let (session, settings) =
         authorize_command(&state, Action::ExportDailyReport, None).map_err(into_command_error)?;
     validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
@@ -269,30 +267,14 @@ pub fn export_daily_report_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
-    let package = SyncPackage {
-            metadata: SyncPackageMetadata {
-                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-                created_at: Utc::now(),
-                source_node_id,
-                package_sequence: None,
-                issuer_identity_id: None,
-                package_id: PackageId(Uuid::new_v4().to_string()),
-                signature_version: None,
-                signing_key_id: resolve_active_signing_key_id(),
-                integrity_hash: None,
-                signature: None,
-            },
-        payload: dataset.clone(),
-    };
-
-    let builder = PackageBuilder::new();
-    builder
-        .build_encrypted_stream_path(
-            &package,
-            &SerdeJsonSyncPackageSerializer,
-            &HmacPackageSigner,
-            &state.crypto_port,
+    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_package(
+            dataset.clone(),
+            &source_node_id,
+            "daily_report",
             std::path::Path::new(&file_path),
+            export_subject_type(settings.node_type),
+            &state.crypto_port,
         )
         .map_err(into_command_error)?;
 
@@ -614,30 +596,14 @@ pub fn export_monthly_summary_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
-    let package = SyncPackage {
-            metadata: SyncPackageMetadata {
-                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-                created_at: Utc::now(),
-                source_node_id,
-                package_sequence: None,
-                issuer_identity_id: None,
-                package_id: PackageId(Uuid::new_v4().to_string()),
-                signature_version: None,
-                signing_key_id: resolve_active_signing_key_id(),
-                integrity_hash: None,
-                signature: None,
-            },
-        payload: dataset.clone(),
-    };
-
-    let builder = PackageBuilder::new();
-    builder
-        .build_encrypted_stream_path(
-            &package,
-            &SerdeJsonSyncPackageSerializer,
-            &HmacPackageSigner,
-            &state.crypto_port,
+    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_package(
+            dataset.clone(),
+            &source_node_id,
+            "monthly_summary",
             std::path::Path::new(&file_path),
+            export_subject_type(settings_row.node_type),
+            &state.crypto_port,
         )
         .map_err(into_command_error)?;
 
@@ -789,30 +755,14 @@ pub fn export_stock_movements_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
-    let package = SyncPackage {
-            metadata: SyncPackageMetadata {
-                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-                created_at: Utc::now(),
-                source_node_id,
-                package_sequence: None,
-                issuer_identity_id: None,
-                package_id: PackageId(Uuid::new_v4().to_string()),
-                signature_version: None,
-                signing_key_id: resolve_active_signing_key_id(),
-                integrity_hash: None,
-                signature: None,
-            },
-        payload: dataset.clone(),
-    };
-
-    let builder = PackageBuilder::new();
-    builder
-        .build_encrypted_stream_path(
-            &package,
-            &SerdeJsonSyncPackageSerializer,
-            &HmacPackageSigner,
-            &state.crypto_port,
+    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_package(
+            dataset.clone(),
+            &source_node_id,
+            "stock_movements",
             std::path::Path::new(&file_path),
+            export_subject_type(settings_row.node_type),
+            &state.crypto_port,
         )
         .map_err(into_command_error)?;
 

@@ -66,6 +66,11 @@ admin افتراضي `admin/admin` مثبّت في الكود، WILAYA بلا UU
 ## 6. الحزم والهجرة
 - حزم `trust` (شهادات + إبطالات) و`registry` (حالة الأسطول) عبر `run_import_pipeline`.
 - `signature_version = 2` = Ed25519؛ يبقى HMAC لقراءة V1 خلال نافذة إهمال بنمط ADR-0007.
+  منذ Commit ④b: حزم الإنتاج الأربع (products/daily_report/monthly_summary/
+  stock_movements) تُصدَّر حصريًا V2/Ed25519 عبر `IdentitySignedExportService` بلا مسار
+  تراجع HMAC (عقدة غير مجهَّزة → فشل مغلق). `.unit` تبقى HMAC — **استثناء Bootstrap
+  دائم**: مسار استيراد `.unit` يتجاوز `run_import_pipeline` ولا تملك UNIT مرساة
+  ثقة/هوية عند التزويد (دائرة «تحتاج ثقة ← تحتاج `.unit`»).
 - `algorithm_version` ثابت لكل credential صادر ولا يتغير إلا عبر Rotate/Re-Issue.
 
 ## 7. قواعد `check_arch` الجديدة (GROUP 24)
@@ -101,7 +106,9 @@ algorithm_version ثابت لكل اعتماد.
 - B5: استبدال bootstrap admin + نافذة إهمال users/كلمات المرور.
 - B6-A: إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (Authentication Cutover).
 - B6-B: (Commit ③ — إزالة `GRPC_LEGACY_AUTH`/`change_password` وبوابة دائمة) ثم
-  (Commit ④ — قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط).
+  (Commit ④ — قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط؛ يُسلَّم
+  على مرحلتين: ④a بنية تحتية سلوكيًا محايدة، ثم ④b القطع السلوكي عبر
+  `IdentitySignedExportService`).
 
 # حالة التنفيذ
 - **B1–B5 مكتملة** (B5 بتاريخ 2026-08-05). البوابة كاملة: `cargo test` (صفر فشل —
@@ -146,5 +153,24 @@ algorithm_version ثابت لكل اعتماد.
   `IdentityAuthenticationPolicy` يبقى مصدر القرار الوحيد. إعادة معايرة
   `contracts.snapshot.json` + اختبارات البوابة أُعيدت كتابتها (بلا override). البوابة
   كاملة (644 lib + كل التكامل، clippy `-D warnings`، `check:arch` صفر تحذيرات،
-  `check` 0 أخطاء، Vitest 88/88). **الجزء الثاني من B6-B (قلب الافتراضي إلى
-  `signature_version = 2`؛ HMAC للقراءة فقط) مؤجَّل إلى Commit ④ بمشروع مستقل.**
+  `check` 0 أخطاء، Vitest 88/88).
+- **Commit ④a (بنية B6-B — سلوكيًا محايد) مكتمل** (2026-08-06): سجل مُنتِج
+  `sync_issuer_sequence_state` (مفتاح `identity_id` — استمرارية عبر الدوران،
+  `begin_export`/`PendingIssuedSequence::commit` بفصل تخصيص/كتابة، advance-on-success)
+  + `Ed25519PackageSigner::from_provider`/`public_key_hex` + فحص تسلسل متسلسل
+  (consistency check) + `import_export.rs` دون لمس (إخراج مطابق بايتًا-ببايت).
+- **Commit ④b (القطع السلوكي B6-B) مكتمل** (2026-08-06): `IdentitySignedExportService`
+  — المدخل الوحيد لتصدير V2: `export_v2_package` يحلّ `NodeIdentityResolver` (R5)
+  بفشل مغلق بلا تراجع HMAC، يخصّص تسلسلًا من `sync_issuer_sequence_state`، يوقّع
+  Ed25519 عبر `PackageBuilder` (Metadata V2: `issuer_identity_id`/`package_sequence`/
+  `signature_version=2`/`signing_key_id`)، ويُقدّم السجل فقط بعد نجاح كتابة الملف
+  (الفشل لا يحرق رقمًا). أوامر الإنتاج الأربعة (`export_products_package`/
+  `export_daily_report_package`/`export_monthly_summary_package`/
+  `export_stock_movements_package`) قُلبت إلى V2؛ `export_hash` (Uuid) مستقل عن
+  `package_id`؛ `.unit` تبقى HMAC دون تغيير (استثناء Bootstrap). 5 اختبارات تكامل
+  `sync_v2_producer_export_tests` (metadata + تحقق التوقيع، round-trip مستهلك مع
+  Accept/Replay/OutOfOrder، فشل-بلا-تقدّم + إعادة استخدام الرقم، استمرارية عبر دوران
+  الشهادة، fail-closed للعقدة غير المجهَّزة). تحديث RFC §3.4.1/§3.10/§5/§7. البوابة
+  كاملة (644 lib + كل التكامل + 5 اختبارات تكامل جديدة، clippy `-D warnings`،
+  `check:arch` صفر تحذيرات، `check` 0 أخطاء، Vitest 88/88). **اكتمل بذلك الجزء
+  الثاني من B6-B (قلب الافتراضي إلى `signature_version = 2`؛ HMAC للقراءة فقط).**

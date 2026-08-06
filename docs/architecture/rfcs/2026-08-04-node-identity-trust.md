@@ -264,6 +264,14 @@ IdentityState {
   ```
 - **يحل:** out-of-order، duplicate، replay، missing package. لا علاقة له بالمحتوى.
 
+- **سجل المُنتِج (Commit ④b):** على جانب المُنتِج، `sync_issuer_sequence_state` يتتبّع
+  آخر تسلسل مصدَّر لكل هوية عقدة محلية (`issuer_identity_id` — ليس `credential_id`)؛
+  استمرارية الترتيب النقلي عبر دوران الشهادات (القيود أعلاه §3.4.4). تخصيص التسلسل
+  وكتابته منفصلان: `begin_export` يقرأ فقط ويعيد رمزًا معلّقًا، ويتقدّم السجل
+  حصريًا عبر `commit()` بعد نجاح بناء/كتابة الحزمة (advance-on-success) — الفشل لا
+  يحرق تسلسلًا، وإعادة المحاولة تعيد نفس الرقم. `IdentitySignedExportService` هو
+  المدخل الوحيد لتصدير V2 (products/daily_report/monthly_summary/stock_movements).
+
 #### 3.4.2 Credential Guard — `(credential_id, generation)`
 
 - **النطاق:** لكل شهادة.
@@ -437,7 +445,14 @@ Challenge {
 
 - `signature_version = 2` = توقيع Ed25519 بهوية العقدة.
 - يبقى HMAC (version 1 / الحزم الإرثية) **قابلًا للقراءة** خلال نافذة إهمال بنمط
-  ADR-0007 (deprecation window).
+  ADR-0007 (deprecation window). منذ Commit ④b، **حزم الإنتاج الأربع**
+  (products/daily_report/monthly_summary/stock_movements) تُصدَّر حصريًا
+  `signature_version = 2` عبر `IdentitySignedExportService` — بدون أي مسار تراجع
+  HMAC: عقدة غير مجهَّزة تفشل مغلقةً ولا تصدر حزمة V2.
+- **استثناء Bootstrap الوحيد:** `.unit` تبقى موقّعة HMAC (بدون `signature_version`)
+  — استثناء دائم. السبب: مسار استيراد `.unit` يتجاوز `run_import_pipeline` (لا يمر
+  على Transport Guard) ولا تملك عقدة UNIT مرساة ثقة/هوية عند التزويد — دائرة
+  «تحتاج ثقة ← تحتاج `.unit`». لا تُصدَّر عبر `IdentitySignedExportService`.
 - Ed25519 حتمي (RFC 8032) — لا أثر على حتمية Freeze §2.5.
 - Canonical JSON V2 (ADR-0009) يبقى؛ يوقّع Ed25519 نفس البايتات القانونية.
 - **التشفير على مستويين (ADR-0039):** `age::x25519` للأسرار المدارة على العقدة
@@ -575,9 +590,11 @@ Challenge {
   `users`/كلمات المرور.
 - **B6-A:** إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (Authentication
   Cutover عبر `IdentityAuthenticationPolicy`).
-- **B6-B (جزئان مستقلان):** Commit ③ — إزالة `GRPC_LEGACY_AUTH`/`change_password`
+- **B6-B (أجزاء مستقلة):** Commit ③ — إزالة `GRPC_LEGACY_AUTH`/`change_password`
   وإغلاق نافذة كلمة المرور ببوابة دائمة (Authentication Final Cutover). Commit ④ —
   قلب الافتراضي إلى `signature_version = 2` (Ed25519)؛ HMAC يبقى للقراءة فقط.
+  Commit ④ يُسلَّم على مرحلتين: ④a (البنية التحتية السلوكية-المحايدة) و④b
+  (القطع السلوكي B6-B عبر `IdentitySignedExportService`).
 
 ### حالة التنفيذ (Progress Log)
 
@@ -592,6 +609,8 @@ Challenge {
 | B6-A (Authentication Cutover) | ✅ مكتمل | 2026-08-06 | `IdentityAuthenticationPolicy` كمصدر قرار وحيد + `LoginResponse.identity_challenge_required` + إغلاق بوابة كلمة المرور عند وجود هوية ADMIN نشطة (ACTIVE cert + `.adminkey`) + `GRPC_LEGACY_AUTH` مؤقت + إزالة البذر الإنتاجي (`should_seed_legacy_admin`/`GRPC_LEGACY_BOOTSTRAP`) + إغلاق Rule 128 + الواجهة (تبويب `.adminkey` افتراضيًا عند AdminProvisioned/Ready) + بوابة كاملة (`cargo test` 633 lib + 30 تكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 | Commit ② (UNIT CSR bootstrap — B6-A isolation) | ✅ مكتمل | 2026-08-06 | `NodeIdentityResolver` (R5) + `IdentityTrustAnchorService` (مرساة ثقة WILAYA مستقلة) + مسار إصدار موحّد (`sign_identity_request`/`generate_identity_request`/`sign_unit_identity_request`/`finalize_unit_provision`) + سلسلة UNIT (`Uninitialized → UnitWaitingForCertificate → UnitActive`) + 4 أوامر IPC (`begin_unit_provision`/`sign_unit_identity_request`/`finalize_unit_provision`/`install_wilaya_certificate`) + 19 اختبار تكامل UNIT (16 WILAYA دون تغيير) + الواجهة (قسم UNIT على شاشة الدخول) + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة (644 lib + كل التكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
 | Commit ③ (Authentication Final Cutover — B6-B الجزء الأول) | ✅ مكتمل | 2026-08-06 | حذف `GRPC_LEGACY_AUTH` نهائيًا (من `IdentityAuthenticationPolicy` و`commands/auth.rs`؛ لم يبقَ متغير بيئة) + إغلاق `change_password` كأمر IPC وخدمة وواجهة + بوابة دائمة: مسار كلمة المرور يبقى فقط عند غياب هوية ADMIN نشطة (مستخدمي UNIT المحليون + العقد غير المجهَّزة) + إزالة `UserService::change_password`/`get_user_node_id` + إعادة معايرة `contracts.snapshot.json` + بوابة كاملة (644 lib + كل التكامل + clippy `-D warnings`/`check:arch`/`check`/Vitest 88) |
+| Commit ④a (بنية B6-B التحتية — سلوكيًا محايد) | ✅ مكتمل | 2026-08-06 | سجل مُنتِج `sync_issuer_sequence_state` (مفتاح `identity_id`، `begin_export`/`PendingIssuedSequence::commit` — advance-on-success) + `Ed25519PackageSigner::from_provider`/`public_key_hex` + فحص تسلسل متسلسل + `import_export.rs` دون لمس + اختبارات (7 repo + 1 signer) + بوابة كاملة |
+| Commit ④b (القطع السلوكي B6-B — `IdentitySignedExportService`) | ✅ مكتمل | 2026-08-06 | `IdentitySignedExportService::export_v2_package` (حلّل R5 fail-closed بلا تراجع HMAC + تخصيص/التزام التسلسل + توقيع Ed25519) + قلب أوامر الإنتاج الأربعة (products/daily_report/monthly_summary/stock_movements) إلى V2 بـ `issuer_identity_id`/`package_sequence`/`signature_version=2`/`signing_key_id` + `export_hash` مستقل (Uuid) عن `package_id` + `.unit` تبقى HMAC (استثناء Bootstrap) + 5 اختبارات تكامل `sync_v2_producer_export_tests` (metadata/round-trip Guard/replay/out-of-order/failed-export-reuses-sequence/rotation/unprovisioned fail-closed) + تحديث RFC/ADR-0038 + بوابة كاملة |
 
 بشكل محدد، يُغلَق B3 وفق الحالة المعتمدة:
 
@@ -744,6 +763,29 @@ Challenge {
 مستخدمي UNIT إلى نموذج هوية (بما يشمله من تصميم تحدّي خاص بالعقدة) — لا يحققه
 B6-B الحالي.
 
+بشكل محدد، يُغلَق Commit ④b (القطع السلوكي B6-B) وفق الحالة المعتمدة:
+
+- **`IdentitySignedExportService`:** المدخل الوحيد لتصدير V2 —
+  `export_v2_package(dataset, source_node_id, kind, target_path, node_type, crypto_port)`
+  يُرجع **التسلسل المصدر فقط**. الحل: `NodeIdentityResolver::resolve_local_signer`
+  (R5) مع **فشل مغلق بلا تراجع HMAC** — عقدة بلا مفتاح أو بلا شهادة ACTIVE أو R5
+  mismatch تُخطئ `OperationNotPermitted` ولا تُنتج ملفًا.
+- **الحزم الأربع قلبها:** `export_products_package`/`export_daily_report_package`/
+  `export_monthly_summary_package`/`export_stock_movements_package` صارت توقّع
+  `signature_version = 2` (Ed25519) وتحمل `issuer_identity_id` (المُصدِر =
+  `identity_id`، استمرارية عبر الدوران — §3.4.4) و`package_sequence` (مؤمّنة من
+  `sync_issuer_sequence_state`) و`signing_key_id` (المفتاح العام للعقدة، hex).
+  `.unit` (`export_unit_node_package`) **دون تغيير حرفيًا** — HMAC، استثناء Bootstrap (§3.10).
+- **`export_hash` مستقل:** معرّف تتبّع مالي يولّد كـ `Uuid::new_v4()` مستقل كليًا عن
+  `package_id` (لا ربط/مساواة في أي كود — عمود UNIQUE + عرض مختصر في الجدول الزمني فقط).
+- **التحقق من عدم التقدم:** التزام التسلسل (advance-on-success) يحدث فقط بعد نجاح
+  `PackageBuilder::build_encrypted_stream_path`؛ الفشل يُسقط الرمز ولا يحرق رقمًا.
+- **اختبارات التكامل (5):** `sync_v2_producer_export_tests` — V2 metadata +
+  تحقق التوقيع مقابل شهادة المُصدِر، round-trip مستهلك (Accept ثم Replay ثم
+  OutOfOrder ثم متتالية)، فشل-بلا-تقدّم + إعادة استخدام نفس الرقم، استمرارية عبر
+  دوران الشهادة (new `credential_id`/`generation`، نفس `identity_id`)، وfail-closed
+  للعقدة غير المجهَّزة.
+
 ---
 
 ## 6. Rollback Plan (خطة التراجع)
@@ -760,6 +802,10 @@ B6-B الحالي.
 ## 7. Backward Compatibility (التوافق الرجعي)
 
 - حزم V1 (HMAC) تُقرأ وتُتحقق كما اليوم.
+- حزم `.unit` تبقى موقّعة HMAC (استثناء Bootstrap، §3.10) — مسار استيرادها دون
+  تغيير (يتجاوز `run_import_pipeline`).
+- حزم الإنتاج الجديدة (V2/Ed25519) تُستهلك عبر `verify_v2_signature` + Transport
+  Guard داخل `run_import_pipeline` — بنمط add-only؛ لا تعديل على حزم الإصدارات السابقة.
 - دخول كلمات مرور المستخدمين الحاليين يستمر خلال نافذة الإهمال.
 - `CurrentSession` و`authorize_command` وواجهات frontend (`tauri.ts`/contracts) دون تغيير.
 - تُقبل حزم الثقة الجديدة فقط عند استيفاء: ترتيب نقل سليم (per-issuer sequence)
