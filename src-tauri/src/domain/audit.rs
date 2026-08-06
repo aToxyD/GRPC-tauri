@@ -71,6 +71,12 @@ pub enum AuditAction {
     // Identity rotation (B7)
     IdentityRotated,
     IdentityReissued,
+    // Identity & Access Synchronization (B8)
+    FleetAdminPasswordUpdated,
+    UnitUserPasswordUpdated,
+    AccountStatusChanged,
+    IdentityAccessPackageExported,
+    IdentityAccessPackageImported,
 }
 
 impl AuditAction {
@@ -126,6 +132,11 @@ impl AuditAction {
             AuditAction::FiscalClosurePackageApplied => "FiscalClosurePackageApplied",
             AuditAction::IdentityRotated => "IdentityRotated",
             AuditAction::IdentityReissued => "IdentityReissued",
+            AuditAction::FleetAdminPasswordUpdated => "FleetAdminPasswordUpdated",
+            AuditAction::UnitUserPasswordUpdated => "UnitUserPasswordUpdated",
+            AuditAction::AccountStatusChanged => "AccountStatusChanged",
+            AuditAction::IdentityAccessPackageExported => "IdentityAccessPackageExported",
+            AuditAction::IdentityAccessPackageImported => "IdentityAccessPackageImported",
         }
     }
 
@@ -180,6 +191,11 @@ impl AuditAction {
             "FiscalClosurePackageApplied" => Some(AuditAction::FiscalClosurePackageApplied),
             "IdentityRotated" => Some(AuditAction::IdentityRotated),
             "IdentityReissued" => Some(AuditAction::IdentityReissued),
+            "FleetAdminPasswordUpdated" => Some(AuditAction::FleetAdminPasswordUpdated),
+            "UnitUserPasswordUpdated" => Some(AuditAction::UnitUserPasswordUpdated),
+            "AccountStatusChanged" => Some(AuditAction::AccountStatusChanged),
+            "IdentityAccessPackageExported" => Some(AuditAction::IdentityAccessPackageExported),
+            "IdentityAccessPackageImported" => Some(AuditAction::IdentityAccessPackageImported),
             _ => None,
         }
     }
@@ -237,6 +253,11 @@ impl AuditAction {
             AuditAction::FiscalClosurePackageApplied => "تطبيق حزمة إغلاق السنة",
             AuditAction::IdentityRotated => "تدوير هوية",
             AuditAction::IdentityReissued => "إعادة إصدار هوية",
+            AuditAction::FleetAdminPasswordUpdated => "تحديث كلمة مرور المسؤول العام",
+            AuditAction::UnitUserPasswordUpdated => "تحديث كلمة مرور مستخدم الوحدة",
+            AuditAction::AccountStatusChanged => "تغيير حالة حساب",
+            AuditAction::IdentityAccessPackageExported => "تصدير حزمة حسابات",
+            AuditAction::IdentityAccessPackageImported => "استيراد حزمة حسابات",
         }
     }
 
@@ -275,12 +296,16 @@ impl AuditAction {
             | AuditAction::ImportMonthlyReport
             | AuditAction::ImportStockMovements => EntityType::DailyReport,
             AuditAction::CreateUser | AuditAction::UpdateUser => EntityType::User,
+            AuditAction::FleetAdminPasswordUpdated
+            | AuditAction::UnitUserPasswordUpdated
+            | AuditAction::AccountStatusChanged => EntityType::User,
             AuditAction::Create | AuditAction::ResolveConflict => EntityType::System,
             // B4 trust distribution (Identity Store) and registry fleet-state
             // snapshots are system-level facts, not single-entity updates.
-            AuditAction::ImportTrustPackage | AuditAction::ImportRegistryPackage => {
-                EntityType::System
-            }
+            AuditAction::ImportTrustPackage
+            | AuditAction::ImportRegistryPackage
+            | AuditAction::IdentityAccessPackageExported
+            | AuditAction::IdentityAccessPackageImported => EntityType::System,
             AuditAction::FiscalYearOpened
             | AuditAction::FiscalYearClosed
             | AuditAction::FiscalYearArchived
@@ -876,6 +901,9 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
         | AuditAction::CreateSnapshot
         | AuditAction::CreateUser
         | AuditAction::UpdateUser
+        | AuditAction::FleetAdminPasswordUpdated
+        | AuditAction::UnitUserPasswordUpdated
+        | AuditAction::AccountStatusChanged
         | AuditAction::Create => AuditEventType::UserAction,
 
         // Fiscal lifecycle events → FiscalEvent
@@ -897,7 +925,9 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
         | AuditAction::ImportNodePackage
         | AuditAction::ImportTrustPackage
         | AuditAction::ImportRegistryPackage
-        | AuditAction::UnitNodeImport => AuditEventType::SyncEvent,
+        | AuditAction::UnitNodeImport
+        | AuditAction::IdentityAccessPackageExported
+        | AuditAction::IdentityAccessPackageImported => AuditEventType::SyncEvent,
 
         // Integrity/backup failures → IntegrityEvent
         AuditAction::BackupCheckpointFailed

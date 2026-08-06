@@ -228,7 +228,9 @@ fn additive_window_keeps_legacy_password_until_hash_cleared() {
     // Legacy hashed admin was linked WITHOUT clearing the hash → AdminProvisioned.
     assert_eq!(status(&node), IdentityBootstrapState::AdminProvisioned);
 
-    // Legacy password path still authenticates (additive window).
+    // Legacy password path still authenticates (additive window). B8: the
+    // seeded admin is the fleet-wide `admin`, so its hash verifies in the
+    // global admin domain.
     let admin = node
         .db
         .executor()
@@ -239,7 +241,7 @@ fn additive_window_keeps_legacy_password_until_hash_cleared() {
     assert!(!admin.password_hash.is_empty());
     let port = Argon2PasswordHashProvider;
     assert!(port
-        .verify_password("admin", &admin.node_id, &admin.password_hash)
+        .verify_admin("admin", &admin.password_hash)
         .expect("verify ok"));
 
     // Clearing the hash (identity cutover, B6) flips the state to Ready.
@@ -616,7 +618,7 @@ fn identity_only_admin_has_empty_hash_and_no_password_path() {
     // The password verifier fails closed on empty hash material (no parse).
     let port = Argon2PasswordHashProvider;
     assert!(port
-        .verify_password("anything", &admin.node_id, &admin.password_hash)
+        .verify_node("anything", &admin.node_id, &admin.password_hash)
         .is_err());
 }
 

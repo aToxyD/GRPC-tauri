@@ -42,7 +42,7 @@ fn admin_count(db: &Database) -> usize {
 
 fn verify(password: &str, user: &User) -> bool {
     Argon2PasswordHashProvider
-        .verify_password(password, &user.node_id, &user.password_hash)
+        .verify_admin(password, &user.password_hash)
         .expect("verify password")
 }
 
@@ -100,7 +100,7 @@ fn modified_password_persists_across_restart() {
         // B6-B: the `UserService::change_password` reset path was removed. The
         // repository write still exercises the persistence invariant directly.
         let hash = Argon2PasswordHashProvider
-            .hash_password(MODIFIED_PASSWORD, &admin.node_id)
+            .hash_admin(MODIFIED_PASSWORD)
             .expect("hash");
         UserRepository::new(db.executor())
             .change_password(&admin.id, &hash, &chrono::Utc::now().to_rfc3339())

@@ -40,11 +40,20 @@ pub fn authorize(
         }
 
         // ── Core domain management (Admin-only) ──────────────────────────
-        Action::AdminOnly
-        | Action::ManageProducts
-        | Action::ManageUnits // [arch:allow-manageunits-wilaya] see ADR-0038 (B2 adds WILAYA node-type guard)
-        | Action::ManageInventory => {
+        Action::AdminOnly | Action::ManageProducts | Action::ManageInventory => {
             system::authorize_system(principal, Action::AdminOnly, resource)
+        }
+
+        // ── Unit management (Wilaya node-scoped authority) ───────────────
+        // Unit CRUD and UNIT bootstrap export are Wilaya-side operations.
+        // This closes the previous ManageUnits gap: a UNIT admin may no
+        // longer manage units through the AdminOnly-only arm.
+        Action::ManageUnits => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::InsufficientPermissions)
+            }
         }
 
         // ── Actions requiring authentication (any valid session) ──────────
@@ -92,6 +101,25 @@ pub fn authorize(
         // valid session on the UNIT node.
         Action::RotateCredential | Action::ReissueCredential => {
             system::authorize_authenticated(principal, resource)
+        }
+
+        // ── Identity & Access Synchronization (B8) ─────────────────────────
+        // Account management and package export are Wilaya-side authorities:
+        // the Wilaya is the single source of truth for the two synced accounts.
+        Action::ManageAccountSync | Action::ExportIdentityAccessPackage => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::InsufficientPermissions)
+            }
+        }
+        // Package import is a UNIT-side apply (one-way Wilaya→UNIT, no reverse path).
+        Action::ImportIdentityAccessPackage => {
+            if let ResourceContext::UnitNode { .. } = resource {
+                system::authorize_authenticated(principal, resource)
+            } else {
+                Err(AuthorizationError::InsufficientPermissions)
+            }
         }
     }
 }

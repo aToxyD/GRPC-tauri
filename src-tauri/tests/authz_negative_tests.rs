@@ -166,3 +166,27 @@ fn auth_wilaya_non_admin_denied_authenticated_gate() {
         e => panic!("unexpected: {:?}", e),
     }
 }
+
+#[test]
+fn auth_unit_admin_denied_manage_units_wilaya_node_guard() {
+    // B8 ① closed the ManageUnits node-type gap: a UNIT admin may no longer
+    // manage units through the AdminOnly-only arm (Rule 127 retired).
+    let state = unit_configured_state();
+    let s = common::create_test_session("u1", "unit-admin", "Admin");
+    set_session(&state, s);
+
+    let err = authorize_command(&state, Action::ManageUnits, None).expect_err("deny");
+    match err {
+        AppError::Authorization(AuthorizationError::InsufficientPermissions) => {}
+        e => panic!("unexpected: {:?}", e),
+    }
+}
+
+#[test]
+fn auth_wilaya_admin_allowed_manage_units_wilaya_node_guard() {
+    let state = wilaya_configured_state();
+    let s = common::create_test_session("u1", "wilaya-admin", "Admin");
+    set_session(&state, s);
+
+    authorize_command(&state, Action::ManageUnits, None).expect("allow");
+}

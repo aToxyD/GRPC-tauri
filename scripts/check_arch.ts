@@ -1803,15 +1803,14 @@ checkRule(
     "error"
 );
 
-// Rule 127: ManageUnits must be node-type (WILAYA-only) guarded through authz.
-// Until B2 adds the node-type guard, occurrences must carry the tag.
-checkRule(
-    "Rule 127: Action::ManageUnits without WILAYA node-type guard tag (RFC 2026-08-04, ADR-0038)",
-    ["src-tauri/src/application/authz/policies/**/*.rs"],
-    /Action::ManageUnits/,
-    (line) => line.includes("[arch:allow-manageunits-wilaya]"),
-    "error"
-);
+// Rule 127 (CLOSED in B8 ①): ManageUnits now carries a WILAYA node-type guard
+// through authz. B8 ① removed the `[arch:allow-manageunits-wilaya]` tag and
+// replaced the AdminOnly-only arm with an explicit `ResourceContext::WilayaNode`
+// gate in `policies/mod.rs` (unit CRUD + UNIT bootstrap export are Wilaya-side
+// operations; a UNIT admin receives `InsufficientPermissions`). The governance
+// concern this rule guarded no longer exists, so the rule is retired rather
+// than suppressed.
+// RFC 2026-08-04-node-identity-trust §3.6 / ADR-0038.
 
 // Rule 128 (CLOSED in B6-A): No hardcoded default admin credential.
 // B5 replaced the production bootstrap path (WILAYA->ADMIN). B6-A removed the

@@ -21,6 +21,10 @@ pub struct User {
     /// Never sent to the frontend — kept for node-binding verification only.
     #[serde(skip_serializing)]
     pub node_id: String,
+    /// B8 account status: `false` = enabled (deleted = 0), `true` = disabled
+    /// (soft-deleted). Never sent to the frontend through the `User` DTO.
+    #[serde(default, skip_serializing)]
+    pub deleted: bool,
 }
 
 /// User role for authorization

@@ -37,6 +37,7 @@ pub mod system_diagnostics_service;
 pub mod system_health_service;
 pub mod system_stats_service;
 pub mod unit_service;
+pub mod user_account_sync_service;
 pub mod user_service;
 
 pub use audit_observability_service::AuditObservabilityService;
@@ -86,6 +87,7 @@ pub use system_diagnostics_service::SystemDiagnosticsService;
 pub use system_health_service::SystemHealthService;
 pub use system_stats_service::SystemStatsService;
 pub use unit_service::UnitService;
+pub use user_account_sync_service::{ApplyIdentityAccessOutcome, UserAccountSyncService};
 pub use user_service::UserService;
 
 /// User identification context for auditing.
@@ -115,6 +117,7 @@ impl crate::architecture::Service for MonthlyReportService<'_> {}
 impl crate::architecture::Service for OrderService<'_> {}
 impl crate::architecture::Service for DailyReportService<'_> {}
 impl crate::architecture::Service for UnitService<'_> {}
+impl crate::architecture::Service for UserAccountSyncService<'_> {}
 impl crate::architecture::Service for AuditService<'_> {}
 impl crate::architecture::Service for ProductService<'_> {}
 impl crate::architecture::Service for UserService<'_> {}

@@ -190,6 +190,9 @@ use std::path::Path;
 /// a known credential while the DB is `Uninitialized` (the B6-A login gate
 /// leaves the password path open on such databases).
 ///
+/// B8: the seeded admin is the fleet-wide synchronized `admin`, so its hash is
+/// derived in the global admin domain (identical on every node).
+///
 /// Idempotent by construction: an existing `admin` row is never overwritten.
 pub fn seed_default_admin(db: &Database) -> crate::errors::AppResult<()> {
     use crate::domain::security::PasswordHashPort;
@@ -208,7 +211,7 @@ pub fn seed_default_admin(db: &Database) -> crate::errors::AppResult<()> {
         .unwrap_or_else(|_| "WILAYA".to_string());
     let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
     let password_hash = password_port
-        .hash_password("admin", &node_id)
+        .hash_admin("admin")
         .map_err(crate::errors::AppError::Internal)?;
 
     let id = uuid::Uuid::new_v4().to_string();

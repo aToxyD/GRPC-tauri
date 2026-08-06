@@ -500,6 +500,7 @@ pub fn complete_challenge(
         role: session.user_snapshot.role.clone(),
         created_at: session.user_snapshot.created_at,
         node_id: String::new(),
+        deleted: false,
     };
 
     Ok(LoginResponse {

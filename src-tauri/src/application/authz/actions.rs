@@ -51,4 +51,9 @@ pub enum Action {
     // Identity credential rotation (B7)
     RotateCredential,
     ReissueCredential,
+
+    // Identity & Access Synchronization (B8)
+    ManageAccountSync,
+    ExportIdentityAccessPackage,
+    ImportIdentityAccessPackage,
 }

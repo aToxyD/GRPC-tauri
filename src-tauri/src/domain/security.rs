@@ -3,8 +3,19 @@
 //! Input sanitization, XSS prevention, and security helpers
 
 pub trait PasswordHashPort: Send + Sync {
-    fn hash_password(&self, password: &str, node_id: &str) -> Result<String, String>;
-    fn verify_password(&self, password: &str, node_id: &str, hash: &str) -> Result<bool, String>;
+    /// Hash a node-bound password. The pre-hash HMAC key is derived from
+    /// `node_id`, so the resulting hash is valid only on that node.
+    fn hash_node(&self, password: &str, node_id: &str) -> Result<String, String>;
+    fn verify_node(&self, password: &str, node_id: &str, hash: &str) -> Result<bool, String>;
+
+    /// Hash / verify the fleet-wide synchronized `admin` account.
+    ///
+    /// The pre-hash HMAC key is a fixed global admin domain constant that is
+    /// identical on every node, so a single hash authenticates the unified
+    /// `admin` account anywhere in the fleet. The derivation domain lives
+    /// exclusively inside the provider — callers never see it.
+    fn hash_admin(&self, password: &str) -> Result<String, String>;
+    fn verify_admin(&self, password: &str, hash: &str) -> Result<bool, String>;
 }
 
 use regex::Regex;

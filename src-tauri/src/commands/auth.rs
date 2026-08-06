@@ -13,7 +13,7 @@ use crate::commands::common::{
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError, ValidationError};
-use crate::models::{LoginRequest, LoginResponse, SessionStatus, User};
+use crate::models::{LoginRequest, LoginResponse, SessionStatus, User, UserRole};
 use tauri::State;
 
 /// User login with rate limiting and audit logging
@@ -97,15 +97,44 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
                 request.username
             );
         } else {
-            // Node-bound password verification
-            let valid = password_port
-                .verify_password(&request.password, &user.node_id, &user.password_hash)
-                .map_err(|e| {
-                    into_command_error(AppError::Internal(format!(
-                        "Password verification failed: {}",
-                        e
-                    )))
-                })?;
+            // Role-based password verification (B8 — Identity & Access
+            // Synchronization): the fleet-wide `admin` account verifies in the
+            // global admin domain; every other account (UNIT `user`, legacy
+            // local users) verifies node-bound. Admin additionally falls back
+            // to node-bound verification to cover pre-sync unit-bootstrapped
+            // admin hashes that predate the first identity_access package.
+            let valid = match user.role {
+                UserRole::Admin => {
+                    let admin_ok = password_port
+                        .verify_admin(&request.password, &user.password_hash)
+                        .map_err(|e| {
+                            into_command_error(AppError::Internal(format!(
+                                "Password verification failed: {}",
+                                e
+                            )))
+                        })?;
+                    if admin_ok {
+                        true
+                    } else {
+                        password_port
+                            .verify_node(&request.password, &user.node_id, &user.password_hash)
+                            .map_err(|e| {
+                                into_command_error(AppError::Internal(format!(
+                                    "Password verification failed: {}",
+                                    e
+                                )))
+                            })?
+                    }
+                }
+                UserRole::User => password_port
+                    .verify_node(&request.password, &user.node_id, &user.password_hash)
+                    .map_err(|e| {
+                        into_command_error(AppError::Internal(format!(
+                            "Password verification failed: {}",
+                            e
+                        )))
+                    })?,
+            };
 
             if valid {
                 // Reset rate limiter on success
@@ -256,6 +285,7 @@ pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> 
         role: snapshot.role.clone(),
         created_at: snapshot.created_at,
         node_id: String::new(),
+        deleted: false,
     };
 
     Ok(Some(user))

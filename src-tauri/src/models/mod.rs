@@ -23,6 +23,9 @@ pub use fifo::*;
 // Re-export fiscal year models
 pub use fiscal_year::*;
 
+// Re-export identity & access synchronization payload
+pub use identity_access::*;
+
 // Re-export product models
 pub use product::*;
 
@@ -43,6 +46,7 @@ pub mod audit;
 pub mod dto;
 pub mod fifo;
 pub mod fiscal_year;
+pub mod identity_access;
 pub mod inventory;
 pub mod order;
 pub mod product;

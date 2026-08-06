@@ -32,7 +32,7 @@ impl<'a> UserService<'a> {
 
         let password_hash = self
             .password_port
-            .hash_password(password, &node_id)
+            .hash_node(password, &node_id)
             .map_err(crate::errors::AppError::Internal)?;
 
         let id = Uuid::new_v4().to_string();

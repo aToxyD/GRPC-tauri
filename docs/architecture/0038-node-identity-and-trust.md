@@ -75,8 +75,9 @@ admin افتراضي `admin/admin` مثبّت في الكود، WILAYA بلا UU
 
 ## 7. قواعد `check_arch` الجديدة (GROUP 24)
 - **Rule 126**: منع Ed25519/هوية غير متماثلة خارج طبقات الهوية (commands/models/repositories).
-- **Rule 127**: `Action::ManageUnits` يتطلب حارس node-type (WILAYA) عبر authz؛ مواقع غير
-  منقّحة تُعلَّم `[arch:allow-manageunits-wilaya]`.
+- **Rule 127** (أُغلقت في B8 ①): `Action::ManageUnits` يتطلب حارس node-type (WILAYA) عبر
+  authz؛ أُغلقت القاعدة — حارس `ResourceContext::WilayaNode` في `policies/mod.rs` وليس
+  علامة `[arch:allow-manageunits-wilaya]`.
 - **Rule 128**: منع اعتماد admin افتراضي مثبّت (`hash_password("admin"...`)؛ المواقع
   الحالية تُعلَّم `[arch:allow-bootstrap-admin]` حتى B5.
 - **Rule 129**: `signature_version` يبقى `Option<u16>` (حماية نقطة التوسّع).

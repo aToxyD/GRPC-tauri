@@ -45,7 +45,7 @@ impl<'a> UnitService<'a> {
         // Hash password with node binding
         let password_hash = self
             .password_port
-            .hash_password(&req.password, node_id)
+            .hash_node(&req.password, node_id)
             .map_err(crate::errors::AppError::Internal)?;
 
         let user_id = Uuid::new_v4().to_string();
@@ -103,7 +103,7 @@ impl<'a> UnitService<'a> {
                     let node_id = &req.code;
                     let password_hash = self
                         .password_port
-                        .hash_password(&req.password, node_id)
+                        .hash_node(&req.password, node_id)
                         .map_err(crate::errors::AppError::Internal)?;
                     let now = Utc::now().to_rfc3339();
                     user_repo.change_password(&user_id, &password_hash, &now)?;
