@@ -2,6 +2,7 @@ import { safeInvoke } from '../tauri';
 import type {
   SyncExportResult, SyncImportResult, DailyReportImportResult,
   UnitNodePackageImportResult, StockMovementsImportResult,
+  IdentityAccessImportResult,
 } from '../types';
 
 export async function exportProductsPackage(filePath: string): Promise<SyncExportResult> {
@@ -42,4 +43,24 @@ export async function importMonthlySummaryPackage(filePath: string, unitId: stri
 
 export async function importStockMovementsPackage(filePath: string, unitId: string): Promise<StockMovementsImportResult> {
   return await safeInvoke('import_stock_movements_package', { filePath, unitId });
+}
+
+export async function setFleetAdminPassword(password: string): Promise<void> {
+  return await safeInvoke('set_fleet_admin_password', { password });
+}
+
+export async function setUnitUserPassword(unitCode: string, password: string): Promise<void> {
+  return await safeInvoke('set_unit_user_password', { unitCode, password });
+}
+
+export async function setAccountStatus(username: string, enabled: boolean): Promise<void> {
+  return await safeInvoke('set_account_status', { username, enabled });
+}
+
+export async function exportIdentityAccessPackage(unitCode: string, filePath: string): Promise<SyncExportResult> {
+  return await safeInvoke('export_identity_access_package', { unitCode, filePath });
+}
+
+export async function importIdentityAccessPackage(filePath: string): Promise<IdentityAccessImportResult> {
+  return await safeInvoke('import_identity_access_package', { filePath });
 }

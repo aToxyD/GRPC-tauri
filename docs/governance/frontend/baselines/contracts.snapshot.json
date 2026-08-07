@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-06T12:00:00.000Z",
+  "generated": "2026-08-07T01:28:41.000Z",
   "contracts": [
     {
       "name": "identity",
@@ -485,6 +485,21 @@
         },
         {
           "name": "importStockMovementsPackage"
+        },
+        {
+          "name": "setFleetAdminPassword"
+        },
+        {
+          "name": "setUnitUserPassword"
+        },
+        {
+          "name": "setAccountStatus"
+        },
+        {
+          "name": "exportIdentityAccessPackage"
+        },
+        {
+          "name": "importIdentityAccessPackage"
         }
       ],
       "commands": [
@@ -517,11 +532,26 @@
         },
         {
           "command": "import_stock_movements_package"
+        },
+        {
+          "command": "set_fleet_admin_password"
+        },
+        {
+          "command": "set_unit_user_password"
+        },
+        {
+          "command": "set_account_status"
+        },
+        {
+          "command": "export_identity_access_package"
+        },
+        {
+          "command": "import_identity_access_package"
         }
       ],
-      "loc": 46,
-      "exportCount": 10,
-      "commandCount": 10
+      "loc": 82,
+      "exportCount": 15,
+      "commandCount": 15
     },
     {
       "name": "orders",

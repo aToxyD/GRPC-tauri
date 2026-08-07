@@ -1,4 +1,5 @@
 pub mod import_daily_report_package;
+pub mod import_identity_access_package;
 pub mod import_monthly_summary_package;
 pub mod import_products_package;
 pub mod import_registry_package;

@@ -8,4 +8,5 @@ pub enum SyncPackageKind {
     Products,
     DailyReports,
     MonthlySummary,
+    IdentityAccess,
 }

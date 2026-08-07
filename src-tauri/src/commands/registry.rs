@@ -95,6 +95,12 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::import_stock_movements_package,
         commands::import_trust_package,
         commands::import_registry_package,
+        // Identity & Access Synchronization (B8, ADR-0040)
+        commands::set_fleet_admin_password,
+        commands::set_unit_user_password,
+        commands::set_account_status,
+        commands::export_identity_access_package,
+        commands::import_identity_access_package,
         commands::export_stock_movements_package,
         commands::get_import_audit_events,
         commands::record_consumption,

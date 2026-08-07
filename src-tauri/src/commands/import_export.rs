@@ -8,7 +8,7 @@ use crate::application::services::{
     record_export_with_reproducibility, AuditService, AuditTxService, DailyReportService,
     ExportReproducibilityContext, IdentitySignedExportService, NodePackageService, ProductService,
     SettingsService, StockMovementService, SyncPackageIdentityVerificationService, UnitService,
-    UserService,
+    UserAccountSyncService, UserService,
 };
 use crate::application::services::{
     ImportReproducibilityRecord, ImportReproducibilityService, MaintenanceBlockedOperation,
@@ -49,6 +49,10 @@ use crate::application::usecases::sync::import_trust_package::TRUST_PACKAGE_KIND
 use crate::application::usecases::sync::import_trust_package::{
     execute as apply_trust_package, ImportTrustPackageInput,
 };
+use crate::application::usecases::sync::import_identity_access_package::IDENTITY_ACCESS_PACKAGE_KIND;
+use crate::application::usecases::sync::import_identity_access_package::{
+    execute as apply_identity_access_package, ImportIdentityAccessPackageInput,
+};
 use crate::commands::common::{
     db_mut_or_command_error, db_ref_or_command_error, node_key_store, user_ctx_from_session,
 };
@@ -72,13 +76,14 @@ use crate::infrastructure::sync::{
     read_daily_report_package_from_file, read_monthly_summary_package_from_file,
     read_products_package_from_file, read_registry_package_from_file,
     read_stock_movements_package_from_file, read_trust_package_from_file,
-    read_unit_node_package_from_file, resolve_export_source_node_id, HmacPackageSigner,
-    PackageBuilder, SerdeJsonSyncPackageSerializer,
+    read_identity_access_package_from_file, read_unit_node_package_from_file,
+    resolve_export_source_node_id, HmacPackageSigner, PackageBuilder,
+    SerdeJsonSyncPackageSerializer,
 };
 
 use crate::models::{
-    DailyReportImportResult, PackageExportResult, RegistryPackageImportResult,
-    TrustPackageImportResult, XlsxExportResult,
+    DailyReportImportResult, IdentityAccessPackageImportResult, PackageExportResult,
+    RegistryPackageImportResult, TrustPackageImportResult, XlsxExportResult,
 };
 use chrono::{Datelike, Utc};
 use tauri::State;
@@ -879,6 +884,227 @@ pub fn import_registry_package(
             Ok(RegistryPackageImportResult {
                 snapshot_version: outcome.snapshot_version,
                 unit_count: outcome.unit_count,
+                package_id: outcome.package_id,
+                imported_by: session.username.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            })
+        },
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B8 — Identity & Access Synchronization (ADR-0040)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Wilaya: set the fleet-wide `admin` password (admin derivation domain).
+///
+/// The hash authenticates `admin` on every node. Local modification on UNIT
+/// nodes is forbidden by Invariant 13; only the Wilaya IPC command reaches this
+/// mutation (authz `Action::ManageAccountSync` → Wilaya + AdminOnly).
+#[tauri::command]
+pub fn set_fleet_admin_password(
+    state: State<AppState>,
+    password: String,
+) -> Result<(), String> {
+    let (session, _settings) =
+        authorize_command(&state, Action::ManageAccountSync, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let user_ctx = user_ctx_from_session(&session);
+    let password_port = state.password_port.as_ref();
+
+    AuditTxService::execute_with_audit(
+        db,
+        AuditAction::FleetAdminPasswordUpdated,
+        &user_ctx,
+        |tx| UserAccountSyncService::new(tx.executor, password_port).set_fleet_admin_password(&password),
+    )
+    .map_err(into_command_error)?;
+
+    Ok(())
+}
+
+/// Wilaya: set a unit's `user` password (node-bound to the unit code).
+///
+/// The hash authenticates `user` only on the target unit. Wilaya-only (authz
+/// `Action::ManageAccountSync` → Wilaya + AdminOnly).
+#[tauri::command]
+pub fn set_unit_user_password(
+    state: State<AppState>,
+    unit_code: String,
+    password: String,
+) -> Result<(), String> {
+    let (session, _settings) =
+        authorize_command(&state, Action::ManageAccountSync, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let user_ctx = user_ctx_from_session(&session);
+    let password_port = state.password_port.as_ref();
+
+    AuditTxService::execute_with_audit(
+        db,
+        AuditAction::UnitUserPasswordUpdated,
+        &user_ctx,
+        |tx| {
+            UserAccountSyncService::new(tx.executor, password_port)
+                .set_unit_user_password(&unit_code, &password)
+        },
+    )
+    .map_err(into_command_error)?;
+
+    Ok(())
+}
+
+/// Wilaya: enable / disable an account (soft-delete semantics).
+///
+/// `enabled = false` maps to `deleted = 1`. Wilaya-only (authz
+/// `Action::ManageAccountSync` → Wilaya + AdminOnly).
+#[tauri::command]
+pub fn set_account_status(
+    state: State<AppState>,
+    username: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let (session, _settings) =
+        authorize_command(&state, Action::ManageAccountSync, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let user_ctx = user_ctx_from_session(&session);
+    let password_port = state.password_port.as_ref();
+
+    AuditTxService::execute_with_audit(
+        db,
+        AuditAction::AccountStatusChanged,
+        &user_ctx,
+        |tx| {
+            UserAccountSyncService::new(tx.executor, password_port)
+                .set_account_status(&username, enabled)
+        },
+    )
+    .map_err(into_command_error)?;
+
+    Ok(())
+}
+
+/// Wilaya: export one unit's Identity & Access package (encrypted `.sync`).
+///
+/// B8 (ADR-0040): kind = `identity_access`, one package per unit, signed V2 via
+/// `IdentitySignedExportService`. Fails closed when the fleet `admin` password
+/// is unset or the fleet `admin` is disabled. Wilaya-only (authz
+/// `Action::ExportIdentityAccessPackage` → Wilaya + AdminOnly).
+#[tauri::command]
+pub fn export_identity_access_package(
+    state: State<AppState>,
+    unit_code: String,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    let (session, settings) = authorize_command(&state, Action::ExportIdentityAccessPackage, None)
+        .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+    let start_time = std::time::Instant::now();
+
+    let password_port = state.password_port.as_ref();
+    let payload = UserAccountSyncService::new(db.executor(), password_port)
+        .export(&unit_code)
+        .map_err(into_command_error)?;
+
+    let source_node_id =
+        resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
+
+    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_package(
+            payload.clone(),
+            &source_node_id,
+            IDENTITY_ACCESS_PACKAGE_KIND,
+            std::path::Path::new(&file_path),
+            export_subject_type(settings.node_type),
+            &state.crypto_port,
+        )
+        .map_err(into_command_error)?;
+
+    log::info!(
+        target: "grpc::import_export",
+        "export_identity_access_package: success path={} unit_code={}",
+        file_path,
+        unit_code
+    );
+
+    let export_hash = Uuid::new_v4().to_string();
+    let result = PackageExportResult::success(file_path.clone(), 1, "encrypted".to_string());
+
+    let _ = db.with_transaction(|tx| {
+        record_export_with_reproducibility(
+            tx,
+            ExportReproducibilityContext {
+                export_hash,
+                fiscal_year: settings.current_year,
+                generated_by: session.username.clone(),
+                movement_count: 0,
+                report_count: 0,
+                inventory_total_value: 0.0,
+                export_reason: "identity_access_sync_package".to_string(),
+            },
+        )
+    });
+
+    let duration = start_time.elapsed().as_millis() as i64;
+    let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
+        crate::application::services::TelemetryEventType::SyncExport,
+        crate::application::services::TelemetryOutcome::Success,
+        Some(duration),
+        Some(serde_json::json!({
+            "path": file_path,
+            "kind": IDENTITY_ACCESS_PACKAGE_KIND,
+            "unit_code": unit_code,
+        })),
+        Some(&session.user_id),
+    );
+
+    Ok(result)
+}
+
+/// UNIT: import an Identity & Access package (encrypted `.sync`).
+///
+/// B8 (ADR-0040): kind = `identity_access` — canonical account reconciliation on
+/// the UNIT node (rename + canonical upserts). Replay protection is owned by
+/// `run_import_pipeline` (Transport Guard + `ImportedPackageRegistry`).
+/// Unit-only (authz `Action::ImportIdentityAccessPackage` → Unit + authenticated).
+#[tauri::command]
+pub fn import_identity_access_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<IdentityAccessPackageImportResult, String> {
+    run_import_pipeline(
+        &state,
+        Action::ImportIdentityAccessPackage,
+        file_path,
+        IDENTITY_ACCESS_PACKAGE_KIND,
+        AuditAction::IdentityAccessPackageImported,
+        read_identity_access_package_from_file,
+        |executor, registry, package, session, _importer_wilaya: &str| {
+            let password_port = state.password_port.as_ref();
+            let input = ImportIdentityAccessPackageInput {
+                package,
+                imported_by: session.username.clone(),
+            };
+            let outcome = apply_identity_access_package(executor, registry, password_port, input)?;
+            Ok(IdentityAccessPackageImportResult {
+                admin_updated: outcome.admin_updated,
+                user_updated: outcome.user_updated,
+                user_renamed: outcome.user_renamed,
                 package_id: outcome.package_id,
                 imported_by: session.username.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),

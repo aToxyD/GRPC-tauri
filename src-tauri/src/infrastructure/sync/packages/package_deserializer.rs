@@ -9,7 +9,7 @@ use crate::application::usecases::sync::import_registry_package::RegistryPackage
 use crate::application::usecases::sync::import_trust_package::TrustPackagePayload;
 use crate::errors::{AppError, AppResult};
 use crate::infrastructure::MAX_IMPORT_SIZE;
-use crate::models::UnitNodePackage;
+use crate::models::{IdentityAccessPayload, UnitNodePackage};
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::canonical_json::{canonical_bytes_for_integrity, canonical_bytes_for_signature};
@@ -289,6 +289,15 @@ impl SerdeJsonSyncPackageDeserializer {
     pub fn registry_package_from_reader<R: std::io::Read>(
         reader: R,
     ) -> AppResult<SyncPackage<RegistryPackagePayload>> {
+        let package = Self::parse_json_from_reader(reader)?;
+        Self::verify_integrity(&package)?;
+        Self::verify_signature(&package)?;
+        Ok(package)
+    }
+
+    pub fn identity_access_from_reader<R: std::io::Read>(
+        reader: R,
+    ) -> AppResult<SyncPackage<IdentityAccessPayload>> {
         let package = Self::parse_json_from_reader(reader)?;
         Self::verify_integrity(&package)?;
         Self::verify_signature(&package)?;

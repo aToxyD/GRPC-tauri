@@ -429,6 +429,15 @@ export interface StockMovementsImportResult {
   timestamp: string;
 }
 
+export interface IdentityAccessImportResult {
+  admin_updated: boolean;
+  user_updated: boolean;
+  user_renamed: boolean;
+  package_id: string;
+  imported_by: string;
+  timestamp: string;
+}
+
 // Progress Types
 export interface ProgressInfo {
   id: string;

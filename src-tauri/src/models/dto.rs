@@ -268,6 +268,16 @@ pub struct RegistryPackageImportResult {
     pub timestamp: String,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct IdentityAccessPackageImportResult {
+    pub admin_updated: bool,
+    pub user_updated: bool,
+    pub user_renamed: bool,
+    pub package_id: String,
+    pub imported_by: String,
+    pub timestamp: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

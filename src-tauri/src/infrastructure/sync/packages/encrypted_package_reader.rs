@@ -163,4 +163,14 @@ pub fn read_registry_package_from_file(
     SerdeJsonSyncPackageDeserializer::registry_package_from_reader(std::io::BufReader::new(file))
 }
 
+pub fn read_identity_access_package_from_file(
+    path: &Path,
+    crypto_port: &AgeFileEncryptionProvider,
+) -> AppResult<SyncPackage<crate::models::IdentityAccessPayload>> {
+    let temp_plaintext = decrypt_encrypted_file_to_temp(path, crypto_port)?;
+    let file = std::fs::File::open(temp_plaintext.path())
+        .map_err(|e| AppError::Internal(format!("Failed to re-open decrypt temp: {}", e)))?;
+    SerdeJsonSyncPackageDeserializer::identity_access_from_reader(std::io::BufReader::new(file))
+}
+
 // Note: Byte-slice entry points were removed to enforce the streaming model.

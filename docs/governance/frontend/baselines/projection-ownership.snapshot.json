@@ -1,6 +1,6 @@
 {
-  "generated": "2026-06-01T19:15:02.460Z",
-  "totalTypes": 102,
+  "generated": "2026-08-07T01:28:41.000Z",
+  "totalTypes": 103,
   "types": [
     {
       "name": "LoginRequest",
@@ -1266,6 +1266,36 @@
         },
         {
           "name": "file_hash",
+          "type": "string"
+        },
+        {
+          "name": "imported_by",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "IdentityAccessImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "admin_updated",
+          "type": "boolean"
+        },
+        {
+          "name": "user_updated",
+          "type": "boolean"
+        },
+        {
+          "name": "user_renamed",
+          "type": "boolean"
+        },
+        {
+          "name": "package_id",
           "type": "string"
         },
         {

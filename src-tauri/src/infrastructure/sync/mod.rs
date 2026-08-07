@@ -11,6 +11,7 @@ pub use packages::{
     read_unit_node_package_from_file,
     read_trust_package_from_file,
     read_registry_package_from_file,
+    read_identity_access_package_from_file,
     signing::{HmacPackageSigner, PackageSigner, PackageVerifier},
     PackageBuilder,
     SerdeJsonSyncPackageDeserializer,
