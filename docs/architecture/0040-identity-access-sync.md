@@ -1,7 +1,7 @@
 # ADR 0040: Identity & Access Synchronization — Two Static Accounts per UNIT (B8)
 
 # Status
-Draft (2026-08-07)
+Accepted (2026-08-07)
 
 # Date
 2026-08-07
@@ -130,3 +130,8 @@ hash).
   `identity_access` payload, AuthZ actions, audit events, close Rule 127.
 - B8 ②: IPC cutover, frontend contracts, snapshot recertification.
 - B8 ③: integration suite, final ADR acceptance, 8-gate pass, `tauri build`.
+  Evidence: `tests/identity_access_sync_tests.rs` (16 tests) — export
+  service-level round-trip + fail-closed guards, import pipeline (replay,
+  out-of-order, wrong-issuer, tampering, rename, re-enable, signed snapshot,
+  foreign-shape-at-parse, atomic ledger), authz; RFC §5 B8 rows updated;
+  full gate pass. Commit: B8 (③).

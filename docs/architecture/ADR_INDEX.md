@@ -63,7 +63,7 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 |-----|------|-------|--------|------|-------|
 | 0038 | `0038-node-identity-and-trust.md` | Node Identity & Trust Architecture | Accepted | 2026-08-04 | Architecture / Security |
 | 0039 | `0039-adminkey-portable-scrypt.md` | Two-Tier Secret Protection (x25519 node / scrypt `.adminkey`) | Accepted | 2026-08-04 | Architecture / Security |
-| 0040 | `0040-identity-access-sync.md` | Identity & Access Synchronization — Two Static Accounts per UNIT | Draft | 2026-08-07 | Architecture / Security |
+| 0040 | `0040-identity-access-sync.md` | Identity & Access Synchronization — Two Static Accounts per UNIT | Accepted | 2026-08-07 | Architecture / Security |
 
 ---
 
