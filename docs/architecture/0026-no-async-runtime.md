@@ -3,6 +3,12 @@
 ## Status
 Accepted
 
+> **Amendment (ADR-0043):** This ADR is **partially superseded** by
+> `docs/architecture/0043-backup-async-exception.md` for the two backup command handlers
+> only — `create_backup` and `restore_backup` in `src-tauri/src/commands/backup.rs` use
+> `tauri::async_runtime::spawn_blocking` for blocking backup/restore file I/O (decision
+> items 1–2 above). All other Rust code remains fully synchronous.
+
 ## Context
 
 The Algerian Civil Protection food-service management system is a desktop application built on Tauri. Desktop application development in Rust commonly uses async runtimes (tokio, async-std, smol) to handle concurrent I/O, background tasks, and non-blocking GUI interactions. However, the system's architecture prioritizes deterministic execution, auditability, and operational simplicity over async-induced throughput.
