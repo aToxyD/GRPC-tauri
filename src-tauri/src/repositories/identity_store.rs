@@ -72,15 +72,13 @@ fn map_row(row: &Row<'_>) -> rusqlite::Result<IdentityCertificate> {
     // enforced at the domain boundary. Storage keeps raw bytes only.
     let signature = signature
         .map(|bytes| {
-            bytes
-                .try_into()
-                .map_err(|e: String| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        11,
-                        rusqlite::types::Type::Blob,
-                        Box::new(AppError::Internal(e)),
-                    )
-                })
+            bytes.try_into().map_err(|e: String| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    11,
+                    rusqlite::types::Type::Blob,
+                    Box::new(AppError::Internal(e)),
+                )
+            })
         })
         .transpose()?;
 

@@ -22,12 +22,12 @@ pub use package_serializer::{SerdeJsonSyncPackageSerializer, SyncPackageSerializ
 
 // ── Preferred file-path-based readers (ADR-0016) ──────────────────────────
 pub use encrypted_package_reader::read_daily_report_package_from_file;
+pub use encrypted_package_reader::read_identity_access_package_from_file;
 pub use encrypted_package_reader::read_monthly_summary_package_from_file;
 pub use encrypted_package_reader::read_products_package_from_file;
-pub use encrypted_package_reader::read_stock_movements_package_from_file;
-pub use encrypted_package_reader::read_unit_node_package_from_file;
-pub use encrypted_package_reader::read_trust_package_from_file;
 pub use encrypted_package_reader::read_registry_package_from_file;
-pub use encrypted_package_reader::read_identity_access_package_from_file;
+pub use encrypted_package_reader::read_stock_movements_package_from_file;
+pub use encrypted_package_reader::read_trust_package_from_file;
+pub use encrypted_package_reader::read_unit_node_package_from_file;
 
 // Legacy byte-slice readers were removed in favor of the streaming file-based API.

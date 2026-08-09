@@ -79,7 +79,10 @@ fn resolve_root_public_key_impl(
 
 /// Resolve the Authority Root public verification key (lazy, at finalize time).
 pub fn resolve_root_public_key() -> AppResult<[u8; ED25519_PUBLIC_KEY_LEN]> {
-    resolve_root_public_key_impl(std::env::var("GRPC_ROOT_PUBLIC_KEY").ok(), cfg!(debug_assertions))
+    resolve_root_public_key_impl(
+        std::env::var("GRPC_ROOT_PUBLIC_KEY").ok(),
+        cfg!(debug_assertions),
+    )
 }
 
 #[cfg(test)]
@@ -88,7 +91,12 @@ mod tests {
 
     #[test]
     fn pin_decodes_to_32_bytes() {
-        assert_eq!(decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin").unwrap().len(), 32);
+        assert_eq!(
+            decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin")
+                .unwrap()
+                .len(),
+            32
+        );
     }
 
     #[test]
@@ -113,7 +121,10 @@ mod tests {
     #[test]
     fn missing_env_in_prod_uses_pin() {
         let key = resolve_root_public_key_impl(None, false).unwrap();
-        assert_eq!(key, decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin").unwrap());
+        assert_eq!(
+            key,
+            decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin").unwrap()
+        );
     }
 
     #[test]

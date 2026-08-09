@@ -26,23 +26,22 @@ use grpc_lib::application::usecases::sync::import_registry_package::{
 use grpc_lib::application::usecases::sync::import_trust_package::{
     execute as apply_trust_package, ImportTrustPackageInput, TrustPackagePayload,
 };
+use grpc_lib::commands::authorize_command;
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::audit::{
     audit_action_to_event_type, AuditAction, AuditEventType, EntityType,
 };
 use grpc_lib::domain::identity::{
     CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySigner,
-    IdentityStorePort, SIGNATURE_VERSION_ED25519, SubjectType,
+    IdentityStorePort, SubjectType, SIGNATURE_VERSION_ED25519,
 };
 use grpc_lib::errors::{AppError, BusinessLogicError, ValidationError};
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
-use grpc_lib::infrastructure::security::{Ed25519SigningProvider, AgeFileEncryptionProvider};
+use grpc_lib::infrastructure::security::{AgeFileEncryptionProvider, Ed25519SigningProvider};
 use grpc_lib::infrastructure::sync::packages::canonical_json::{
     canonical_bytes_for_integrity, canonical_bytes_for_signature,
 };
-use grpc_lib::infrastructure::sync::packages::integrity::{
-    PackageHasher, Sha256PackageHasher,
-};
+use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256PackageHasher};
 use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};
 use grpc_lib::infrastructure::sync::{
     read_registry_package_from_file, read_trust_package_from_file, PackageBuilder,
@@ -52,7 +51,6 @@ use grpc_lib::models::UserRole;
 use grpc_lib::repositories::executor::DbExecutor;
 use grpc_lib::repositories::RegistrySnapshotsRepository;
 use grpc_lib::repositories::RepositoryProvider;
-use grpc_lib::commands::authorize_command;
 
 /// Issuer signing key used to seed certificates and sign packages.
 const ISSUER_SECRET: [u8; 32] = [42u8; 32];
@@ -202,11 +200,7 @@ fn registry_package(
     }
 }
 
-fn write_encrypted<T: serde::Serialize>(
-    package: &SyncPackage<T>,
-    secret: [u8; 32],
-    path: &Path,
-) {
+fn write_encrypted<T: serde::Serialize>(package: &SyncPackage<T>, secret: [u8; 32], path: &Path) {
     let signer = Ed25519PackageSigner::new(secret);
     PackageBuilder::new()
         .build_encrypted_stream_path(
@@ -237,8 +231,8 @@ fn run_pipeline<T>(
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone,
 {
-    let source_node_id = Some(package.metadata.source_node_id.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let source_node_id =
+        Some(package.metadata.source_node_id.trim().to_string()).filter(|s| !s.is_empty());
     let package_sequence = package.metadata.package_sequence;
     let issuer_identity_id = package.metadata.issuer_identity_id.map(|u| u.to_string());
 
@@ -317,7 +311,13 @@ fn trust_import_happy_path_persists_certificates_and_advances_ledger() {
     let certificate = unit_certificate(cert_identity, issuer_id);
 
     let package = sign_v2_package(
-        trust_package("trust-pkg-1", issuer_id, ISSUER_SECRET, 1, vec![certificate]),
+        trust_package(
+            "trust-pkg-1",
+            issuer_id,
+            ISSUER_SECRET,
+            1,
+            vec![certificate],
+        ),
         ISSUER_SECRET,
     );
 
@@ -357,13 +357,7 @@ fn trust_import_round_trips_through_encrypted_file() {
     let path = dir.path().join("trust.sync");
     let issuer_id = Uuid::new_v4();
 
-    let package = trust_package(
-        "trust-file-1",
-        issuer_id,
-        ISSUER_SECRET,
-        1,
-        vec![],
-    );
+    let package = trust_package("trust-file-1", issuer_id, ISSUER_SECRET, 1, vec![]);
     write_encrypted(&package, ISSUER_SECRET, &path);
 
     let read_back = read_trust_package_from_file(&path, &AgeFileEncryptionProvider::new())
@@ -385,14 +379,20 @@ fn trust_replay_sequence_is_rejected_and_ledger_not_consumed() {
         trust_package("trust-pkg-a", issuer_id, ISSUER_SECRET, 1, vec![]),
         ISSUER_SECRET,
     );
-    run_pipeline(&mut db, "trust", "admin", first, |executor, registry, package, _| {
-        let input = ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_trust_package(executor, registry, input)?;
-        Ok(())
-    })
+    run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        first,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect("first import ok");
     assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
 
@@ -401,14 +401,20 @@ fn trust_replay_sequence_is_rejected_and_ledger_not_consumed() {
         trust_package("trust-pkg-b", issuer_id, ISSUER_SECRET, 1, vec![]),
         ISSUER_SECRET,
     );
-    let err = run_pipeline(&mut db, "trust", "admin", replay, |executor, registry, package, _| {
-        let input = ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_trust_package(executor, registry, input)?;
-        Ok(())
-    })
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        replay,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect_err("replay must be rejected");
     match err {
         AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
@@ -429,14 +435,20 @@ fn trust_out_of_order_sequence_is_rejected() {
         trust_package("trust-pkg-c", issuer_id, ISSUER_SECRET, 3, vec![]),
         ISSUER_SECRET,
     );
-    let err = run_pipeline(&mut db, "trust", "admin", package, |executor, registry, package, _| {
-        let input = ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_trust_package(executor, registry, input)?;
-        Ok(())
-    })
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        package,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect_err("out-of-order must be rejected");
     match err {
         AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
@@ -468,14 +480,20 @@ fn trust_wrong_issuer_certificate_is_rejected_before_importer() {
         OTHER_SECRET,
     );
 
-    let err = run_pipeline(&mut db, "trust", "admin", package, |executor, registry, package, _| {
-        let input = ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_trust_package(executor, registry, input)?;
-        Ok(())
-    })
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        package,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect_err("wrong issuer must be rejected before the importer");
 
     match err {
@@ -501,17 +519,29 @@ fn trust_unknown_issuer_is_rejected() {
     // No certificate seeded for `unknown_issuer`.
 
     let package = sign_v2_package(
-        trust_package("trust-pkg-unknown", unknown_issuer, ISSUER_SECRET, 1, vec![]),
+        trust_package(
+            "trust-pkg-unknown",
+            unknown_issuer,
+            ISSUER_SECRET,
+            1,
+            vec![],
+        ),
         ISSUER_SECRET,
     );
-    let err = run_pipeline(&mut db, "trust", "admin", package, |executor, registry, package, _| {
-        let input = ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_trust_package(executor, registry, input)?;
-        Ok(())
-    })
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        package,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect_err("unknown issuer must be rejected");
     match err {
         AppError::Validation(ValidationError::InvalidFormat { field, .. }) => {
@@ -559,14 +589,20 @@ fn trust_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
     package.metadata.integrity_hash = Some(hash);
     // Signature left stale.
 
-    let err = run_pipeline(&mut db, "trust", "admin", package, |executor, registry, package, _| {
-        let input = ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_trust_package(executor, registry, input)?;
-        Ok(())
-    })
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        package,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect_err("tampered package must be rejected");
 
     match err {
@@ -637,9 +673,8 @@ fn registry_import_round_trips_through_encrypted_file() {
     let package = registry_package("registry-file-1", issuer_id, 1, 2);
     write_encrypted(&package, ISSUER_SECRET, &path);
 
-    let read_back =
-        read_registry_package_from_file(&path, &AgeFileEncryptionProvider::new())
-            .expect("read + integrity verify");
+    let read_back = read_registry_package_from_file(&path, &AgeFileEncryptionProvider::new())
+        .expect("read + integrity verify");
     assert_eq!(read_back.metadata.package_id.0, "registry-file-1");
     assert_eq!(read_back.payload.snapshot_version, 2);
 }
@@ -654,14 +689,20 @@ fn registry_duplicate_package_id_is_rejected() {
         registry_package("registry-pkg-dup", issuer_id, 1, 1),
         ISSUER_SECRET,
     );
-    run_pipeline(&mut db, "registry", "admin", first, |executor, registry, package, _| {
-        let input = ImportRegistryPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_registry_package(executor, registry, input)?;
-        Ok(())
-    })
+    run_pipeline(
+        &mut db,
+        "registry",
+        "admin",
+        first,
+        |executor, registry, package, _| {
+            let input = ImportRegistryPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_registry_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect("first import ok");
 
     // Same package id again (sequence 2 would be fine transport-wise, but the
@@ -670,14 +711,20 @@ fn registry_duplicate_package_id_is_rejected() {
         registry_package("registry-pkg-dup", issuer_id, 2, 2),
         ISSUER_SECRET,
     );
-    let err = run_pipeline(&mut db, "registry", "admin", dup, |executor, registry, package, _| {
-        let input = ImportRegistryPackageInput {
-            package,
-            imported_by: "admin".into(),
-        };
-        let _ = apply_registry_package(executor, registry, input)?;
-        Ok(())
-    })
+    let err = run_pipeline(
+        &mut db,
+        "registry",
+        "admin",
+        dup,
+        |executor, registry, package, _| {
+            let input = ImportRegistryPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_registry_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
     .expect_err("duplicate package must be rejected");
     match err {
         AppError::BusinessLogic(BusinessLogicError::DuplicateSyncPackage { package_id }) => {
@@ -763,9 +810,7 @@ fn authz_unit_node_admin_denied_trust_import() {
         set_session(&state, "Admin");
         let err = authorize_command(&state, action, None).expect_err("deny");
         match err {
-            AppError::Authorization(
-                grpc_lib::errors::AuthorizationError::RequiresWilayaNode,
-            ) => {}
+            AppError::Authorization(grpc_lib::errors::AuthorizationError::RequiresWilayaNode) => {}
             e => panic!("expected RequiresWilayaNode, got {e:?}"),
         }
     }
@@ -800,8 +845,14 @@ fn audit_trust_and_registry_actions_round_trip() {
 
 #[test]
 fn audit_trust_and_registry_map_to_system_entity_and_sync_event() {
-    for action in [AuditAction::ImportTrustPackage, AuditAction::ImportRegistryPackage] {
+    for action in [
+        AuditAction::ImportTrustPackage,
+        AuditAction::ImportRegistryPackage,
+    ] {
         assert_eq!(action.default_entity_type(), EntityType::System);
-        assert_eq!(audit_action_to_event_type(&action), AuditEventType::SyncEvent);
+        assert_eq!(
+            audit_action_to_event_type(&action),
+            AuditEventType::SyncEvent
+        );
     }
 }

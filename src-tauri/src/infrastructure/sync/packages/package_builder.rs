@@ -46,7 +46,8 @@ impl PackageBuilder {
 
         // Pass A: Calculate Integrity Hash
         // Remove hash and signature before hashing
-        let canonical_for_hash = super::canonical_json::canonical_bytes_for_integrity(&package_val)?;
+        let canonical_for_hash =
+            super::canonical_json::canonical_bytes_for_integrity(&package_val)?;
         let hash = super::integrity::Sha256PackageHasher.hash(&canonical_for_hash)?;
 
         // Update value with hash

@@ -159,7 +159,10 @@ impl<'a> UserAccountSyncService<'a> {
     /// 3. Upsert the canonical `user` row (unit-bound hash).
     ///
     /// Account ownership stays with the unit: `node_id` is the unit code.
-    pub fn apply(&self, payload: &IdentityAccessPayload) -> Result<ApplyIdentityAccessOutcome, AppError> {
+    pub fn apply(
+        &self,
+        payload: &IdentityAccessPayload,
+    ) -> Result<ApplyIdentityAccessOutcome, AppError> {
         if payload.admin_password_hash.is_empty() || payload.user_password_hash.is_empty() {
             return Err(Self::not_permitted("حزمة حسابات ناقصة (كلمة مرور فارغة)"));
         }
@@ -218,10 +221,10 @@ impl<'a> UserAccountSyncService<'a> {
 mod tests {
     use super::*;
     use crate::db::{ConnectionFactory, Database};
+    use crate::domain::security::PasswordHashPort;
     use crate::infrastructure::security::Argon2PasswordHashProvider;
     use crate::models::{CreateUnitRequest, UserRole};
     use crate::repositories::RepositoryProvider;
-    use crate::domain::security::PasswordHashPort;
 
     const FLEET_PASSWORD: &str = "FleetPass123";
     const UNIT_PASSWORD: &str = "UnitPass123";
@@ -396,9 +399,7 @@ mod tests {
         // "admin" (legacy `.unit` import) — it shadows the seeded admin row
         // (role User, node_id = unit code).
         let port = Argon2PasswordHashProvider;
-        let user_hash = port
-            .hash_node(UNIT_PASSWORD, "UNIT-9")
-            .expect("user hash");
+        let user_hash = port.hash_node(UNIT_PASSWORD, "UNIT-9").expect("user hash");
         db.executor()
             .users()
             .upsert_user(
@@ -469,22 +470,26 @@ mod tests {
         UserAccountSyncService::new(make_executor(&db), &port)
             .apply(&disabled)
             .expect("apply disabled");
-        assert!(db
-            .executor()
-            .users()
-            .get_user_by_username("user")
-            .unwrap()
-            .is_none(), "disabled unit user must be rejected");
+        assert!(
+            db.executor()
+                .users()
+                .get_user_by_username("user")
+                .unwrap()
+                .is_none(),
+            "disabled unit user must be rejected"
+        );
 
         UserAccountSyncService::new(make_executor(&db), &port)
             .apply(&payload)
             .expect("re-apply enabled");
-        assert!(db
-            .executor()
-            .users()
-            .get_user_by_username("user")
-            .unwrap()
-            .is_some(), "re-enabled unit user must authenticate at source");
+        assert!(
+            db.executor()
+                .users()
+                .get_user_by_username("user")
+                .unwrap()
+                .is_some(),
+            "re-enabled unit user must authenticate at source"
+        );
     }
 
     #[test]

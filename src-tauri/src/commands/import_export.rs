@@ -29,6 +29,10 @@ use crate::application::usecases::sync::import_daily_report_package::DAILY_REPOR
 use crate::application::usecases::sync::import_daily_report_package::{
     execute as apply_daily_report_package, ImportDailyReportPackageInput,
 };
+use crate::application::usecases::sync::import_identity_access_package::IDENTITY_ACCESS_PACKAGE_KIND;
+use crate::application::usecases::sync::import_identity_access_package::{
+    execute as apply_identity_access_package, ImportIdentityAccessPackageInput,
+};
 use crate::application::usecases::sync::import_monthly_summary_package::MONTHLY_SUMMARY_PACKAGE_KIND;
 use crate::application::usecases::sync::import_monthly_summary_package::{
     execute as apply_monthly_summary_package, ImportMonthlySummaryPackageInput,
@@ -37,21 +41,17 @@ use crate::application::usecases::sync::import_products_package::PRODUCTS_PACKAG
 use crate::application::usecases::sync::import_products_package::{
     execute as apply_products_package, ImportProductsPackageInput,
 };
-use crate::application::usecases::sync::import_stock_movements_package::STOCK_MOVEMENTS_PACKAGE_KIND;
-use crate::application::usecases::sync::import_stock_movements_package::{
-    execute as apply_stock_movements_package, ImportStockMovementsPackageInput,
-};
 use crate::application::usecases::sync::import_registry_package::REGISTRY_PACKAGE_KIND;
 use crate::application::usecases::sync::import_registry_package::{
     execute as apply_registry_package, ImportRegistryPackageInput,
 };
+use crate::application::usecases::sync::import_stock_movements_package::STOCK_MOVEMENTS_PACKAGE_KIND;
+use crate::application::usecases::sync::import_stock_movements_package::{
+    execute as apply_stock_movements_package, ImportStockMovementsPackageInput,
+};
 use crate::application::usecases::sync::import_trust_package::TRUST_PACKAGE_KIND;
 use crate::application::usecases::sync::import_trust_package::{
     execute as apply_trust_package, ImportTrustPackageInput,
-};
-use crate::application::usecases::sync::import_identity_access_package::IDENTITY_ACCESS_PACKAGE_KIND;
-use crate::application::usecases::sync::import_identity_access_package::{
-    execute as apply_identity_access_package, ImportIdentityAccessPackageInput,
 };
 use crate::commands::common::{
     db_mut_or_command_error, db_ref_or_command_error, node_key_store, user_ctx_from_session,
@@ -73,12 +73,11 @@ use crate::infrastructure::db::sync_import::{
 };
 use crate::infrastructure::security::resolve_active_signing_key_id;
 use crate::infrastructure::sync::{
-    read_daily_report_package_from_file, read_monthly_summary_package_from_file,
-    read_products_package_from_file, read_registry_package_from_file,
-    read_stock_movements_package_from_file, read_trust_package_from_file,
-    read_identity_access_package_from_file, read_unit_node_package_from_file,
-    resolve_export_source_node_id, HmacPackageSigner, PackageBuilder,
-    SerdeJsonSyncPackageSerializer,
+    read_daily_report_package_from_file, read_identity_access_package_from_file,
+    read_monthly_summary_package_from_file, read_products_package_from_file,
+    read_registry_package_from_file, read_stock_movements_package_from_file,
+    read_trust_package_from_file, read_unit_node_package_from_file, resolve_export_source_node_id,
+    HmacPackageSigner, PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
 
 use crate::models::{
@@ -682,18 +681,18 @@ pub fn export_unit_node_package(
         resolve_export_source_node_id(executor, &settings).map_err(into_command_error)?;
 
     let package = SyncPackage {
-            metadata: SyncPackageMetadata {
-                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-                created_at: Utc::now(),
-                source_node_id,
-                package_sequence: None,
-                issuer_identity_id: None,
-                package_id: PackageId(Uuid::new_v4().to_string()),
-                signature_version: None,
-                signing_key_id: resolve_active_signing_key_id(),
-                integrity_hash: None,
-                signature: None,
-            },
+        metadata: SyncPackageMetadata {
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+            created_at: Utc::now(),
+            source_node_id,
+            package_sequence: None,
+            issuer_identity_id: None,
+            package_id: PackageId(Uuid::new_v4().to_string()),
+            signature_version: None,
+            signing_key_id: resolve_active_signing_key_id(),
+            integrity_hash: None,
+            signature: None,
+        },
         payload: package_data,
     };
 
@@ -902,10 +901,7 @@ pub fn import_registry_package(
 /// nodes is forbidden by Invariant 13; only the Wilaya IPC command reaches this
 /// mutation (authz `Action::ManageAccountSync` → Wilaya + AdminOnly).
 #[tauri::command]
-pub fn set_fleet_admin_password(
-    state: State<AppState>,
-    password: String,
-) -> Result<(), String> {
+pub fn set_fleet_admin_password(state: State<AppState>, password: String) -> Result<(), String> {
     let (session, _settings) =
         authorize_command(&state, Action::ManageAccountSync, None).map_err(into_command_error)?;
     state.touch_session();
@@ -920,7 +916,10 @@ pub fn set_fleet_admin_password(
         db,
         AuditAction::FleetAdminPasswordUpdated,
         &user_ctx,
-        |tx| UserAccountSyncService::new(tx.executor, password_port).set_fleet_admin_password(&password),
+        |tx| {
+            UserAccountSyncService::new(tx.executor, password_port)
+                .set_fleet_admin_password(&password)
+        },
     )
     .map_err(into_command_error)?;
 
@@ -947,15 +946,10 @@ pub fn set_unit_user_password(
     let user_ctx = user_ctx_from_session(&session);
     let password_port = state.password_port.as_ref();
 
-    AuditTxService::execute_with_audit(
-        db,
-        AuditAction::UnitUserPasswordUpdated,
-        &user_ctx,
-        |tx| {
-            UserAccountSyncService::new(tx.executor, password_port)
-                .set_unit_user_password(&unit_code, &password)
-        },
-    )
+    AuditTxService::execute_with_audit(db, AuditAction::UnitUserPasswordUpdated, &user_ctx, |tx| {
+        UserAccountSyncService::new(tx.executor, password_port)
+            .set_unit_user_password(&unit_code, &password)
+    })
     .map_err(into_command_error)?;
 
     Ok(())
@@ -981,15 +975,10 @@ pub fn set_account_status(
     let user_ctx = user_ctx_from_session(&session);
     let password_port = state.password_port.as_ref();
 
-    AuditTxService::execute_with_audit(
-        db,
-        AuditAction::AccountStatusChanged,
-        &user_ctx,
-        |tx| {
-            UserAccountSyncService::new(tx.executor, password_port)
-                .set_account_status(&username, enabled)
-        },
-    )
+    AuditTxService::execute_with_audit(db, AuditAction::AccountStatusChanged, &user_ctx, |tx| {
+        UserAccountSyncService::new(tx.executor, password_port)
+            .set_account_status(&username, enabled)
+    })
     .map_err(into_command_error)?;
 
     Ok(())

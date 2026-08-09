@@ -55,10 +55,7 @@ impl SerdeJsonSyncPackageDeserializer {
         } else {
             // Legacy V1: strip fields then plain serde bytes (no canonicalization).
             let mut legacy = canonical;
-            if let Some(meta_obj) = legacy
-                .get_mut("metadata")
-                .and_then(|m| m.as_object_mut())
-            {
+            if let Some(meta_obj) = legacy.get_mut("metadata").and_then(|m| m.as_object_mut()) {
                 meta_obj.remove("integrity_hash");
                 meta_obj.remove("signature");
             }
@@ -91,10 +88,7 @@ impl SerdeJsonSyncPackageDeserializer {
         } else {
             // Legacy V1: strip the signature then plain serde bytes.
             let mut legacy = canonical;
-            if let Some(meta_obj) = legacy
-                .get_mut("metadata")
-                .and_then(|m| m.as_object_mut())
-            {
+            if let Some(meta_obj) = legacy.get_mut("metadata").and_then(|m| m.as_object_mut()) {
                 meta_obj.remove("signature");
             }
             serde_json::to_vec(&legacy).map_err(|e| {

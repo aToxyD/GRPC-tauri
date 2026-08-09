@@ -140,8 +140,9 @@ pub fn authorize_reports(
             match resource {
                 ResourceContext::WilayaNode | ResourceContext::Global => Ok(()),
                 // Unit nodes are not trust distributors (see above).
-                ResourceContext::UnitNode { .. }
-                | ResourceContext::UnitScope { .. } => Err(AuthorizationError::RequiresWilayaNode),
+                ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => {
+                    Err(AuthorizationError::RequiresWilayaNode)
+                }
                 _ => Err(AuthorizationError::InsufficientPermissions),
             }
         }

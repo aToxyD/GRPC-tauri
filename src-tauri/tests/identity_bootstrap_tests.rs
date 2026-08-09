@@ -44,9 +44,8 @@ use grpc_lib::repositories::RepositoryProvider;
 /// RFC 8032 §7.1 TEST 1 secret — the matching public key IS the debug-mode
 /// development Root fallback (root_public_key.rs). Never a production key.
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 /// Operator passphrase protecting the portable `.adminkey`.
 const ADMIN_PASSPHRASE: &str = "correct horse battery staple";
@@ -75,12 +74,8 @@ fn fresh_node() -> Node {
 }
 
 fn status(node: &Node) -> IdentityBootstrapState {
-    IdentityBootstrapStatusService::compute(
-        &node.db,
-        &node.node_key_store,
-        &node.adminkey_provider,
-    )
-    .expect("status computed")
+    IdentityBootstrapStatusService::compute(&node.db, &node.node_key_store, &node.adminkey_provider)
+        .expect("status computed")
 }
 
 fn root_signer() -> Ed25519SigningProvider {
@@ -138,10 +133,7 @@ fn challenge_service(
     (state, service)
 }
 
-fn begin_challenge(
-    service: &IdentityChallengeService,
-    node: &Node,
-) -> ChallengeMessage {
+fn begin_challenge(service: &IdentityChallengeService, node: &Node) -> ChallengeMessage {
     service
         .begin(&IdentityStoreRepository::new(node.db.executor()))
         .expect("challenge issued")
@@ -196,11 +188,7 @@ fn full_bootstrap_sequence_reaches_ready_on_identity_only_admin() {
     let (_, service) = challenge_service(&node);
     let challenge = begin_challenge(&service, &node);
     let established = service
-        .complete_with_passphrase(
-            &mut node.db,
-            &challenge.session_id,
-            ADMIN_PASSPHRASE,
-        )
+        .complete_with_passphrase(&mut node.db, &challenge.session_id, ADMIN_PASSPHRASE)
         .expect("challenge login succeeds");
     assert_eq!(established.session.username, BOOTSTRAP_USERNAME);
     assert_eq!(
@@ -395,7 +383,10 @@ fn finalize_is_idempotent_for_identical_certificate() {
         .list_all()
         .expect("list")
         .len();
-    assert_eq!(before, after, "identical re-import must perform ZERO writes");
+    assert_eq!(
+        before, after,
+        "identical re-import must perform ZERO writes"
+    );
 }
 
 #[test]
@@ -419,18 +410,13 @@ fn finalize_rejects_different_wilaya_certificate_for_provisioned_node() {
     let mut other = signed.clone();
     other.identity_id = uuid::Uuid::new_v4();
     other.credential_id = uuid::Uuid::new_v4();
-    let signature = root_signer()
-        .sign_certificate(&other)
-        .expect("root signed");
+    let signature = root_signer().sign_certificate(&other).expect("root signed");
     other.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("sig"));
 
     let err = provisioning
         .finalize_wilaya_provision(&other, &node.node_key_store, FIXED_NOW)
         .expect_err("different WILAYA cert must fail closed");
-    assert!(
-        err.to_string().contains("already exists"),
-        "got {err:?}"
-    );
+    assert!(err.to_string().contains("already exists"), "got {err:?}");
 }
 
 #[test]
@@ -479,7 +465,8 @@ fn finalize_rejects_certificate_public_key_that_does_not_match_node_key() {
         .finalize_wilaya_provision(&signed, &node.node_key_store, FIXED_NOW)
         .expect_err("cross-device public key must fail closed");
     assert!(
-        err.to_string().contains("does not match the node signing key"),
+        err.to_string()
+            .contains("does not match the node signing key"),
         "got {err:?}"
     );
 }
@@ -517,7 +504,10 @@ fn finalize_rejects_node_issuer_and_non_wilaya_subject() {
     let err = provisioning
         .finalize_wilaya_provision(&signed, &node.node_key_store, FIXED_NOW)
         .expect_err("non-WILAYA subject must fail closed");
-    assert!(err.to_string().contains("WILAYA certificate"), "got {err:?}");
+    assert!(
+        err.to_string().contains("WILAYA certificate"),
+        "got {err:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -552,9 +542,9 @@ fn challenge_replay_via_passphrase_is_rejected() {
     assert!(
         matches!(
             replay,
-            grpc_lib::errors::AppError::Authentication(AuthenticationError::InvalidCredentials {
-                ..
-            })
+            grpc_lib::errors::AppError::Authentication(
+                AuthenticationError::InvalidCredentials { .. }
+            )
         ),
         "got {replay:?}"
     );
@@ -650,11 +640,8 @@ fn password_login_gate_is_sole_security_fact() {
         )
         .expect("admin issued");
     assert!(
-        IdentityAuthenticationPolicy::has_active_admin_identity(
-            &node.db,
-            &node.adminkey_provider,
-        )
-        .expect("fact"),
+        IdentityAuthenticationPolicy::has_active_admin_identity(&node.db, &node.adminkey_provider,)
+            .expect("fact"),
         "ACTIVE ADMIN cert + `.adminkey` must be detected"
     );
     assert!(

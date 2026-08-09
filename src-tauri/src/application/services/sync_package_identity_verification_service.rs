@@ -19,9 +19,7 @@ use crate::application::sync::SyncPackage;
 use crate::domain::identity::IdentityStorePort;
 use crate::errors::{AppError, AppResult, ValidationError};
 use crate::infrastructure::sync::packages::canonical_json::canonical_bytes_for_signature;
-use crate::infrastructure::sync::packages::signing::{
-    Ed25519PackageVerifier, PackageVerifier,
-};
+use crate::infrastructure::sync::packages::signing::{Ed25519PackageVerifier, PackageVerifier};
 use crate::repositories::executor::DbExecutor;
 use crate::repositories::RepositoryProvider;
 
@@ -54,12 +52,15 @@ impl SyncPackageIdentityVerificationService {
             })
         })?;
 
-        let certificate = executor.identity_store().get_by_identity_id(&issuer_id)?.ok_or_else(|| {
-            AppError::Validation(ValidationError::InvalidFormat {
-                field: "issuer_identity_id".into(),
-                message: "المُصدِر غير موجود في مخزن الهويات".into(),
-            })
-        })?;
+        let certificate = executor
+            .identity_store()
+            .get_by_identity_id(&issuer_id)?
+            .ok_or_else(|| {
+                AppError::Validation(ValidationError::InvalidFormat {
+                    field: "issuer_identity_id".into(),
+                    message: "المُصدِر غير موجود في مخزن الهويات".into(),
+                })
+            })?;
 
         let public_key: [u8; 32] = certificate.public_key.as_slice().try_into().map_err(|_| {
             AppError::Validation(ValidationError::InvalidFormat {
@@ -119,7 +120,9 @@ mod tests {
     use crate::application::sync::{PackageId, SchemaVersion};
     use crate::db::ConnectionFactory;
     use crate::db::Database;
-    use crate::domain::identity::{CredentialStatus, IdentityCertificate, IdentitySigner, SubjectType};
+    use crate::domain::identity::{
+        CredentialStatus, IdentityCertificate, IdentitySigner, SubjectType,
+    };
     use crate::infrastructure::sync::packages::canonical_json::canonical_bytes_for_integrity;
     use crate::infrastructure::sync::packages::integrity::{PackageHasher, Sha256PackageHasher};
     use crate::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};

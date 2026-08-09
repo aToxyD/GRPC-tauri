@@ -123,11 +123,7 @@ mod tests {
     use super::*;
 
     fn sample_challenge() -> ChallengeMessage {
-        ChallengeMessage::new(
-            uuid::Uuid::new_v4(),
-            uuid::Uuid::new_v4(),
-            [7u8; 32],
-        )
+        ChallengeMessage::new(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), [7u8; 32])
     }
 
     #[test]

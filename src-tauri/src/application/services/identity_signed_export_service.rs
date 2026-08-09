@@ -24,7 +24,9 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::application::services::NodeIdentityResolver;
-use crate::application::sync::{PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION};
+use crate::application::sync::{
+    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+};
 use crate::db::Database;
 use crate::domain::identity::{SubjectType, SIGNATURE_VERSION_ED25519};
 use crate::errors::{AppError, AppResult, BusinessLogicError};

@@ -41,9 +41,8 @@ use grpc_lib::repositories::RepositoryProvider;
 /// RFC 8032 §7.1 TEST 1 secret — the matching public key IS the debug-mode
 /// development Root fallback (root_public_key.rs). Never a production key.
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 /// Fixed timestamp for deterministic persistence.
 const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
@@ -76,9 +75,7 @@ fn root_signer() -> Ed25519SigningProvider {
 }
 
 fn sign_with_root(cert: &IdentityCertificate) -> IdentityCertificate {
-    let signature = root_signer()
-        .sign_certificate(cert)
-        .expect("root signed");
+    let signature = root_signer().sign_certificate(cert).expect("root signed");
     let mut signed = cert.clone();
     signed.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("sig wrap"));
     signed
@@ -301,7 +298,11 @@ fn wilaya_full_rotation_emits_old_key_signed_trust_package_and_promotes() {
     let outcome = IdentityRotationCoordinator::new(&mut node.db, &node.node_key_store)
         .finalize_wilaya(&signed, &package_path, &wilaya_settings(), &crypto)
         .expect("finalize wilaya rotation");
-    let RotationFinalizeOutcome::Completed { certificate, operation } = outcome else {
+    let RotationFinalizeOutcome::Completed {
+        certificate,
+        operation,
+    } = outcome
+    else {
         panic!("first finalize must complete")
     };
     assert_eq!(operation, RotationOperation::Rotate);
@@ -328,8 +329,7 @@ fn wilaya_full_rotation_emits_old_key_signed_trust_package_and_promotes() {
     assert!(new_active.is_identical_to(&signed));
 
     // Trust package exists, carries the new certificate, and is sequence 1.
-    let package = read_trust_package_from_file(&package_path, &crypto)
-        .expect("read trust package");
+    let package = read_trust_package_from_file(&package_path, &crypto).expect("read trust package");
     assert_eq!(package.metadata.package_sequence, Some(1));
     assert!(package
         .payload
@@ -424,10 +424,7 @@ fn wilaya_finalize_rejects_tampered_signature() {
     let err = IdentityRotationCoordinator::new(&mut node.db, &node.node_key_store)
         .finalize_wilaya(&signed, &package_path, &wilaya_settings(), &crypto)
         .expect_err("imposter signature must fail closed");
-    assert!(
-        err.to_string().contains("pinned issuer"),
-        "got {err:?}"
-    );
+    assert!(err.to_string().contains("pinned issuer"), "got {err:?}");
     // Nothing was promoted; the staged key is still there for a retry.
     assert!(node
         .node_key_store
@@ -472,9 +469,12 @@ fn unit_full_rotation_via_wilaya_signing_completes() {
     let unit_before = active_unit(&provisioned.unit);
 
     // 1. UNIT begin: stage a fresh node key, derive the CSR.
-    let plan = IdentityRotationCoordinator::new(&mut provisioned.unit.db, &provisioned.unit.node_key_store)
-        .begin(SubjectType::Unit, RotationOperation::Rotate)
-        .expect("unit begin rotation");
+    let plan = IdentityRotationCoordinator::new(
+        &mut provisioned.unit.db,
+        &provisioned.unit.node_key_store,
+    )
+    .begin(SubjectType::Unit, RotationOperation::Rotate)
+    .expect("unit begin rotation");
     assert_eq!(plan.operation, RotationOperation::Rotate);
     assert_eq!(plan.certificate.subject_type, SubjectType::Unit);
     assert_eq!(plan.certificate.identity_id, unit_before.identity_id);
@@ -483,9 +483,12 @@ fn unit_full_rotation_via_wilaya_signing_completes() {
     assert_eq!(plan.certificate.signature, None);
 
     // 2. WILAYA signs the UNIT rotation CSR + records Issuer Local State.
-    let signed_unit = IdentityRotationCoordinator::new(&mut provisioned.wilaya.db, &provisioned.wilaya.node_key_store)
-        .sign_unit_rotation(&plan.certificate)
-        .expect("sign unit rotation");
+    let signed_unit = IdentityRotationCoordinator::new(
+        &mut provisioned.wilaya.db,
+        &provisioned.wilaya.node_key_store,
+    )
+    .sign_unit_rotation(&plan.certificate)
+    .expect("sign unit rotation");
     assert_eq!(signed_unit.certificate.subject_type, SubjectType::Unit);
     assert_eq!(signed_unit.operation, RotationOperation::ReIssue);
     assert!(
@@ -503,10 +506,17 @@ fn unit_full_rotation_via_wilaya_signing_completes() {
         .expect("WILAYA-side local state recorded");
 
     // 3. UNIT finalize: issuer resolved via `issuer_identity_id`, promoted.
-    let outcome = IdentityRotationCoordinator::new(&mut provisioned.unit.db, &provisioned.unit.node_key_store)
-        .finalize_unit(&signed_unit.certificate)
-        .expect("unit finalize rotation");
-    let RotationFinalizeOutcome::Completed { certificate, operation } = outcome else {
+    let outcome = IdentityRotationCoordinator::new(
+        &mut provisioned.unit.db,
+        &provisioned.unit.node_key_store,
+    )
+    .finalize_unit(&signed_unit.certificate)
+    .expect("unit finalize rotation");
+    let RotationFinalizeOutcome::Completed {
+        certificate,
+        operation,
+    } = outcome
+    else {
         panic!("first unit finalize must complete")
     };
     assert_eq!(operation, RotationOperation::Rotate);
@@ -532,9 +542,12 @@ fn unit_full_rotation_via_wilaya_signing_completes() {
         .list_all()
         .expect("list")
         .len();
-    let replay = IdentityRotationCoordinator::new(&mut provisioned.unit.db, &provisioned.unit.node_key_store)
-        .finalize_unit(&signed_unit.certificate)
-        .expect("replay accepted");
+    let replay = IdentityRotationCoordinator::new(
+        &mut provisioned.unit.db,
+        &provisioned.unit.node_key_store,
+    )
+    .finalize_unit(&signed_unit.certificate)
+    .expect("replay accepted");
     assert!(
         matches!(replay, RotationFinalizeOutcome::AlreadyCompleted { .. }),
         "identical re-presentation must be a no-op, got {replay:?}"
@@ -557,9 +570,12 @@ fn unit_full_rotation_via_wilaya_signing_completes() {
 fn unit_finalize_requires_active_wilaya_issuer() {
     let mut provisioned = provisioned_unit();
 
-    let plan = IdentityRotationCoordinator::new(&mut provisioned.unit.db, &provisioned.unit.node_key_store)
-        .begin(SubjectType::Unit, RotationOperation::Rotate)
-        .expect("unit begin rotation");
+    let plan = IdentityRotationCoordinator::new(
+        &mut provisioned.unit.db,
+        &provisioned.unit.node_key_store,
+    )
+    .begin(SubjectType::Unit, RotationOperation::Rotate)
+    .expect("unit begin rotation");
 
     // Sign with a DIFFERENT key and pretend a foreign identity issued it.
     let mut signed = plan.certificate.clone();
@@ -570,13 +586,13 @@ fn unit_finalize_requires_active_wilaya_issuer() {
         .expect("foreign signed");
     signed.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("sig"));
 
-    let err = IdentityRotationCoordinator::new(&mut provisioned.unit.db, &provisioned.unit.node_key_store)
-        .finalize_unit(&signed)
-        .expect_err("unknown issuer must fail closed");
-    assert!(
-        err.to_string().contains("does not exist"),
-        "got {err:?}"
-    );
+    let err = IdentityRotationCoordinator::new(
+        &mut provisioned.unit.db,
+        &provisioned.unit.node_key_store,
+    )
+    .finalize_unit(&signed)
+    .expect_err("unknown issuer must fail closed");
+    assert!(err.to_string().contains("does not exist"), "got {err:?}");
 }
 
 #[test]

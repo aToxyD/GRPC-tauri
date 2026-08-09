@@ -126,7 +126,14 @@ mod tests {
         let repo = SyncAppliedPackagesRepository::new(make_executor(&db));
 
         let first = repo
-            .insert_if_new("pkg-1", "trust", Some("w-1"), "admin", Some(7), Some("issuer-a"))
+            .insert_if_new(
+                "pkg-1",
+                "trust",
+                Some("w-1"),
+                "admin",
+                Some(7),
+                Some("issuer-a"),
+            )
             .unwrap();
         assert!(first);
         assert!(repo.has_imported("pkg-1").unwrap());
@@ -144,15 +151,27 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let repo = SyncAppliedPackagesRepository::new(make_executor(&db));
 
-        assert_eq!(repo.last_applied_sequence_for_issuer("issuer-a").unwrap(), None);
+        assert_eq!(
+            repo.last_applied_sequence_for_issuer("issuer-a").unwrap(),
+            None
+        );
 
         repo.record_issuer_sequence("issuer-a", 1).unwrap();
         repo.record_issuer_sequence("issuer-a", 2).unwrap();
         repo.record_issuer_sequence("issuer-b", 1).unwrap();
 
-        assert_eq!(repo.last_applied_sequence_for_issuer("issuer-a").unwrap(), Some(2));
-        assert_eq!(repo.last_applied_sequence_for_issuer("issuer-b").unwrap(), Some(1));
-        assert_eq!(repo.last_applied_sequence_for_issuer("issuer-c").unwrap(), None);
+        assert_eq!(
+            repo.last_applied_sequence_for_issuer("issuer-a").unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            repo.last_applied_sequence_for_issuer("issuer-b").unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            repo.last_applied_sequence_for_issuer("issuer-c").unwrap(),
+            None
+        );
     }
 
     #[test]

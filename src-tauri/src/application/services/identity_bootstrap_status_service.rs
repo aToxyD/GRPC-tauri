@@ -82,7 +82,10 @@ impl IdentityBootstrapStatusService {
         node_key_store: &NodeKeyStore,
     ) -> AppResult<IdentityBootstrapState> {
         let store = db.executor().identity_store();
-        if store.get_active_by_subject_type(SubjectType::Unit)?.is_some() {
+        if store
+            .get_active_by_subject_type(SubjectType::Unit)?
+            .is_some()
+        {
             return Ok(IdentityBootstrapState::UnitActive);
         }
         if node_key_store.exists() {

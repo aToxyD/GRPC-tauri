@@ -37,9 +37,8 @@ use grpc_lib::repositories::RepositoryProvider;
 /// RFC 8032 §7.1 TEST 1 secret — the matching public key IS the debug-mode
 /// development Root fallback (root_public_key.rs). Never a production key.
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 /// Fixed timestamp for deterministic persistence.
 const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
@@ -70,12 +69,8 @@ fn fresh_node() -> Node {
 }
 
 fn status(node: &Node) -> IdentityBootstrapState {
-    IdentityBootstrapStatusService::compute(
-        &node.db,
-        &node.node_key_store,
-        &node.adminkey_provider,
-    )
-    .expect("status computed")
+    IdentityBootstrapStatusService::compute(&node.db, &node.node_key_store, &node.adminkey_provider)
+        .expect("status computed")
 }
 
 fn root_signer() -> Ed25519SigningProvider {
@@ -465,11 +460,7 @@ fn finalize_rejects_non_active_issuer() {
         .upsert(&revoked, FIXED_NOW)
         .expect("revoked upsert");
     let err = IdentityProvisioningService::new(&mut p.unit.db)
-        .finalize_unit_provision(
-            &p.signed_unit_cert,
-            &p.unit.node_key_store,
-            FIXED_NOW,
-        )
+        .finalize_unit_provision(&p.signed_unit_cert, &p.unit.node_key_store, FIXED_NOW)
         .expect_err("non-ACTIVE issuer must fail closed");
     assert!(err.to_string().contains("ACTIVE"), "got {err:?}");
 }
@@ -495,11 +486,7 @@ fn finalize_rejects_non_wilaya_issuer() {
         .upsert(&admin_issuer, FIXED_NOW)
         .expect("admin issuer upsert");
     let err = IdentityProvisioningService::new(&mut p.unit.db)
-        .finalize_unit_provision(
-            &p.signed_unit_cert,
-            &p.unit.node_key_store,
-            FIXED_NOW,
-        )
+        .finalize_unit_provision(&p.signed_unit_cert, &p.unit.node_key_store, FIXED_NOW)
         .expect_err("non-WILAYA issuer must fail closed");
     assert!(err.to_string().contains("WILAYA"), "got {err:?}");
 }
@@ -510,10 +497,8 @@ fn finalize_rejects_wrong_issuer_signature() {
     let mut signed = p.signed_unit_cert;
     let imposter = Ed25519SigningProvider::new([7u8; 32]);
     signed.signature = Some(
-        Ed25519CertificateSignature::try_from(
-            imposter.sign_certificate(&signed).expect("sig"),
-        )
-        .expect("wrap"),
+        Ed25519CertificateSignature::try_from(imposter.sign_certificate(&signed).expect("sig"))
+            .expect("wrap"),
     );
     let err = IdentityProvisioningService::new(&mut p.unit.db)
         .finalize_unit_provision(&signed, &p.unit.node_key_store, FIXED_NOW)

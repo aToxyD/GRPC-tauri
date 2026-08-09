@@ -104,7 +104,9 @@ impl<'a> IdentityTrustAnchorService<'a> {
         }
 
         store.upsert(signed_cert, now)?;
-        Ok(InstallWilayaCertificateResult::Installed(signed_cert.clone()))
+        Ok(InstallWilayaCertificateResult::Installed(
+            signed_cert.clone(),
+        ))
     }
 
     fn permitted(message: String) -> AppError {
@@ -151,9 +153,7 @@ mod tests {
     }
 
     fn root_signed(cert: &IdentityCertificate) -> IdentityCertificate {
-        let signature = root_signer()
-            .sign_certificate(cert)
-            .expect("root signed");
+        let signature = root_signer().sign_certificate(cert).expect("root signed");
         let mut signed = cert.clone();
         signed.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("wrap"));
         signed
@@ -166,7 +166,10 @@ mod tests {
         let outcome = IdentityTrustAnchorService::new(&mut db)
             .install_wilaya_certificate(&cert, FIXED_NOW)
             .unwrap();
-        assert!(matches!(outcome, InstallWilayaCertificateResult::Installed(_)));
+        assert!(matches!(
+            outcome,
+            InstallWilayaCertificateResult::Installed(_)
+        ));
     }
 
     #[test]
@@ -175,12 +178,16 @@ mod tests {
         let cert = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
         {
             let mut service = IdentityTrustAnchorService::new(&mut db);
-            service.install_wilaya_certificate(&cert, FIXED_NOW).unwrap();
+            service
+                .install_wilaya_certificate(&cert, FIXED_NOW)
+                .unwrap();
         }
         let before = db.executor().identity_store().list_all().unwrap().len();
         {
             let mut service = IdentityTrustAnchorService::new(&mut db);
-            let outcome = service.install_wilaya_certificate(&cert, FIXED_NOW).unwrap();
+            let outcome = service
+                .install_wilaya_certificate(&cert, FIXED_NOW)
+                .unwrap();
             assert!(
                 matches!(outcome, InstallWilayaCertificateResult::AlreadyInstalled(_)),
                 "identical re-install must be a no-op"
@@ -196,12 +203,16 @@ mod tests {
         let identity_id = Uuid::new_v4();
         let first = root_signed(&wilaya_cert(identity_id, root_signer().public_key()));
         let mut service = IdentityTrustAnchorService::new(&mut db);
-        service.install_wilaya_certificate(&first, FIXED_NOW).unwrap();
+        service
+            .install_wilaya_certificate(&first, FIXED_NOW)
+            .unwrap();
 
         let mut rotated = wilaya_cert(identity_id, root_signer().public_key());
         rotated.credential_id = Uuid::new_v4();
         let rotated = root_signed(&rotated);
-        let err = service.install_wilaya_certificate(&rotated, FIXED_NOW).unwrap_err();
+        let err = service
+            .install_wilaya_certificate(&rotated, FIXED_NOW)
+            .unwrap_err();
         assert!(
             err.to_string().contains("already installed"),
             "different credential_id for same identity must fail closed, got {err:?}"
@@ -223,7 +234,10 @@ mod tests {
         let err = IdentityTrustAnchorService::new(&mut db)
             .install_wilaya_certificate(&as_admin, FIXED_NOW)
             .unwrap_err();
-        assert!(err.to_string().contains("WILAYA certificate"), "got {err:?}");
+        assert!(
+            err.to_string().contains("WILAYA certificate"),
+            "got {err:?}"
+        );
 
         let mut revoked = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
         revoked.status = CredentialStatus::Revoked;
@@ -237,7 +251,10 @@ mod tests {
         let err = IdentityTrustAnchorService::new(&mut db)
             .install_wilaya_certificate(&node_issued, FIXED_NOW)
             .unwrap_err();
-        assert!(err.to_string().contains("offline Authority Root"), "got {err:?}");
+        assert!(
+            err.to_string().contains("offline Authority Root"),
+            "got {err:?}"
+        );
     }
 
     #[test]

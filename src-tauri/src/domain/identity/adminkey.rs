@@ -115,9 +115,9 @@ mod tests {
             algorithm_version: SIGNATURE_VERSION_ED25519,
             not_after: None,
             package_sequence: Some(1),
-            signature: Some(crate::domain::identity::Ed25519CertificateSignature::from_bytes(
-                [9u8; 64],
-            )),
+            signature: Some(
+                crate::domain::identity::Ed25519CertificateSignature::from_bytes([9u8; 64]),
+            ),
         };
         AdminKeyFile {
             format_version: ADMINKEY_FORMAT_VERSION,

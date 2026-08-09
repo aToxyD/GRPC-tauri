@@ -107,14 +107,19 @@ mod tests {
         db.executor()
     }
 
-    fn registry_package(pkg_id: &str, snapshot_version: u64) -> SyncPackage<RegistryPackagePayload> {
+    fn registry_package(
+        pkg_id: &str,
+        snapshot_version: u64,
+    ) -> SyncPackage<RegistryPackagePayload> {
         SyncPackage {
             metadata: SyncPackageMetadata {
                 schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
                 created_at: chrono::Utc::now(),
                 source_node_id: "w-node".to_string(),
                 package_sequence: Some(1),
-                issuer_identity_id: Some(Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0001)),
+                issuer_identity_id: Some(Uuid::from_u128(
+                    0x0000_0000_0000_0000_0000_0000_0000_0001,
+                )),
                 package_id: PackageId(pkg_id.to_string()),
                 signature_version: Some(2),
                 signing_key_id: None,
@@ -149,10 +154,14 @@ mod tests {
     fn snapshot_is_persisted_and_auditable() {
         let db = ConnectionFactory::new_for_test().unwrap();
 
-        let outcome = execute(make_executor(&db), &registry(&db), ImportRegistryPackageInput {
-            package: registry_package("pkg-reg-1", 1),
-            imported_by: "admin".into(),
-        })
+        let outcome = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportRegistryPackageInput {
+                package: registry_package("pkg-reg-1", 1),
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         assert_eq!(outcome.snapshot_version, 1);
@@ -185,10 +194,14 @@ mod tests {
     #[test]
     fn zero_snapshot_version_is_rejected() {
         let db = ConnectionFactory::new_for_test().unwrap();
-        let err = execute(make_executor(&db), &registry(&db), ImportRegistryPackageInput {
-            package: registry_package("pkg-reg-zero", 0),
-            imported_by: "admin".into(),
-        })
+        let err = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportRegistryPackageInput {
+                package: registry_package("pkg-reg-zero", 0),
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap_err();
         assert!(
             matches!(err, AppError::Validation(_)),

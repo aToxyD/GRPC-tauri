@@ -47,7 +47,8 @@ pub fn execute(
     }
 
     let package_id = input.package.metadata.package_id.clone();
-    let outcome = UserAccountSyncService::new(executor, password_port).apply(&input.package.payload)?;
+    let outcome =
+        UserAccountSyncService::new(executor, password_port).apply(&input.package.payload)?;
 
     Ok(ImportIdentityAccessPackageOutcome {
         admin_updated: outcome.admin_updated,

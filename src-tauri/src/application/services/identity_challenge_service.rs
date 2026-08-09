@@ -28,7 +28,7 @@ use crate::domain::identity::{
 use crate::domain::security::PasswordHashPort;
 use crate::errors::{AppError, AppResult, AuthenticationError};
 use crate::infrastructure::identity::AdminKeyProvider;
-use crate::repositories::{RepositoryProvider, identity_store::IdentityStoreRepository};
+use crate::repositories::{identity_store::IdentityStoreRepository, RepositoryProvider};
 
 use super::identity_provisioning_service::BOOTSTRAP_ADMIN_USERNAME;
 use super::session_establishment_service::{EstablishedSession, SessionEstablishmentService};
@@ -86,14 +86,11 @@ impl IdentityChallengeService {
     pub fn begin(&self, store: &dyn IdentityStorePort) -> AppResult<ChallengeMessage> {
         let wilaya = store
             .get_active_by_subject_type(SubjectType::Wilaya)?
-            .ok_or_else(|| {
-                AppError::Internal("No ACTIVE WILAYA identity is provisioned".into())
-            })?;
+            .ok_or_else(|| AppError::Internal("No ACTIVE WILAYA identity is provisioned".into()))?;
         let mut nonce = [0u8; 32];
         use rand::RngCore;
         rand::rngs::OsRng.fill_bytes(&mut nonce);
-        let challenge =
-            ChallengeMessage::new(uuid::Uuid::new_v4(), wilaya.identity_id, nonce);
+        let challenge = ChallengeMessage::new(uuid::Uuid::new_v4(), wilaya.identity_id, nonce);
         self.challenge_state
             .lock()
             .map_err(|e| AppError::Internal(format!("Failed to lock challenge state: {e}")))?
@@ -179,9 +176,7 @@ impl IdentityChallengeService {
 
         let user = UserService::new(db.executor(), self.password_port.as_ref())
             .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME)?
-            .ok_or_else(|| {
-                AppError::Internal("Local admin user is not provisioned".into())
-            })?;
+            .ok_or_else(|| AppError::Internal("Local admin user is not provisioned".into()))?;
 
         SessionEstablishmentService::establish(
             db,
@@ -228,7 +223,9 @@ impl IdentityChallengeService {
         if !self
             .verifier
             .verify_challenge(challenge, &presented.public_key, challenge_signature)
-            .map_err(|e| AppError::Internal(format!("Challenge signature verification failed: {e}")))?
+            .map_err(|e| {
+                AppError::Internal(format!("Challenge signature verification failed: {e}"))
+            })?
         {
             return Err(reject_challenge());
         }

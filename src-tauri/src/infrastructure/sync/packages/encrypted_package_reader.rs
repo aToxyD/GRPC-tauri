@@ -155,7 +155,9 @@ pub fn read_registry_package_from_file(
     path: &Path,
     crypto_port: &AgeFileEncryptionProvider,
 ) -> AppResult<
-    SyncPackage<crate::application::usecases::sync::import_registry_package::RegistryPackagePayload>,
+    SyncPackage<
+        crate::application::usecases::sync::import_registry_package::RegistryPackagePayload,
+    >,
 > {
     let temp_plaintext = decrypt_encrypted_file_to_temp(path, crypto_port)?;
     let file = std::fs::File::open(temp_plaintext.path())

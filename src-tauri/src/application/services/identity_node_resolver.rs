@@ -88,7 +88,10 @@ impl NodeIdentityResolver {
                 "R5: local {subject_type} node signing key does not match the ACTIVE certificate public key"
             )));
         }
-        Ok(Some(ResolvedNodeIdentity { certificate, signer }))
+        Ok(Some(ResolvedNodeIdentity {
+            certificate,
+            signer,
+        }))
     }
 
     fn permitted(message: String) -> AppError {
@@ -158,9 +161,15 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let store = store_with_secret(&dir);
-        let mut cert = make_cert(SubjectType::Wilaya, NodeIdentityResolver::derive_public_key(&SECRET));
+        let mut cert = make_cert(
+            SubjectType::Wilaya,
+            NodeIdentityResolver::derive_public_key(&SECRET),
+        );
         cert.status = CredentialStatus::Revoked;
-        db.executor().identity_store().upsert(&cert, FIXED_NOW).unwrap();
+        db.executor()
+            .identity_store()
+            .upsert(&cert, FIXED_NOW)
+            .unwrap();
         let resolved =
             NodeIdentityResolver::resolve_local_signer(&db, &store, SubjectType::Wilaya).unwrap();
         assert!(resolved.is_none());
@@ -171,16 +180,18 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let store = store_with_secret(&dir);
-        let mut cert = make_cert(SubjectType::Wilaya, NodeIdentityResolver::derive_public_key(&SECRET));
-        cert.algorithm_version = SIGNATURE_VERSION_ED25519 + 1;
-        db.executor().identity_store().upsert(&cert, FIXED_NOW).unwrap();
-        let err =
-            NodeIdentityResolver::resolve_local_signer(&db, &store, SubjectType::Wilaya)
-                .unwrap_err();
-        assert!(
-            err.to_string().contains("algorithm_version"),
-            "got {err:?}"
+        let mut cert = make_cert(
+            SubjectType::Wilaya,
+            NodeIdentityResolver::derive_public_key(&SECRET),
         );
+        cert.algorithm_version = SIGNATURE_VERSION_ED25519 + 1;
+        db.executor()
+            .identity_store()
+            .upsert(&cert, FIXED_NOW)
+            .unwrap();
+        let err = NodeIdentityResolver::resolve_local_signer(&db, &store, SubjectType::Wilaya)
+            .unwrap_err();
+        assert!(err.to_string().contains("algorithm_version"), "got {err:?}");
     }
 
     #[test]
@@ -189,10 +200,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = store_with_secret(&dir);
         let cert = make_cert(SubjectType::Wilaya, vec![7u8; 32]);
-        db.executor().identity_store().upsert(&cert, FIXED_NOW).unwrap();
-        let err =
-            NodeIdentityResolver::resolve_local_signer(&db, &store, SubjectType::Wilaya)
-                .unwrap_err();
+        db.executor()
+            .identity_store()
+            .upsert(&cert, FIXED_NOW)
+            .unwrap();
+        let err = NodeIdentityResolver::resolve_local_signer(&db, &store, SubjectType::Wilaya)
+            .unwrap_err();
         assert!(err.to_string().contains("does not match"), "got {err:?}");
     }
 
@@ -203,7 +216,10 @@ mod tests {
         let store = store_with_secret(&dir);
         let public_key = NodeIdentityResolver::derive_public_key(&SECRET);
         let cert = make_cert(SubjectType::Wilaya, public_key.clone());
-        db.executor().identity_store().upsert(&cert, FIXED_NOW).unwrap();
+        db.executor()
+            .identity_store()
+            .upsert(&cert, FIXED_NOW)
+            .unwrap();
         let resolved = NodeIdentityResolver::resolve_local_signer(&db, &store, SubjectType::Wilaya)
             .unwrap()
             .expect("resolved");

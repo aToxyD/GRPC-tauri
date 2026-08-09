@@ -198,9 +198,10 @@ impl IdentityRotationService {
             )));
         }
 
-        let signature = signed_cert.signature.as_ref().ok_or_else(|| {
-            AppError::Internal("Rotation certificate missing signature".into())
-        })?;
+        let signature = signed_cert
+            .signature
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Rotation certificate missing signature".into()))?;
         let signature_valid = Ed25519SignatureVerifier
             .verify_certificate(signed_cert, issuer_public_key, signature)
             .map_err(|e| {
@@ -318,8 +319,8 @@ mod tests {
     fn plan_rotate_keeps_identity_and_advances_generation() {
         let stored = signed_stored(1, SubjectType::Wilaya, 1);
         let (node_key, _) = keypair(2);
-        let plan = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap();
+        let plan =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key).unwrap();
         assert_eq!(plan.operation, RotationOperation::Rotate);
         assert_eq!(plan.previous_credential_id, stored.credential_id);
         assert_eq!(plan.certificate.identity_id, stored.identity_id);
@@ -328,7 +329,10 @@ mod tests {
         assert_eq!(plan.certificate.credential_id, stored.credential_id);
         assert_eq!(plan.certificate.generation, 2);
         assert_eq!(plan.certificate.public_key, keypair(2).1.public_key());
-        assert_eq!(plan.certificate.algorithm_version, IDENTITY_ALGORITHM_PROFILE_ED25519);
+        assert_eq!(
+            plan.certificate.algorithm_version,
+            IDENTITY_ALGORITHM_PROFILE_ED25519
+        );
         assert_eq!(plan.certificate.status, CredentialStatus::Active);
         assert_eq!(plan.certificate.issuer_identity_id, None);
         assert_eq!(plan.certificate.signature, None);
@@ -338,8 +342,8 @@ mod tests {
     fn plan_reissue_generates_fresh_credential_at_generation_one() {
         let stored = signed_stored(1, SubjectType::Unit, 4);
         let (node_key, _) = keypair(2);
-        let plan = IdentityRotationService::plan(RotationOperation::ReIssue, &stored, &node_key)
-            .unwrap();
+        let plan =
+            IdentityRotationService::plan(RotationOperation::ReIssue, &stored, &node_key).unwrap();
         assert_eq!(plan.operation, RotationOperation::ReIssue);
         assert_eq!(plan.previous_credential_id, stored.credential_id);
         assert_eq!(plan.certificate.identity_id, stored.identity_id);
@@ -352,8 +356,8 @@ mod tests {
         let mut stored = signed_stored(1, SubjectType::Wilaya, 1);
         stored.signature = None;
         let (node_key, _) = keypair(2);
-        let err =
-            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key).unwrap_err();
+        let err = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+            .unwrap_err();
         assert!(err.to_string().contains("unsigned"), "got {err:?}");
     }
 
@@ -362,8 +366,8 @@ mod tests {
         let mut stored = signed_stored(1, SubjectType::Wilaya, 1);
         stored.status = CredentialStatus::Revoked;
         let (node_key, _) = keypair(2);
-        let err =
-            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key).unwrap_err();
+        let err = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+            .unwrap_err();
         assert!(err.to_string().contains("ACTIVE"), "got {err:?}");
     }
 
@@ -372,8 +376,8 @@ mod tests {
         let mut stored = signed_stored(1, SubjectType::Wilaya, u64::MAX);
         stored.generation = u64::MAX;
         let (node_key, _) = keypair(2);
-        let err =
-            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key).unwrap_err();
+        let err = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+            .unwrap_err();
         assert!(err.to_string().contains("overflow"), "got {err:?}");
     }
 
@@ -382,9 +386,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Wilaya, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, node_signer) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         let signed = issued_by(&mut draft, &issuer_signer);
         let verdict = IdentityRotationService::verify_finalize(
             &signed,
@@ -409,9 +414,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Unit, 3);
         let issuer_signer = keypair(9).1;
         let (node_key, node_signer) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::ReIssue, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::ReIssue, &stored, &node_key)
+                .unwrap()
+                .certificate;
         let signed = issued_by(&mut draft, &issuer_signer);
         let verdict = IdentityRotationService::verify_finalize(
             &signed,
@@ -479,9 +485,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Wilaya, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, _) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         draft.identity_id = Uuid::new_v4();
         let signed = issued_by(&mut draft, &issuer_signer);
         let err = IdentityRotationService::verify_finalize(
@@ -499,9 +506,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Unit, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, _) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         draft.subject_id = Uuid::new_v4();
         let signed = issued_by(&mut draft, &issuer_signer);
         let err = IdentityRotationService::verify_finalize(
@@ -520,9 +528,10 @@ mod tests {
         let issuer_signer = keypair(9).1;
         let wrong_issuer = keypair(10).1;
         let (node_key, _) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         let signed = issued_by(&mut draft, &issuer_signer);
         let err = IdentityRotationService::verify_finalize(
             &signed,
@@ -539,9 +548,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Wilaya, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, _) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         let (_, other_signer) = keypair(3);
         draft.public_key = other_signer.public_key();
         draft.signature = None;
@@ -561,9 +571,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Unit, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, node_signer) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::ReIssue, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::ReIssue, &stored, &node_key)
+                .unwrap()
+                .certificate;
         draft.generation = 5;
         draft.public_key = node_signer.public_key();
         draft.signature = None;
@@ -583,9 +594,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Wilaya, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, _) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         draft.status = CredentialStatus::Superseded;
         let signed = issued_by(&mut draft, &issuer_signer);
         let err = IdentityRotationService::verify_finalize(
@@ -603,9 +615,10 @@ mod tests {
         let stored = signed_stored(1, SubjectType::Wilaya, 1);
         let issuer_signer = keypair(9).1;
         let (node_key, _) = keypair(2);
-        let mut draft = IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
-            .unwrap()
-            .certificate;
+        let mut draft =
+            IdentityRotationService::plan(RotationOperation::Rotate, &stored, &node_key)
+                .unwrap()
+                .certificate;
         draft.generation = 0;
         let signed = issued_by(&mut draft, &issuer_signer);
         let err = IdentityRotationService::verify_finalize(

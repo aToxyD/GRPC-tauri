@@ -39,8 +39,8 @@ impl Ed25519CertificateSignature {
 
     /// Parse a lowercase hex string of exactly 128 characters.
     pub fn from_hex(input: &str) -> Result<Self, String> {
-        let decoded = hex::decode(input)
-            .map_err(|e| format!("invalid Ed25519 signature hex: {e}"))?;
+        let decoded =
+            hex::decode(input).map_err(|e| format!("invalid Ed25519 signature hex: {e}"))?;
         Self::try_from(decoded)
     }
 }
@@ -103,7 +103,10 @@ mod tests {
     fn roundtrip_hex() {
         let sig = sample();
         assert_eq!(sig.to_hex().len(), 128);
-        assert_eq!(Ed25519CertificateSignature::from_hex(&sig.to_hex()).unwrap(), sig);
+        assert_eq!(
+            Ed25519CertificateSignature::from_hex(&sig.to_hex()).unwrap(),
+            sig
+        );
     }
 
     #[test]

@@ -53,14 +53,10 @@ impl AdminKeyProvider {
         file.validate()?;
         let json = serde_json::to_string_pretty(file)
             .map_err(|e| AppError::Internal(format!("Failed to serialize .adminkey: {e}")))?;
-        std::fs::create_dir_all(&self.data_dir).map_err(|e| {
-            AppError::Io(e)
-        })?;
+        std::fs::create_dir_all(&self.data_dir).map_err(|e| AppError::Io(e))?;
         let path = self.file_path();
         let tmp = path.with_extension("adminkey.tmp");
-        std::fs::write(&tmp, json).map_err(|e| {
-            AppError::Io(e)
-        })?;
+        std::fs::write(&tmp, json).map_err(|e| AppError::Io(e))?;
         std::fs::rename(&tmp, &path).map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
             AppError::Io(e)
@@ -71,8 +67,12 @@ impl AdminKeyProvider {
     /// Load and structurally validate the `.adminkey` file.
     pub fn read(&self) -> AppResult<AdminKeyFile> {
         let path = self.file_path();
-        let json = std::fs::read_to_string(&path)
-            .map_err(|e| AppError::Internal(format!("Failed to read .adminkey at {}: {e}", path.display())))?;
+        let json = std::fs::read_to_string(&path).map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to read .adminkey at {}: {e}",
+                path.display()
+            ))
+        })?;
         let file: AdminKeyFile = serde_json::from_str(&json)
             .map_err(|e| AppError::FileFormat(format!("Malformed .adminkey file: {e}")))?;
         file.validate()?;
@@ -80,7 +80,11 @@ impl AdminKeyProvider {
     }
 
     /// Encrypt a 32-byte Ed25519 secret key with the operator passphrase.
-    pub fn encrypt_private_key(&self, secret_key: &[u8; 32], passphrase: &str) -> AppResult<Vec<u8>> {
+    pub fn encrypt_private_key(
+        &self,
+        secret_key: &[u8; 32],
+        passphrase: &str,
+    ) -> AppResult<Vec<u8>> {
         encrypt_scrypt(passphrase, secret_key)
     }
 
@@ -104,9 +108,10 @@ fn encrypt_scrypt(passphrase: &str, data: &[u8]) -> AppResult<Vec<u8>> {
     use age::secrecy::SecretString;
     let recipient = age::scrypt::Recipient::new(SecretString::from(passphrase.to_owned()));
 
-    let encryptor = age::Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
-        .ok()
-        .ok_or_else(|| AppError::Internal("Failed to create scrypt encryptor".into()))?;
+    let encryptor =
+        age::Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
+            .ok()
+            .ok_or_else(|| AppError::Internal("Failed to create scrypt encryptor".into()))?;
 
     let mut encrypted = vec![];
     let mut writer = encryptor
@@ -130,7 +135,11 @@ fn decrypt_scrypt(passphrase: &str, encrypted: &[u8]) -> AppResult<Vec<u8>> {
         .map_err(|e| AppError::Internal(format!("Invalid scrypt ciphertext: {e}")))?;
     let mut reader = decryptor
         .decrypt(std::iter::once(&identity as &dyn age::Identity))
-        .map_err(|e| AppError::Internal(format!("Failed to decrypt .adminkey (wrong passphrase?): {e}")))?;
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to decrypt .adminkey (wrong passphrase?): {e}"
+            ))
+        })?;
     let mut plaintext = vec![];
     std::io::copy(&mut reader, &mut plaintext)
         .map_err(|e| AppError::Internal(format!("Failed to read decrypted .adminkey: {e}")))?;
@@ -161,9 +170,11 @@ pub fn adminkey_path_description(data_dir: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::identity::{AdminKeyFile, IdentityCertificate, IDENTITY_ALGORITHM_PROFILE_ED25519};
-    use crate::domain::identity::{CredentialStatus, Ed25519CertificateSignature, SubjectType};
     use crate::domain::identity::SIGNATURE_VERSION_ED25519;
+    use crate::domain::identity::{
+        AdminKeyFile, IdentityCertificate, IDENTITY_ALGORITHM_PROFILE_ED25519,
+    };
+    use crate::domain::identity::{CredentialStatus, Ed25519CertificateSignature, SubjectType};
     use uuid::Uuid;
 
     fn sample_file() -> AdminKeyFile {
@@ -193,8 +204,12 @@ mod tests {
     fn scrypt_roundtrip_with_correct_passphrase() {
         let provider = AdminKeyProvider::new(PathBuf::from("/tmp/unused"));
         let secret = [7u8; 32];
-        let encrypted = provider.encrypt_private_key(&secret, "correct horse battery staple").unwrap();
-        let decrypted = provider.decrypt_private_key(&encrypted, "correct horse battery staple").unwrap();
+        let encrypted = provider
+            .encrypt_private_key(&secret, "correct horse battery staple")
+            .unwrap();
+        let decrypted = provider
+            .decrypt_private_key(&encrypted, "correct horse battery staple")
+            .unwrap();
         assert_eq!(decrypted, secret);
         assert_ne!(&encrypted[..], &secret[..]);
     }
@@ -203,8 +218,12 @@ mod tests {
     fn scrypt_wrong_passphrase_fails_closed() {
         let provider = AdminKeyProvider::new(PathBuf::from("/tmp/unused"));
         let secret = [7u8; 32];
-        let encrypted = provider.encrypt_private_key(&secret, "right passphrase").unwrap();
-        assert!(provider.decrypt_private_key(&encrypted, "wrong passphrase").is_err());
+        let encrypted = provider
+            .encrypt_private_key(&secret, "right passphrase")
+            .unwrap();
+        assert!(provider
+            .decrypt_private_key(&encrypted, "wrong passphrase")
+            .is_err());
     }
 
     #[test]

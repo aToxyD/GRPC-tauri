@@ -66,10 +66,10 @@ pub fn begin_wilaya_provision(
     let request = IdentityProvisioningService::new(db)
         .generate_wilaya_request(subject_id, &node_key_store())
         .map_err(into_command_error)?;
-    let json = serde_json::to_string_pretty(&request)
-        .map_err(|e| into_command_error(AppError::Internal(format!("CSR serialization failed: {e}"))))?;
-    std::fs::write(&request_file_path, json)
-        .map_err(|e| into_command_error(AppError::Io(e)))?;
+    let json = serde_json::to_string_pretty(&request).map_err(|e| {
+        into_command_error(AppError::Internal(format!("CSR serialization failed: {e}")))
+    })?;
+    std::fs::write(&request_file_path, json).map_err(|e| into_command_error(AppError::Io(e)))?;
 
     Ok(request)
 }
@@ -86,8 +86,11 @@ pub fn finalize_wilaya_provision(
 
     let json = std::fs::read_to_string(&cert_file_path)
         .map_err(|e| into_command_error(AppError::Io(e)))?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed signed certificate file: {e}"))))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!(
+            "Malformed signed certificate file: {e}"
+        )))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -144,14 +147,16 @@ pub fn begin_unit_provision(
     let db = db_mut_or_command_error(guard.as_mut())?;
 
     let service = IdentityProvisioningService::new(db);
-    let subject_id = service.resolve_local_unit_subject_id().map_err(into_command_error)?;
+    let subject_id = service
+        .resolve_local_unit_subject_id()
+        .map_err(into_command_error)?;
     let request = service
         .generate_identity_request(SubjectType::Unit, subject_id, &node_key_store())
         .map_err(into_command_error)?;
-    let json = serde_json::to_string_pretty(&request)
-        .map_err(|e| into_command_error(AppError::Internal(format!("CSR serialization failed: {e}"))))?;
-    std::fs::write(&request_file_path, json)
-        .map_err(|e| into_command_error(AppError::Io(e)))?;
+    let json = serde_json::to_string_pretty(&request).map_err(|e| {
+        into_command_error(AppError::Internal(format!("CSR serialization failed: {e}")))
+    })?;
+    std::fs::write(&request_file_path, json).map_err(|e| into_command_error(AppError::Io(e)))?;
 
     Ok(request)
 }
@@ -164,8 +169,9 @@ pub fn sign_unit_identity_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<IdentityCertificate, String> {
-    let request: IdentityCertificate = serde_json::from_str(&request_json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed UNIT CSR: {e}"))))?;
+    let request: IdentityCertificate = serde_json::from_str(&request_json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!("Malformed UNIT CSR: {e}")))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -189,8 +195,11 @@ pub fn finalize_unit_provision(
 
     let json = std::fs::read_to_string(&cert_file_path)
         .map_err(|e| into_command_error(AppError::Io(e)))?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed signed certificate file: {e}"))))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!(
+            "Malformed signed certificate file: {e}"
+        )))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -214,8 +223,11 @@ pub fn install_wilaya_certificate(
 
     let json = std::fs::read_to_string(&cert_file_path)
         .map_err(|e| into_command_error(AppError::Io(e)))?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed certificate file: {e}"))))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!(
+            "Malformed certificate file: {e}"
+        )))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -239,7 +251,9 @@ fn parse_rotation_operation(raw: &str) -> Result<RotationOperation, String> {
         into_command_error(AppError::Validation(
             crate::errors::ValidationError::InvalidFormat {
                 field: "operation".into(),
-                message: format!("Unknown rotation operation '{raw}' (expected ROTATE or RE-ISSUE)"),
+                message: format!(
+                    "Unknown rotation operation '{raw}' (expected ROTATE or RE-ISSUE)"
+                ),
             },
         ))
     })
@@ -305,10 +319,10 @@ pub fn begin_wilaya_rotation(
     let plan = IdentityRotationCoordinator::new(db, &node_key_store())
         .begin(SubjectType::Wilaya, operation)
         .map_err(into_command_error)?;
-    let json = serde_json::to_string_pretty(&plan.certificate)
-        .map_err(|e| into_command_error(AppError::Internal(format!("CSR serialization failed: {e}"))))?;
-    std::fs::write(&request_file_path, json)
-        .map_err(|e| into_command_error(AppError::Io(e)))?;
+    let json = serde_json::to_string_pretty(&plan.certificate).map_err(|e| {
+        into_command_error(AppError::Internal(format!("CSR serialization failed: {e}")))
+    })?;
+    std::fs::write(&request_file_path, json).map_err(|e| into_command_error(AppError::Io(e)))?;
 
     Ok(plan)
 }
@@ -324,8 +338,8 @@ pub fn finalize_wilaya_rotation(
     cert_file_path: String,
     rotation_package_path: String,
 ) -> Result<RotationFinalizeOutcome, String> {
-    let (session, settings) = authorize_command(&state, Action::RotateCredential, None)
-        .map_err(into_command_error)?;
+    let (session, settings) =
+        authorize_command(&state, Action::RotateCredential, None).map_err(into_command_error)?;
     state.touch_session();
     crate::domain::validation::validate_file_path(&cert_file_path, &["json"])
         .map_err(into_command_error)?;
@@ -334,8 +348,11 @@ pub fn finalize_wilaya_rotation(
 
     let json = std::fs::read_to_string(&cert_file_path)
         .map_err(|e| into_command_error(AppError::Io(e)))?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed signed certificate file: {e}"))))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!(
+            "Malformed signed certificate file: {e}"
+        )))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -380,10 +397,10 @@ pub fn begin_unit_rotation(
     let plan = IdentityRotationCoordinator::new(db, &node_key_store())
         .begin(SubjectType::Unit, operation)
         .map_err(into_command_error)?;
-    let json = serde_json::to_string_pretty(&plan.certificate)
-        .map_err(|e| into_command_error(AppError::Internal(format!("CSR serialization failed: {e}"))))?;
-    std::fs::write(&request_file_path, json)
-        .map_err(|e| into_command_error(AppError::Io(e)))?;
+    let json = serde_json::to_string_pretty(&plan.certificate).map_err(|e| {
+        into_command_error(AppError::Internal(format!("CSR serialization failed: {e}")))
+    })?;
+    std::fs::write(&request_file_path, json).map_err(|e| into_command_error(AppError::Io(e)))?;
 
     Ok(plan)
 }
@@ -397,12 +414,15 @@ pub fn sign_unit_rotation_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<SignedUnitRotation, String> {
-    let (session, _settings) = authorize_command(&state, Action::RotateCredential, None)
-        .map_err(into_command_error)?;
+    let (session, _settings) =
+        authorize_command(&state, Action::RotateCredential, None).map_err(into_command_error)?;
     state.touch_session();
 
-    let request: IdentityCertificate = serde_json::from_str(&request_json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed UNIT rotation CSR: {e}"))))?;
+    let request: IdentityCertificate = serde_json::from_str(&request_json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!(
+            "Malformed UNIT rotation CSR: {e}"
+        )))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -424,16 +444,19 @@ pub fn finalize_unit_rotation(
     state: State<AppState>,
     cert_file_path: String,
 ) -> Result<RotationFinalizeOutcome, String> {
-    let (session, _settings) = authorize_command(&state, Action::RotateCredential, None)
-        .map_err(into_command_error)?;
+    let (session, _settings) =
+        authorize_command(&state, Action::RotateCredential, None).map_err(into_command_error)?;
     state.touch_session();
     crate::domain::validation::validate_file_path(&cert_file_path, &["json"])
         .map_err(into_command_error)?;
 
     let json = std::fs::read_to_string(&cert_file_path)
         .map_err(|e| into_command_error(AppError::Io(e)))?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
-        .map_err(|e| into_command_error(AppError::FileFormat(format!("Malformed signed certificate file: {e}"))))?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
+        into_command_error(AppError::FileFormat(format!(
+            "Malformed signed certificate file: {e}"
+        )))
+    })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
@@ -478,7 +501,9 @@ pub fn complete_challenge(
         )));
     }
     let parsed_session_id = uuid::Uuid::parse_str(&session_id).map_err(|e| {
-        into_command_error(AppError::Internal(format!("Invalid challenge session id: {e}")))
+        into_command_error(AppError::Internal(format!(
+            "Invalid challenge session id: {e}"
+        )))
     })?;
 
     let mut guard = state.get_db().map_err(into_command_error)?;

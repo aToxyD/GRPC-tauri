@@ -44,9 +44,8 @@ use grpc_lib::repositories::RepositoryProvider;
 /// RFC 8032 §7.1 TEST 1 secret — the matching public key IS the debug-mode
 /// development Root fallback (root_public_key.rs). Never a production key.
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 /// Fixed timestamp for deterministic persistence.
 const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
@@ -99,7 +98,9 @@ fn bootstrap_wilaya(node: &mut Node) -> IdentityCertificate {
 fn export_products(node: &Node, crypto: &AgeFileEncryptionProvider, target: &Path) -> u64 {
     IdentitySignedExportService::new(&node.db, &node.node_key_store)
         .export_v2_package(
-            ProductsExportDataset { product_rows: vec![] },
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "wilaya-test-node",
             "products",
             target,
@@ -263,7 +264,9 @@ fn failed_export_burns_no_sequence_and_retry_reuses_number() {
     let bad = dir.path().join("no_such_dir").join("bad.sync");
     let err = IdentitySignedExportService::new(&node.db, &node.node_key_store)
         .export_v2_package(
-            ProductsExportDataset { product_rows: vec![] },
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "wilaya-test-node",
             "products",
             &bad,
@@ -308,12 +311,8 @@ fn sequence_continues_across_credential_rotation() {
         .sign_certificate(&cert_b)
         .expect("root re-signs rotated cert");
     cert_b.signature = Some(Ed25519CertificateSignature::try_from(sig).expect("wrap"));
-    IdentityStorePort::upsert(
-        &node.db.executor().identity_store(),
-        &cert_b,
-        FIXED_NOW,
-    )
-    .expect("rotated cert upsert");
+    IdentityStorePort::upsert(&node.db.executor().identity_store(), &cert_b, FIXED_NOW)
+        .expect("rotated cert upsert");
 
     let p2 = dir.path().join("p2.sync");
     let seq2 = export_products(&node, &crypto, &p2);
@@ -343,7 +342,9 @@ fn unprovisioned_node_fails_closed_without_hmac_fallback() {
     let path = dir.path().join("bare.sync");
     let err = IdentitySignedExportService::new(&bare.db, &bare.node_key_store)
         .export_v2_package(
-            ProductsExportDataset { product_rows: vec![] },
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "n",
             "products",
             &path,
@@ -356,11 +357,16 @@ fn unprovisioned_node_fails_closed_without_hmac_fallback() {
 
     // Node key present but no ACTIVE WILAYA certificate.
     let key_only = fresh_node();
-    key_only.node_key_store.write(&[42u8; 32]).expect("write key");
+    key_only
+        .node_key_store
+        .write(&[42u8; 32])
+        .expect("write key");
     let path = dir.path().join("key_only.sync");
     let err = IdentitySignedExportService::new(&key_only.db, &key_only.node_key_store)
         .export_v2_package(
-            ProductsExportDataset { product_rows: vec![] },
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "n",
             "products",
             &path,

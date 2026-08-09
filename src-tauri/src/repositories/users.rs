@@ -233,12 +233,7 @@ impl<'a> UserRepository<'a> {
 
     /// Enable (`deleted = 0`) or disable (`deleted = 1`) an account.
     /// Disabling is a soft-delete: the row is preserved and re-enableable.
-    pub fn set_deleted(
-        &self,
-        user_id: &str,
-        deleted: bool,
-        now: &str,
-    ) -> Result<(), AppError> {
+    pub fn set_deleted(&self, user_id: &str, deleted: bool, now: &str) -> Result<(), AppError> {
         self.executor.execute(
             "UPDATE users SET deleted = ?1, updated_at = ?2 WHERE id = ?3",
             params![deleted as i64, now, user_id],
@@ -464,8 +459,14 @@ mod tests {
         let repo = UserRepository::new(make_executor(&db));
 
         assert!(repo.get_user_by_username("admin").unwrap().is_some());
-        repo.upsert_synced_admin("other-id", "fleet-hash", "UNIT-1", false, "2024-01-01T00:00:00Z")
-            .unwrap();
+        repo.upsert_synced_admin(
+            "other-id",
+            "fleet-hash",
+            "UNIT-1",
+            false,
+            "2024-01-01T00:00:00Z",
+        )
+        .unwrap();
         let admin = repo
             .get_user_by_username("admin")
             .unwrap()

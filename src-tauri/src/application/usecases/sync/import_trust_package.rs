@@ -113,14 +113,14 @@ pub fn execute(
 
     let mut revocation_count = 0usize;
     for revocation in &input.package.payload.revocations {
-        let existing = identity_store.get_by_identity_id(&revocation.identity_id)?.ok_or_else(
-            || {
+        let existing = identity_store
+            .get_by_identity_id(&revocation.identity_id)?
+            .ok_or_else(|| {
                 AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
                     resource: "identity".into(),
                     id: revocation.identity_id.to_string(),
                 })
-            },
-        )?;
+            })?;
         let mut revoked = existing;
         revoked.status = CredentialStatus::Revoked;
         identity_store.upsert(&revoked, &now)?;
@@ -188,7 +188,9 @@ mod tests {
                 created_at: chrono::Utc::now(),
                 source_node_id: "w-node".to_string(),
                 package_sequence: Some(1),
-                issuer_identity_id: Some(Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0001)),
+                issuer_identity_id: Some(Uuid::from_u128(
+                    0x0000_0000_0000_0000_0000_0000_0000_0001,
+                )),
                 package_id: PackageId(pkg_id.to_string()),
                 signature_version: Some(2),
                 signing_key_id: None,
@@ -226,10 +228,14 @@ mod tests {
             vec![],
         );
 
-        let outcome = execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        })
+        let outcome = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         assert_eq!(outcome.certificate_count, 1);
@@ -256,10 +262,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 1, subject_id)],
             vec![],
         );
-        execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: gen1,
-            imported_by: "admin".into(),
-        })
+        execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: gen1,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         let gen2 = trust_package(
@@ -267,10 +277,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 2, subject_id)],
             vec![],
         );
-        execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: gen2,
-            imported_by: "admin".into(),
-        })
+        execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: gen2,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         let store = IdentityStoreRepository::new(make_executor(&db));
@@ -294,10 +308,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 2, subject_id)],
             vec![],
         );
-        execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: gen2,
-            imported_by: "admin".into(),
-        })
+        execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: gen2,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         // RFC §3.4.2: (X,2) → (X,1) is rejected regardless of transport order.
@@ -306,10 +324,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 1, subject_id)],
             vec![],
         );
-        let err = execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: gen1,
-            imported_by: "admin".into(),
-        })
+        let err = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: gen1,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap_err();
         assert!(
             matches!(
@@ -332,10 +354,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 1, subject_id)],
             vec![],
         );
-        execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: first,
-            imported_by: "admin".into(),
-        })
+        execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: first,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         let replayed = trust_package(
@@ -343,10 +369,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 1, subject_id)],
             vec![],
         );
-        let outcome = execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: replayed,
-            imported_by: "admin".into(),
-        })
+        let outcome = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: replayed,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
         assert_eq!(outcome.certificate_count, 1);
     }
@@ -363,10 +393,14 @@ mod tests {
             vec![sample_cert(identity_id, credential_id, 1, subject_id)],
             vec![],
         );
-        execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: issue,
-            imported_by: "admin".into(),
-        })
+        execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: issue,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
 
         let revoke = trust_package(
@@ -377,10 +411,14 @@ mod tests {
                 reason: Some("loss of custody".into()),
             }],
         );
-        let outcome = execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package: revoke,
-            imported_by: "admin".into(),
-        })
+        let outcome = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package: revoke,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap();
         assert_eq!(outcome.revocation_count, 1);
 
@@ -403,10 +441,14 @@ mod tests {
                 reason: None,
             }],
         );
-        let err = execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        })
+        let err = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap_err();
         assert!(
             matches!(
@@ -424,10 +466,14 @@ mod tests {
         cert.signature = None;
 
         let package = trust_package("pkg-trust-unsigned", vec![cert], vec![]);
-        let err = execute(make_executor(&db), &registry(&db), ImportTrustPackageInput {
-            package,
-            imported_by: "admin".into(),
-        })
+        let err = execute(
+            make_executor(&db),
+            &registry(&db),
+            ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            },
+        )
         .unwrap_err();
         assert!(
             matches!(err, AppError::Internal(_)),
@@ -440,7 +486,12 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let package = trust_package(
             "pkg-trust-dup",
-            vec![sample_cert(Uuid::new_v4(), Uuid::new_v4(), 1, Uuid::new_v4())],
+            vec![sample_cert(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                1,
+                Uuid::new_v4(),
+            )],
             vec![],
         );
         let input = ImportTrustPackageInput {

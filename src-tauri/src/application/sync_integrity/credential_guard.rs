@@ -38,9 +38,7 @@ pub enum CredentialVerdict {
         incoming: u64,
     },
     /// `incoming.generation == 0` — impossible generation. Reject fail-closed.
-    RejectZero {
-        credential_id: String,
-    },
+    RejectZero { credential_id: String },
 }
 
 /// Evaluates credential lifecycle monotonicity per credential.

@@ -81,9 +81,7 @@ mod tests {
         assert!(!provider
             .verify_node("WrongPassword", node_id, &hash)
             .unwrap());
-        assert!(!provider
-            .verify_node(password, "WRONG_NODE", &hash)
-            .unwrap());
+        assert!(!provider.verify_node(password, "WRONG_NODE", &hash).unwrap());
     }
 
     #[test]

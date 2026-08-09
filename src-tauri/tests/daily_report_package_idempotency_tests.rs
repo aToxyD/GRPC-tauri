@@ -97,8 +97,14 @@ fn daily_report_package_same_id_is_rejected_second_time() {
 
     db.with_transaction(|tx| {
         let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
-        let reg =
-            SqliteImportedPackageRegistry::new(tx, DAILY_REPORT_PACKAGE_KIND, src_opt, "admin", None, None);
+        let reg = SqliteImportedPackageRegistry::new(
+            tx,
+            DAILY_REPORT_PACKAGE_KIND,
+            src_opt,
+            "admin",
+            None,
+            None,
+        );
         apply_daily_report_package(tx, &reg, input.clone())
     })
     .expect("first import ok");
@@ -106,8 +112,14 @@ fn daily_report_package_same_id_is_rejected_second_time() {
     let err = db
         .with_transaction(|tx| {
             let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
-            let reg =
-                SqliteImportedPackageRegistry::new(tx, DAILY_REPORT_PACKAGE_KIND, src_opt, "admin", None, None);
+            let reg = SqliteImportedPackageRegistry::new(
+                tx,
+                DAILY_REPORT_PACKAGE_KIND,
+                src_opt,
+                "admin",
+                None,
+                None,
+            );
             apply_daily_report_package(tx, &reg, input)
         })
         .expect_err("second import must fail");

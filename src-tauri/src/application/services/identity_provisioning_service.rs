@@ -17,7 +17,7 @@ use crate::domain::identity::{
     ADMINKEY_FORMAT_VERSION, IDENTITY_ALGORITHM_PROFILE_ED25519, SIGNATURE_VERSION_ED25519,
 };
 use crate::errors::{AppError, AppResult, BusinessLogicError};
-use crate::infrastructure::identity::{AdminKeyProvider, NodeKeyStore, resolve_root_public_key};
+use crate::infrastructure::identity::{resolve_root_public_key, AdminKeyProvider, NodeKeyStore};
 use crate::infrastructure::security::Ed25519SigningProvider;
 use crate::models::UserRole;
 use crate::repositories::RepositoryProvider;
@@ -59,7 +59,10 @@ impl<'a> IdentityProvisioningService<'a> {
     }
 
     /// Generate an Ed25519 keypair from a secure OS entropy source.
-    fn generate_keypair() -> ([u8; 32], crate::infrastructure::security::Ed25519SigningProvider) {
+    fn generate_keypair() -> (
+        [u8; 32],
+        crate::infrastructure::security::Ed25519SigningProvider,
+    ) {
         use rand::RngCore;
         let mut secret = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut secret);
@@ -202,8 +205,9 @@ impl<'a> IdentityProvisioningService<'a> {
         if request.signature.is_some() {
             return Err(AppError::BusinessLogic(
                 BusinessLogicError::OperationNotPermitted {
-                    message: "The request is already signed; a CSR must be unsigned at signing time"
-                        .into(),
+                    message:
+                        "The request is already signed; a CSR must be unsigned at signing time"
+                            .into(),
                 },
             ));
         }
@@ -323,10 +327,7 @@ impl<'a> IdentityProvisioningService<'a> {
                 })
             })?;
         Uuid::parse_str(&unit.id).map_err(|e| {
-            AppError::Internal(format!(
-                "units.id '{}' is not a valid UUID: {e}",
-                unit.id
-            ))
+            AppError::Internal(format!("units.id '{}' is not a valid UUID: {e}", unit.id))
         })
     }
 
@@ -398,14 +399,18 @@ impl<'a> IdentityProvisioningService<'a> {
     ) -> AppResult<FinalizeWilayaProvisionResult> {
         signed_cert.require_signed()?;
         if signed_cert.subject_type != SubjectType::Wilaya {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "finalize_wilaya_provision requires a WILAYA certificate".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "finalize_wilaya_provision requires a WILAYA certificate".into(),
+                },
+            ));
         }
         if signed_cert.status != CredentialStatus::Active {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "finalize_wilaya_provision requires an ACTIVE certificate".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "finalize_wilaya_provision requires an ACTIVE certificate".into(),
+                },
+            ));
         }
         if signed_cert.issuer_identity_id.is_some() {
             return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
@@ -414,25 +419,29 @@ impl<'a> IdentityProvisioningService<'a> {
         }
 
         let root_public_key = resolve_root_public_key()?;
-        let signature = signed_cert
-            .signature
-            .ok_or_else(|| AppError::Internal("Root-signed certificate missing signature".into()))?;
+        let signature = signed_cert.signature.ok_or_else(|| {
+            AppError::Internal("Root-signed certificate missing signature".into())
+        })?;
         let verifier = crate::infrastructure::security::Ed25519SignatureVerifier;
         let root_signature_valid = verifier
             .verify_certificate(signed_cert, &root_public_key, &signature)
             .map_err(|e| AppError::Internal(format!("Root signature verification failed: {e}")))?;
         if !root_signature_valid {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "Certificate signature is not valid for the Authority Root".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "Certificate signature is not valid for the Authority Root".into(),
+                },
+            ));
         }
 
         let node_secret = node_key_store.read()?;
         let node_signer = crate::infrastructure::security::Ed25519SigningProvider::new(node_secret);
         if signed_cert.public_key != node_signer.public_key() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "Certificate public key does not match the node signing key".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "Certificate public key does not match the node signing key".into(),
+                },
+            ));
         }
 
         let store = self.db.executor().identity_store();
@@ -446,7 +455,9 @@ impl<'a> IdentityProvisioningService<'a> {
         }
 
         store.upsert(signed_cert, now)?;
-        Ok(FinalizeWilayaProvisionResult::Provisioned(signed_cert.clone()))
+        Ok(FinalizeWilayaProvisionResult::Provisioned(
+            signed_cert.clone(),
+        ))
     }
 
     /// Issue the FIRST ADMIN key linked to the bootstrap operator (B5).
@@ -472,16 +483,20 @@ impl<'a> IdentityProvisioningService<'a> {
     ) -> AppResult<IdentityCertificate> {
         let username = subject_username.trim();
         if username.is_empty() {
-            return Err(AppError::Validation(crate::errors::ValidationError::Required {
-                field: "subject_username".into(),
-            }));
+            return Err(AppError::Validation(
+                crate::errors::ValidationError::Required {
+                    field: "subject_username".into(),
+                },
+            ));
         }
         let store = self.db.executor().identity_store();
         let wilaya = store
             .get_active_by_subject_type(SubjectType::Wilaya)?
             .ok_or_else(|| {
                 AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                    message: "An ACTIVE WILAYA identity is required before issuing the first ADMIN key".into(),
+                    message:
+                        "An ACTIVE WILAYA identity is required before issuing the first ADMIN key"
+                            .into(),
                 })
             })?;
 
@@ -495,10 +510,9 @@ impl<'a> IdentityProvisioningService<'a> {
                             username, existing.id
                         ))
                     })?;
-                    if let Some(existing_admin) = store.get_active_by_subject(
-                        SubjectType::Admin,
-                        &parsed,
-                    )? {
+                    if let Some(existing_admin) =
+                        store.get_active_by_subject(SubjectType::Admin, &parsed)?
+                    {
                         return Err(AppError::BusinessLogic(
                             BusinessLogicError::OperationNotPermitted {
                                 message: format!(
@@ -512,12 +526,13 @@ impl<'a> IdentityProvisioningService<'a> {
                 }
                 None => {
                     let id = Uuid::new_v4();
-                    let node_id = crate::infrastructure::security::NodeIdentityProvider::current_node_id(
-                        &crate::infrastructure::security::SettingsNodeIdentityProvider::new(
-                            self.db.executor(),
-                        ),
-                    )
-                    .unwrap_or_else(|_| "WILAYA".to_string());
+                    let node_id =
+                        crate::infrastructure::security::NodeIdentityProvider::current_node_id(
+                            &crate::infrastructure::security::SettingsNodeIdentityProvider::new(
+                                self.db.executor(),
+                            ),
+                        )
+                        .unwrap_or_else(|_| "WILAYA".to_string());
                     users.upsert_user(
                         &id.to_string(),
                         username,
@@ -592,23 +607,25 @@ impl<'a> IdentityProvisioningService<'a> {
     ) -> AppResult<FinalizeUnitProvisionResult> {
         signed_cert.require_signed()?;
         if signed_cert.subject_type != SubjectType::Unit {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "finalize_unit_provision requires a UNIT certificate".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "finalize_unit_provision requires a UNIT certificate".into(),
+                },
+            ));
         }
         if signed_cert.status != CredentialStatus::Active {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "finalize_unit_provision requires an ACTIVE certificate".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "finalize_unit_provision requires an ACTIVE certificate".into(),
+                },
+            ));
         }
 
-        let issuer_identity_id = signed_cert
-            .issuer_identity_id
-            .ok_or_else(|| {
-                AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                    message: "A UNIT certificate MUST be issued by a WILAYA identity".into(),
-                })
-            })?;
+        let issuer_identity_id = signed_cert.issuer_identity_id.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                message: "A UNIT certificate MUST be issued by a WILAYA identity".into(),
+            })
+        })?;
         let store = self.db.executor().identity_store();
         let issuer = store
             .get_by_identity_id(&issuer_identity_id)?
@@ -620,19 +637,23 @@ impl<'a> IdentityProvisioningService<'a> {
                 })
             })?;
         if issuer.status != CredentialStatus::Active {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "The UNIT certificate issuer MUST be an ACTIVE WILAYA identity".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "The UNIT certificate issuer MUST be an ACTIVE WILAYA identity".into(),
+                },
+            ));
         }
         if issuer.subject_type != SubjectType::Wilaya {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "The UNIT certificate issuer MUST be a WILAYA identity".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "The UNIT certificate issuer MUST be a WILAYA identity".into(),
+                },
+            ));
         }
 
-        let signature = signed_cert
-            .signature
-            .ok_or_else(|| AppError::Internal("WILAYA-signed certificate missing signature".into()))?;
+        let signature = signed_cert.signature.ok_or_else(|| {
+            AppError::Internal("WILAYA-signed certificate missing signature".into())
+        })?;
         let verifier = crate::infrastructure::security::Ed25519SignatureVerifier;
         let issuer_signature_valid = verifier
             .verify_certificate(signed_cert, &issuer.public_key, &signature)
@@ -640,17 +661,22 @@ impl<'a> IdentityProvisioningService<'a> {
                 AppError::Internal(format!("Issuer signature verification failed: {e}"))
             })?;
         if !issuer_signature_valid {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "Certificate signature is not valid for the declared WILAYA issuer".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "Certificate signature is not valid for the declared WILAYA issuer"
+                        .into(),
+                },
+            ));
         }
 
         let node_secret = node_key_store.read()?;
         let node_signer = crate::infrastructure::security::Ed25519SigningProvider::new(node_secret);
         if signed_cert.public_key != node_signer.public_key() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "Certificate public key does not match the node signing key".into(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "Certificate public key does not match the node signing key".into(),
+                },
+            ));
         }
 
         let unit_id = signed_cert.subject_id.to_string();
@@ -668,7 +694,8 @@ impl<'a> IdentityProvisioningService<'a> {
             })?;
         let _ = unit;
 
-        if let Some(existing) = store.get_active_by_subject(SubjectType::Unit, &signed_cert.subject_id)?
+        if let Some(existing) =
+            store.get_active_by_subject(SubjectType::Unit, &signed_cert.subject_id)?
         {
             if existing.is_identical_to(signed_cert) {
                 return Ok(FinalizeUnitProvisionResult::AlreadyProvisioned(existing));
@@ -679,6 +706,8 @@ impl<'a> IdentityProvisioningService<'a> {
         }
 
         store.upsert(signed_cert, now)?;
-        Ok(FinalizeUnitProvisionResult::Provisioned(signed_cert.clone()))
+        Ok(FinalizeUnitProvisionResult::Provisioned(
+            signed_cert.clone(),
+        ))
     }
 }

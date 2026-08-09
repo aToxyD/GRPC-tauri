@@ -7,9 +7,7 @@ use crate::application::services::{
     AuditService, AuditTxService, IdentityAuthenticationPolicy, OperationalSessionService,
     SessionEndReason, SessionEstablishmentService, UserService,
 };
-use crate::commands::common::{
-    adminkey_provider, db_mut_or_command_error, user_ctx_from_parts,
-};
+use crate::commands::common::{adminkey_provider, db_mut_or_command_error, user_ctx_from_parts};
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError, ValidationError};

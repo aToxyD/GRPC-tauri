@@ -284,8 +284,8 @@ impl<'a> SyncImportExecutionService<'a> {
                         }
                     };
 
-        // [arch:allow-unwrap-or] see ADR-0014 — Reason: intended fallback to 0 for non-numeric conflict IDs (replay-detect path); Date: 2026-08-09; Owner: Sync
-        let conflict_id_val = conflict.conflict_id().0.parse::<i64>().unwrap_or(0);
+                    // [arch:allow-unwrap-or] see ADR-0014 — Reason: intended fallback to 0 for non-numeric conflict IDs (replay-detect path); Date: 2026-08-09; Owner: Sync
+                    let conflict_id_val = conflict.conflict_id().0.parse::<i64>().unwrap_or(0);
                     ctx.emit(DomainEvent::SyncConflictDetected {
                         conflict_id: conflict_id_val,
                         conflict_type: Some(conflict.conflict_type_str().to_string()),

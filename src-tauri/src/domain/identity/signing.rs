@@ -15,9 +15,7 @@
 //! from domain or application layers — no code may build the signed byte layout
 //! by hand.
 
-use crate::domain::identity::{
-    ChallengeMessage, Ed25519CertificateSignature, IdentityCertificate,
-};
+use crate::domain::identity::{ChallengeMessage, Ed25519CertificateSignature, IdentityCertificate};
 
 /// `signature_version` / `algorithm_version` value for Ed25519 (RFC 8032).
 ///

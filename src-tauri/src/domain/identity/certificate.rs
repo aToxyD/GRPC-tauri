@@ -194,7 +194,10 @@ mod tests {
         let mut with_sig = fixed_certificate();
         with_sig.signature = Some(Ed25519CertificateSignature::from_bytes([1u8; 64]));
         with_sig.package_sequence = Some(42);
-        assert_eq!(with_sig.canonical_bytes(), fixed_certificate().canonical_bytes());
+        assert_eq!(
+            with_sig.canonical_bytes(),
+            fixed_certificate().canonical_bytes()
+        );
     }
 
     #[test]
@@ -206,8 +209,7 @@ mod tests {
     #[test]
     fn issuer_and_not_after_are_encoded_deterministically() {
         let mut cert = fixed_certificate();
-        cert.issuer_identity_id =
-            Some(Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0003));
+        cert.issuer_identity_id = Some(Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0003));
         let bytes_with_issuer = cert.canonical_bytes();
         assert_eq!(bytes_with_issuer.len(), 100 + 16);
         assert_eq!(bytes_with_issuer[35], 1);

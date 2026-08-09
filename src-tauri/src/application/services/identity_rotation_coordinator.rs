@@ -78,10 +78,7 @@ pub struct IdentityRotationCoordinator<'a> {
 
 impl<'a> IdentityRotationCoordinator<'a> {
     pub fn new(db: &'a mut Database, node_key_store: &'a NodeKeyStore) -> Self {
-        Self {
-            db,
-            node_key_store,
-        }
+        Self { db, node_key_store }
     }
 
     /// Begin a rotation: stage a fresh node key and build the unsigned CSR.
@@ -368,7 +365,9 @@ impl<'a> IdentityRotationCoordinator<'a> {
     fn install_active(&mut self, certificate: &IdentityCertificate, now: &str) -> AppResult<()> {
         self.db.with_transaction(|tx| {
             let store = tx.identity_store();
-            if let Some(prior) = store.get_active_by_subject(certificate.subject_type, &certificate.subject_id)? {
+            if let Some(prior) =
+                store.get_active_by_subject(certificate.subject_type, &certificate.subject_id)?
+            {
                 if prior.identity_id != certificate.identity_id {
                     let mut superseded = prior.clone();
                     superseded.status = CredentialStatus::Superseded;
@@ -385,7 +384,11 @@ impl<'a> IdentityRotationCoordinator<'a> {
     /// Mirrors the Trust Package per-certificate gate (RFC §3.4.2): Accept →
     /// install, Replay → idempotent no-op, Rollback/RejectZero → error (the
     /// caller logs and skips — the signing itself already succeeded).
-    fn register_best_effort(&mut self, certificate: &IdentityCertificate, now: &str) -> AppResult<()> {
+    fn register_best_effort(
+        &mut self,
+        certificate: &IdentityCertificate,
+        now: &str,
+    ) -> AppResult<()> {
         let stored_generation = self
             .db
             .executor()
@@ -406,7 +409,10 @@ impl<'a> IdentityRotationCoordinator<'a> {
         }
     }
 
-    fn derive_operation(previous: &IdentityCertificate, next: &IdentityCertificate) -> RotationOperation {
+    fn derive_operation(
+        previous: &IdentityCertificate,
+        next: &IdentityCertificate,
+    ) -> RotationOperation {
         if previous.credential_id == next.credential_id {
             RotationOperation::Rotate
         } else {

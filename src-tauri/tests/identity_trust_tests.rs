@@ -17,9 +17,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
-use grpc_lib::application::services::{
-    IdentityChallengeService, IdentityProvisioningService,
-};
+use grpc_lib::application::services::{IdentityChallengeService, IdentityProvisioningService};
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
     ChallengeMessage, CredentialStatus, IdentityChallengeState, IdentitySigner, IdentityStorePort,
@@ -58,7 +56,12 @@ fn provision_device() -> ProvisionedDevice {
     let root_signer = Ed25519SigningProvider::new(TEST_ROOT_SECRET);
     let mut provisioning = IdentityProvisioningService::new(&mut db);
     let wilaya = provisioning
-        .provision_wilaya(uuid::Uuid::new_v4(), &root_signer, &node_key_store, FIXED_NOW)
+        .provision_wilaya(
+            uuid::Uuid::new_v4(),
+            &root_signer,
+            &node_key_store,
+            FIXED_NOW,
+        )
         .expect("wilaya provisioned");
     provisioning
         .issue_admin(
@@ -94,10 +97,7 @@ fn challenge_service(
 
 /// Simulates the operator: decrypts the `.adminkey` secret with the passphrase
 /// and signs the challenge canonical bytes with the ADMIN private key.
-fn operator_sign(
-    challenge: &ChallengeMessage,
-    adminkey_provider: &AdminKeyProvider,
-) -> Vec<u8> {
+fn operator_sign(challenge: &ChallengeMessage, adminkey_provider: &AdminKeyProvider) -> Vec<u8> {
     let adminkey = adminkey_provider.read().expect("adminkey readable");
     let secret = adminkey_provider
         .decrypt_private_key(&adminkey.encrypted_private_key, ADMIN_PASSPHRASE)
@@ -106,7 +106,10 @@ fn operator_sign(
     signer.sign_challenge(challenge).expect("challenge signed")
 }
 
-fn begin_challenge(service: &IdentityChallengeService, device: &ProvisionedDevice) -> ChallengeMessage {
+fn begin_challenge(
+    service: &IdentityChallengeService,
+    device: &ProvisionedDevice,
+) -> ChallengeMessage {
     service
         .begin(&IdentityStoreRepository::new(device.db.executor()))
         .expect("challenge issued")
@@ -123,7 +126,10 @@ fn provisioning_writes_store_certificates_and_portable_adminkey() {
         .expect("wilaya active");
     assert_eq!(wilaya.identity_id, device.wilaya_identity_id);
     assert_eq!(wilaya.status, CredentialStatus::Active);
-    assert!(wilaya.signature.is_some(), "wilaya cert must be root-signed");
+    assert!(
+        wilaya.signature.is_some(),
+        "wilaya cert must be root-signed"
+    );
 
     let admin = store
         .list_all()
@@ -178,16 +184,14 @@ fn challenge_replay_after_success_is_rejected() {
     let challenge = begin_challenge(&service, &device);
     let signature = operator_sign(&challenge, &device.adminkey_provider);
 
-    assert!(
-        service
-            .complete(
-                &mut device.db,
-                &challenge.session_id,
-                ADMIN_PASSPHRASE,
-                &signature,
-            )
-            .is_ok()
-    );
+    assert!(service
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
+        .is_ok());
     let replay = service.complete(
         &mut device.db,
         &challenge.session_id,
@@ -197,7 +201,9 @@ fn challenge_replay_after_success_is_rejected() {
     assert!(
         matches!(
             replay,
-            Err(AppError::Authentication(AuthenticationError::InvalidCredentials { .. }))
+            Err(AppError::Authentication(
+                AuthenticationError::InvalidCredentials { .. }
+            ))
         ),
         "replayed challenge must be rejected fail-closed, got {replay:?}"
     );
@@ -220,7 +226,9 @@ fn tampered_challenge_signature_is_rejected_and_consumes_challenge() {
     assert!(
         matches!(
             tampered,
-            Err(AppError::Authentication(AuthenticationError::InvalidCredentials { .. }))
+            Err(AppError::Authentication(
+                AuthenticationError::InvalidCredentials { .. }
+            ))
         ),
         "tampered signature must be rejected, got {tampered:?}"
     );
@@ -233,7 +241,10 @@ fn tampered_challenge_signature_is_rejected_and_consumes_challenge() {
         ADMIN_PASSPHRASE,
         &correct,
     );
-    assert!(replay.is_err(), "consumed challenge must reject a correct replay");
+    assert!(
+        replay.is_err(),
+        "consumed challenge must reject a correct replay"
+    );
 }
 
 #[test]
@@ -257,7 +268,10 @@ fn wrong_passphrase_is_rejected_and_consumes_challenge() {
         ADMIN_PASSPHRASE,
         &signature,
     );
-    assert!(correct.is_err(), "challenge consumed even after failed attempt");
+    assert!(
+        correct.is_err(),
+        "challenge consumed even after failed attempt"
+    );
 }
 
 #[test]
@@ -268,10 +282,7 @@ fn challenge_bound_to_foreign_node_is_rejected() {
     // A challenge crafted for a DIFFERENT node identity must be rejected even
     // though the signature and passphrase are valid.
     let foreign = ChallengeMessage::new(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), [7u8; 32]);
-    state
-        .lock()
-        .expect("state lock")
-        .begin(foreign.clone());
+    state.lock().expect("state lock").begin(foreign.clone());
     let signature = operator_sign(&foreign, &device.adminkey_provider);
 
     let result = service.complete(
@@ -283,7 +294,9 @@ fn challenge_bound_to_foreign_node_is_rejected() {
     assert!(
         matches!(
             result,
-            Err(AppError::Authentication(AuthenticationError::InvalidCredentials { .. }))
+            Err(AppError::Authentication(
+                AuthenticationError::InvalidCredentials { .. }
+            ))
         ),
         "foreign-node challenge must be rejected, got {result:?}"
     );

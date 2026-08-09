@@ -109,11 +109,7 @@ impl<'a> SyncIssuerSequenceStateRepository<'a> {
     /// Persist an issued sequence (UPSERT). Invoked by
     /// [`PendingIssuedSequence::commit`] after a successful export — never from
     /// an allocation path.
-    pub fn record_issued_sequence(
-        &self,
-        issuer_identity_id: &str,
-        sequence: u64,
-    ) -> AppResult<()> {
+    pub fn record_issued_sequence(&self, issuer_identity_id: &str, sequence: u64) -> AppResult<()> {
         validate_issuer_id(issuer_identity_id)?;
         self.executor
             .execute(

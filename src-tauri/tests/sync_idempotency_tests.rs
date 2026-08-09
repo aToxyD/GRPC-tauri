@@ -96,8 +96,14 @@ fn importing_same_package_id_twice_is_rejected() {
     // First time should succeed.
     db.with_transaction(|tx| {
         let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
-        let reg =
-            SqliteImportedPackageRegistry::new(tx, MONTHLY_SUMMARY_PACKAGE_KIND, src_opt, "admin", None, None);
+        let reg = SqliteImportedPackageRegistry::new(
+            tx,
+            MONTHLY_SUMMARY_PACKAGE_KIND,
+            src_opt,
+            "admin",
+            None,
+            None,
+        );
         apply_monthly_summary_package(tx, &reg, input.clone())
     })
     .expect("first import ok");
