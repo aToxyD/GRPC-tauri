@@ -53,10 +53,10 @@ impl AdminKeyProvider {
         file.validate()?;
         let json = serde_json::to_string_pretty(file)
             .map_err(|e| AppError::Internal(format!("Failed to serialize .adminkey: {e}")))?;
-        std::fs::create_dir_all(&self.data_dir).map_err(|e| AppError::Io(e))?;
+        std::fs::create_dir_all(&self.data_dir).map_err(AppError::Io)?;
         let path = self.file_path();
         let tmp = path.with_extension("adminkey.tmp");
-        std::fs::write(&tmp, json).map_err(|e| AppError::Io(e))?;
+        std::fs::write(&tmp, json).map_err(AppError::Io)?;
         std::fs::rename(&tmp, &path).map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
             AppError::Io(e)
