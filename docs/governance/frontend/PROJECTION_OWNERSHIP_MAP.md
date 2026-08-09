@@ -221,6 +221,16 @@ isolation enforcement (FE-152).
 
 ---
 
+### Security & App Key
+
+| Projection | Owner Contract | IPC Command | Consuming Pages |
+|------------|---------------|-------------|-----------------|
+| `AppKeyStatusDto` | security.contract.ts | `get_security_status` | AppSecurityPage, LoginPage |
+| `AppKeyInitializeResultDto` | security.contract.ts | `initialize_app_key` | AppSecurityPage |
+| `AppKeyUnlockResultDto` | security.contract.ts | `unlock_app_key` | AppSecurityPage |
+
+---
+
 ## Ownership Summary
 
 | Domain | Projections | IPC Commands | Consuming Pages |
@@ -238,8 +248,9 @@ isolation enforcement (FE-152).
 | user | 3 | 2 | 1 |
 | backup | 1 | 4 | 1 |
 | dashboard | 2 | 2 | 1 |
+| security | 3 | 4 | 2 |
 | platform | 0 | 0 | 0 |
-| **Total** | **~69** | **~98** | **24 pages** |
+| **Total** | **~72** | **~102** | **25 pages** |
 
 ---
 

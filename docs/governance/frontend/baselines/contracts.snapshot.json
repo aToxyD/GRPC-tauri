@@ -628,6 +628,40 @@
       "commandCount": 1
     },
     {
+      "name": "security",
+      "exports": [
+        {
+          "name": "getSecurityStatus"
+        },
+        {
+          "name": "initializeAppKey"
+        },
+        {
+          "name": "unlockAppKey"
+        },
+        {
+          "name": "exportAppKeyBackup"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_security_status"
+        },
+        {
+          "command": "initialize_app_key"
+        },
+        {
+          "command": "unlock_app_key"
+        },
+        {
+          "command": "export_app_key_backup"
+        }
+      ],
+      "loc": 61,
+      "exportCount": 4,
+      "commandCount": 4
+    },
+    {
       "name": "session",
       "exports": [
         {
@@ -871,6 +905,46 @@
       "loc": 34,
       "exportCount": 7,
       "commandCount": 7
+    },
+    {
+      "name": "licensing",
+      "exports": [
+        {
+          "name": "getLicensingStatus"
+        },
+        {
+          "name": "importTrustAnchor"
+        },
+        {
+          "name": "importLicense"
+        },
+        {
+          "name": "dryRunVerifyLicense"
+        },
+        {
+          "name": "verifyLicense"
+        }
+      ],
+      "commands": [
+        {
+          "command": "get_licensing_status"
+        },
+        {
+          "command": "import_trust_anchor"
+        },
+        {
+          "command": "import_license"
+        },
+        {
+          "command": "dry_run_verify_license"
+        },
+        {
+          "command": "verify_license"
+        }
+      ],
+      "loc": 92,
+      "exportCount": 5,
+      "commandCount": 5
     }
   ]
 }

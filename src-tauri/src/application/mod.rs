@@ -7,6 +7,7 @@
 
 pub mod authz;
 pub mod command_context;
+pub mod licensing;
 pub mod oversight;
 pub mod ports;
 pub mod reporting;

@@ -85,6 +85,8 @@
       "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
     diagnostics:
       "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01",
+    license:
+      "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
   };
 
   // ── Link definitions ────────────────────────────────────────────────────────
@@ -119,6 +121,7 @@
       links.push(
         makeLink("/admin/diagnostics", "التشخيصات المتقدمة", ICONS.diagnostics),
       );
+      links.push(makeLink("/admin/licensing", "الترخيص", ICONS.license));
 
       // Only add topology and conflicts for Wilaya node
       if (effectiveNodeType === "WILAYA") {

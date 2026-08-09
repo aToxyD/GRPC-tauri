@@ -3,6 +3,11 @@ use tauri::ipc::Invoke;
 
 pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        // Application-key provisioning (ADR-0041, pre-auth lifecycle)
+        commands::get_security_status,
+        commands::initialize_app_key,
+        commands::unlock_app_key,
+        commands::export_app_key_backup,
         // Authentication
         commands::login,
         commands::get_current_user,
@@ -172,5 +177,11 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::verify_integrity,
         commands::get_system_maintenance_state,
         commands::list_operational_sessions,
+        // Licensing (ADR-0042)
+        commands::get_licensing_status,
+        commands::import_trust_anchor,
+        commands::import_license,
+        commands::dry_run_verify_license,
+        commands::verify_license,
     ]
 }

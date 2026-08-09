@@ -64,6 +64,8 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0038 | `0038-node-identity-and-trust.md` | Node Identity & Trust Architecture | Accepted | 2026-08-04 | Architecture / Security |
 | 0039 | `0039-adminkey-portable-scrypt.md` | Two-Tier Secret Protection (x25519 node / scrypt `.adminkey`) | Accepted | 2026-08-04 | Architecture / Security |
 | 0040 | `0040-identity-access-sync.md` | Identity & Access Synchronization — Two Static Accounts per UNIT | Accepted | 2026-08-07 | Architecture / Security |
+| 0041 | `0041-production-app-key-provisioning.md` | Production Application-Key Provisioning — GRPC_APP_KEY via Passphrase-Protected Store | Accepted | 2026-08-08 | Architecture / Security |
+| 0042 | `0042-licensing-consumer-integration.md` | Licensing Consumer Integration — Signed Licensing Artifact Consumption in GRPC | Accepted | 2026-08-08 | Architecture / Licensing Integration |
 
 ---
 
@@ -99,5 +101,5 @@ The following legacy ADRs have been consolidated:
 |-----------|---------|
 | 0031 | `0031-rate-limiter-persistence.md` | Rate Limiter Persistence | Accepted | 2026-06-03 | Infrastructure |
 | 0032–0037 | CANCELLED / DEFERRED | Not implemented in v1.2.0 baseline | — | — | — |
-| 0041–0099 | Available for future governance ADRs |
+| 0043–0099 | Available for future governance ADRs |
 | 0100–9999 | Available for domain/feature ADRs |

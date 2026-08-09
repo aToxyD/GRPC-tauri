@@ -108,7 +108,7 @@ export const DOMAIN_REGISTRY: Record<string, {
     contract: "metrics.contract.ts",
     pages: ["UnitStatisticsPage", "WilayaStatisticsPage", "WilayaDashboard"],
     functions: ["getLoginMetrics", "getSystemMetrics", "getSyncSecurityDiagnostics", "syncPreflightCheck"],
-    crossDomainExceptions: ["listUnits", "listProducts"],
+    crossDomainExceptions: ["listUnits", "listProducts", "getSecurityStatus"],
   },
   session: {
     contract: "session.contract.ts",
@@ -120,7 +120,13 @@ export const DOMAIN_REGISTRY: Record<string, {
     contract: "user.contract.ts",
     pages: ["LoginPage"],
     functions: ["login"],
-    crossDomainExceptions: [],
+    crossDomainExceptions: ["getSecurityStatus"],
+  },
+  security: {
+    contract: "security.contract.ts",
+    pages: ["AppSecurityPage"],
+    functions: ["getSecurityStatus", "initializeAppKey", "unlockAppKey", "exportAppKeyBackup"],
+    crossDomainExceptions: ["login"],
   },
 };
 

@@ -10,6 +10,12 @@ const mockIsConfigured = vi.fn();
 const mockGetSettings = vi.fn();
 const mockImportUnitNodePackage = vi.fn();
 const mockGetIdentityStatus = vi.fn();
+const mockGetSecurityStatus = vi.fn();
+const mockBeginWilayaProvision = vi.fn();
+const mockFinalizeWilayaProvision = vi.fn();
+const mockIssueFirstAdminKey = vi.fn();
+const mockBeginUnitProvision = vi.fn();
+const mockFinalizeUnitProvision = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
     safeInvoke: vi.fn(),
@@ -24,6 +30,12 @@ vi.mock('../../lib/contracts', () => ({
     getSettings: (...args: any[]) => mockGetSettings(...args),
     importUnitNodePackage: (...args: any[]) => mockImportUnitNodePackage(...args),
     getIdentityStatus: (...args: any[]) => mockGetIdentityStatus(...args),
+    getSecurityStatus: (...args: any[]) => mockGetSecurityStatus(...args),
+    beginWilayaProvision: (...args: any[]) => mockBeginWilayaProvision(...args),
+    finalizeWilayaProvision: (...args: any[]) => mockFinalizeWilayaProvision(...args),
+    issueFirstAdminKey: (...args: any[]) => mockIssueFirstAdminKey(...args),
+    beginUnitProvision: (...args: any[]) => mockBeginUnitProvision(...args),
+    finalizeUnitProvision: (...args: any[]) => mockFinalizeUnitProvision(...args),
 }));
 
 // Mock tauri plugin dialog
@@ -51,6 +63,7 @@ describe('Login Page Integration Flow', () => {
         currentUser.set(null);
         mockIsConfigured.mockResolvedValue(true);
         mockGetIdentityStatus.mockResolvedValue('UNINITIALIZED');
+        mockGetSecurityStatus.mockResolvedValue({ requires_action: false });
     });
 
     it('should display error if fields are submitted empty', async () => {

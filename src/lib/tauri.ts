@@ -617,6 +617,11 @@ export async function openFile(options?: Parameters<typeof tauriOpen>[0]) {
   return await tauriOpen(options);
 }
 
+export async function readTextFile(path: string): Promise<string> {
+  const { readTextFile } = await import('@tauri-apps/plugin-fs');
+  return await readTextFile(path);
+}
+
 export async function saveFile(options?: Parameters<typeof tauriSave>[0]) {
   return await tauriSave(options);
 }

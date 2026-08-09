@@ -12,10 +12,14 @@ Architecture / Security
 # Reference
 - RFC `docs/architecture/rfcs/2026-08-04-node-identity-trust.md` §3.8 (`.adminkey`), §3.10.
 - ADR-0038 §5 (Challenge–Response authentication).
-- Rule 38 (`scripts/check_arch.ts`) — amended by this decision.
-- ARCHITECTURE_FREEZE.md §2.7 — amended by this decision.
+- Rule 38 (`scripts/check_arch.ts`) — amended by this decision and later by ADR-0041.
+- ARCHITECTURE_FREEZE.md §2.7 — amended by this decision and later by ADR-0041.
 - ADR-0019 (legacy crypto isolation) — unchanged; this decision refines the allowed crypto
   surface, it does not weaken isolation.
+- **Amendment (ADR-0041 §3):** `age::scrypt` is now permitted in **exactly two** files —
+  `infrastructure/identity/adminkey_provider.rs` (this ADR) and the new
+  `infrastructure/security/appkey_store.rs` (passphrase-protected app-key-at-rest store).
+  The two-site policy replaces the one-site policy below wherever they conflict.
 
 # Context
 
@@ -54,8 +58,11 @@ would duplicate what `age::scrypt` already provides.
 
 - `age::scrypt` is an **error** in `src-tauri/src/**/*.rs` everywhere **except**
   `src-tauri/src/infrastructure/identity/adminkey_provider.rs` (the sole portable-key
-  provider). Comments are excluded as before.
+  provider) and — after **ADR-0041 §3** — `src-tauri/src/infrastructure/security/appkey_store.rs`
+  (the sole passphrase-protected app-key-at-rest store). Comments are excluded as before.
 - The error message states the two-tier policy.
+- **ADR-0041 amendment:** the allow-list has exactly two entries (`.adminkey`,
+  `appkey.age`). Any further scrypt site requires a new ADR.
 
 This is a deliberate contract amendment approved through the RFC-to-ADR process, not a
 time-limited `[arch:allow-*]` exception.

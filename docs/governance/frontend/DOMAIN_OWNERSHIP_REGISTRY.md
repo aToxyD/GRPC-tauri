@@ -153,7 +153,7 @@ each domain, which pages belong to each domain, allowed imports, and forbidden i
 | Owned Pages | `UnitStatisticsPage.svelte`, `WilayaStatisticsPage.svelte`, `WilayaDashboard.svelte` |
 | Owned Projection Types | `LoginMetrics`, `SystemMetrics`, `SyncSecurityDiagnostics`, `SyncPreflightCheck` |
 | Allowed Imports | metrics contract, session contract (`getSettings`) |
-| Cross-Domain Exceptions | `listUnits` (inventory), `listProducts` (inventory) |
+| Cross-Domain Exceptions | `listUnits` (inventory), `listProducts` (inventory), `getSecurityStatus` (security) |
 | Forbidden Imports | All other domain contracts |
 
 ---
@@ -179,7 +179,20 @@ each domain, which pages belong to each domain, allowed imports, and forbidden i
 | Owned Pages | `LoginPage.svelte` |
 | Owned Projection Types | `LoginRequest`, `LoginResponse`, `User` |
 | Allowed Imports | user contract, session contract |
-| Cross-Domain Exceptions | None |
+| Cross-Domain Exceptions | `getSecurityStatus` (security) |
+| Forbidden Imports | All other domain contracts |
+
+---
+
+### security
+
+| Property | Value |
+|----------|-------|
+| Owner Contract | `security.contract.ts` |
+| Owned Pages | `AppSecurityPage.svelte` |
+| Owned Projection Types | `AppKeyStatusDto`, `AppKeyInitializeResultDto`, `AppKeyUnlockResultDto` |
+| Allowed Imports | security contract, session contract (`getSettings`) |
+| Cross-Domain Exceptions | `login` (user — route navigation to `/login`) |
 | Forbidden Imports | All other domain contracts |
 
 ---

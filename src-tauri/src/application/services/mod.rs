@@ -8,12 +8,12 @@ pub mod fiscal_reporting_service;
 pub mod fiscal_scope;
 pub mod fiscal_validation_service;
 pub mod identity_authentication_policy;
-pub mod identity_challenge_service;
 pub mod identity_bootstrap_status_service;
+pub mod identity_challenge_service;
 pub mod identity_node_resolver;
 pub mod identity_provisioning_service;
-pub mod identity_rotation_service;
 pub mod identity_rotation_coordinator;
+pub mod identity_rotation_service;
 pub mod identity_signed_export_service;
 pub mod identity_trust_anchor_service;
 pub mod inventory_snapshot_service;
@@ -49,20 +49,22 @@ pub use fiscal_closing_service::FiscalClosingService;
 pub use fiscal_reporting_service::FiscalReportingService;
 pub use fiscal_validation_service::FiscalValidationService;
 pub use identity_authentication_policy::IdentityAuthenticationPolicy;
-pub use identity_challenge_service::IdentityChallengeService;
 pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;
+pub use identity_challenge_service::IdentityChallengeService;
 pub use identity_node_resolver::NodeIdentityResolver;
 pub use identity_provisioning_service::{
     FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult, IdentityProvisioningService,
 };
-pub use identity_rotation_service::{
-    FinalizeVerdict, IdentityRotationService, RotationOperation, RotationPlan,
-};
 pub use identity_rotation_coordinator::{
     IdentityRotationCoordinator, RotationFinalizeOutcome, SignedUnitRotation,
 };
+pub use identity_rotation_service::{
+    FinalizeVerdict, IdentityRotationService, RotationOperation, RotationPlan,
+};
 pub use identity_signed_export_service::IdentitySignedExportService;
-pub use identity_trust_anchor_service::{IdentityTrustAnchorService, InstallWilayaCertificateResult};
+pub use identity_trust_anchor_service::{
+    IdentityTrustAnchorService, InstallWilayaCertificateResult,
+};
 pub use inventory_snapshot_service::InventorySnapshotService;
 pub use login_policy::LoginPolicy;
 pub use monthly_report_service::MonthlyReportService;
@@ -153,6 +155,7 @@ pub mod operational_log_contract;
 pub mod operational_recommendation_service;
 pub mod operational_session_service;
 pub mod operator_safety_service;
+pub mod runtime_bootstrap;
 pub mod system_maintenance_state;
 pub mod telemetry_service;
 
@@ -177,6 +180,7 @@ pub use operational_consistency_verifier::{
 pub use operational_session_service::{
     OperationalSessionRecord, OperationalSessionService, SessionCounterKind, SessionEndReason,
 };
+pub use runtime_bootstrap::{bootstrap_runtime, RuntimeBootstrap};
 pub use system_maintenance_state::{
     MaintenanceBlockedOperation, SystemMaintenanceHandle, SystemMaintenanceState,
 };

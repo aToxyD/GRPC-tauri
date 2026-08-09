@@ -7,6 +7,7 @@
     getSettings,
     isConfigured,
     getIdentityStatus,
+    getSecurityStatus,
     beginWilayaProvision,
     finalizeWilayaProvision,
     issueFirstAdminKey,
@@ -143,6 +144,18 @@
   }
 
   onMount(async () => {
+    // ADR-0041: if the app key does not resolve (locked store / unprovisioned),
+    // route to the Security Setup / Unlock page — the DB is deferred and no
+    // command below can run yet.
+    try {
+      const security = await getSecurityStatus();
+      if (security.requires_action) {
+        push('/security');
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to read security status:', e);
+    }
     try {
       isAppConfigured = await isConfigured();
     } catch (e) {

@@ -41,6 +41,9 @@ pub use unit::*;
 // Re-export user models
 pub use user::*;
 
+// Re-export licensing contract types & DTOs (ADR-0042)
+pub use licensing::*;
+
 // Sub-modules
 pub mod audit;
 pub mod dto;
@@ -48,6 +51,7 @@ pub mod fifo;
 pub mod fiscal_year;
 pub mod identity_access;
 pub mod inventory;
+pub mod licensing;
 pub mod order;
 pub mod product;
 pub mod report;

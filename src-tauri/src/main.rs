@@ -1,10 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use grpc_lib::commands::{self, AppState};
-use grpc_lib::db::apply_pragma_settings;
-use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::rate_limiter::RateLimiter;
-use grpc_lib::repositories::rate_limiter::RateLimiterRepository;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -21,6 +18,8 @@ fn main() {
     }
     log::info!(target: "grpc::runtime", "security environment validated");
 
+    // Eager DB-path resolution (ADR-0041 §5: stays eager for readiness/cleanup;
+    // no SQLite connection or migrations start while the app key is locked).
     let db_path = match grpc_lib::db::get_db_path() {
         Ok(p) => {
             log::info!(target: "grpc::runtime", "Using database file: {}", p.display());
@@ -32,127 +31,62 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let crypto_probe =
-        grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider::new();
-    if let Err(e) = grpc_lib::infrastructure::backup::recover_interrupted_restore_and_orphans(
-        &db_path,
-        &crypto_probe,
-    ) {
-        eprintln!("Restore recovery / orphan cleanup failed: {}", e);
-        std::process::exit(1);
-    }
 
-    // Initialize database and create default admin if needed
-    let db = match ConnectionFactory::new() {
-        Ok(db) => db,
-        Err(e) => {
-            eprintln!("Failed to initialize database: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // 🚫 Settings cache removed - authorization always reads from DB directly
-
-    let db_path = match db.get_connection_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("Failed to resolve database path: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Initialize persisted rate limiter with a dedicated connection
-    let rate_limiter = match rusqlite::Connection::open(&db_path) {
-        Ok(rl_conn) => {
-            if let Err(e) = apply_pragma_settings(&rl_conn) {
-                eprintln!("Failed to apply rate limiter connection pragmas: {}", e);
+    let state = if grpc_lib::infrastructure::security::app_key_unlocked() {
+        // Eager startup (ADR-0041 §5 rank 1 / rank 3): env or dev key present.
+        let runtime = match grpc_lib::application::services::runtime_bootstrap::bootstrap_runtime()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Failed to initialize database: {}", e);
                 std::process::exit(1);
             }
-            let store = Box::new(RateLimiterRepository::new(rl_conn));
-            RateLimiter::with_store(store, 300, 5)
-        }
-        Err(e) => {
-            eprintln!("Failed to open rate limiter database connection: {}", e);
-            std::process::exit(1);
-        }
-    };
+        };
+        AppState {
+            db: Arc::new(Mutex::new(Some(runtime.db))),
+            rate_limiter: Arc::new(Mutex::new(runtime.rate_limiter)),
+            operation_guard: Arc::new(
+                grpc_lib::application::services::OperationExecutionGuard::new(),
+            ),
+            maintenance: grpc_lib::application::services::SystemMaintenanceHandle::new(
+                grpc_lib::application::services::SystemMaintenanceState::Normal,
+            ),
 
-    // ── Deployment readiness (read-only, fail-closed on blocking checks) ────
-    match grpc_lib::application::services::DeploymentReadinessService::new(
-        db.executor(),
-        db_path.clone(),
-    )
-    .verify()
-    {
-        Ok(report) => {
-            for w in &report.warnings {
-                log::warn!(target: "grpc::deployment", "readiness warning: {}", w);
-            }
-            if report.status == grpc_lib::application::services::DeploymentReadinessStatus::NotReady
-            {
-                for f in &report.blocking_failures {
-                    log::error!(target: "grpc::deployment", "readiness blocking: {}", f);
-                    eprintln!("DEPLOYMENT NOT READY: {}", f);
-                }
-                std::process::exit(1);
-            }
-            log::info!(target: "grpc::deployment", "deployment readiness: READY");
+            current_session: Arc::new(Mutex::new(None)),
+            identity_challenge: Arc::new(Mutex::new(
+                grpc_lib::domain::identity::IdentityChallengeState::default(),
+            )),
+            crypto_port:
+                grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider::new(
+                ),
+            password_port: Arc::new(grpc_lib::infrastructure::security::Argon2PasswordHashProvider),
+            process_start_time: std::time::Instant::now(),
         }
-        Err(e) => {
-            eprintln!("DEPLOYMENT READINESS CHECK FAILED: {}", e);
-            std::process::exit(1);
-        }
-    }
-
-    // ── Recover abandoned operator sessions ─────────────────────────────────
-    if let Err(e) = grpc_lib::application::services::OperationalSessionService::new(db.executor())
-        .recover_abandoned_sessions()
-    {
-        log::warn!(target: "grpc::session", "session recovery failed: {}", e);
-    }
-
-    // ── Fiscal state validation (startup guard) ─────────────────────────────
-    if let Err(msg) =
-        grpc_lib::application::services::fiscal_validation_service::validate_fiscal_state(&db)
-    {
-        log::error!(target: "grpc::fiscal", "STARTUP ABORTED — {}", msg);
-        eprintln!("STARTUP ABORTED: {}", msg);
-        std::process::exit(1);
     } else {
-        let _ = grpc_lib::application::services::SystemHealthService::get_health_report(&db); // triggers initial integrity check + telemetry
+        // Locked / Unprovisioned (ADR-0041 rank 2 / rank 4): the store must be
+        // unlocked (or first-run setup completed) before the DB opens. Boot
+        // reaches the Security Setup / Unlock UI with the DB deferred.
+        log::info!(target: "grpc::runtime", "app key locked or unprovisioned — DB bootstrap deferred until unlock (ADR-0041)");
+        AppState {
+            db: Arc::new(Mutex::new(None)),
+            rate_limiter: Arc::new(Mutex::new(RateLimiter::new())),
+            operation_guard: Arc::new(
+                grpc_lib::application::services::OperationExecutionGuard::new(),
+            ),
+            maintenance: grpc_lib::application::services::SystemMaintenanceHandle::new(
+                grpc_lib::application::services::SystemMaintenanceState::Normal,
+            ),
 
-        // Record startup event
-        let _ = grpc_lib::application::services::TelemetryService::new(db.executor()).record_event(
-            grpc_lib::application::services::TelemetryEventType::RuntimeStartup,
-            grpc_lib::application::services::TelemetryOutcome::Success,
-            None,
-            None,
-            None,
-        );
-
-        log::info!(target: "grpc::runtime", "System boot verification completed successfully");
-    }
-
-    // Clean up old audit logs (older than 1 year)
-    let _ = grpc_lib::application::services::AuditService::new(db.executor())
-        .cleanup_old_audit_logs(None);
-
-    let state = AppState {
-        db: Arc::new(Mutex::new(Some(db))),
-        rate_limiter: Arc::new(Mutex::new(rate_limiter)),
-        operation_guard: Arc::new(grpc_lib::application::services::OperationExecutionGuard::new()),
-        maintenance: grpc_lib::application::services::SystemMaintenanceHandle::new(
-            grpc_lib::application::services::SystemMaintenanceState::Normal,
-        ),
-
-        current_session: Arc::new(Mutex::new(None)),
-        identity_challenge: Arc::new(Mutex::new(
-            grpc_lib::domain::identity::IdentityChallengeState::default(),
-        )),
-        crypto_port:
-            grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider::new(),
-        password_port: Arc::new(grpc_lib::infrastructure::security::Argon2PasswordHashProvider),
-        process_start_time: std::time::Instant::now(),
+            current_session: Arc::new(Mutex::new(None)),
+            identity_challenge: Arc::new(Mutex::new(
+                grpc_lib::domain::identity::IdentityChallengeState::default(),
+            )),
+            crypto_port:
+                grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider::new(
+                ),
+            password_port: Arc::new(grpc_lib::infrastructure::security::Argon2PasswordHashProvider),
+            process_start_time: std::time::Instant::now(),
+        }
     };
 
     let run_result = tauri::Builder::default()

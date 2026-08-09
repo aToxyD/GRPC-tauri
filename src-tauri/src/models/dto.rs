@@ -323,6 +323,43 @@ pub struct SyncSecurityDiagnostics {
     pub trusted_signer_ids: Vec<String>,
 }
 
+// ============================================================================
+// Application-key provisioning (ADR-0041)
+// ============================================================================
+
+/// Live app-key provisioning status (ADR-0041 §9 `get_security_status`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppKeyStatus {
+    /// `appkey.age` store exists on disk.
+    pub provisioned: bool,
+    /// An app key resolves now (env, unlocked store cache, or dev fallback).
+    pub unlocked: bool,
+    /// Absolute path of the store file (`appkey.age`).
+    pub store_path: String,
+    /// `env` | `store` | `dev` | `none` — the active resolution source.
+    pub source: String,
+    /// Backend projection: the operator must act (unlock or first-run setup).
+    pub requires_action: bool,
+}
+
+/// Result of `initialize_app_key` (ADR-0041 §6, §9).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppKeyInitializeResult {
+    pub provisioned: bool,
+    pub unlocked: bool,
+    pub store_path: String,
+    /// Whether an offline backup of the raw identity was exported (opt-in).
+    pub exported_backup: bool,
+}
+
+/// Result of `unlock_app_key` (ADR-0041 §4 `Unlocked`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppKeyUnlockResult {
+    pub provisioned: bool,
+    pub unlocked: bool,
+    pub store_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncPreflightCheck {
     pub status: String, // ok | warn | fail

@@ -1,10 +1,14 @@
+pub mod appkey_store;
 pub mod file_encryption;
 pub mod identity;
 pub mod node_identity_provider;
 pub mod password_hash_provider;
 
+use std::sync::Mutex;
+
 use crate::errors::{AppError, AppResult, ValidationError};
 
+pub use appkey_store::{AppKeyFile, AppKeyStore};
 pub use file_encryption::AgeFileEncryptionProvider;
 pub use identity::{Ed25519SignatureVerifier, Ed25519SigningProvider};
 pub use node_identity_provider::{NodeIdentityProvider, SettingsNodeIdentityProvider};
@@ -17,24 +21,103 @@ fn is_production_mode() -> bool {
     )
 }
 
+/// In-memory cache of the unlocked app encryption key (ADR-0041 §4 `Unlocked`).
+/// Populated on successful `unlock_app_key` / `initialize_app_key`; consulted by
+/// `resolve_app_encryption_key()` after env (rank 2 in the resolution hierarchy).
+static APP_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
+
 /// Development-only embedded AGE identity. Reachable **only** in debug builds via
-/// `#[cfg(debug_assertions)]`; release builds must supply `GRPC_APP_KEY` or fail startup.
+/// `#[cfg(debug_assertions)]`; release builds must supply `GRPC_APP_KEY`, an
+/// unlocked `appkey.age` store, or reach the Security Setup UI (ADR-0041).
 const DEV_AGE_KEY: &str =
     "AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ";
+
+/// Cache the resolved app encryption key in memory (ADR-0041 §4 `Unlocked`).
+pub fn cache_app_key(identity: &str) -> AppResult<()> {
+    let trimmed = identity.trim().to_string();
+    if !trimmed.starts_with("AGE-SECRET-KEY-1") {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "app identity".into(),
+            message: "must be a valid age x25519 identity (starts with AGE-SECRET-KEY-1)".into(),
+        }));
+    }
+    let mut guard = APP_KEY_CACHE
+        .lock()
+        .map_err(|e| AppError::Internal(format!("Failed to lock app key cache: {e}")))?;
+    *guard = Some(trimmed);
+    Ok(())
+}
+
+/// Current in-memory app key cache value (lock/unlock state).
+pub fn cached_app_key() -> Option<String> {
+    APP_KEY_CACHE.lock().ok().and_then(|g| g.clone())
+}
+
+/// Drop the cached app key (e.g. on shutdown or lock-out).
+pub fn clear_app_key_cache() {
+    if let Ok(mut guard) = APP_KEY_CACHE.lock() {
+        *guard = None;
+    }
+}
+
+/// Whether an application encryption key resolves **now** (ADR-0041 §1): env,
+/// then cache, then dev fallback (debug only). `false` in release means the app
+/// is Locked or Unprovisioned and DB bootstrap must be deferred.
+pub fn app_key_unlocked() -> bool {
+    if let Ok(raw) = std::env::var("GRPC_APP_KEY") {
+        return raw.trim().starts_with("AGE-SECRET-KEY-1");
+    }
+    if cached_app_key().is_some() {
+        return true;
+    }
+    cfg!(debug_assertions)
+}
+
+/// Live provisioning status projection for `get_security_status` (ADR-0041 §9).
+pub fn app_key_status() -> AppResult<crate::models::AppKeyStatus> {
+    use crate::models::AppKeyStatus;
+
+    let store = AppKeyStore::new(AppKeyStore::default_data_dir()?);
+    let has_env = std::env::var("GRPC_APP_KEY")
+        .ok()
+        .map(|v| v.trim().starts_with("AGE-SECRET-KEY-1"))
+        .unwrap_or(false);
+    let cached = cached_app_key().is_some();
+    let unlocked = has_env || cached || cfg!(debug_assertions);
+    let source = if has_env {
+        "env"
+    } else if cached {
+        "store"
+    } else if cfg!(debug_assertions) {
+        "dev"
+    } else {
+        "none"
+    };
+
+    Ok(AppKeyStatus {
+        provisioned: store.exists(),
+        unlocked,
+        store_path: store.file_path().display().to_string(),
+        source: source.to_string(),
+        requires_action: !unlocked,
+    })
+}
 
 pub fn validate_production_security_environment() -> Result<(), String> {
     if !is_production_mode() {
         return Ok(());
     }
 
-    let app = std::env::var("GRPC_APP_KEY").map_err(|_| {
-        "Configuration error: GRPC_APP_KEY is required when GRPC_ENV=production".to_string()
-    })?;
-    if !app.trim().starts_with("AGE-SECRET-KEY-1") {
-        return Err(
-            "Validation error: GRPC_APP_KEY must be a valid age x25519 identity (starts with AGE-SECRET-KEY-1)."
-                .to_string(),
-        );
+    // ADR-0041: GRPC_APP_KEY is no longer REQUIRED when GRPC_ENV=production. It
+    // may be provisioned via the passphrase-protected store (`appkey.age`) or the
+    // first-run Security Setup UI. When present it must still be valid.
+    if let Ok(app) = std::env::var("GRPC_APP_KEY") {
+        if !app.trim().starts_with("AGE-SECRET-KEY-1") {
+            return Err(
+                "Validation error: GRPC_APP_KEY must be a valid age x25519 identity (starts with AGE-SECRET-KEY-1)."
+                    .to_string(),
+            );
+        }
     }
 
     let sign = std::env::var("GRPC_PACKAGE_SIGNING_KEY").map_err(|_| {
@@ -59,12 +142,14 @@ pub fn validate_production_security_environment() -> Result<(), String> {
     Ok(())
 }
 
-/// Shared core for `resolve_app_encryption_key`.
+/// Shared core for `resolve_app_encryption_key` (ADR-0041 §1 resolution order).
 ///
-/// `allow_dev_fallback` is threaded explicitly so both debug and release
-/// semantics are testable in a single (debug) test binary.
+/// Hierarchy is fixed: env → unlocked store cache → dev fallback (debug only) →
+/// fail-closed. `allow_dev_fallback` is threaded explicitly so both debug and
+/// release semantics are testable in a single (debug) test binary.
 fn resolve_app_encryption_key_impl(
     env_raw: Option<String>,
+    cached: Option<String>,
     allow_dev_fallback: bool,
 ) -> AppResult<String> {
     match env_raw {
@@ -73,26 +158,31 @@ fn resolve_app_encryption_key_impl(
             if !trimmed.starts_with("AGE-SECRET-KEY-1") {
                 return Err(AppError::Validation(ValidationError::InvalidFormat {
                     field: "GRPC_APP_KEY".into(),
-                    message:
-                        "must be a valid age x25519 identity (starts with AGE-SECRET-KEY-1)"
-                            .into(),
+                    message: "must be a valid age x25519 identity (starts with AGE-SECRET-KEY-1)"
+                        .into(),
                 }));
             }
             Ok(trimmed)
         }
-        None if allow_dev_fallback => {
-            log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_APP_KEY missing — using embedded development AGE key. NOT FOR PRODUCTION.");
-            Ok(DEV_AGE_KEY.to_string())
-        }
-        None => Err(AppError::Configuration(
-            "GRPC_APP_KEY is required; the embedded development key is forbidden outside debug builds"
-                .to_string(),
-        )),
+        None => match cached {
+            Some(key) => Ok(key),
+            None if allow_dev_fallback => {
+                log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_APP_KEY missing — using embedded development AGE key. NOT FOR PRODUCTION.");
+                Ok(DEV_AGE_KEY.to_string())
+            }
+            None => Err(AppError::Configuration(
+                "GRPC_APP_KEY is locked; unlock the app key store or set GRPC_APP_KEY".to_string(),
+            )),
+        },
     }
 }
 
 pub fn resolve_app_encryption_key() -> AppResult<String> {
-    resolve_app_encryption_key_impl(std::env::var("GRPC_APP_KEY").ok(), cfg!(debug_assertions))
+    resolve_app_encryption_key_impl(
+        std::env::var("GRPC_APP_KEY").ok(),
+        cached_app_key(),
+        cfg!(debug_assertions),
+    )
 }
 
 /// Shared core for `resolve_package_signing_key_32`.
@@ -309,9 +399,12 @@ mod key_resolution_tests {
     #[test]
     fn app_key_valid_env_returns_trimmed_in_both_modes() {
         for allow in [true, false] {
-            let got =
-                resolve_app_encryption_key_impl(Some(format!("  {}  ", VALID_APP_KEY)), allow)
-                    .expect("valid key accepted");
+            let got = resolve_app_encryption_key_impl(
+                Some(format!("  {}  ", VALID_APP_KEY)),
+                None,
+                allow,
+            )
+            .expect("valid key accepted");
             assert_eq!(got, VALID_APP_KEY);
         }
     }
@@ -319,8 +412,8 @@ mod key_resolution_tests {
     #[test]
     fn app_key_malformed_prefix_is_validation_error_in_both_modes() {
         for allow in [true, false] {
-            let err =
-                resolve_app_encryption_key_impl(Some("NOT-AN-AGE-KEY".into()), allow).unwrap_err();
+            let err = resolve_app_encryption_key_impl(Some("NOT-AN-AGE-KEY".into()), None, allow)
+                .unwrap_err();
             assert!(
                 matches!(err, AppError::Validation(_)),
                 "malformed key must be a validation error, got {err:?}"
@@ -330,17 +423,81 @@ mod key_resolution_tests {
 
     #[test]
     fn app_key_missing_with_dev_fallback_returns_embedded_key() {
-        let got = resolve_app_encryption_key_impl(None, true).expect("dev fallback allowed");
+        let got = resolve_app_encryption_key_impl(None, None, true).expect("dev fallback allowed");
         assert_eq!(got, DEV_AGE_KEY);
     }
 
     #[test]
     fn app_key_missing_without_dev_fallback_is_configuration_error() {
-        let err = resolve_app_encryption_key_impl(None, false).unwrap_err();
+        let err = resolve_app_encryption_key_impl(None, None, false).unwrap_err();
         assert!(
             matches!(err, AppError::Configuration(_)),
             "missing key must be a configuration error, got {err:?}"
         );
+    }
+
+    // ---- ADR-0041 resolution hierarchy (env → store cache → dev → fail-closed) ----
+
+    #[test]
+    fn app_key_env_beats_cached_store_key_in_both_modes() {
+        for allow in [true, false] {
+            let got = resolve_app_encryption_key_impl(
+                Some(VALID_APP_KEY.to_string()),
+                Some("AGE-SECRET-KEY-1DIFFERENTVALUEHERE".to_string()),
+                allow,
+            )
+            .expect("env key wins");
+            assert_eq!(got, VALID_APP_KEY);
+        }
+    }
+
+    #[test]
+    fn app_key_cache_used_when_env_absent_in_release_mode() {
+        let cached =
+            "AGE-SECRET-KEY-1CACHEVALUE000000000000000000000000000000000000000".to_string();
+        let got = resolve_app_encryption_key_impl(None, Some(cached.clone()), false)
+            .expect("cached store key accepted in release");
+        assert_eq!(got, cached);
+    }
+
+    #[test]
+    fn app_key_cache_beats_dev_fallback_in_debug_mode() {
+        let cached =
+            "AGE-SECRET-KEY-1CACHEVALUE000000000000000000000000000000000000000".to_string();
+        let got = resolve_app_encryption_key_impl(None, Some(cached.clone()), true)
+            .expect("cached store key accepted");
+        assert_eq!(got, cached);
+    }
+
+    // ---- cache_app_key / cached_app_key ----
+
+    fn clear_app_key_cache() {
+        super::clear_app_key_cache();
+    }
+
+    #[test]
+    fn cache_app_key_roundtrip() {
+        clear_app_key_cache();
+        assert!(cached_app_key().is_none());
+        cache_app_key(VALID_APP_KEY).expect("valid key cached");
+        assert_eq!(cached_app_key().as_deref(), Some(VALID_APP_KEY));
+        clear_app_key_cache();
+        assert!(cached_app_key().is_none());
+    }
+
+    #[test]
+    fn cache_app_key_trims_whitespace() {
+        clear_app_key_cache();
+        cache_app_key(&format!("  {VALID_APP_KEY}  ")).expect("trimmed before caching");
+        assert_eq!(cached_app_key().as_deref(), Some(VALID_APP_KEY));
+        clear_app_key_cache();
+    }
+
+    #[test]
+    fn cache_app_key_rejects_malformed_identity() {
+        clear_app_key_cache();
+        assert!(cache_app_key("NOT-AN-AGE-KEY").is_err());
+        assert!(cached_app_key().is_none());
     }
 
     // ---- resolve_package_signing_key_32_impl ----
@@ -407,14 +564,42 @@ mod key_resolution_tests {
     }
 
     #[test]
-    fn validate_rejects_missing_app_key_in_production() {
+    fn validate_allows_missing_app_key_in_production() {
+        // ADR-0041: GRPC_APP_KEY is optional in production; it may come from the
+        // passphrase-protected store or first-run Security Setup. The signing key
+        // remains mandatory.
         let _g = ENV_LOCK.lock().unwrap();
         clear_key_env();
         std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        let result = validate_production_security_environment();
+        assert!(
+            result.is_ok(),
+            "missing app key is allowed (store/setup path), got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_valid_app_key_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        assert!(validate_production_security_environment().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_malformed_app_key_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", "NOT-AN-AGE-KEY");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
         let err = validate_production_security_environment().unwrap_err();
         assert!(
-            err.contains("GRPC_APP_KEY") && err.starts_with("Configuration error:"),
-            "missing app key must be a configuration error, got: {err}"
+            err.contains("GRPC_APP_KEY") && err.starts_with("Validation error:"),
+            "malformed app key must be a validation error, got: {err}"
         );
     }
 

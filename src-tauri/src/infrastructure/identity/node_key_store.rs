@@ -157,6 +157,16 @@ impl NodeKeyStore {
             Ok(None)
         }
     }
+
+    /// Derive the node's public key from the stored signing key without
+    /// exposing the secret. `None` when the node is not provisioned.
+    pub fn node_public_key(&self) -> AppResult<Option<Vec<u8>>> {
+        use crate::domain::identity::IdentitySigner;
+        use crate::infrastructure::security::Ed25519SigningProvider;
+        Ok(self
+            .read_if_exists()?
+            .map(|secret| Ed25519SigningProvider::new(secret).public_key()))
+    }
 }
 
 #[cfg(test)]
@@ -181,6 +191,20 @@ mod tests {
     }
 
     #[test]
+    fn node_public_key_matches_derived_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NodeKeyStore::new(dir.path().to_path_buf());
+        assert_eq!(store.node_public_key().unwrap(), None);
+        let secret = [42u8; 32];
+        store.write(&secret).unwrap();
+        let derived = {
+            use crate::domain::identity::IdentitySigner;
+            crate::infrastructure::security::Ed25519SigningProvider::new(secret).public_key()
+        };
+        assert_eq!(store.node_public_key().unwrap(), Some(derived));
+    }
+
+    #[test]
     fn read_rejects_malformed_key_file() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(NODE_KEY_FILE_NAME), "garbage").unwrap();
@@ -196,7 +220,11 @@ mod tests {
         let staged = [2u8; 32];
         store.write(&active).unwrap();
         store.write_pending(&staged).unwrap();
-        assert_eq!(store.read().unwrap(), active, "active key must stay untouched");
+        assert_eq!(
+            store.read().unwrap(),
+            active,
+            "active key must stay untouched"
+        );
         assert_eq!(store.read_pending().unwrap(), Some(staged));
         assert!(store.pending_exists());
     }

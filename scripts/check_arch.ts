@@ -571,17 +571,23 @@ checkRule(
     "error"
 );
 
-// Rule 38 (amended by ADR-0039): two-tier secret protection.
+// Rule 38 (amended by ADR-0039, then ADR-0041): two-tier secret protection.
 // age::x25519 is mandatory for node-managed secrets. age::scrypt is permitted
-// exclusively for portable operator key material (.adminkey), which lives only in
-// src-tauri/src/infrastructure/identity/adminkey_provider.rs.
+// in exactly two sites: portable operator key material (.adminkey) in
+// src-tauri/src/infrastructure/identity/adminkey_provider.rs, and the
+// passphrase-protected app-key-at-rest store in
+// src-tauri/src/infrastructure/security/appkey_store.rs (ADR-0041).
+const SCRIPT_SITES = [
+    "infrastructure/identity/adminkey_provider.rs",
+    "infrastructure/security/appkey_store.rs",
+];
 checkRule(
-    "Rule 38: age::scrypt is forbidden outside infrastructure/identity/adminkey_provider.rs (ADR-0039: two-tier secret protection)",
+    "Rule 38: age::scrypt is forbidden outside adminkey_provider.rs and appkey_store.rs (ADR-0039 + ADR-0041: two-tier secret protection)",
     ["src-tauri/src/**/*.rs"],
     /age::scrypt/i,
     (line) => line.trim().startsWith("//"),
     "error",
-    (file) => !file.includes("infrastructure/identity/adminkey_provider.rs")
+    (file) => !SCRIPT_SITES.some((site) => file.includes(site))
 );
 
 // Rule 39: Ensure session touching in commands with authorization

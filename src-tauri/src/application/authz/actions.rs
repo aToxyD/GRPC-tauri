@@ -56,4 +56,8 @@ pub enum Action {
     ManageAccountSync,
     ExportIdentityAccessPackage,
     ImportIdentityAccessPackage,
+
+    // Licensing (ADR-0042 / B7-licensing)
+    ReadLicensingStatus,
+    ManageLicensing,
 }

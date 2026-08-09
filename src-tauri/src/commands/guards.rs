@@ -14,7 +14,7 @@ use crate::app::state::AppState;
 use crate::application::authz::{authorize, Action, Principal, ResourceContext};
 use crate::application::services::MaintenanceBlockedOperation;
 use crate::domain::session::CurrentSession;
-use crate::errors::{AppError, AuthenticationError};
+use crate::errors::{AppError, AuthenticationError, AuthorizationError};
 use crate::models::Settings;
 
 /// Macro for cleaner guard usage
@@ -121,6 +121,32 @@ pub fn authorize_command(
         );
         AppError::Authorization(e)
     })?;
+
+    // ── Licensing enforcement gate (ADR-0042 §5) ────────────────────────────
+    // Persistence-derived trigger: dormant until an active trust anchor is
+    // installed; then globally active for non-exempt actions, fail-closed.
+    // Database unavailability or a missing node key ⇒ deny.
+    let gate_result = {
+        let db_guard = state.get_db().map_err(|e| {
+            log::warn!(target: "grpc::licensing", "gate: database unavailable: {e}");
+            AppError::Authorization(AuthorizationError::LicenseRequired)
+        })?;
+        let Some(db) = db_guard.as_ref() else {
+            return Err(AppError::Authorization(AuthorizationError::LicenseRequired));
+        };
+        crate::application::licensing::enforcement::enforce(
+            db,
+            crate::commands::common::resolve_node_public_key(),
+            action,
+        )
+    };
+    if let Err(e) = gate_result {
+        log::warn!(
+            target: "grpc::licensing",
+            "licensing gate denied: action={action:?} err={e}"
+        );
+        return Err(AppError::Authorization(e));
+    }
 
     Ok((session, settings))
 }

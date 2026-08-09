@@ -39,6 +39,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Producer sequence state ledger (RFC 2026-08-04 §3.4.1, ADR-0038, B6-B Commit ④)",
             include_str!("migrations/006_issuer_sequence_state.sql"),
         ),
+        (
+            7,
+            "Licensing consumer derived view (ADR-0042, Phase B)",
+            include_str!("migrations/007_licensing.sql"),
+        ),
     ]
 }
 

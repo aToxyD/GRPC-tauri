@@ -3,9 +3,10 @@ use crate::application::services::UserContext;
 use crate::domain::session::CurrentSession;
 use crate::errors::{into_command_error, AppError, ValidationError};
 use crate::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
+use crate::infrastructure::security::AppKeyStore;
 
 /// Default on-disk GRPC data dir (`dirs::data_dir()/GRPC`) shared by the node
-/// key store and the `.adminkey` provider.
+/// key store, the `.adminkey` provider, and the `appkey.age` store.
 pub(crate) fn default_data_dir() -> crate::errors::AppResult<std::path::PathBuf> {
     AdminKeyProvider::default_data_dir()
 }
@@ -15,9 +16,22 @@ pub(crate) fn node_key_store() -> NodeKeyStore {
     NodeKeyStore::new(dir)
 }
 
+/// Derive the node's public key for licensing subject binding (ADR-0042 §4).
+/// `None` when the node is not provisioned. The derivation itself lives in the
+/// identity layer (`NodeKeyStore`).
+pub(crate) fn resolve_node_public_key() -> Option<Vec<u8>> {
+    node_key_store().node_public_key().ok().flatten()
+}
+
 pub(crate) fn adminkey_provider() -> AdminKeyProvider {
     let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
     AdminKeyProvider::new(dir)
+}
+
+/// `appkey.age` store provider (ADR-0041) sharing the GRPC data directory.
+pub(crate) fn appkey_store() -> AppKeyStore {
+    let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
+    AppKeyStore::new(dir)
 }
 
 pub fn principal_from_session(session: &CurrentSession) -> Principal {

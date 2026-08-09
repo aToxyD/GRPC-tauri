@@ -17,6 +17,9 @@ pub mod identity_store;
 pub mod import_audit_events;
 pub mod integrity;
 pub mod inventory;
+pub mod licensing_anchor;
+pub mod licensing_events;
+pub mod licensing_license;
 pub mod opening_balances;
 pub mod orders;
 pub mod products;
@@ -48,6 +51,9 @@ pub use identity_store::IdentityStoreRepository;
 pub use import_audit_events::ImportAuditEventsRepository;
 pub use integrity::IntegrityRepository;
 pub use inventory::InventoryRepository;
+pub use licensing_anchor::{LicensingAnchorRepository, LicensingAnchorRow};
+pub use licensing_events::{LicensingEventRow, LicensingEventsRepository};
+pub use licensing_license::{LicensingLicenseRepository, LicensingLicenseRow};
 pub use opening_balances::OpeningBalanceRepository;
 pub use orders::OrderRepository;
 pub use products::ProductRepository;
@@ -59,9 +65,7 @@ pub use settings::SettingsRepository;
 pub use stock_movements::StockMovementRepository;
 pub use sync_applied_packages::SyncAppliedPackagesRepository;
 pub use sync_conflicts::SyncConflictRepository;
-pub use sync_issuer_sequence_state::{
-    PendingIssuedSequence, SyncIssuerSequenceStateRepository,
-};
+pub use sync_issuer_sequence_state::{PendingIssuedSequence, SyncIssuerSequenceStateRepository};
 pub use system::SystemRepository;
 pub use telemetry::TelemetryRepository;
 pub use timeline::TimelineRepository;
@@ -94,6 +98,9 @@ impl crate::architecture::Repository for FiscalPackageRegistryRepository<'_> {}
 impl crate::architecture::Repository for RateLimiterRepository {}
 impl crate::architecture::Repository for RegistrySnapshotsRepository<'_> {}
 impl crate::architecture::Repository for FifoLayerRepository<'_> {}
+impl crate::architecture::Repository for LicensingAnchorRepository<'_> {}
+impl crate::architecture::Repository for LicensingLicenseRepository<'_> {}
+impl crate::architecture::Repository for LicensingEventsRepository<'_> {}
 
 /// Centralized provider for repositories to avoid manual construction in the service layer.
 /// This satisfies Rule 17 of the architectural integrity check.
@@ -126,6 +133,9 @@ pub trait RepositoryProvider<'a> {
     fn fiscal_package_registry(&self) -> FiscalPackageRegistryRepository<'a>;
     fn fifo_layers(&self) -> FifoLayerRepository<'a>;
     fn registry_snapshots(&self) -> RegistrySnapshotsRepository<'a>;
+    fn licensing_anchor(&self) -> LicensingAnchorRepository<'a>;
+    fn licensing_license(&self) -> LicensingLicenseRepository<'a>;
+    fn licensing_events(&self) -> LicensingEventsRepository<'a>;
 }
 
 impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
@@ -212,5 +222,14 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn registry_snapshots(&self) -> RegistrySnapshotsRepository<'a> {
         RegistrySnapshotsRepository::new(*self)
+    }
+    fn licensing_anchor(&self) -> LicensingAnchorRepository<'a> {
+        LicensingAnchorRepository::new(*self)
+    }
+    fn licensing_license(&self) -> LicensingLicenseRepository<'a> {
+        LicensingLicenseRepository::new(*self)
+    }
+    fn licensing_events(&self) -> LicensingEventsRepository<'a> {
+        LicensingEventsRepository::new(*self)
     }
 }
