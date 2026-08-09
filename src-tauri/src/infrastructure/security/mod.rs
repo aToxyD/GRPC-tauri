@@ -283,7 +283,7 @@ pub fn is_signing_key_deprecated(key_id: &str) -> bool {
     };
 
     match chrono::DateTime::parse_from_rfc3339(&deadline_raw) {
-        Ok(deadline) => chrono::Utc::now() >= deadline.with_timezone(&chrono::Utc), // [arch:allow-utc-now] see ADR-0007 — signing key deprecation deadline check
+        Ok(deadline) => chrono::Utc::now() >= deadline.with_timezone(&chrono::Utc),
         Err(e) => {
             log::warn!(
                 "Invalid GRPC_SIGNING_KEY_DEPRECATION_DEADLINE_UTC value: {} ({})",

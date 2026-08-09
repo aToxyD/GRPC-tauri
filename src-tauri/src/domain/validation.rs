@@ -265,7 +265,7 @@ fn validate_meal_section_input(section: &MealSectionInput) -> ValidationResult {
 
 /// Validate full daily report input (one report, multiple meal sections)
 pub fn validate_daily_report_input(input: &DailyReportInput) -> ValidationResult {
-    let today = Utc::now().date_naive(); // [arch:allow-utc-now] see ADR-0007 — date validation against current day
+    let today = Utc::now().date_naive();
     let one_year_ago = today - chrono::Duration::days(365);
 
     if input.date > today {

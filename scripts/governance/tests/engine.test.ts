@@ -215,6 +215,38 @@ describe("validateSuppressionMetadata", () => {
     const expiredViolations = violations.filter((v) => v.message.includes("expired"));
     expect(expiredViolations.length).toBeGreaterThan(0);
   });
+
+  it("should accept a Rust-style tag with full metadata", async () => {
+    const { validateSuppressionMetadata } = await import("../suppression");
+    const violations = validateSuppressionMetadata(
+      [
+        {
+          tag: "unwrap-or",
+          file: "src-tauri/src/application/services/x.rs",
+          line: 1,
+          justification: "see ADR-0007 — safe default",
+          reason: "safe default",
+          date: "2026-08-09",
+          owner: "Sync",
+        },
+      ],
+      "RUNTIME_SAFETY",
+    );
+    expect(violations.length).toBe(0);
+  });
+
+  it("should collect real Rust suppression tags from the tree", async () => {
+    const { FileCache } = await import("../scanner");
+    const { collectSuppressions } = await import("../suppression");
+    const cache = new FileCache();
+    const entries = collectSuppressions(cache, ["src-tauri/src/**/*.rs"], ["utc-now", "mutation-before-replay", "unwrap-or", "non-nested", "sql", "memory-unsafe"]);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.reason).toBeDefined();
+      expect(e.date).toBeDefined();
+      expect(e.owner).toBeDefined();
+    }
+  });
 });
 
 // ----------------------------------------------------------

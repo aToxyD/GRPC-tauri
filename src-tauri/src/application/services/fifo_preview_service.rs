@@ -136,18 +136,16 @@ impl<'a> FifoPreviewService<'a> {
             }
 
             let section = section_by_type.get(computed_meal.meal_type.as_str());
-            let total_beneficiaries = section
-                .map(|s| {
-                    DailyReportMeal::compute_total_beneficiaries(
-                        s.staff_24h_count,
-                        s.staff_8h_count,
-                        s.reservation_count,
-                        s.mission_count,
-                        s.guest_count,
-                    )
-                })
-                // [arch:allow-unwrap-or] legitimate fallback — no section means zero beneficiaries (no meal served)
-                .unwrap_or(0);
+            let total_beneficiaries = match section {
+                Some(s) => DailyReportMeal::compute_total_beneficiaries(
+                    s.staff_24h_count,
+                    s.staff_8h_count,
+                    s.reservation_count,
+                    s.mission_count,
+                    s.guest_count,
+                ),
+                None => 0,
+            };
             let meal_average = DailyReportMeal::compute_meal_average(
                 computed_meal.total_cost,
                 total_beneficiaries,

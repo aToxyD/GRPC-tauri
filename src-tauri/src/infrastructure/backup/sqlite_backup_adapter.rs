@@ -746,7 +746,7 @@ pub fn recover_interrupted_restore_and_orphans(
 
     // The journal file is naturally small (contains a few paths), so fs::read is acceptable.
     let raw = fs::read(&journal).map_err(|e| {
-        // [arch:allow-memory-unsafe] see ADR-0017 — whole-file read for SHA-256 backup verification
+        // [arch:allow-memory-unsafe] see ADR-0017 — Reason: whole-file read in backup for SHA-256 hashing — required for cryptographic verification; Date: 2026-08-09; Owner: Infrastructure
         io::Error::other(format!("restore journal read: {}", e))
     })?;
 

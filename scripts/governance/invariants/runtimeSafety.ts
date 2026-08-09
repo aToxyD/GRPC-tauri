@@ -460,5 +460,36 @@ export function scanRuntimeSafety(cache: FileCache): Violation[] {
     }
   }
 
+  // Rust suppression metadata validation (FE-149 + FE-162 + ADR linkage)
+  // Routes all [arch:allow-*] tags in src-tauri/src through the same lifecycle
+  // policy as frontend tags (B3-2): empty/duplicate justification, mandatory
+  // Reason/Date/Owner, 90-day expiry, and ADR reference.
+  {
+    const rustTagPatterns = [
+      "utc-now",
+      "mutation-before-replay",
+      "unwrap-or",
+      "non-nested",
+      "sql",
+      "memory-unsafe",
+    ];
+    const rustEntries = collectSuppressions(cache, ["src-tauri/src/**/*.rs"], rustTagPatterns);
+
+    violations.push(...validateSuppressionMetadata(rustEntries, INVARIANT));
+
+    for (const entry of rustEntries) {
+      if (!/\bsee\s+ADR-\d+/i.test(entry.justification)) {
+        violations.push({
+          invariant: INVARIANT,
+          severity: "ERROR",
+          file: entry.file,
+          line: entry.line,
+          message: `Suppression '[arch:allow-${entry.tag}]' missing ADR reference (must include 'see ADR-NNNN')`,
+          rule: "FE-162",
+        });
+      }
+    }
+  }
+
   return violations;
 }

@@ -53,7 +53,7 @@ impl SystemStatsService {
             None => report_repo.list_daily_reports(None, None)?.len() as u32,
         };
 
-        let now = Utc::now(); // [arch:allow-utc-now] see ADR-0007 — stats report current month/year
+        let now = Utc::now();
         let current_month = now.month();
         let current_year = now.year();
 
@@ -216,7 +216,7 @@ impl SystemStatsService {
     }
 
     fn count_today_orders(db: &Database) -> u32 {
-        let today = Utc::now().date_naive().to_string(); // [arch:allow-utc-now] see ADR-0007 — stats report today's orders
+        let today = Utc::now().date_naive().to_string();
         match db.executor().orders().count_today_orders(&today) {
             Ok(count) => count,
             Err(e) => {

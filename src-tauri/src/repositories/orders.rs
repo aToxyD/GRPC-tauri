@@ -51,7 +51,7 @@ impl<'a> OrderRepository<'a> {
     ) -> Result<(), AppError> {
         let fy = chrono::NaiveDate::parse_from_str(order_date, "%Y-%m-%d")
             .map(|d| d.year())
-            .unwrap_or_else(|_| chrono::Utc::now().date_naive().year()); // [arch:allow-utc-now] see ADR-0005 — fallback when order_date parse fails
+            .unwrap_or_else(|_| chrono::Utc::now().date_naive().year());
         self.executor.execute(
             "INSERT INTO supplier_orders (id, order_date, supplier_name, reference_number, total_amount, status, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![id, order_date, &req.supplier_name, &req.reference_number, &total_amount, "Draft", created_at, fy],

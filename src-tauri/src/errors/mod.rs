@@ -751,7 +751,7 @@ macro_rules! validate_positive {
 /// يدعم RFC3339 مع التراجع إلى تنسيق SQLite القياسي في حالة الفشل.
 pub fn parse_datetime_rfc3339(s: &str) -> Result<chrono::DateTime<chrono::Utc>, AppError> {
     if s.is_empty() {
-        return Ok(chrono::Utc::now()); // [arch:allow-utc-now] see ADR-0007 — fallback when string is empty
+        return Ok(chrono::Utc::now());
     }
 
     // 1. Try RFC3339

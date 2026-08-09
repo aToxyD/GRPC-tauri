@@ -40,10 +40,10 @@ impl<'a> SyncImportExecutionService<'a> {
         )
     }
 
-    // [arch:allow-mutation-before-replay] see ADR-0014 — pre-existing legacy method
+    // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: import_daily_reports must mutate before replay check (pre-existing legacy, idempotent flow); Date: 2026-08-09; Owner: Sync
     pub fn import_daily_reports(&self, reports: Vec<DailyReportResult>) -> Result<usize, AppError> {
         let mut count = 0;
-        let now = // [arch:allow-utc-now] see ADR-0014 — pre-existing legacy method
+        let now = // [arch:allow-utc-now] see ADR-0014 — Reason: timestamp for sync package rejection audit entry (pre-existing legacy); Date: 2026-08-09; Owner: Sync
             Utc::now().to_rfc3339();
 
         let report_repo = self.executor.reports();
@@ -102,7 +102,7 @@ impl<'a> SyncImportExecutionService<'a> {
         Ok(count)
     }
 
-    // [arch:allow-mutation-before-replay] see ADR-0014 — pre-existing legacy method
+    // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: import_monthly_report mutation before replay in conflict handling (pre-existing legacy); Date: 2026-08-09; Owner: Sync
     pub fn import_monthly_report(
         &self,
         _unit_id: &str,
@@ -115,7 +115,7 @@ impl<'a> SyncImportExecutionService<'a> {
 
         for report in reports {
             let report_id = uuid::Uuid::new_v4().to_string();
-            let now = // [arch:allow-utc-now] see ADR-0014 — pre-existing legacy method
+            let now = // [arch:allow-utc-now] see ADR-0014 — Reason: timestamp for sync conflict audit entry (pre-existing legacy); Date: 2026-08-09; Owner: Sync
                 Utc::now().to_rfc3339();
             let fiscal_year = report.report.fiscal_year;
 
@@ -140,7 +140,7 @@ impl<'a> SyncImportExecutionService<'a> {
         Ok(count)
     }
 
-    // [arch:allow-mutation-before-replay] see ADR-0014 — pre-existing legacy method
+    // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: import_products_sync mutation before replay in validation (pre-existing legacy); Date: 2026-08-09; Owner: Sync
     pub fn import_products_sync(
         &self,
         records: &[ProductSyncRecord],
@@ -196,7 +196,7 @@ impl<'a> SyncImportExecutionService<'a> {
         Ok((imported_count, updated_count, skipped_count))
     }
 
-    // [arch:allow-mutation-before-replay] see ADR-0014 — pre-existing legacy method
+    // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: import_stock_movements mutation before replay check (pre-existing legacy); Date: 2026-08-09; Owner: Sync
     pub fn import_stock_movements(
         &self,
         movements: Vec<crate::models::inventory::StockMovement>,
@@ -261,7 +261,7 @@ impl<'a> SyncImportExecutionService<'a> {
             return Self::handle_rejection(db, request, validation);
         }
 
-        // [arch:allow-non-nested] see ADR-0014 — separate code path from handle_rejection
+        // [arch:allow-non-nested] see ADR-0014 — Reason: separate code path from handle_rejection (not a nested transaction); Date: 2026-08-09; Owner: Sync
         let result = db.with_event_persistence(
             |ctx: &mut EventContext<'_>| -> Result<ImportExecutionSummary, AppError> {
                 let inner_detector = Self::build_replay_detector_from_ctx(ctx, &request);
@@ -284,8 +284,8 @@ impl<'a> SyncImportExecutionService<'a> {
                         }
                     };
 
-                    // [arch:allow-unwrap-or] see ADR-0014 — intended fallback to 0 for non-numeric conflict IDs
-                    let conflict_id_val = conflict.conflict_id().0.parse::<i64>().unwrap_or(0);
+        // [arch:allow-unwrap-or] see ADR-0014 — Reason: intended fallback to 0 for non-numeric conflict IDs (replay-detect path); Date: 2026-08-09; Owner: Sync
+        let conflict_id_val = conflict.conflict_id().0.parse::<i64>().unwrap_or(0);
                     ctx.emit(DomainEvent::SyncConflictDetected {
                         conflict_id: conflict_id_val,
                         conflict_type: Some(conflict.conflict_type_str().to_string()),
@@ -303,7 +303,7 @@ impl<'a> SyncImportExecutionService<'a> {
                 let repo = ctx.executor().sync_applied_packages();
                 let inserted = repo
                     .insert_if_new(
-                        // [arch:allow-mutation-before-replay] see ADR-0014 — pre-existing legacy — mutation after replay check
+                        // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: mutation after replay check but before full validation (pre-existing legacy); Date: 2026-08-09; Owner: Sync
                         &package_id,
                         kind_str,
                         Some(&request.source_node_id),
@@ -385,7 +385,7 @@ impl<'a> SyncImportExecutionService<'a> {
     ) -> SyncImportResult {
         let package_id = request.package_id.clone();
 
-        // [arch:allow-non-nested] see ADR-0014 — separate code path from execute_import
+        // [arch:allow-non-nested] see ADR-0014 — Reason: separate code path from execute_import (not a nested transaction); Date: 2026-08-09; Owner: Sync
         let result = db.with_event_persistence(
             |ctx: &mut EventContext<'_>| -> Result<ImportExecutionSummary, AppError> {
                 let conflict = match &validation.replay_check {
@@ -397,7 +397,7 @@ impl<'a> SyncImportExecutionService<'a> {
                     }
                 };
 
-                // [arch:allow-unwrap-or] see ADR-0014 — intended fallback to 0 for non-numeric conflict IDs
+                // [arch:allow-unwrap-or] see ADR-0014 — Reason: intended fallback to 0 for non-numeric conflict IDs (conflict path); Date: 2026-08-09; Owner: Sync
                 let conflict_id_val = conflict.conflict_id().0.parse::<i64>().unwrap_or(0);
                 let event_seq = ctx.emit(DomainEvent::SyncConflictDetected {
                     conflict_id: conflict_id_val,
@@ -463,7 +463,7 @@ impl<'a> SyncImportExecutionService<'a> {
         let executor = db.executor();
 
         let repo = executor.sync_applied_packages();
-        // [arch:allow-unwrap-or] see ADR-0014 — false is safe default for "not imported yet"
+        // [arch:allow-unwrap-or] see ADR-0014 — Reason: false is safe default for not-imported-yet (build_replay_detector); Date: 2026-08-09; Owner: Sync
         let is_imported = repo.has_imported(&request.package_id).unwrap_or(false);
 
         let mut applied_packages = BTreeSet::new();
@@ -487,7 +487,7 @@ impl<'a> SyncImportExecutionService<'a> {
         let executor = ctx.executor();
 
         let repo = executor.sync_applied_packages();
-        // [arch:allow-unwrap-or] see ADR-0014 — false is safe default for "not imported yet"
+        // [arch:allow-unwrap-or] see ADR-0014 — Reason: false is safe default for not-imported-yet (build_replay_detector_from_ctx); Date: 2026-08-09; Owner: Sync
         let is_imported = repo.has_imported(&request.package_id).unwrap_or(false);
 
         let mut applied_packages = BTreeSet::new();
@@ -565,7 +565,7 @@ mod tests {
             .replay_protection
             .as_ref()
             .map(|r| r.replay_detected)
-            .unwrap_or(false)); // [arch:allow-unwrap-or] see ADR-0014 — test assertion default
+            .unwrap_or(false)); // [arch:allow-unwrap-or] see ADR-0014 — Reason: test assertion default — false is safe; Date: 2026-08-09; Owner: Sync
     }
 
     #[test]

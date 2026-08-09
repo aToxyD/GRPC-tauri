@@ -115,7 +115,7 @@ impl SystemHealthService {
             .ok()
             .and_then(|p| std::fs::metadata(&p).ok())
             .map(|m| m.len())
-            .unwrap_or(0); // safe: 0 bytes is the correct default when path/metadata is unavailable — not an error condition [arch:allow-unwrap-or] see ADR-0007
+            .unwrap_or(0); // [arch:allow-unwrap-or] see ADR-0007 — Reason: 0 bytes safe default when path/metadata unavailable — not an error condition; Date: 2026-08-09; Owner: Architecture
 
         Ok(SystemHealthReport {
             database_status,
