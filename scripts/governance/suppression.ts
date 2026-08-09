@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { Glob } from "bun";
 import type { Violation } from "./types";
 import type { FileCache } from "./scanner";
@@ -65,6 +66,37 @@ export function collectSuppressions(
   return entries;
 }
 
+/**
+ * Permanent-exception registry — derived from `docs/architecture/adr_exception_registry.md`
+ * so the validator is bound to the real registry, not a disconnected manual list.
+ * A suppression is only exempt when its `Permanent: ADR-NNNN` marker resolves to an ADR
+ * registered there as PERMANENT — the marker string alone never grants permanence.
+ */
+const PERMANENT_REGISTRY_FILE = "docs/architecture/adr_exception_registry.md";
+
+export function getPermanentAdrs(): Set<string> {
+  try {
+    const content = readFileSync(PERMANENT_REGISTRY_FILE, "utf-8");
+    const adrs = new Set<string>();
+    const re = /PERMANENT \(ADR-(\d{4})\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) adrs.add(m[1]);
+    return adrs;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * True when the entry declares a `Permanent: ADR-NNNN` marker whose ADR is registered
+ * in the exception registry as PERMANENT. Used by the validator to skip the 90-day check.
+ */
+function isPermanent(entry: SuppressionEntry): boolean {
+  const match = (entry.justification || "").match(/Permanent\s*:\s*ADR-(\d{4})/i);
+  if (!match) return false;
+  return getPermanentAdrs().has(match[1]);
+}
+
 export function validateSuppressionMetadata(
   entries: SuppressionEntry[],
   invariant: Violation["invariant"],
@@ -115,8 +147,36 @@ export function validateSuppressionMetadata(
       });
     }
 
-    // FE-162: Expired (> 90 days)
-    if (entry.date) {
+    // FE-162: Expired (> 90 days) — skipped for registered PERMANENT exceptions
+    const permanentAdrs = getPermanentAdrs();
+    const just = entry.justification || "";
+    const permanentAdr = just.match(/Permanent\s*:\s*(?:ADR-)?(\d{4})/i)?.[1];
+    const declaredPermanent = /Permanent\s*:/i.test(just);
+
+    // FE-162: A Permanent marker must resolve to a registered PERMANENT ADR.
+    if (declaredPermanent && !permanentAdr) {
+      violations.push({
+        invariant,
+        severity: "ERROR",
+        file: entry.file,
+        line: entry.line,
+        message: `Suppression '[arch:allow-${entry.tag}]' declares Permanent but has no ADR reference`,
+        rule: "FE-162",
+      });
+    } else if (declaredPermanent && !permanentAdrs.has(permanentAdr!)) {
+      violations.push({
+        invariant,
+        severity: "ERROR",
+        file: entry.file,
+        line: entry.line,
+        message: `Suppression '[arch:allow-${entry.tag}]' declares Permanent: ADR-${permanentAdr} but that ADR is not registered as PERMANENT`,
+        rule: "FE-162",
+      });
+    }
+
+    const isExemptPermanent = declaredPermanent && permanentAdr !== undefined && permanentAdrs.has(permanentAdr);
+
+    if (entry.date && !isExemptPermanent) {
       const date = new Date(entry.date);
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();

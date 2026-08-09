@@ -142,6 +142,10 @@ The following contracts, boundaries, and guarantees are **frozen** and may not b
 - **🔒 Single-writer connection** — `Mutex<Option<Connection>>`. No second write connection.
 - **🔒 No background threads** — `std::thread::spawn` banned in sqlite_runtime, sqlite_runtime_review, sqlite_observability.
 - **🔒 No async** — no `async fn`, `await`, `tokio`, `futures` in any Rust layer.
+  **Sanctioned exception (ADR-0043):** `tauri::async_runtime::spawn_blocking` for blocking
+  backup/restore file I/O in `src-tauri/src/commands/backup.rs` ONLY — `create_backup` and
+  `restore_backup` are the sole async entry points; no async beyond these two command handlers,
+  and none in Domain/Application/Ports.
 - **🔒 No auto-repair** — integrity monitoring detects but does not repair.
 - **🔒 No auto-VACUUM** — VACUUM must not execute automatically.
 - **🔒 No automatic checkpoints** — checkpoint evaluation is caller-driven, not automatic.

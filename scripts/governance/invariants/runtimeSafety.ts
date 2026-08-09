@@ -472,6 +472,7 @@ export function scanRuntimeSafety(cache: FileCache): Violation[] {
       "non-nested",
       "sql",
       "memory-unsafe",
+      "async",
     ];
     const rustEntries = collectSuppressions(cache, ["src-tauri/src/**/*.rs"], rustTagPatterns);
 

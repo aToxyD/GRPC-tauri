@@ -235,6 +235,94 @@ describe("validateSuppressionMetadata", () => {
     expect(violations.length).toBe(0);
   });
 
+  it("should exempt a registered PERMANENT exception from 90-day expiry", async () => {
+    const { validateSuppressionMetadata } = await import("../suppression");
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - 100);
+    const dateStr = oldDate.toISOString().split("T")[0];
+
+    const violations = validateSuppressionMetadata(
+      [
+        {
+          tag: "async",
+          file: "src-tauri/src/commands/backup.rs",
+          line: 45,
+          justification: "Permanent: ADR-0043 — see ADR-0043 — create_backup offloads blocking DB-copy via spawn_blocking",
+          reason: "create_backup offloads blocking DB-copy via spawn_blocking",
+          date: dateStr,
+          owner: "Architecture",
+        },
+      ],
+      "RUNTIME_SAFETY",
+    );
+    const expiredViolations = violations.filter((v) => v.message.includes("expired"));
+    expect(expiredViolations.length).toBe(0);
+  });
+
+  it("should still flag an ordinary exception with an old date (90-day default)", async () => {
+    const { validateSuppressionMetadata } = await import("../suppression");
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - 100);
+    const dateStr = oldDate.toISOString().split("T")[0];
+
+    const violations = validateSuppressionMetadata(
+      [
+        {
+          tag: "unwrap-or",
+          file: "src-tauri/src/application/services/x.rs",
+          line: 1,
+          justification: "see ADR-0007 — safe default",
+          reason: "safe default",
+          date: dateStr,
+          owner: "Sync",
+        },
+      ],
+      "RUNTIME_SAFETY",
+    );
+    const expiredViolations = violations.filter((v) => v.message.includes("expired"));
+    expect(expiredViolations.length).toBeGreaterThan(0);
+  });
+
+  it("should flag a Permanent marker referencing an unregistered ADR", async () => {
+    const { validateSuppressionMetadata } = await import("../suppression");
+    const violations = validateSuppressionMetadata(
+      [
+        {
+          tag: "async",
+          file: "src-tauri/src/commands/backup.rs",
+          line: 45,
+          justification: "Permanent: ADR-9999 — see ADR-9999 — not registered as permanent",
+          reason: "not registered as permanent",
+          date: "2026-08-09",
+          owner: "Architecture",
+        },
+      ],
+      "RUNTIME_SAFETY",
+    );
+    const permanentViolations = violations.filter((v) => v.message.includes("not registered as PERMANENT"));
+    expect(permanentViolations.length).toBeGreaterThan(0);
+  });
+
+  it("should flag a Permanent marker without an ADR reference", async () => {
+    const { validateSuppressionMetadata } = await import("../suppression");
+    const violations = validateSuppressionMetadata(
+      [
+        {
+          tag: "async",
+          file: "src-tauri/src/commands/backup.rs",
+          line: 45,
+          justification: "Permanent: — no ADR reference",
+          reason: "no ADR reference",
+          date: "2026-08-09",
+          owner: "Architecture",
+        },
+      ],
+      "RUNTIME_SAFETY",
+    );
+    const permanentViolations = violations.filter((v) => v.message.includes("declares Permanent but has no ADR reference"));
+    expect(permanentViolations.length).toBeGreaterThan(0);
+  });
+
   it("should collect real Rust suppression tags from the tree", async () => {
     const { FileCache } = await import("../scanner");
     const { collectSuppressions } = await import("../suppression");

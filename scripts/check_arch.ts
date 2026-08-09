@@ -1674,13 +1674,18 @@ checkRule(
     "error"
 );
 
-// Rule 117: No async runtime in sqlite_runtime_review/
+// Rule 117: No async runtime in Rust (must be synchronous)
+// Sanctioned exception (ADR-0043): src-tauri/src/commands/backup.rs ONLY — the two command
+// handlers create_backup/restore_backup use tauri::async_runtime::spawn_blocking for blocking
+// backup/restore file I/O. No async beyond those two entry points, none in
+// Domain/Application/Ports. See docs/architecture/0043-backup-async-exception.md.
 checkRule(
-    "Rule 117: Async runtime usage in sqlite_runtime_review/ (must be synchronous)",
-    ["src-tauri/src/infrastructure/sqlite_runtime_review/**/*.rs"],
-    /\basync\s+fn\b|\bawait\b|\btokio::\b|\bfutures::\b|\bAsync\b/,
+    "Rule 117: Async runtime usage in Rust (must be synchronous)",
+    ["src-tauri/src/**/*.rs"],
+    /\basync\s+fn\b|\bawait\b|\btokio::\b|\bfutures::\b|\bAsync\b|spawn_blocking/,
     (line) => line.trim().startsWith("//"),
-    "error"
+    "error",
+    (f) => !f.includes("src-tauri/src/commands/backup.rs")
 );
 
 // Rule 118: No scheduler loops in sqlite_runtime_review/

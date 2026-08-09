@@ -55,6 +55,13 @@ All `[arch:allow-*]` architectural exceptions must be registered here with ADR l
 |---|------|------|------|-----|--------|---------|---------|---------|-------|
 | 26 | `infrastructure/backup/sqlite_backup_adapter.rs` | 749 | 31 | ADR-017 | Whole-file read in backup for SHA-256 hashing — required for cryptographic verification | 2026-05-28 | 2026-08-09 | 2026-11-07 | Infrastructure |
 
+## Exception: `[arch:allow-async]` — PERMANENT (ADR-0043)
+
+| # | File | Line | Rule | ADR | Reason | Created | Expires | Owner |
+|---|------|------|------|-----|--------|---------|---------|-------|
+| 27 | `commands/backup.rs` | 45 | 117 | ADR-0043 | `create_backup` offloads blocking DB-copy + encryption via `tauri::async_runtime::spawn_blocking` to avoid UI freeze on the Tauri main thread — sanctioned exception, no async beyond the two backup command handlers | 2026-08-09 | Permanent | Architecture |
+| 28 | `commands/backup.rs` | 357 | 117 | ADR-0043 | `restore_backup` offloads blocking DB restore + verification via `tauri::async_runtime::spawn_blocking` to avoid UI freeze on the Tauri main thread — sanctioned exception, no async beyond the two backup command handlers | 2026-08-09 | Permanent | Architecture |
+
 ---
 
 ## Summary
@@ -67,6 +74,7 @@ All `[arch:allow-*]` architectural exceptions must be registered here with ADR l
 | `[arch:allow-non-nested]` | 2 | ADR-014 |
 | `[arch:allow-sql]` | 1 | ADR-011 |
 | `[arch:allow-memory-unsafe]` | 1 | ADR-017 |
-| **Total** | **19** | |
+| `[arch:allow-async]` (Permanent) | 2 | ADR-0043 |
+| **Total** | **21** | |
 
-**Review cadence:** All exceptions must be reviewed at least every 90 days. Expired exceptions must be renewed or closed. All rows renewed 2026-08-09; next review window closes 2026-11-07.
+**Review cadence:** All exceptions must be reviewed at least every 90 days. Expired exceptions must be renewed or closed. All rows renewed 2026-08-09; next review window closes 2026-11-07. `[arch:allow-async]` is **Permanent** per ADR-0043 — exempt from the 90-day renewal cycle.

@@ -42,6 +42,7 @@ enum CheckpointOutcome {
 }
 
 /// Create immediate backup - AUDITED SYSTEM OPERATION
+// [arch:allow-async] see ADR-0043 — Reason: create_backup offloads blocking DB-copy + encryption via tauri::async_runtime::spawn_blocking to avoid UI freeze on the Tauri main thread; Date: 2026-08-09; Owner: Architecture; Permanent: ADR-0043
 #[tauri::command]
 pub async fn create_backup(state: State<'_, AppState>) -> Result<String, String> {
     let (session_user_id, session_username, session_id) = {
@@ -353,6 +354,7 @@ pub fn list_backups(state: State<'_, AppState>) -> Result<Vec<BackupInfo>, Strin
 }
 
 /// Restore database from backup - requires confirmation + execution token + integrity preflight.
+// [arch:allow-async] see ADR-0043 — Reason: restore_backup offloads blocking DB restore + verification via tauri::async_runtime::spawn_blocking to avoid UI freeze on the Tauri main thread; Date: 2026-08-09; Owner: Architecture; Permanent: ADR-0043
 #[tauri::command]
 pub async fn restore_backup(
     app_handle: tauri::AppHandle,
