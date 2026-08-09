@@ -388,7 +388,7 @@ The following tools are the authoritative enforcement mechanisms for this reposi
 | Secrets detection | `scripts/check_secrets.ts` | Zero hardcoded secrets. |
 | Documentation governance | `scripts/check_docs_governance.ts` | Zero broken links / missing refs. |
 | Release integrity | `scripts/check_release_integrity.ts` | Zero integrity violations. |
-| CI pipeline | `.gitlab-ci.yml` | Full gate — all tools above. |
+| CI pipeline | `.github/workflows/ci.yml` | Full gate — all tools above. |
 
 Reference: `docs/architecture/ARCHITECTURE_FREEZE.md` Section 5 (Zero-Warning Policy).
 
@@ -423,4 +423,4 @@ The following documents extend and complement this contract:
 | Architectural Invariants Charter | `docs/architecture/ARCHITECTURAL_INVARIANTS.md` | Technical invariants and exception policy |
 | ADR Index | `docs/architecture/ADR_INDEX.md` | All accepted architecture decisions |
 | Architecture Audit Script | `scripts/check_arch.ts` | Authoritative governance enforcement tool |
-| CI Pipeline | `.gitlab-ci.yml` | Full pre-merge gate |
+| CI Pipeline | `.github/workflows/ci.yml` | Full pre-merge gate |

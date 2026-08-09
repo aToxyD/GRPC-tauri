@@ -41,10 +41,11 @@ A comprehensive architectural governance review of the GRPC-Tauri system (Algeri
   - `tests/sync_idempotency_tests.rs`, `tests/daily_report_package_idempotency_tests.rs`
   - `tests/operational_survivability_tests.rs`, `tests/disaster_recovery_integration_tests.rs`
 
-### 1.4 `scripts/run_ci.ts` — Comprehensive Governance CI Gate
+### 1.4 `scripts/run_ci.ts` — Local CI Gate (subset)
 
-- **What is guaranteed:** Full sequential gate: `check:arch` → `svelte-check` → `vitest` → `cargo build` → `playwright test:e2e`. Any failure aborts the pipeline.
-- **How it is enforced:** Run via `bun run ci` locally. CI mirrors the same stages.
+- **What is guaranteed:** Local sequential gate: `check:obs` → `check:arch` → `svelte-check` → `vitest` → `cargo build` → `playwright test:e2e`. Any failure aborts the run.
+- **Scope:** A developer-facing convenience subset. The authoritative full gate is the GitHub Actions pipeline (`.github/workflows/ci.yml`), which additionally enforces `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, secrets scanning, dependency audits, documentation governance, and release integrity. See `docs/technical/ci_governance_audit.md`.
+- **How it is enforced:** Run via `bun run ci` locally. The GitHub Actions pipeline runs the full canonical gate set.
 - **Where to look for violations:** Output of `bun run ci`. CI pipeline logs.
 
 ### 1.5 Compile-Time Guards (`architecture.rs`)

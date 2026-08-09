@@ -114,7 +114,7 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -
 *   [دليل حوكمة التطوير والدمج المستمر (CI_CD_GOVERNANCE.md)](docs/technical/CI_CD_GOVERNANCE.md)
 *   [دليل معالجة فشل خطوط الأنابيب (PIPELINE_FAILURE_GUIDE.md)](docs/technical/PIPELINE_FAILURE_GUIDE.md)
 *   [دليل حوكمة وإدارة التبعات البرمجية (DEPENDENCY_GOVERNANCE.md)](docs/technical/DEPENDENCY_GOVERNANCE.md)
-*   [دليل حوكمة مستودع GitLab (GITLAB_GOVERNANCE.md)](docs/technical/GITLAB_GOVERNANCE.md)
+*   [دليل حوكمة مستودع GitHub (GITHUB_GOVERNANCE.md)](docs/technical/GITHUB_GOVERNANCE.md)
 *   [قاموس المصطلحات التقنية (GLOSSARY.md)](docs/technical/GLOSSARY.md)
 *   [التوثيق التقني (TECHNICAL_DOCUMENTATION.md)](docs/technical/TECHNICAL_DOCUMENTATION.md)
 *   [سجل القرارات المعمارية (ADRs)](docs/architecture/README.md)

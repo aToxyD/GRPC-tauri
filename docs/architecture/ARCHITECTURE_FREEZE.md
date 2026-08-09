@@ -317,7 +317,7 @@ If a warning cannot be immediately resolved:
 | Architectural Invariants Charter | `docs/architecture/ARCHITECTURAL_INVARIANTS.md` |
 | ADR Index | `docs/architecture/README.md` |
 | Architecture Audit Script | `scripts/check_arch.ts` |
-| CI Pipeline | `.gitlab-ci.yml` |
+| CI Pipeline | `.github/workflows/ci.yml` |
 | Comprehensive CI Gate | `scripts/run_ci.ts` |
 | Compile-Time Guards | `src-tauri/src/architecture.rs` |
 | AGENTS.md (project identity & rules) | `AGENTS.md` |
