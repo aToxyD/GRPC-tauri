@@ -4,6 +4,16 @@
 المرحلة: A4.1 + A4.2 (تحقيق وتحقق) → A4.3 (تفعيل GitHub CI) → A4.4 (إزالة GitLab وتنظيف التوثيق)
 الحالة: مكتمل — التقرير هو المرجع المبرر لقرارات A4.3/A4.4
 
+> **سجل الإغلاق (Closure — 2026-08-09):**
+> بند ديون التنسيق (44 ملفًا / 221 hunk) الذي ظل البوابة الوحيدة الرافضة في الـcanonical set قد **أُغلق** عبر:
+>
+> - `eb73dd3` — `style: apply cargo fmt to resolve formatting debt (45 files / 222 hunks)` — remediation formatting-only مثبت (45/45 ملف مطابقة حرفيًا لـ`cargo fmt` على HEAD الأب).
+> - `189bf75` — `fix: resolve clippy redundant closures after rustfmt` — إصلاح سطرين لـ`redundant_closure` كشفهما rustfmt في `adminkey_provider.rs` (منفصل عن `eb73dd3`، بدون amend).
+> - **النتيجة:** `cargo fmt --check` = ✅ **PASS**، و`scripts/release_certification.ts` = **8/8 CERTIFIED** على commit `189bf75`.
+> - تشغيل الـcanonical gates بالكامل: **11/11 PASS** + مراجعة مستقلة نهائية **PASS** + شجرة عمل نظيفة.
+>
+> بند الـclosure هذا يسجل اكتمال بند §9 المعلّق ("إصلاح ديون التنسيق")؛ أقسام التقرير أدناه تبقى سجلًا تاريخيًا لحالة A4 وقت كتابته.
+
 ---
 
 ## 1. الملخص التنفيذي
@@ -12,10 +22,10 @@
 - **بعد A4.3 (commit `675dcf4`)**: أصبح GitHub Actions (`.github/workflows/ci.yml`) هو الـCI المعياري الآلي — يعمل على `push` (كل الفروع) و`pull_request` مع الإبقاء على `workflow_dispatch`، وأُضيف `check:obs` قبل `check:arch`.
 - **بعد A4.4**: أُزيل `.gitlab-ci.yml` نهائيًا، وأُعيدت تسمية `GITLAB_GOVERNANCE.md` إلى `GITHUB_GOVERNANCE.md`، وحُدّثت كل مراجع GitLab في الوثائق إلى GitHub Actions.
 - **`release_certification.ts` ليس هو البوابة المعيارية (canonical gate).** المرجع المعياري هو AGENTS.md §9/§11، وCI الكامل هو الذي يجمع كل البوابات.
-- **التحقق على Rust 1.94.0 (نفس إصدار CI):**
+- **التحقق على Rust 1.94.0 (نفس إصدار CI) — بعد الإغلاق (2026-08-09):**
   | البوابة | النتيجة |
   |---------|---------|
-  | `cargo fmt --check` | ❌ **FAIL** — 44 ملفًا / 221 hunk |
+  | `cargo fmt --check` | ✅ **PASS** (أُغلق عبر `eb73dd3` + `189bf75`) — كان ❌ 44 ملفًا / 221 hunk وقت A4 |
   | `cargo clippy -- -D warnings` | ✅ PASS |
   | `cargo test` | ✅ PASS — 1361 اختبارًا |
   | `bun run check:arch` | ✅ PASS — 0 تحذيرات |
@@ -26,6 +36,7 @@
   | `scripts/check_docs_governance.ts` | ✅ PASS — 100% |
   | `scripts/check_release_integrity.ts` | ✅ PASS — 100% |
   | `bun audit` | ⚠️ FAIL لكنه مسموح (allow_failure) وفق سياسة DEPENDENCY_GOVERNANCE.md |
+  | `scripts/release_certification.ts` | ✅ **8/8 CERTIFIED** على commit `189bf75` |
 
 - **نتيجة حاسمة:** اختلاف `cargo fmt --check` **مطابق حرفيًا** بين rustfmt 1.8.0 (Rust 1.94) وrustfmt 1.9.0 (Rust 1.96) — أي أن مشكلة الـ44 ملفًا هي **ديون تنسيق حقيقية في المستودع** وليست toolchain drift.
 
@@ -75,7 +86,7 @@
 الأداة المثبتة: `rustup toolchain install 1.94.0` → rustc 1.94.0 / rustfmt 1.8.0 / cargo 1.94.0
 (المحلي الافتراضي: rustc 1.96.0 / rustfmt 1.9.0)
 
-### 4.1 `cargo fmt --check` — ❌ FAIL
+### 4.1 `cargo fmt --check` — ❌ FAIL (سجل تاريخي — أُغلق لاحقًا عبر `eb73dd3`/`189bf75`)
 - **Rust 1.94 (rustfmt 1.8.0):** خروج 1 — **221 hunk في 44 ملفًا**
 - **Rust 1.96 (rustfmt 1.9.0):** خروج 1 — **221 hunk في 44 ملفًا**
 - `diff` بين مخرجَي الفحصين: **مطابق حرفيًا (identical)**.
@@ -106,7 +117,7 @@
 | `check_secrets` | ❌ لم يُشغَّل | ✅ |
 | `check_release_integrity` | ❌ لم يُشغَّل | ✅ |
 
-**الاستنتاج:** معايير تأهيل A-series كانت **مجموعة فرعية** من الـcanonical set؛ ولم يكن `fmt --check` ناجحًا عبر التاريخ الحديث. أي إعادة تفعيل CI سترصد فشل fmt فورًا.
+**الاستنتاج:** معايير تأهيل A-series كانت **مجموعة فرعية** من الـcanonical set؛ ولم يكن `fmt --check` ناجحًا عبر التاريخ الحديث. أي إعادة تفعيل CI سترصد فشل fmt فورًا. *(محلولة: `cargo fmt --check` = PASS منذ `eb73dd3`/`189bf75`، 2026-08-09.)*
 
 ---
 
@@ -153,7 +164,7 @@
 ### ثابت الآن (نتائج A4)
 1. ~~لا CI تلقائي — GitLab ميت، GitHub يدوي.~~ → **أُنجز في A4.3 (commit `675dcf4`)**: GitHub Actions هو الـCI الآلي المعياري (`push` + `pull_request` + `workflow_dispatch`)، و`check:obs` أصبح قبل `check:arch`.
 2. `release_certification.ts` = أداة مساعدة وليست canonical.
-3. البوابة الوحيدة الرافضة حاليًا هي `cargo fmt --check` (44 ملفًا / 221 hunk) — وهي **ديون تنسيق حقيقية** (متطابقة بين rustfmt 1.8.0 و1.9.0).
+3. ~~البوابة الوحيدة الرافضة حاليًا هي `cargo fmt --check` (44 ملفًا / 221 hunk) — وهي **ديون تنسيق حقيقية** (متطابقة بين rustfmt 1.8.0 و1.9.0).~~ → **أُغلقت:** `cargo fmt --check` = PASS بعد `eb73dd3` + `189bf75` (سجل الإغلاق أعلى التقرير).
 4. كل بوابات الـcanonical set الأخرى تمر على Rust 1.94.0.
 5. ~~GH↔GitLab drift: `ci.yml` ينقصه `check:obs`.~~ → **أُزيلت الفجوة في A4.3**؛ وGitLab أُزيل نهائيًا في A4.4.
 6. CI-E2E لا يعادل شهادة A2 على الثنائي الحقيقي — ميّزناها بوضوح في `ci.yml` كتعليق، ويبقى A2 release-binary certification مسارًا منفصلًا.
@@ -163,7 +174,7 @@
 - **A4.4**: حذف `.gitlab-ci.yml`، إعادة تسمية `GITLAB_GOVERNANCE.md` → `GITHUB_GOVERNANCE.md`، تحديث كل مراجع GitLab في AGENTS.md / ARCHITECTURE_FREEZE.md / governance_review.md / CI_CD_GOVERNANCE.md / PIPELINE_FAILURE_GUIDE.md، وتحديث هذا التقرير.
 
 ### معلّق (قرار مستقل — ليس جزءًا من A4)
-- **إصلاح ديون التنسيق (44 ملفًا / 221 hunk)**: يجب أن يكون التزامًا مستقلًا قابلاً للمراجعة، بعد اعتماد GitHub-only CI. هذه البوابة هي الوحيدة الرافضة حاليًا في الـcanonical set.
+- ~~**إصلاح ديون التنسيق (44 ملفًا / 221 hunk)**: يجب أن يكون التزامًا مستقلًا قابلاً للمراجعة، بعد اعتماد GitHub-only CI. هذه البوابة هي الوحيدة الرافضة حاليًا في الـcanonical set.~~ → **أُغلق (2026-08-09):** `eb73dd3` (FMT remediation) + `189bf75` (clippy remediation بعد rustfmt). `cargo fmt --check` = PASS، و`release_certification.ts` = 8/8 CERTIFIED على `189bf75`. راجع سجل الإغلاق أعلى التقرير.
 
 ---
 
@@ -180,5 +191,15 @@
 | secrets / docs / integrity | `/tmp/opencode/a4_secrets.log` / `a4_docs.log` / `a4_integrity.log` (خروج 0) |
 | svelte-check / vitest | `/tmp/opencode/a4_svelte.log` / `a4_vitest.log` (خروج 0) |
 | bun audit | `/tmp/opencode/a4_bunaudit.log` (خروج 1 — مسموح) |
+
+### 10.1 أدلة إغلاق ديون التنسيق (2026-08-09)
+
+| القياس | القيمة |
+|--------|--------|
+| FMT remediation | commit `eb73dd3` — 45 ملفًا / 222 hunk — formatting-only (مثبت: 45/45 مطابقة لـ`cargo fmt` على HEAD الأب) |
+| Clippy remediation | commit `189bf75` — `map_err(AppError::Io)` سطران في `adminkey_provider.rs` |
+| `cargo fmt --check` بعد الإغلاق | خروج 0 — PASS |
+| `scripts/release_certification.ts` | **8/8 CERTIFIED** — commit `189bf75` — timestamp 2026-08-09T22:03:07Z |
+| Full canonical gates | 11/11 PASS + Final Independent Review PASS |
 
 ---
