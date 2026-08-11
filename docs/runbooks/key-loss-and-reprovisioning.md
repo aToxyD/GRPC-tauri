@@ -45,6 +45,9 @@
 - يُستخدم للتحقق من شهادة إقلاع الهوية دون اتصال (عند `finalize`).
 - ترتيب الحل: `GRPC_ROOT_PUBLIC_KEY` (بيئة) → المفتاح المضمّن `PROD_ROOT_PUBLIC_KEY`
   (placeholder في Release الحالي — راجع `trial-deployment-checklist.md`).
+- **Fail-Closed (Release)**: طالما المضمّن هو متجه اختبار RFC 8032 §7.1 TEST 2،
+  **يرفض النظام في Release** حلّه كـfallback — إقلاع WILAYA يتطلب `GRPC_ROOT_PUBLIC_KEY`
+  بمفتاح عام حقيقي (غير TEST) حتى يُستبدل المضمّن بقرار رسمي.
 - تدوير مفتاح Root = تحديث قيمة البيئة على كل عقدة (أو استبدال المضمّن في كود الإصدار).
   مستقل عن تدوير anchor الترخيص.
 

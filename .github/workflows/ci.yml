@@ -181,3 +181,51 @@ jobs:
           export TEST_SECURE_TEMP_DIR="$(mktemp -d)"
           bun run test:e2e
           rm -rf "$TEST_SECURE_TEMP_DIR"
+
+  # CI-E2E (Windows): real Tauri debug binary via TauriDriver + WebView2 CDP.
+  # Windows cannot run the ci-latest Linux container, so this job runs directly
+  # on the hosted runner (preinstalled Rust + WebView2 runtime). TauriDriver
+  # attaches to the app's WebView2 over CDP, so no Playwright browser download
+  # is required (unlike the Linux job, which uses ViteDriver + chromium).
+  # Scope: only the runtime specs validated on the native Windows build.
+  #   - security.spec.ts is excluded by design (Linux Release binary +
+  #     WebKitWebDriver stack, see ADR-0041).
+  #   - runtime_stability.spec.ts is a ViteDriver UI-only spec.
+  runtime-e2e-governance-windows:
+    name: Runtime E2E governance (Windows)
+    runs-on: windows-latest
+    needs: frontend-build
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Bun
+        run: npm install -g bun
+        shell: bash
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --cache-dir ${{ env.BUN_CACHE_DIR }}
+        shell: bash
+      - name: Build src-tauri
+        run: cd src-tauri && cargo build
+        shell: bash
+      - name: Run Playwright E2E tests (Windows)
+        run: |
+          bun run test:e2e -- runtime/auth.spec.ts runtime/backup.spec.ts runtime/ipc.spec.ts runtime/sync_fiscal.spec.ts runtime/startup.spec.ts
+        shell: bash
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-windows
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore

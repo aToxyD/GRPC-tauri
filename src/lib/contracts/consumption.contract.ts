@@ -42,11 +42,11 @@ export async function calculateMealRate(
 ): Promise<number> {
   return await safeInvoke('calculate_meal_rate', {
     totalCost,
-    staff_24h_count: staff24hCount,
-    staff_8h_count: staff8hCount,
-    reservation_count: reservationCount,
-    mission_count: missionCount,
-    guest_count: guestCount,
+    staff24hCount,
+    staff8hCount,
+    reservationCount,
+    missionCount,
+    guestCount,
   });
 }
 

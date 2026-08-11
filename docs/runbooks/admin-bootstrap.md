@@ -49,6 +49,55 @@
    - لا يوجد مسار إقلاع يعيد إنشاء مسؤول أو يعيد تعيين كلمات المرور.
    - الاسترداد/التعديل يتم عبر مسار إداري مستقل بعد تسجيل الدخول.
 
+# أداة توقيع Root (root-signer)
+
+> **حدود المسؤولية (ADR-0004)**: `grpc-licensing` سلطة ترخيص **فقط**؛ **ليس** هو
+> سلطة توقيع هوية Root ولا يوقّع شهادات Identity إطلاقاً. منظومة الثقة
+> (`Root offline → WILAYA → UNIT/ADMIN`) ملك `grpc`، وتوقيع شهادات WILAYA يتم عبر
+> أداة `root-signer` داخل `grpc/src-tauri` — وهي الأداة الوحيدة التي تحمل مفتاح
+> Root الخاص (المقدَّم من بيئة/ملف خارجي، أبداً من داخل المستودع).
+
+## البناء
+```bash
+cd grpc/src-tauri
+cargo build --release --bin root-signer
+# المخرَج: target/release/root-signer
+```
+
+## الاستخدام
+```bash
+root-signer sign --csr <csr.json> --out <signed.json> \
+  --key-file <path-to-root-secret>   # أو GRPC_ROOT_PRIVATE_KEY، أو --key-hex
+```
+- مصدر مفتاح Root الخاص (واحد فقط): متغير البيئة `GRPC_ROOT_PRIVATE_KEY` أو
+  `--key-file` أو `--key-hex` (32 بايت، hex أو Base64).
+- إذا ضُبط `GRPC_ROOT_PUBLIC_KEY` في البيئة، تشترط الأداة أن يطابق المفتاح العام
+  المشتق منه وإلا **ترفض التوقيع** (Fail-Closed).
+
+## التدفق الكامل (Offline)
+```
+begin_wilaya_provision(requestFilePath)          → CSR (غير موقّع) في ملف JSON
+root-signer sign --csr … --out <signed.json>     → شهادة WILAYA موقّعة (offline)
+finalize_wilaya_provision(certFilePath)          → WILAYA_ACTIVE
+issue_first_admin_key(subjectUsername, passphrase) → READY
+begin_challenge / complete_challenge             → تسجيل دخول المسؤول
+```
+
+## ضوابط الأداة (Fail-Closed)
+- `subject_type` يجب أن يكون WILAYA فقط — لا توقيع UNIT/ADMIN/حزم (Root يوقّع WILAYA حصراً).
+- رفض أي CSR يحمل توقيعاً مسبقاً.
+- إجبار `algorithm_version` على ملف الهوية Ed25519.
+- رفض الشهادات غير النشطة (غير ACTIVE).
+- التحقق الذاتي من التوقيع قبل كتابة الملف الموقَّع.
+- مفتاح Root الخاص لا يُطبع أبداً على stdout/stderr/logs.
+
+## ملاحظة أمنية حاسمة
+اختبار نهاية-إلى-نهاية بمفتاح **RFC 8032 §7.1 TEST 1** يثبت صحة البروتوكول فقط؛
+**ليس** دليلاً على الجاهزية الإنتاجية. الإنتاج يتطلب مفتاح Root خاصاً حقيقياً يطابق
+مفتاحاً عاماً حقيقياً عبر `GRPC_ROOT_PUBLIC_KEY` (راجع
+`security-production-keys.md`). حِزم Release من الأداة ترفض التوقيع بمفاتيح الاختبار
+المعروفة (TEST 1/TEST 2).
+
 # الضمان الأمني
 > **إصدار المسؤول مرتبط بهوية العقدة المزوّدة؛ لا يوجد حساب افتراضي قابل للتخمين،
 > والمصادقة بعد الإصدار عبر Challenge–Response (توقيع) وليس كلمة مرور ثابتة.**

@@ -4,6 +4,18 @@
 
 ---
 
+## [1.2.1] - 2026-08-10
+
+### ✨ الميزات المضافة (Added)
+* **أداة توقيع Root دون اتصال (root-signer):** توقيع شهادات WILAYA (Identity CSR) عبر الأداة الجديدة `root-signer` داخل `grpc/src-tauri` — مسار Root offline كامل (RFC 2026-08-04-node-identity-trust / ADR-0038 / ADR-0039).
+
+### 🐛 إصلاح الأخطاء (Fixed)
+* تصحيح وسائط عقود IPC إلى camelCase (identity / licensing / consumption / fiscal / security) لمطابقة فك ترميز Tauri v2.
+
+### 🔄 التغييرات (Changed)
+* تحديث أدلة التشغيل: مراسم مفتاح Root وضوابط التوقيع Fail-Closed (`security-production-keys.md` / `admin-bootstrap.md`).
+* إضافة اختبارات E2E لمسار التوقيع (`root_signer_e2e`) واختبارات مفاتيح عقود IPC (`ipcArgs`).
+
 ## [1.2.0] - 2026-06-02
 
 ### ✨ الميزات المضافة (Added)

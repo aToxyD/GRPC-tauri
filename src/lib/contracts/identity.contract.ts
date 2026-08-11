@@ -84,7 +84,7 @@ export async function getIdentityStatus(): Promise<IdentityBootstrapState> {
  * operator to carry to the Authority Root.
  */
 export async function beginWilayaProvision(requestFile: string): Promise<IdentityCertificateDto> {
-  return await safeInvoke('begin_wilaya_provision', { request_file_path: requestFile });
+  return await safeInvoke('begin_wilaya_provision', { requestFilePath: requestFile });
 }
 
 /**
@@ -94,7 +94,7 @@ export async function beginWilayaProvision(requestFile: string): Promise<Identit
 export async function finalizeWilayaProvision(
   certFile: string,
 ): Promise<FinalizeWilayaProvisionResultDto> {
-  return await safeInvoke('finalize_wilaya_provision', { cert_file_path: certFile });
+  return await safeInvoke('finalize_wilaya_provision', { certFilePath: certFile });
 }
 
 /**
@@ -106,7 +106,7 @@ export async function issueFirstAdminKey(
   passphrase: string,
 ): Promise<IdentityCertificateDto> {
   return await safeInvoke('issue_first_admin_key', {
-    subject_username: subjectUsername,
+    subjectUsername,
     passphrase,
   });
 }
@@ -117,7 +117,7 @@ export async function issueFirstAdminKey(
  * and write the UNSIGNED UNIT certificate (CSR) to `requestFile`.
  */
 export async function beginUnitProvision(requestFile: string): Promise<IdentityCertificateDto> {
-  return await safeInvoke('begin_unit_provision', { request_file_path: requestFile });
+  return await safeInvoke('begin_unit_provision', { requestFilePath: requestFile });
 }
 
 /**
@@ -126,7 +126,7 @@ export async function beginUnitProvision(requestFile: string): Promise<IdentityC
  * Pass the CSR payload JSON (not a file path).
  */
 export async function signUnitIdentityRequest(requestJson: string): Promise<IdentityCertificateDto> {
-  return await safeInvoke('sign_unit_identity_request', { request_json: requestJson });
+  return await safeInvoke('sign_unit_identity_request', { requestJson });
 }
 
 /**
@@ -137,7 +137,7 @@ export async function signUnitIdentityRequest(requestJson: string): Promise<Iden
 export async function finalizeUnitProvision(
   certFile: string,
 ): Promise<FinalizeUnitProvisionResultDto> {
-  return await safeInvoke('finalize_unit_provision', { cert_file_path: certFile });
+  return await safeInvoke('finalize_unit_provision', { certFilePath: certFile });
 }
 
 /**
@@ -148,7 +148,7 @@ export async function finalizeUnitProvision(
 export async function installWilayaCertificate(
   certFile: string,
 ): Promise<InstallWilayaCertificateResultDto> {
-  return await safeInvoke('install_wilaya_certificate', { cert_file_path: certFile });
+  return await safeInvoke('install_wilaya_certificate', { certFilePath: certFile });
 }
 
 /**
@@ -161,7 +161,7 @@ export async function beginWilayaRotation(
   operation: RotationOperation,
 ): Promise<RotationPlanDto> {
   return await safeInvoke('begin_wilaya_rotation', {
-    request_file_path: requestFile,
+    requestFilePath: requestFile,
     operation,
   });
 }
@@ -177,8 +177,8 @@ export async function finalizeWilayaRotation(
   packageFile: string,
 ): Promise<RotationFinalizeOutcomeDto> {
   return await safeInvoke('finalize_wilaya_rotation', {
-    cert_file_path: certFile,
-    rotation_package_path: packageFile,
+    certFilePath: certFile,
+    rotationPackagePath: packageFile,
   });
 }
 
@@ -192,7 +192,7 @@ export async function beginUnitRotation(
   operation: RotationOperation,
 ): Promise<RotationPlanDto> {
   return await safeInvoke('begin_unit_rotation', {
-    request_file_path: requestFile,
+    requestFilePath: requestFile,
     operation,
   });
 }
@@ -204,7 +204,7 @@ export async function beginUnitRotation(
  * credential guard). Pass the CSR payload JSON (not a file path).
  */
 export async function signUnitRotationRequest(requestJson: string): Promise<SignedUnitRotationDto> {
-  return await safeInvoke('sign_unit_rotation_request', { request_json: requestJson });
+  return await safeInvoke('sign_unit_rotation_request', { requestJson });
 }
 
 /**
@@ -215,7 +215,7 @@ export async function signUnitRotationRequest(requestJson: string): Promise<Sign
 export async function finalizeUnitRotation(
   certFile: string,
 ): Promise<RotationFinalizeOutcomeDto> {
-  return await safeInvoke('finalize_unit_rotation', { cert_file_path: certFile });
+  return await safeInvoke('finalize_unit_rotation', { certFilePath: certFile });
 }
 
 /** Begin a one-shot Challenge–Response login. */
@@ -229,5 +229,5 @@ export async function beginChallenge(): Promise<ChallengeMessageDto> {
  * ever passes the passphrase.
  */
 export async function completeChallenge(sessionId: string, passphrase: string): Promise<LoginResponse> {
-  return await safeInvoke('complete_challenge', { session_id: sessionId, passphrase });
+  return await safeInvoke('complete_challenge', { sessionId, passphrase });
 }

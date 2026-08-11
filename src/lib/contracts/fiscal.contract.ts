@@ -70,7 +70,7 @@ export async function updateFiscalPackageRetentionStatus(
   confirmation: string,
 ): Promise<void> {
   return await safeInvoke('update_fiscal_package_retention_status', {
-    transition_id: transitionId,
+    transitionId,
     status,
     confirmation,
   });

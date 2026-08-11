@@ -71,18 +71,18 @@ export async function getLicensingStatus(): Promise<LicensingStatusDto> {
 
 /** Install or rotate the single active licensing trust anchor (provisioning-v1). */
 export async function importTrustAnchor(packageJson: string): Promise<ImportAnchorResultDto> {
-  return await safeInvoke<ImportAnchorResultDto>('import_trust_anchor', { package_json: packageJson });
+  return await safeInvoke<ImportAnchorResultDto>('import_trust_anchor', { packageJson });
 }
 
 /** Import a signed license artifact (full pipeline + derived-view persist). */
 export async function importLicense(artifactJson: string): Promise<ImportLicenseResultDto> {
-  return await safeInvoke<ImportLicenseResultDto>('import_license', { artifact_json: artifactJson });
+  return await safeInvoke<ImportLicenseResultDto>('import_license', { artifactJson });
 }
 
 /** Deterministic pre-import check (no persistence). */
 export async function dryRunVerifyLicense(artifactJson: string): Promise<ImportLicenseResultDto> {
   return await safeInvoke<ImportLicenseResultDto>('dry_run_verify_license', {
-    artifact_json: artifactJson,
+    artifactJson,
   });
 }
 

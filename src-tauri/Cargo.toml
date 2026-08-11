@@ -55,3 +55,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "grpc"
 path = "src/main.rs"
 
+# Offline Authority Root signing tool — signs WILAYA IdentityCertificate CSRs
+# (RFC 2026-08-04-node-identity-trust / ADR-0038). Part of the grpc identity
+# trust chain (NOT grpc-licensing, ADR-0004). See src/bin/root-signer.rs.
+[[bin]]
+name = "root-signer"
+path = "src/bin/root-signer.rs"
+

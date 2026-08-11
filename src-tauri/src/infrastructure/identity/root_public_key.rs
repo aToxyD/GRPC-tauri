@@ -8,11 +8,14 @@
 //!
 //! Resolution order:
 //! 1. `GRPC_ROOT_PUBLIC_KEY` (Base64, exactly 32 bytes) — production fleets
-//!    override the compiled-in pin when the Authority Root key is rotated.
+//!    supply the real Authority Root key this way.
 //! 2. Debug builds (`#[cfg(debug_assertions)]`) fall back to an embedded
 //!    development key with a loud warning — mirrors the `GRPC_APP_KEY` /
 //!    `DEV_AGE_KEY` pattern.
-//! 3. Otherwise the compiled-in pin (`PROD_ROOT_PUBLIC_KEY`) is used.
+//! 3. Otherwise the compiled-in pin (`PROD_ROOT_PUBLIC_KEY`) is used — but ONLY
+//!    if it is NOT a known RFC 8032 test-vector key. While the pin is the TEST-2
+//!    placeholder, Release builds fail closed on WILAYA finalization until a
+//!    real Authority Root key is pinned or supplied via `GRPC_ROOT_PUBLIC_KEY`.
 //!
 //! Resolved LAZILY by the finalize command, NOT by
 //! `validate_production_security_environment()`: existing fleets that never use
@@ -28,9 +31,43 @@ const ED25519_PUBLIC_KEY_LEN: usize = 32;
 /// Compiled-in Authority Root verification key (Base64, 32 bytes).
 ///
 /// RFC 8032 §7.1 TEST 2 vector placeholder. Certification MUST pin the real
-/// Authority Root public key here before release; until then, production
-/// finalizations fail closed unless `GRPC_ROOT_PUBLIC_KEY` is supplied.
+/// Authority Root public key here before release; until then, Release builds
+/// fail closed on WILAYA finalization unless `GRPC_ROOT_PUBLIC_KEY` supplies a
+/// real (non-test-vector) Authority Root public key.
 const PROD_ROOT_PUBLIC_KEY: &str = "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=";
+
+/// Known RFC 8032 §7.1 public test vectors (Base64, 32 bytes). Their private
+/// keys are published in RFC 8032, so none of them may ever become a trusted
+/// production Authority Root key. TEST 1 is the debug-mode dev fallback.
+const RFC8032_TEST1_PUBLIC_KEY_B64: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=";
+const RFC8032_TEST2_PUBLIC_KEY_B64: &str = "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=";
+const RFC8032_TEST3_PUBLIC_KEY_B64: &str = "/FHNjmIYoaONpH7QAjDwWAgW7RO6MwOsXeuRFUiQgCU=";
+
+fn is_known_rfc8032_test_public_key(key: &[u8; ED25519_PUBLIC_KEY_LEN]) -> bool {
+    [
+        RFC8032_TEST1_PUBLIC_KEY_B64,
+        RFC8032_TEST2_PUBLIC_KEY_B64,
+        RFC8032_TEST3_PUBLIC_KEY_B64,
+    ]
+    .iter()
+    .any(|encoded| STANDARD.decode(encoded).ok().as_deref() == Some(key.as_slice()))
+}
+
+/// Fail-closed guard: in release semantics (`allow_dev_fallback == false`), a
+/// known RFC 8032 test-vector key can never become the trusted production Root
+/// key — neither via `GRPC_ROOT_PUBLIC_KEY` nor via the compiled-in pin.
+fn reject_known_test_vector(
+    key: [u8; ED25519_PUBLIC_KEY_LEN],
+    source: &str,
+    allow_dev_fallback: bool,
+) -> AppResult<()> {
+    if !allow_dev_fallback && is_known_rfc8032_test_public_key(&key) {
+        return Err(AppError::Configuration(format!(
+            "{source} is a known RFC 8032 §7.1 public test vector and MUST NOT be used as the production Authority Root key"
+        )));
+    }
+    Ok(())
+}
 
 /// Debug-only embedded Root key (RFC 8032 §7.1 TEST 1). Reachable ONLY in
 /// debug builds; release builds must supply `GRPC_ROOT_PUBLIC_KEY` or the pin.
@@ -70,10 +107,20 @@ fn resolve_root_public_key_impl(
     match env_raw {
         Some(raw) => {
             let trimmed = raw.trim().to_string();
-            decode_root_public_key(&trimmed, "GRPC_ROOT_PUBLIC_KEY")
+            let key = decode_root_public_key(&trimmed, "GRPC_ROOT_PUBLIC_KEY")?;
+            reject_known_test_vector(key, "GRPC_ROOT_PUBLIC_KEY", allow_dev_fallback)?;
+            Ok(key)
         }
         None if allow_dev_fallback => dev_key_fallback(),
-        None => decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "PROD_ROOT_PUBLIC_KEY"),
+        None => {
+            let key = decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "PROD_ROOT_PUBLIC_KEY")?;
+            reject_known_test_vector(
+                key,
+                "PROD_ROOT_PUBLIC_KEY (RFC 8032 §7.1 TEST-2 placeholder)",
+                allow_dev_fallback,
+            )?;
+            Ok(key)
+        }
     }
 }
 
@@ -119,12 +166,56 @@ mod tests {
     }
 
     #[test]
-    fn missing_env_in_prod_uses_pin() {
-        let key = resolve_root_public_key_impl(None, false).unwrap();
+    fn missing_env_in_prod_fails_closed_when_pin_is_a_test_vector() {
+        // PROD_ROOT_PUBLIC_KEY is currently the RFC 8032 §7.1 TEST-2 placeholder,
+        // so Release + missing env MUST fail closed instead of trusting TEST-2.
+        let pin = decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin").unwrap();
+        if is_known_rfc8032_test_public_key(&pin) {
+            let err = resolve_root_public_key_impl(None, false).unwrap_err();
+            assert!(
+                matches!(err, AppError::Configuration(_)),
+                "release + missing env + test-vector pin must fail closed, got {err:?}"
+            );
+        } else {
+            // A real pinned key is the certification ceremony path and is accepted.
+            assert_eq!(resolve_root_public_key_impl(None, false).unwrap(), pin);
+        }
+    }
+
+    #[test]
+    fn release_rejects_known_rfc8032_test_vectors_from_env() {
+        for encoded in [
+            RFC8032_TEST1_PUBLIC_KEY_B64,
+            RFC8032_TEST2_PUBLIC_KEY_B64,
+            RFC8032_TEST3_PUBLIC_KEY_B64,
+        ] {
+            let err = resolve_root_public_key_impl(Some(encoded.to_string()), false).unwrap_err();
+            assert!(
+                matches!(err, AppError::Configuration(_)),
+                "release must reject a known test vector via env, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn release_accepts_valid_configured_root_key() {
+        // A deterministic, non-RFC-8032 key (never a production secret) must be
+        // accepted as a configured production Root key.
+        let valid = [42u8; 32];
+        let encoded = STANDARD.encode(valid);
         assert_eq!(
-            key,
-            decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin").unwrap()
+            resolve_root_public_key_impl(Some(encoded), false).unwrap(),
+            valid
         );
+    }
+
+    #[test]
+    fn debug_semantics_still_accept_test_keys() {
+        // Dev/test workflows must remain usable: test vectors are allowed when
+        // the dev fallback is permitted (debug builds).
+        let key = resolve_root_public_key_impl(Some(RFC8032_TEST2_PUBLIC_KEY_B64.to_string()), true)
+            .unwrap();
+        assert_eq!(key.len(), ED25519_PUBLIC_KEY_LEN);
     }
 
     #[test]

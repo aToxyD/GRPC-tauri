@@ -1,0 +1,108 @@
+name: A2 Release-Binary Certification
+
+# Phase 3B Step 2 — A2 release-binary security certification.
+# Runs src/tests/e2e/runtime/security.spec.ts (ADR-0041 app-key lifecycle)
+# against the REAL Tauri Release binary on Linux, driven over the W3C
+# WebDriver protocol via tauri-driver + WebKitWebDriver (NOT ViteDriver).
+#
+# This is an on-demand certification workflow (workflow_dispatch only), not a
+# per-PR CI gate. Release gating is intentionally deferred to a later phase.
+#
+# Must run on a hosted ubuntu-latest runner (NOT the ci-latest container):
+# WebKitGTK + WebKitWebDriver + Xvfb + DBus are required, and the WebKit
+# driver stack needs a real display environment.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUN_CACHE_DIR: .bun-cache
+
+jobs:
+  a2-certification:
+    name: A2 release-binary security certification (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bun
+        run: npm install -g bun
+        shell: bash
+
+      - name: Install WebKitGTK, WebKitWebDriver, Xvfb and DBus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            webkit2gtk-driver \
+            xvfb \
+            dbus \
+            dbus-x11
+        shell: bash
+
+      - name: Verify WebKitWebDriver
+        run: |
+          which WebKitWebDriver
+          WebKitWebDriver --help >/dev/null 2>&1 || true
+          test -x /usr/bin/WebKitWebDriver && echo "WebKitWebDriver OK: /usr/bin/WebKitWebDriver"
+        shell: bash
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+        shell: bash
+
+      - name: Build frontend (dist/)
+        run: bun run build
+        shell: bash
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver
+        shell: bash
+
+      - name: Verify tauri-driver
+        run: |
+          test -x "$HOME/.cargo/bin/tauri-driver" && echo "tauri-driver OK: $HOME/.cargo/bin/tauri-driver"
+          "$HOME/.cargo/bin/tauri-driver" --help >/dev/null 2>&1 || true
+        shell: bash
+
+      - name: Build Release binary
+        run: cargo build --release
+        working-directory: src-tauri
+        shell: bash
+
+      - name: Verify Release binary
+        run: |
+          test -x src-tauri/target/release/grpc
+          ls -la src-tauri/target/release/grpc
+        shell: bash
+
+      - name: Run A2 security certification (Release binary via WebKitWebDriver)
+        env:
+          E2E_RELEASE: '1'
+          GRPC_WEBKIT_DRIVER: /usr/bin/WebKitWebDriver
+        run: |
+          dbus-run-session -- xvfb-run -a bun run test:e2e -- runtime/security.spec.ts
+        shell: bash
+
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a2-playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore

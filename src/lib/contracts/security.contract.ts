@@ -43,7 +43,7 @@ export async function initializeAppKey(
 ): Promise<AppKeyInitializeResultDto> {
   return await safeInvoke('initialize_app_key', {
     passphrase,
-    export_backup: exportBackup ?? null,
+    exportBackup: exportBackup ?? null,
   });
 }
 
