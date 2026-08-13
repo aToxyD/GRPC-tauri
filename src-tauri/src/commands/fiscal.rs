@@ -2,11 +2,11 @@
 
 use crate::application::authz::Action;
 use crate::application::services::FiscalReportingService;
-use crate::commands::common::db_mut_or_command_error;
+use crate::commands::common::{db_mut_or_app_error, db_mut_or_command_error};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::events::DomainEvent;
-use crate::errors::into_command_error;
+use crate::errors::{into_command_error, AppError};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -116,10 +116,23 @@ pub fn get_fiscal_year_status(
 pub fn run_fiscal_integrity_scan(
     state: State<AppState>,
 ) -> Result<crate::application::services::fiscal_integrity_service::FiscalIntegrityReport, String> {
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = guard.as_mut().ok_or_else(|| {
-        into_command_error(crate::errors::AppError::Internal("DB unavailable".into()))
-    })?;
+    run_fiscal_integrity_scan_impl(&state).map_err(into_command_error)
+}
+
+/// Command-boundary implementation of `run_fiscal_integrity_scan`.
+///
+/// SEC-005-A: the integrity-scan command performs a DB write
+/// (`integrity_attempts`) and MUST be gated at the command boundary —
+/// `ViewSystemHealth` (the same authorization used by `verify_integrity` and
+/// `get_advanced_diagnostics_bundle`). Extracted for command-boundary testing.
+pub fn run_fiscal_integrity_scan_impl(
+    state: &AppState,
+) -> Result<crate::application::services::fiscal_integrity_service::FiscalIntegrityReport, AppError> {
+    let (_session, _settings) = authorize_command(state, Action::ViewSystemHealth, None)?;
+    state.touch_session();
+
+    let mut guard = state.get_db()?;
+    let db = db_mut_or_app_error(guard.as_mut())?;
 
     db.with_transaction(|tx| {
         let report =
@@ -144,7 +157,6 @@ pub fn run_fiscal_integrity_scan(
         }
         Ok(report)
     })
-    .map_err(into_command_error)
 }
 
 // ── Fiscal Closure Package commands ──────────────────────────────────────────

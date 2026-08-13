@@ -508,39 +508,48 @@ pub fn finalize_wilaya_rotation(
     cert_file_path: String,
     rotation_package_path: String,
 ) -> Result<RotationFinalizeOutcome, String> {
-    let (session, settings) =
-        authorize_command(&state, Action::RotateCredential, None).map_err(into_command_error)?;
-    state.touch_session();
-    crate::domain::validation::validate_file_path(&cert_file_path, &["json"])
-        .map_err(into_command_error)?;
-    crate::domain::validation::validate_file_path(&rotation_package_path, &["sync"])
-        .map_err(into_command_error)?;
+    finalize_wilaya_rotation_impl(&state, cert_file_path, rotation_package_path, &node_key_store())
+        .map_err(into_command_error)
+}
 
-    let json = std::fs::read_to_string(&cert_file_path)
-        .map_err(|e| into_command_error(AppError::Io(e)))?;
+/// Command-boundary implementation of `finalize_wilaya_rotation`.
+///
+/// SEC-005-B: the DB guard MUST be dropped before `log_rotation_audit` (the
+/// audit re-locks the non-reentrant std Mutex). `node_key_store` is injected so
+/// the Tauri wrapper alone binds the global on-disk store; tests pass an
+/// isolated store.
+pub fn finalize_wilaya_rotation_impl(
+    state: &AppState,
+    cert_file_path: String,
+    rotation_package_path: String,
+    node_key_store: &NodeKeyStore,
+) -> Result<RotationFinalizeOutcome, AppError> {
+    let (session, settings) = authorize_command(state, Action::RotateCredential, None)?;
+    state.touch_session();
+    crate::domain::validation::validate_file_path(&cert_file_path, &["json"])?;
+    crate::domain::validation::validate_file_path(&rotation_package_path, &["sync"])?;
+
+    let json = std::fs::read_to_string(&cert_file_path).map_err(AppError::Io)?;
     let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
-        into_command_error(AppError::FileFormat(format!(
-            "Malformed signed certificate file: {e}"
-        )))
+        AppError::FileFormat(format!("Malformed signed certificate file: {e}"))
     })?;
 
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
+    let mut guard = state.get_db()?;
+    let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
-    let outcome = IdentityRotationCoordinator::new(db, &node_key_store())
-        .finalize_wilaya(
-            &signed_cert,
-            std::path::Path::new(&rotation_package_path),
-            &settings,
-            &state.crypto_port,
-        )
-        .map_err(into_command_error)?;
+    let outcome = IdentityRotationCoordinator::new(db, node_key_store).finalize_wilaya(
+        &signed_cert,
+        std::path::Path::new(&rotation_package_path),
+        &settings,
+        &state.crypto_port,
+    )?;
 
+    drop(guard);
     match &outcome {
         RotationFinalizeOutcome::Completed {
             certificate,
             operation,
-        } => log_rotation_audit(&state, &session, operation, certificate),
+        } => log_rotation_audit(state, &session, operation, certificate),
         RotationFinalizeOutcome::AlreadyCompleted { .. } => {}
     }
     Ok(outcome)
@@ -584,23 +593,35 @@ pub fn sign_unit_rotation_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<SignedUnitRotation, String> {
-    let (session, _settings) =
-        authorize_command(&state, Action::RotateCredential, None).map_err(into_command_error)?;
+    sign_unit_rotation_request_impl(&state, request_json, &node_key_store())
+        .map_err(into_command_error)
+}
+
+/// Command-boundary implementation of `sign_unit_rotation_request`.
+///
+/// SEC-005-B: the DB guard MUST be dropped before `log_rotation_audit` (the
+/// audit re-locks the non-reentrant std Mutex). `node_key_store` is injected so
+/// the Tauri wrapper alone binds the global on-disk store; tests pass an
+/// isolated store.
+pub fn sign_unit_rotation_request_impl(
+    state: &AppState,
+    request_json: String,
+    node_key_store: &NodeKeyStore,
+) -> Result<SignedUnitRotation, AppError> {
+    let (session, _settings) = authorize_command(state, Action::RotateCredential, None)?;
     state.touch_session();
 
     let request: IdentityCertificate = serde_json::from_str(&request_json).map_err(|e| {
-        into_command_error(AppError::FileFormat(format!(
-            "Malformed UNIT rotation CSR: {e}"
-        )))
+        AppError::FileFormat(format!("Malformed UNIT rotation CSR: {e}"))
     })?;
 
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
+    let mut guard = state.get_db()?;
+    let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
-    let result = IdentityRotationCoordinator::new(db, &node_key_store())
-        .sign_unit_rotation(&request)
-        .map_err(into_command_error)?;
-    log_rotation_audit(&state, &session, &result.operation, &result.certificate);
+    let result = IdentityRotationCoordinator::new(db, node_key_store)
+        .sign_unit_rotation(&request)?;
+    drop(guard);
+    log_rotation_audit(state, &session, &result.operation, &result.certificate);
     Ok(result)
 }
 
@@ -614,32 +635,42 @@ pub fn finalize_unit_rotation(
     state: State<AppState>,
     cert_file_path: String,
 ) -> Result<RotationFinalizeOutcome, String> {
-    let (session, _settings) =
-        authorize_command(&state, Action::RotateCredential, None).map_err(into_command_error)?;
-    state.touch_session();
-    crate::domain::validation::validate_file_path(&cert_file_path, &["json"])
-        .map_err(into_command_error)?;
+    finalize_unit_rotation_impl(&state, cert_file_path, &node_key_store())
+        .map_err(into_command_error)
+}
 
-    let json = std::fs::read_to_string(&cert_file_path)
-        .map_err(|e| into_command_error(AppError::Io(e)))?;
+/// Command-boundary implementation of `finalize_unit_rotation`.
+///
+/// SEC-005-B: the DB guard MUST be dropped before `log_rotation_audit` (the
+/// audit re-locks the non-reentrant std Mutex). `node_key_store` is injected so
+/// the Tauri wrapper alone binds the global on-disk store; tests pass an
+/// isolated store.
+pub fn finalize_unit_rotation_impl(
+    state: &AppState,
+    cert_file_path: String,
+    node_key_store: &NodeKeyStore,
+) -> Result<RotationFinalizeOutcome, AppError> {
+    let (session, _settings) = authorize_command(state, Action::RotateCredential, None)?;
+    state.touch_session();
+    crate::domain::validation::validate_file_path(&cert_file_path, &["json"])?;
+
+    let json = std::fs::read_to_string(&cert_file_path).map_err(AppError::Io)?;
     let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
-        into_command_error(AppError::FileFormat(format!(
-            "Malformed signed certificate file: {e}"
-        )))
+        AppError::FileFormat(format!("Malformed signed certificate file: {e}"))
     })?;
 
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
+    let mut guard = state.get_db()?;
+    let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
-    let outcome = IdentityRotationCoordinator::new(db, &node_key_store())
-        .finalize_unit(&signed_cert)
-        .map_err(into_command_error)?;
+    let outcome = IdentityRotationCoordinator::new(db, node_key_store)
+        .finalize_unit(&signed_cert)?;
 
+    drop(guard);
     match &outcome {
         RotationFinalizeOutcome::Completed {
             certificate,
             operation,
-        } => log_rotation_audit(&state, &session, operation, certificate),
+        } => log_rotation_audit(state, &session, operation, certificate),
         RotationFinalizeOutcome::AlreadyCompleted { .. } => {}
     }
     Ok(outcome)

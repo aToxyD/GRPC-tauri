@@ -129,6 +129,11 @@ impl<'a> IdentityRotationCoordinator<'a> {
                 "finalize_wilaya_rotation requires a WILAYA certificate",
             ));
         }
+        if signed_cert.issuer_identity_id.is_some() {
+            return Err(Self::permitted(
+                "WILAYA certificates MUST be issued by the offline Authority Root (issuer None)",
+            ));
+        }
 
         let stored = self
             .db

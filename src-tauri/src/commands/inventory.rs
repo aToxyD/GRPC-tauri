@@ -8,7 +8,7 @@ use crate::application::services::{
     AuditTxService, InventorySnapshotService, StockLevelService, StockMovementService,
 };
 use crate::commands::common::{
-    db_mut_or_command_error, db_ref_or_command_error, user_ctx_from_session,
+    db_mut_or_app_error, db_mut_or_command_error, db_ref_or_command_error, user_ctx_from_session,
 };
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
@@ -273,12 +273,27 @@ pub fn verify_inventory_integrity(
     crate::application::services::inventory_integrity_service::InventoryIntegrityReport,
     String,
 > {
-    let mut guard = state.get_db().map_err(crate::errors::into_command_error)?;
-    let db = guard.as_mut().ok_or_else(|| {
-        crate::errors::into_command_error(crate::errors::AppError::Internal(
-            "DB unavailable".into(),
-        ))
-    })?;
+    verify_inventory_integrity_impl(&state, year).map_err(crate::errors::into_command_error)
+}
+
+/// Command-boundary implementation of `verify_inventory_integrity`.
+///
+/// SEC-005-A: the integrity-scan command performs a DB write
+/// (`integrity_attempts`) and MUST be gated at the command boundary —
+/// `ViewSystemHealth` (the same authorization used by `verify_integrity` and
+/// `get_advanced_diagnostics_bundle`). Extracted for command-boundary testing.
+pub fn verify_inventory_integrity_impl(
+    state: &crate::commands::types::AppState,
+    year: i32,
+) -> Result<
+    crate::application::services::inventory_integrity_service::InventoryIntegrityReport,
+    crate::errors::AppError,
+> {
+    let (_session, _settings) = authorize_command(state, Action::ViewSystemHealth, None)?;
+    state.touch_session();
+
+    let mut guard = state.get_db()?;
+    let db = db_mut_or_app_error(guard.as_mut())?;
 
     // Wrap in a transaction so we can append an integrity attempt row atomically.
     db.with_transaction(|tx| {
@@ -309,7 +324,6 @@ pub fn verify_inventory_integrity(
         }
         Ok(report)
     })
-    .map_err(crate::errors::into_command_error)
 }
 
 #[tauri::command]
