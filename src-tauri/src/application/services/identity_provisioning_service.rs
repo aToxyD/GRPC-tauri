@@ -13,6 +13,7 @@ use crate::application::services::{
     identity_authentication_policy::{AdminCredentialState, IdentityAuthenticationPolicy},
     NodeIdentityResolver,
 };
+use crate::application::sync_integrity::credential_guard::{CredentialGuard, CredentialVerdict};
 use crate::db::Database;
 use crate::domain::identity::{
     AdminKeyFile, CredentialStatus, Ed25519CertificateSignature, IdentityCertificate,
@@ -381,6 +382,75 @@ impl<'a> IdentityProvisioningService<'a> {
             })
         })?;
         self.sign_identity_request(request, &resolved.certificate, &resolved.signer)
+    }
+
+    /// Sign a UNIT **bootstrap** CSR on the local WILAYA node (RFC §3.12 D2),
+    /// hardened for SEC-004-02/03/04.
+    ///
+    /// This is the BOOTSTRAP-ONLY entry point. It MUST NOT be used by the
+    /// rotation flow: `IdentityRotationCoordinator::sign_unit_rotation` reuses
+    /// the shared `sign_unit_identity_request` signing path, where an existing
+    /// ACTIVE credential is legitimately superseded during RE-ISSUE. Fail-closed:
+    /// - all shared CSR checks of `sign_unit_identity_request` (subject, issuer,
+    ///   R5, unsigned, generation >= 1, ACTIVE);
+    /// - duplicate ACTIVE guard: if an ACTIVE UNIT identity already exists for
+    ///   `subject_id`, bootstrap issuance is DENIED with zero mutation;
+    /// - REVOKED/SUPERSEDED/EXPIRED credential histories do NOT block bootstrap
+    ///   re-issuance — the guard is ACTIVE-status only, matching the repository
+    ///   `get_active_by_subject` semantics (SEC-004-03);
+    /// - after signing, the issued certificate is registered in the WILAYA
+    ///   Identity Store (Issuer Local State) through the CredentialGuard gate:
+    ///   Accept → install, Replay → idempotent no-op, Rollback/RejectZero →
+    ///   fail-closed error (no signed UNIT certificate escapes without a
+    ///   WILAYA-side record).
+    pub fn sign_unit_bootstrap_request(
+        &self,
+        request: &IdentityCertificate,
+        node_key_store: &NodeKeyStore,
+        now: &str,
+    ) -> AppResult<IdentityCertificate> {
+        let store = self.db.executor().identity_store();
+        if let Some(existing) =
+            store.get_active_by_subject(SubjectType::Unit, &request.subject_id)?
+        {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "An ACTIVE UNIT identity already exists for this unit (credential {}); duplicate bootstrap issuance is denied — use the rotation flow",
+                        existing.credential_id
+                    ),
+                },
+            ));
+        }
+
+        let signed = self.sign_unit_identity_request(request, node_key_store)?;
+
+        let stored_generation = store.max_generation_for_credential(&signed.credential_id)?;
+        match CredentialGuard::check(
+            &signed.credential_id.to_string(),
+            signed.generation,
+            stored_generation,
+        ) {
+            CredentialVerdict::Accept { .. } => {
+                store.upsert(&signed, now)?;
+            }
+            CredentialVerdict::Replay { .. } => {
+                // Idempotent: the identical credential is already recorded as
+                // WILAYA-side Issuer Local State.
+            }
+            CredentialVerdict::Rollback { .. } | CredentialVerdict::RejectZero { .. } => {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::OperationNotPermitted {
+                        message: format!(
+                            "WILAYA-side registration would roll back or invalidate the stored UNIT credential {}; bootstrap issuance aborted",
+                            signed.credential_id
+                        ),
+                    },
+                ));
+            }
+        }
+
+        Ok(signed)
     }
 
     /// Finalize the offline WILAYA bootstrap with the Root-signed certificate (B5).

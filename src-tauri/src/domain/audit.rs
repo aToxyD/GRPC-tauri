@@ -71,6 +71,8 @@ pub enum AuditAction {
     // Identity rotation (B7)
     IdentityRotated,
     IdentityReissued,
+    // WILAYA-side UNIT bootstrap CSR signing (RFC §3.12 D2, SEC-004-05)
+    SignUnitIdentityRequest,
     // Identity & Access Synchronization (B8)
     FleetAdminPasswordUpdated,
     UnitUserPasswordUpdated,
@@ -134,6 +136,7 @@ impl AuditAction {
             AuditAction::FiscalClosurePackageApplied => "FiscalClosurePackageApplied",
             AuditAction::IdentityRotated => "IdentityRotated",
             AuditAction::IdentityReissued => "IdentityReissued",
+            AuditAction::SignUnitIdentityRequest => "SignUnitIdentityRequest",
             AuditAction::FleetAdminPasswordUpdated => "FleetAdminPasswordUpdated",
             AuditAction::UnitUserPasswordUpdated => "UnitUserPasswordUpdated",
             AuditAction::AccountStatusChanged => "AccountStatusChanged",
@@ -194,6 +197,7 @@ impl AuditAction {
             "FiscalClosurePackageApplied" => Some(AuditAction::FiscalClosurePackageApplied),
             "IdentityRotated" => Some(AuditAction::IdentityRotated),
             "IdentityReissued" => Some(AuditAction::IdentityReissued),
+            "SignUnitIdentityRequest" => Some(AuditAction::SignUnitIdentityRequest),
             "FleetAdminPasswordUpdated" => Some(AuditAction::FleetAdminPasswordUpdated),
             "UnitUserPasswordUpdated" => Some(AuditAction::UnitUserPasswordUpdated),
             "AccountStatusChanged" => Some(AuditAction::AccountStatusChanged),
@@ -257,6 +261,7 @@ impl AuditAction {
             AuditAction::FiscalClosurePackageApplied => "تطبيق حزمة إغلاق السنة",
             AuditAction::IdentityRotated => "تدوير هوية",
             AuditAction::IdentityReissued => "إعادة إصدار هوية",
+            AuditAction::SignUnitIdentityRequest => "توقيع طلب هوية وحدة",
             AuditAction::FleetAdminPasswordUpdated => "تحديث كلمة مرور المسؤول العام",
             AuditAction::UnitUserPasswordUpdated => "تحديث كلمة مرور مستخدم الوحدة",
             AuditAction::AccountStatusChanged => "تغيير حالة حساب",
@@ -322,6 +327,9 @@ impl AuditAction {
             | AuditAction::FiscalClosurePackageApplied => EntityType::Financial,
             // Identity rotation is a node/credential lifecycle fact (B7).
             AuditAction::IdentityRotated | AuditAction::IdentityReissued => EntityType::System,
+            // WILAYA-side UNIT bootstrap CSR signing is a node/credential
+            // lifecycle fact (RFC §3.12 D2, SEC-004-05).
+            AuditAction::SignUnitIdentityRequest => EntityType::System,
             // Pre-auth first-admin provisioning is a node bootstrap fact (SEC-002).
             AuditAction::FirstAdminProvisioned => EntityType::System,
         }
@@ -944,6 +952,8 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
 
         // Identity rotation (B7) → SystemEvent (node/credential lifecycle)
         AuditAction::IdentityRotated | AuditAction::IdentityReissued => AuditEventType::SystemEvent,
+        // WILAYA-side UNIT bootstrap CSR signing (SEC-004-05) → SystemEvent
+        AuditAction::SignUnitIdentityRequest => AuditEventType::SystemEvent,
         // Pre-auth first-admin provisioning (SEC-002) → SystemEvent (bootstrap)
         AuditAction::FirstAdminProvisioned => AuditEventType::SystemEvent,
     }

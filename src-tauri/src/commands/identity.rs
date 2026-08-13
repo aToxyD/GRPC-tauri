@@ -3,12 +3,16 @@
 //! RFC 2026-08-04-node-identity-trust §3.3–3.7, §3.12 / ADR-0038.
 //!
 //! Thin IPC handlers — dispatch + minimal I/O only, no business logic.
-//! Bootstrap commands are PRE-AUTH: they run before any session exists, and
-//! the offline Root flow means no command here ever touches a Root key — only
-//! the operator-facing request/finalize files. Rotation commands (§3.3 / §3.12)
-//! are POST-AUTH: they gate on `Action::RotateCredential` /
-//! `Action::ReissueCredential` and delegate all decisions to the
-//! `IdentityRotationCoordinator`.
+//! Bootstrap request/finalize commands are PRE-AUTH: they run before any
+//! session exists on the current node, and the offline Root flow means no
+//! command here ever touches a Root key — only the operator-facing
+//! request/finalize files. The WILAYA-side UNIT CSR **signing** command
+//! (`sign_unit_identity_request`) is the exception: it runs on an
+//! already-provisioned WILAYA node and is POST-AUTH, gated on
+//! `Action::SignUnitIdentityRequest` (WILAYA Admin-only; SEC-004-01). Rotation
+//! commands (§3.3 / §3.12) are POST-AUTH: they gate on
+//! `Action::RotateCredential` / `Action::ReissueCredential` and delegate all
+//! decisions to the `IdentityRotationCoordinator`.
 
 use crate::application::authz::Action;
 use crate::application::services::identity_challenge_service::CHALLENGE_RATE_LIMIT_KEY;
@@ -32,6 +36,7 @@ use crate::domain::identity::{
 };
 use crate::domain::session::CurrentSession;
 use crate::errors::{into_command_error, AppError};
+use crate::infrastructure::identity::NodeKeyStore;
 use crate::models::{LoginResponse, User};
 use tauri::State;
 
@@ -258,24 +263,92 @@ pub fn begin_unit_provision(
     Ok(request)
 }
 
-/// WILAYA side: sign a UNIT CSR (RFC §3.12 D2). The CSR MUST be an unsigned
-/// UNIT certificate; the `subject_id` MUST match a known local unit (validated,
-/// never overridden); the ACTIVE local WILAYA signs it.
+/// WILAYA side: sign a UNIT bootstrap CSR (RFC §3.12 D2), SEC-004-01 hardened.
+///
+/// POST-AUTH, WILAYA Admin-only. The CSR MUST be an unsigned UNIT certificate;
+/// the `subject_id` MUST match a known local unit (validated, never overridden);
+/// the ACTIVE local WILAYA signs it. An ACTIVE UNIT identity already present for
+/// the subject is rejected (SEC-004-02), and the issued certificate is registered
+/// as WILAYA-side Issuer Local State (SEC-004-04) before being returned.
 #[tauri::command]
 pub fn sign_unit_identity_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<IdentityCertificate, String> {
+    sign_unit_identity_request_impl(&state, request_json, &node_key_store()).map_err(into_command_error)
+}
+
+/// Testable command body for `sign_unit_identity_request`.
+///
+/// Owns authentication, authorization, licensing gate, session freshness, and
+/// audit actor context — the same split as the POST-AUTH rotation commands
+/// (e.g. `sign_unit_rotation_request`). All business decisions (CSR validation,
+/// duplicate-ACTIVE guard, issuer resolution, signing, WILAYA-side registration)
+/// remain in `IdentityProvisioningService::sign_unit_bootstrap_request`.
+///
+/// `node_key_store` is injected so the Tauri wrapper alone binds the global
+/// on-disk store (mirrors the service-layer DI style); tests pass an isolated
+/// store.
+pub fn sign_unit_identity_request_impl(
+    state: &AppState,
+    request_json: String,
+    node_key_store: &NodeKeyStore,
+) -> Result<IdentityCertificate, AppError> {
+    let (session, _settings) =
+        authorize_command(state, Action::SignUnitIdentityRequest, None)?;
+    state.touch_session();
+
     let request: IdentityCertificate = serde_json::from_str(&request_json).map_err(|e| {
-        into_command_error(AppError::FileFormat(format!("Malformed UNIT CSR: {e}")))
+        AppError::FileFormat(format!("Malformed UNIT CSR: {e}"))
     })?;
 
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
+    let mut guard = state.get_db()?;
+    let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
-    IdentityProvisioningService::new(db)
-        .sign_unit_identity_request(&request, &node_key_store())
-        .map_err(into_command_error)
+    let now = chrono::Utc::now().to_rfc3339();
+    let certificate = IdentityProvisioningService::new(db)
+        .sign_unit_bootstrap_request(&request, node_key_store, &now)?;
+
+    drop(guard);
+    log_unit_identity_signing_audit(state, &session, &certificate);
+    Ok(certificate)
+}
+
+/// Post-signing audit entry for WILAYA-side UNIT bootstrap CSR signing
+/// (best-effort; never fails the command). SEC-004-05.
+///
+/// Records the authenticated actor, the issued identity/certificate id, the
+/// UNIT subject, and the resolved issuer WILAYA identity. Only identity ids are
+/// recorded — never the CSR or any key material.
+fn log_unit_identity_signing_audit(
+    state: &AppState,
+    session: &CurrentSession,
+    certificate: &IdentityCertificate,
+) {
+    let entity_id = certificate.identity_id.to_string();
+    let entity_name = certificate.subject_id.to_string();
+    let metadata = serde_json::json!({
+        "credential_id": certificate.credential_id.to_string(),
+        "generation": certificate.generation,
+        "subject_type": certificate.subject_type.as_str(),
+        "issuer_identity_id": certificate.issuer_identity_id.map(|id| id.to_string()),
+    });
+    if let Ok(guard) = state.get_db() {
+        if let Some(db) = guard.as_ref() {
+            let _ = AuditService::new(db.executor()).log_success(
+                &session.user_id,
+                &session.username,
+                AuditAction::SignUnitIdentityRequest,
+                EntityType::System,
+                Some(&entity_id),
+                Some(&entity_name),
+                None,
+                None,
+                Some(&session.session_id),
+                Some(metadata),
+            );
+        }
+    }
 }
 
 /// Finalize UNIT bootstrap with the WILAYA-signed certificate read from

@@ -103,6 +103,18 @@ pub fn authorize(
             system::authorize_authenticated(principal, resource)
         }
 
+        // ── UNIT bootstrap CSR signing (SEC-004-01) ─────────────────────────
+        // WILAYA-node Admin-only: the WILAYA signing key is the trust decision
+        // for the UNIT identity ceremony. UNIT nodes and WILAYA non-admin users
+        // are denied before any policy evaluation.
+        Action::SignUnitIdentityRequest => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::InsufficientPermissions)
+            }
+        }
+
         // ── Identity & Access Synchronization (B8) ─────────────────────────
         // Account management and package export are Wilaya-side authorities:
         // the Wilaya is the single source of truth for the two synced accounts.

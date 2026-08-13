@@ -71,7 +71,13 @@ pub fn entitlement_for_action(action: Action) -> Option<EntitlementKey> {
         | Action::ApplyFiscalTransition => Some(E::CoreAdmin),
 
         // Identity domain (credential lifecycle → core.auth).
-        Action::RotateCredential | Action::ReissueCredential | Action::ReadUserActivity => {
+        // SEC-004-01: UNIT bootstrap CSR signing is a WILAYA credential-minting
+        // authority and is deliberately NON-exempt (CoreAuth) so the licensing
+        // gate remains active for it.
+        Action::RotateCredential
+        | Action::ReissueCredential
+        | Action::SignUnitIdentityRequest
+        | Action::ReadUserActivity => {
             Some(E::CoreAuth)
         }
 
@@ -292,6 +298,44 @@ mod tests {
         );
         assert!(enforce(&db, Some(node_key()), Action::ManageOrders).is_ok());
         assert!(enforce(&db, Some(node_key()), Action::ManageProducts).is_ok());
+    }
+
+    #[test]
+    fn sign_unit_identity_request_is_core_auth_entitled() {
+        // SEC-004-01: the WILAYA UNIT-CSR signing authority must be NON-exempt
+        // (CoreAuth) so the licensing gate remains active for it.
+        assert_eq!(
+            entitlement_for_action(Action::SignUnitIdentityRequest),
+            Some(EntitlementKey::CoreAuth)
+        );
+
+        // A bound license holding core.auth grants it.
+        let licensor = Licensor::new("lk-test-0001");
+        let db = db_with_license(
+            &licensor,
+            &subject_of(&node_public_key()),
+            &["core.auth"],
+            "active",
+            Some(node_key()),
+        );
+        assert!(enforce(&db, Some(node_key()), Action::SignUnitIdentityRequest).is_ok());
+
+        // A bound license holding only core.reports does NOT grant it.
+        let licensor2 = Licensor::new("lk-test-0002");
+        let db2 = db_with_license(
+            &licensor2,
+            &subject_of(&node_public_key()),
+            &["core.reports"],
+            "active",
+            Some(node_key()),
+        );
+        let err = enforce(&db2, Some(node_key()), Action::SignUnitIdentityRequest).unwrap_err();
+        match err {
+            AuthorizationError::EntitlementRequired { entitlement } => {
+                assert_eq!(entitlement, "core.auth")
+            }
+            other => panic!("expected EntitlementRequired, got {other:?}"),
+        }
     }
 
     #[test]

@@ -52,6 +52,12 @@ pub enum Action {
     RotateCredential,
     ReissueCredential,
 
+    // UNIT bootstrap CSR signing (RFC §3.12 D2, WILAYA side)
+    // SEC-004-01: WILAYA-node Admin-only signing authority for the UNIT
+    // identity bootstrap ceremony. Distinct from `RotateCredential` so the
+    // bootstrap trust decision is never conflated with rotation.
+    SignUnitIdentityRequest,
+
     // Identity & Access Synchronization (B8)
     ManageAccountSync,
     ExportIdentityAccessPackage,

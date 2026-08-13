@@ -200,6 +200,70 @@ fn auth_wilaya_admin_allowed_manage_units_wilaya_node_guard() {
     authorize_command(&state, Action::ManageUnits, None).expect("allow");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-004-01: WILAYA-side UNIT bootstrap CSR signing is WILAYA Admin-only.
+// Only an authenticated WILAYA Admin may sign a UNIT identity request;
+// unauthenticated callers, UNIT nodes, and WILAYA non-admin users are denied.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn auth_sec004_unauthenticated_caller_denied_sign_unit_identity_request() {
+    let state = wilaya_configured_state();
+    let err = authorize_command(&state, Action::SignUnitIdentityRequest, None).expect_err("deny");
+    match err {
+        AppError::Authentication(AuthenticationError::SessionNotFound) => {}
+        e => panic!("unexpected: {:?}", e),
+    }
+}
+
+#[test]
+fn auth_sec004_unit_admin_denied_sign_unit_identity_request() {
+    let state = unit_configured_state();
+    let s = common::create_test_session("u1", "unit-admin", "Admin");
+    set_session(&state, s);
+
+    let err = authorize_command(&state, Action::SignUnitIdentityRequest, None).expect_err("deny");
+    match err {
+        AppError::Authorization(AuthorizationError::InsufficientPermissions) => {}
+        e => panic!("unexpected: {:?}", e),
+    }
+}
+
+#[test]
+fn auth_sec004_unit_user_denied_sign_unit_identity_request() {
+    let state = unit_configured_state();
+    let s = common::create_test_session("u1", "unit-user", "User");
+    set_session(&state, s);
+
+    let err = authorize_command(&state, Action::SignUnitIdentityRequest, None).expect_err("deny");
+    match err {
+        AppError::Authorization(AuthorizationError::InsufficientPermissions) => {}
+        e => panic!("unexpected: {:?}", e),
+    }
+}
+
+#[test]
+fn auth_sec004_wilaya_user_denied_sign_unit_identity_request() {
+    let state = wilaya_configured_state();
+    let s = common::create_test_session("u1", "wilaya-user", "User");
+    set_session(&state, s);
+
+    let err = authorize_command(&state, Action::SignUnitIdentityRequest, None).expect_err("deny");
+    match err {
+        AppError::Authorization(AuthorizationError::RequiresAdmin) => {}
+        e => panic!("unexpected: {:?}", e),
+    }
+}
+
+#[test]
+fn auth_sec004_wilaya_admin_allowed_sign_unit_identity_request() {
+    let state = wilaya_configured_state();
+    let s = common::create_test_session("u1", "wilaya-admin", "Admin");
+    set_session(&state, s);
+
+    authorize_command(&state, Action::SignUnitIdentityRequest, None).expect("WILAYA Admin allowed");
+}
+
 // ---- SEC-003-06-a: UNIT node scoped unit_id must be the local unit ----
 
 #[test]
