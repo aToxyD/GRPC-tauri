@@ -16,12 +16,53 @@
 use serde::Serialize;
 
 use crate::application::sync::SyncPackage;
-use crate::domain::identity::IdentityStorePort;
+use crate::domain::identity::{CredentialStatus, IdentityCertificate, IdentityStorePort, SubjectType};
 use crate::errors::{AppError, AppResult, ValidationError};
 use crate::infrastructure::sync::packages::canonical_json::canonical_bytes_for_signature;
 use crate::infrastructure::sync::packages::signing::{Ed25519PackageVerifier, PackageVerifier};
 use crate::repositories::executor::DbExecutor;
 use crate::repositories::RepositoryProvider;
+
+/// Issuer validity gate for `signature_version = 2` packages (SEC-003-01).
+///
+/// A V2 package is valid only when its issuer certificate
+///   1. exists (enforced by the caller's lookup);
+///   2. is a WILAYA subject;
+///   3. has status `Active`;
+///   4. is not expired (`not_after` is None or in the future).
+///
+/// `not_after` is advisory only (Invariant 8 — `EXPIRED` is never derived from
+/// a wall clock); this check is a verification-time guard, not lifecycle
+/// evaluation. `Revoked`/`Superseded`/`Expired` statuses always reject.
+///
+/// Rotation compatibility: the legitimate rotation sequence signs the trust
+/// package with the OLD key while the OLD certificate is still ACTIVE, so an
+/// older generation with `status == Active` and a valid `not_after` remains
+/// acceptable. Fail-closed for anything else.
+fn validate_v2_issuer_certificate(certificate: &IdentityCertificate) -> AppResult<()> {
+    let reject = |message: &str| {
+        AppError::Validation(ValidationError::InvalidFormat {
+            field: "issuer_identity_id".into(),
+            message: message.into(),
+        })
+    };
+
+    if certificate.subject_type != SubjectType::Wilaya {
+        return Err(reject("المُصدِر ليس عقدة ولاية (WILAYA)"));
+    }
+    if certificate.status != CredentialStatus::Active {
+        return Err(reject(&format!(
+            "المُصدِر غير نشط (الحالة: {})",
+            certificate.status
+        )));
+    }
+    if let Some(not_after) = certificate.not_after {
+        if not_after <= chrono::Utc::now() {
+            return Err(reject("شهادة المُصدِر منتهية الصلاحية"));
+        }
+    }
+    Ok(())
+}
 
 pub struct SyncPackageIdentityVerificationService;
 
@@ -61,6 +102,10 @@ impl SyncPackageIdentityVerificationService {
                     message: "المُصدِر غير موجود في مخزن الهويات".into(),
                 })
             })?;
+
+        // SEC-003-01: issuer must be an ACTIVE WILAYA certificate that is not
+        // expired — enforced BEFORE the Ed25519 signature is accepted.
+        validate_v2_issuer_certificate(&certificate)?;
 
         let public_key: [u8; 32] = certificate.public_key.as_slice().try_into().map_err(|_| {
             AppError::Validation(ValidationError::InvalidFormat {
@@ -138,18 +183,28 @@ mod tests {
     }
 
     fn seed_issuer(db: &Database, identity_id: Uuid) {
+        seed_certificate(db, identity_id, SubjectType::Wilaya, CredentialStatus::Active, None);
+    }
+
+    fn seed_certificate(
+        db: &Database,
+        identity_id: Uuid,
+        subject_type: SubjectType,
+        status: CredentialStatus,
+        not_after: Option<chrono::DateTime<chrono::Utc>>,
+    ) {
         let certificate = IdentityCertificate {
             identity_id,
-            subject_type: SubjectType::Wilaya,
+            subject_type,
             subject_id: identity_id,
             issuer_identity_id: None,
             credential_id: Uuid::new_v4(),
             generation: 1,
-            status: CredentialStatus::Active,
+            status,
             public_key: crate::infrastructure::security::Ed25519SigningProvider::new(ISSUER_SECRET)
                 .public_key(),
             algorithm_version: crate::domain::identity::SIGNATURE_VERSION_ED25519,
-            not_after: None,
+            not_after,
             package_sequence: Some(1),
             signature: None,
         };
@@ -336,5 +391,176 @@ mod tests {
             &package,
         );
         assert!(result.is_ok());
+    }
+
+    // ── SEC-003-01: issuer validity (WILAYA + ACTIVE + not expired) ──────
+
+    #[test]
+    fn revoked_issuer_is_rejected() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Revoked, None);
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "revoked issuer must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn superseded_issuer_is_rejected() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Superseded, None);
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "superseded issuer must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn expired_status_issuer_is_rejected() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Expired, None);
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "expired-status issuer must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn issuer_with_past_not_after_is_rejected() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        let past = chrono::DateTime::from_timestamp(1_500_000_000, 0).unwrap();
+        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Active, Some(past));
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "past not_after must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn unit_issuer_is_rejected() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        seed_certificate(&db, issuer_id, SubjectType::Unit, CredentialStatus::Active, None);
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "UNIT issuer must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn active_wilaya_issuer_with_future_not_after_is_accepted() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        let future = chrono::Utc::now() + chrono::Duration::days(365);
+        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Active, Some(future));
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_ok(), "ACTIVE WILAYA with future not_after accepted: {result:?}");
+    }
+
+    #[test]
+    fn issuer_with_malformed_public_key_is_rejected() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let issuer_id = Uuid::new_v4();
+        let certificate = IdentityCertificate {
+            identity_id: issuer_id,
+            subject_type: SubjectType::Wilaya,
+            subject_id: issuer_id,
+            issuer_identity_id: None,
+            credential_id: Uuid::new_v4(),
+            generation: 1,
+            status: CredentialStatus::Active,
+            public_key: vec![0u8; 16],
+            algorithm_version: crate::domain::identity::SIGNATURE_VERSION_ED25519,
+            not_after: None,
+            package_sequence: Some(1),
+            signature: None,
+        };
+        IdentityStorePort::upsert(
+            &make_executor(&db).identity_store(),
+            &certificate,
+            &Utc::now().to_rfc3339(),
+        )
+        .unwrap();
+
+        let package = build_v2_package(issuer_id);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err());
+    }
+
+    // ── SEC-003-01: rotation regression through the real V2 path ──────────
+
+    #[test]
+    fn rotation_old_key_accepted_while_old_certificate_still_active() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let old_issuer = Uuid::new_v4();
+        // OLD certificate remains ACTIVE while the rotation trust package is
+        // being distributed (signed with the OLD key) — must be ACCEPTED.
+        seed_certificate(&db, old_issuer, SubjectType::Wilaya, CredentialStatus::Active, None);
+        let package = build_v2_package(old_issuer);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_ok(), "OLD ACTIVE issuer accepted during rotation: {result:?}");
+    }
+
+    #[test]
+    fn rotation_old_key_rejected_after_old_certificate_superseded() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let old_issuer = Uuid::new_v4();
+        seed_certificate(&db, old_issuer, SubjectType::Wilaya, CredentialStatus::Superseded, None);
+        let package = build_v2_package(old_issuer);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "OLD SUPERSEDED issuer must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn rotation_old_key_rejected_after_old_certificate_revoked() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let old_issuer = Uuid::new_v4();
+        seed_certificate(&db, old_issuer, SubjectType::Wilaya, CredentialStatus::Revoked, None);
+        let package = build_v2_package(old_issuer);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_err(), "OLD REVOKED issuer must be rejected: {result:?}");
+    }
+
+    #[test]
+    fn rotation_new_key_accepted_with_new_active_certificate() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let new_issuer = Uuid::new_v4();
+        seed_certificate(&db, new_issuer, SubjectType::Wilaya, CredentialStatus::Active, None);
+        let package = build_v2_package(new_issuer);
+        let result = SyncPackageIdentityVerificationService::verify_v2_signature(
+            make_executor(&db),
+            &package,
+        );
+        assert!(result.is_ok(), "NEW ACTIVE issuer accepted after rotation: {result:?}");
     }
 }

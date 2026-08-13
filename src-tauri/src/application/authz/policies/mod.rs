@@ -114,9 +114,12 @@ pub fn authorize(
             }
         }
         // Package import is a UNIT-side apply (one-way Wilaya→UNIT, no reverse path).
+        // SEC-003-06-b: UNIT Admin-only — applying a WILAYA-issued account-sync
+        // package carries credential-overwrite authority and must not be reachable
+        // by a non-admin role on the UNIT node.
         Action::ImportIdentityAccessPackage => {
             if let ResourceContext::UnitNode { .. } = resource {
-                system::authorize_authenticated(principal, resource)
+                system::authorize_system(principal, Action::AdminOnly, resource)
             } else {
                 Err(AuthorizationError::InsufficientPermissions)
             }
@@ -128,5 +131,80 @@ pub fn authorize(
         // (per-node licenses are imported directly on the node they bind to).
         Action::ReadLicensingStatus => system::authorize_authenticated(principal, resource),
         Action::ManageLicensing => system::authorize_system(principal, Action::AdminOnly, resource),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::UserRole;
+
+    fn principal(role: UserRole) -> Principal {
+        Principal {
+            user_id: "u1".to_string(),
+            username: "operator".to_string(),
+            role,
+            session_id: Some("s1".to_string()),
+        }
+    }
+
+    #[test]
+    fn import_identity_access_package_requires_unit_admin() {
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ImportIdentityAccessPackage,
+            &unit_node,
+        )
+        .is_ok());
+
+        let denied = authorize(
+            &principal(UserRole::User),
+            Action::ImportIdentityAccessPackage,
+            &unit_node,
+        );
+        assert!(
+            matches!(denied, Err(AuthorizationError::RequiresAdmin)),
+            "UNIT User must be denied identity_access import, got: {denied:?}"
+        );
+    }
+
+    #[test]
+    fn import_identity_access_package_is_never_allowed_on_wilaya() {
+        let denied = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportIdentityAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(denied.is_err());
+    }
+
+    #[test]
+    fn export_identity_access_package_remains_wilaya_admin_only() {
+        let ok = authorize(
+            &principal(UserRole::Admin),
+            Action::ExportIdentityAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(ok.is_ok());
+
+        let denied = authorize(
+            &principal(UserRole::User),
+            Action::ExportIdentityAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(denied.is_err());
+
+        let denied_unit = authorize(
+            &principal(UserRole::Admin),
+            Action::ExportIdentityAccessPackage,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(denied_unit.is_err());
     }
 }

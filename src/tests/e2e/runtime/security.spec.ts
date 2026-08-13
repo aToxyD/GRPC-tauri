@@ -126,11 +126,24 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       // Phase 1: fresh setup via IPC (UI setup is covered by the fresh-node test).
       await driver.launchApp();
       expect((await driver.invoke<Record<string, unknown>>('get_security_status')).requires_action).toBe(true);
-      const init = await driver.invoke<Record<string, unknown>>('initialize_app_key', { passphrase: PASSPHRASE });
+      // Setup-time backup is the pre-login path (ADR-0041 §6 / SEC-003-03).
+      const backupPath = path.join(dataDir, 'appkey-backup.txt');
+      const init = await driver.invoke<Record<string, unknown>>('initialize_app_key', {
+        passphrase: PASSPHRASE,
+        exportBackup: backupPath,
+      });
       expect(init.unlocked).toBe(true);
+      expect(init.exported_backup).toBe(true);
       expect(fs.existsSync(driver.dbPath)).toBe(true);
-      const identityA = await driver.invoke<string>('export_app_key_backup');
+      const identityA = fs.readFileSync(backupPath, 'utf8');
       expect(identityA.startsWith('AGE-SECRET-KEY-1')).toBe(true);
+      const storeBefore = fs.readFileSync(driver.appKeyPath).toString('hex');
+
+      // SEC-003-03: the guarded re-export is denied without an authenticated
+      // Admin session; the setup-time export_backup path remains the pre-login
+      // backup ceremony.
+      const preAuthExport = await driver.tryInvoke('export_app_key_backup');
+      expect(preAuthExport.ok).toBe(false);
 
       // Phase 2: shutdown + relaunch on the SAME data dir → locked again.
       await driver.quitApp();
@@ -154,9 +167,15 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       );
       await driver.client.waitFor('#username', 25000);
 
-      // Same identity, DB available.
-      const identityB = await driver.invoke<string>('export_app_key_backup');
-      expect(identityB).toBe(identityA);
+      // SEC-003-03: still denied after restart/unlock — a fresh node has no
+      // Admin session yet, so the guarded re-export must not be reachable.
+      const postUnlockExport = await driver.tryInvoke('export_app_key_backup');
+      expect(postUnlockExport.ok).toBe(false);
+
+      // Same node identity: the encrypted store and the setup-time backup are
+      // byte-identical across the restart.
+      expect(fs.readFileSync(driver.appKeyPath).toString('hex')).toBe(storeBefore);
+      expect(fs.readFileSync(backupPath, 'utf8')).toBe(identityA);
       expect((await driver.invoke<Record<string, unknown>>('get_security_status')).unlocked).toBe(true);
       const configured = await driver.tryInvoke('is_configured');
       expect(configured.ok).toBe(true);

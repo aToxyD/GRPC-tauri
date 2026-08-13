@@ -46,6 +46,7 @@ fn wilaya_state() -> AppState {
 fn set_session(state: &AppState, role: &str) {
     let mut session = common::create_test_session("u1", "admin", role);
     session.user_role = grpc_lib::models::UserRole::from(role.to_string());
+    common::insert_test_user(state, "u1", "admin", role);
     *state.current_session.lock().expect("session mutex") = Some(session);
 }
 

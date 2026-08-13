@@ -962,6 +962,7 @@ fn unit_configured_state() -> AppState {
 fn set_session(state: &AppState, role: &str) {
     let mut session = common::create_test_session("u1", "bob", role);
     session.user_role = UserRole::from(role.to_string());
+    common::insert_test_user(state, "u1", "bob", role);
     *state.current_session.lock().expect("session mutex") = Some(session);
 }
 
@@ -1012,13 +1013,20 @@ fn authz_manage_and_export_require_wilaya_admin() {
 fn authz_import_is_unit_only() {
     let action = Action::ImportIdentityAccessPackage;
 
-    // UNIT + any authenticated role → allowed (one-way Wilaya→UNIT apply).
-    for role in ["Admin", "User"] {
-        let state = unit_configured_state();
-        set_session(&state, role);
-        let (session, _settings) =
-            authorize_command(&state, action, None).expect("unit authenticated allowed");
-        assert_eq!(session.username, "bob");
+    // UNIT + Admin → allowed (one-way Wilaya→UNIT apply, SEC-003-06-b).
+    let state = unit_configured_state();
+    set_session(&state, "Admin");
+    let (session, _settings) =
+        authorize_command(&state, action, None).expect("unit admin allowed");
+    assert_eq!(session.username, "bob");
+
+    // UNIT + User → RequiresAdmin (credential-overwrite authority is Admin-only).
+    let state = unit_configured_state();
+    set_session(&state, "User");
+    let err = authorize_command(&state, action, None).expect_err("deny unit user");
+    match err {
+        AppError::Authorization(grpc_lib::errors::AuthorizationError::RequiresAdmin) => {}
+        e => panic!("expected RequiresAdmin, got {e:?}"),
     }
 
     // WILAYA + Admin → InsufficientPermissions (no reverse path).

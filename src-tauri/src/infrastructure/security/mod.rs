@@ -139,6 +139,34 @@ pub fn validate_production_security_environment() -> Result<(), String> {
         ));
     }
 
+    // SEC-003-05-C: in production, trusted-signer enforcement is mandatory and
+    // cannot silently degrade to permissive mode. GRPC_ENFORCE_TRUSTED_SIGNERS
+    // must be exactly "1" and GRPC_TRUSTED_SIGNER_IDS must declare at least one
+    // signer. This mirrors `should_enforce_trusted_signers` but is strict: it
+    // rejects partial/misspelled truthy values that dev mode tolerates.
+    match std::env::var("GRPC_ENFORCE_TRUSTED_SIGNERS") {
+        Ok(v) if v.trim() == "1" => {}
+        Ok(v) => {
+            return Err(format!(
+                "Validation error: GRPC_ENFORCE_TRUSTED_SIGNERS must be exactly \"1\" when GRPC_ENV=production (got \"{}\").",
+                v
+            ))
+        }
+        Err(_) => {
+            return Err(
+                "Configuration error: GRPC_ENFORCE_TRUSTED_SIGNERS is required and must be \"1\" when GRPC_ENV=production"
+                    .to_string(),
+            )
+        }
+    }
+
+    if resolve_trusted_signer_ids().is_empty() {
+        return Err(
+            "Configuration error: GRPC_TRUSTED_SIGNER_IDS must declare at least one trusted signer (non-empty comma-separated list) when GRPC_ENV=production"
+                .to_string(),
+        );
+    }
+
     Ok(())
 }
 
@@ -388,10 +416,17 @@ mod key_resolution_tests {
         std::env::remove_var("GRPC_APP_KEY");
         std::env::remove_var("GRPC_PACKAGE_SIGNING_KEY");
         std::env::remove_var("GRPC_ACTIVE_SIGNING_KEY_ID");
+        std::env::remove_var("GRPC_ENFORCE_TRUSTED_SIGNERS");
+        std::env::remove_var("GRPC_TRUSTED_SIGNER_IDS");
     }
 
     fn valid_sign_env() -> String {
         b64(&[42u8; 32])
+    }
+
+    fn set_valid_trusted_signers_env() {
+        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
+        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a,unit-1");
     }
 
     // ---- resolve_app_encryption_key_impl ----
@@ -572,6 +607,7 @@ mod key_resolution_tests {
         clear_key_env();
         std::env::set_var("GRPC_ENV", "production");
         std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        set_valid_trusted_signers_env();
         let result = validate_production_security_environment();
         assert!(
             result.is_ok(),
@@ -586,6 +622,7 @@ mod key_resolution_tests {
         std::env::set_var("GRPC_ENV", "production");
         std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
         std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        set_valid_trusted_signers_env();
         assert!(validate_production_security_environment().is_ok());
     }
 
@@ -651,6 +688,94 @@ mod key_resolution_tests {
         std::env::set_var("GRPC_ENV", "production");
         std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
         std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        set_valid_trusted_signers_env();
+        assert!(validate_production_security_environment().is_ok());
+    }
+
+    // ---- SEC-003-05-C: trusted-signer enforcement in production ----
+
+    #[test]
+    fn validate_rejects_missing_enforce_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a");
+        let err = validate_production_security_environment().unwrap_err();
+        assert!(
+            err.contains("GRPC_ENFORCE_TRUSTED_SIGNERS") && err.starts_with("Configuration error:"),
+            "missing enforce flag must be a configuration error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_non_one_enforce_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a");
+        for bad in ["0", "false", "true", "yes", "on", "   ", "2"] {
+            std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", bad);
+            let err = validate_production_security_environment().unwrap_err();
+            assert!(
+                err.contains("GRPC_ENFORCE_TRUSTED_SIGNERS") && err.starts_with("Validation error:"),
+                "enforce value {bad:?} must be rejected, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_missing_trusted_signer_ids_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
+        let err = validate_production_security_environment().unwrap_err();
+        assert!(
+            err.contains("GRPC_TRUSTED_SIGNER_IDS") && err.starts_with("Configuration error:"),
+            "missing trusted signer ids must be a configuration error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_or_blank_trusted_signer_ids_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
+        for bad in ["", "   ", ",,", " , ,"] {
+            std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", bad);
+            let err = validate_production_security_environment().unwrap_err();
+            assert!(
+                err.contains("GRPC_TRUSTED_SIGNER_IDS") && err.starts_with("Configuration error:"),
+                "trusted signer ids {bad:?} must be rejected, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_accepts_enforce_one_with_non_empty_ids_in_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "production");
+        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
+        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a");
+        assert!(validate_production_security_environment().is_ok());
+    }
+
+    #[test]
+    fn validate_trusted_signers_skipped_when_not_production() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_key_env();
+        std::env::set_var("GRPC_ENV", "test");
+        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
+        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "0");
+        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "");
         assert!(validate_production_security_environment().is_ok());
     }
 

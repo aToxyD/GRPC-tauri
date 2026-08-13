@@ -64,6 +64,27 @@ pub fn create_test_session(
     }
 }
 
+/// Insert a minimal user row so session revalidation (SEC-003-08) finds it.
+/// Idempotent: replaces any row with the same id/username.
+#[allow(dead_code)]
+pub fn insert_test_user(
+    state: &grpc_lib::commands::AppState,
+    id: &str,
+    username: &str,
+    role: &str,
+) {
+    use rusqlite::params;
+    let db = state.db.lock().unwrap();
+    let db = db.as_ref().unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+    db.get_connection()
+        .execute(
+            "INSERT OR REPLACE INTO users (id, username, password_hash, role, created_at, node_id) VALUES (?1, ?2, 'x', ?3, ?4, 'WILAYA')",
+            params![id, username, role, now],
+        )
+        .expect("insert test user");
+}
+
 /// Test assertion helpers
 #[allow(dead_code)]
 pub fn assert_success<T>(result: Result<T, String>) -> T {

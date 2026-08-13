@@ -3,11 +3,13 @@
 //! Login, logout, and session handling
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
+use crate::application::authz::Action;
 use crate::application::services::{
     AuditService, AuditTxService, IdentityAuthenticationPolicy, OperationalSessionService,
     SessionEndReason, SessionEstablishmentService, UserService,
 };
 use crate::commands::common::{adminkey_provider, db_mut_or_command_error, user_ctx_from_parts};
+use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError, ValidationError};
@@ -24,6 +26,29 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
             e
         )))
     })?;
+
+    // SEC-003-07: node-wide login breaker — checked FIRST so a distributed
+    // brute-force (failures spread across many usernames) cannot evade the
+    // per-user limiter. The WILAYA Challenge–Response path never consults it.
+    if !rate_limiter.is_global_login_allowed() {
+        let remaining_secs = rate_limiter
+            .get_global_remaining_lockout_secs()
+            .unwrap_or(300);
+        log::warn!(
+            target: "grpc::auth",
+            "login rate limited: node-wide breaker active, remaining_secs={}",
+            remaining_secs
+        );
+        return Err(into_command_error(AppError::Validation(
+            ValidationError::InvalidFormat {
+                field: "login".to_string(),
+                message: format!(
+                    "تم تعليق محاولات الدخول مؤقتاً بسبب محاولات فاشلة متعددة. انتظر {} دقيقة",
+                    remaining_secs / 60
+                ),
+            },
+        )));
+    }
 
     if !rate_limiter.is_allowed(&request.username) {
         let remaining_secs = rate_limiter
@@ -193,9 +218,9 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
         request.username
     );
 
-    // Record failed attempt
+    // Record failed attempt (per-user bucket + node-wide breaker, SEC-003-07)
     if let Ok(rl) = state.rate_limiter.lock() {
-        rl.record_failure(&request.username);
+        rl.record_login_failure(&request.username);
     }
 
     Ok(LoginResponse {
@@ -269,7 +294,7 @@ pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> 
         None => return Ok(None),
     };
 
-    if session.is_expired() {
+    if session.is_expired() || session.is_absolutely_expired() {
         return Ok(None);
     }
 
@@ -305,7 +330,7 @@ pub fn check_session(state: State<AppState>) -> Result<SessionStatus, String> {
             username: None,
         }),
         Some(s) => {
-            if s.is_expired() {
+            if s.is_expired() || s.is_absolutely_expired() {
                 Ok(SessionStatus {
                     is_active: false,
                     is_expired: true,
@@ -329,6 +354,16 @@ pub fn check_session(state: State<AppState>) -> Result<SessionStatus, String> {
 /// Update session activity (touch)
 #[tauri::command]
 pub fn touch_session(state: State<AppState>) -> Result<(), String> {
+    touch_session_impl(&state).map_err(into_command_error)
+}
+
+/// SEC-003-08 Part B: session extension requires authentication. Routing through
+/// `authorize_command(Action::AuthenticatedOnly)` means an unauthenticated or
+/// stale session (missing / disabled / demoted user) is rejected BEFORE the
+/// activity timestamp is advanced, so a deleted user's session can no longer be
+/// silently kept alive by frontend activity pings.
+pub fn touch_session_impl(state: &AppState) -> Result<(), AppError> {
+    authorize_command(state, Action::AuthenticatedOnly, None)?;
     state.touch_session();
     Ok(())
 }

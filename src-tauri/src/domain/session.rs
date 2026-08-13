@@ -17,6 +17,12 @@ pub const SESSION_TIMEOUT_MINUTES: i64 = 30;
 /// وقت التحذير قبل انتهاء الجلسة (5 دقائق)
 pub const SESSION_WARNING_MINUTES: i64 = 5;
 
+/// Absolute maximum session lifetime in minutes (SEC-003-08): regardless of
+/// activity, a session must be re-established after this duration. Derived from
+/// the existing `created_at`/`duration_minutes()` model — no separate timeout
+/// configuration, no schema change.
+pub const SESSION_ABSOLUTE_MAX_MINUTES: i64 = 12 * 60;
+
 /// Snapshot of stable user data captured at login.
 /// Eliminates a DB round-trip on every get_current_user call.
 /// Fields match exactly what the frontend consumes.
@@ -85,6 +91,13 @@ impl CurrentSession {
     pub fn is_expired(&self) -> bool {
         let elapsed = Utc::now() - self.last_activity;
         elapsed.num_minutes() >= self.timeout_minutes
+    }
+
+    /// Absolute-lifetime expiry (SEC-003-08): the session must be re-established
+    /// after `SESSION_ABSOLUTE_MAX_MINUTES` even with continuous activity
+    /// (touches only advance `last_activity`, never `created_at`).
+    pub fn is_absolutely_expired(&self) -> bool {
+        self.duration_minutes() >= SESSION_ABSOLUTE_MAX_MINUTES
     }
 
     /// الدقائق المتبقية قبل انتهاء الجلسة
@@ -205,5 +218,30 @@ mod tests {
         // Expired session should not warn (it's already expired)
         session.last_activity = Utc::now() - chrono::Duration::minutes(31);
         assert!(!session.should_warn());
+    }
+
+    #[test]
+    fn test_session_absolute_lifetime_expiry() {
+        let snapshot = make_snapshot();
+        let mut session = CurrentSession::new(
+            "user_123".to_string(),
+            "admin".to_string(),
+            UserRole::Admin,
+            snapshot,
+        );
+
+        assert!(!session.is_absolutely_expired(), "fresh session is valid");
+
+        // Continuous activity must NOT extend beyond the absolute lifetime.
+        session.created_at = Utc::now() - chrono::Duration::minutes(SESSION_ABSOLUTE_MAX_MINUTES);
+        session.last_activity = Utc::now();
+        assert!(
+            !session.is_expired(),
+            "activity is fresh, inactivity timeout not reached"
+        );
+        assert!(
+            session.is_absolutely_expired(),
+            "absolute lifetime is exhausted regardless of activity"
+        );
     }
 }

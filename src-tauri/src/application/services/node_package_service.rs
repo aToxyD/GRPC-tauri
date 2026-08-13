@@ -1,12 +1,28 @@
 //! Node Package Service
 //! Handles unit node packages parsing and importing.
 
-use crate::errors::AppError;
+use crate::errors::{AppError, ValidationError};
 use crate::models::UnitNodePackage;
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
+
+/// Strict role validation for `.unit` node packages (SEC-003-05-D).
+///
+/// Only the existing role model is accepted: `Admin` / `User`. Unknown or
+/// malformed role strings are REJECTED — they are never persisted verbatim and
+/// never silently mapped to a privileged role.
+pub(crate) fn validate_unit_node_role(role: &str) -> Result<crate::models::UserRole, AppError> {
+    match role {
+        "Admin" => Ok(crate::models::UserRole::Admin),
+        "User" => Ok(crate::models::UserRole::User),
+        other => Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "role".into(),
+            message: format!("دور غير صالح في حزمة العقدة: {other}"),
+        })),
+    }
+}
 
 pub struct ParsedUnitPackageRaw {
     pub unit_id: String,
@@ -120,6 +136,11 @@ impl<'a> NodePackageService<'a> {
     pub fn import_unit_node_package(&self, package: &UnitNodePackage) -> Result<(), AppError> {
         let now = Utc::now().to_rfc3339();
 
+        // SEC-003-05-D: reject unknown/malformed roles BEFORE any write — the
+        // package-controlled role string is never persisted verbatim and a
+        // rejected package leaves the node untouched (fail-closed).
+        let role = validate_unit_node_role(&package.user.role)?;
+
         let settings_repo = self.executor.settings();
         let user_repo = self.executor.users();
         let unit_repo = self.executor.units();
@@ -137,7 +158,7 @@ impl<'a> NodePackageService<'a> {
             &user_id,
             &package.user.username,
             &package.user.password_hash,
-            &package.user.role,
+            &role.to_string(),
             node_id,
             &now,
         )?;
@@ -194,5 +215,77 @@ impl<'a> NodePackageService<'a> {
         settings_repo.update_unit_node_settings(unit_name, wilaya_code)?;
 
         Ok((unit_id.to_string(), unit_code.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::ConnectionFactory;
+    use crate::models::{Unit, UserExport, UserRole};
+
+    fn unit_package(role: &str) -> UnitNodePackage {
+        UnitNodePackage {
+            unit: Unit {
+                id: "unit-a".into(),
+                code: "UA".into(),
+                name: "Unit A".into(),
+                wilaya_code: "16".into(),
+                user_id: None,
+                created_at: Utc::now(),
+            },
+            user: UserExport {
+                username: "op".into(),
+                password_hash: "hash".into(),
+                role: role.into(),
+            },
+        }
+    }
+
+    // ── SEC-003-05-D: strict role validation ──────────────────────────────
+
+    #[test]
+    fn valid_roles_parse() {
+        assert_eq!(validate_unit_node_role("Admin").unwrap(), UserRole::Admin);
+        assert_eq!(validate_unit_node_role("User").unwrap(), UserRole::User);
+    }
+
+    #[test]
+    fn unknown_role_is_rejected() {
+        for role in ["SuperAdmin", "admin", "OPERATOR", "", "Admin " ] {
+            assert!(
+                validate_unit_node_role(role).is_err(),
+                "role {role:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn import_unit_package_accepts_valid_roles() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let svc = NodePackageService::new(db.executor());
+
+        for role in ["Admin", "User"] {
+            let result = svc.import_unit_node_package(&unit_package(role));
+            assert!(result.is_ok(), "valid {role} package accepted: {result:?}");
+        }
+    }
+
+    #[test]
+    fn import_unit_package_rejects_unknown_role_before_writes() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let svc = NodePackageService::new(db.executor());
+
+        let result = svc.import_unit_node_package(&unit_package("SuperAdmin"));
+        assert!(result.is_err(), "unknown-role package must be rejected");
+
+        // Fail-closed: the settings row must not be configured by a rejected
+        // package (role validation runs before any write).
+        let configured = db
+            .executor()
+            .settings()
+            .is_configured()
+            .expect("settings readable");
+        assert!(!configured, "rejected package must not write settings");
     }
 }

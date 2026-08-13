@@ -9,7 +9,10 @@
 //! - `unlock_app_key(passphrase)` → store unlock + deferred DB bootstrap
 //! - `export_app_key_backup()` → guarded re-export (requires unlocked store)
 
+use crate::application::authz::Action;
+use crate::application::services::{TelemetryEventType, TelemetryOutcome, TelemetryService};
 use crate::commands::common::appkey_store;
+use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::errors::{into_command_error, AppError};
 use crate::infrastructure::security::appkey_store::{
@@ -161,14 +164,39 @@ pub fn unlock_app_key(
 }
 
 /// Guarded re-export of the raw application identity (ADR-0041 §7). Requires
-/// unlocked state (store cache); used for offline backup after first setup.
+/// an authenticated Admin session plus unlocked state (store cache); used for
+/// offline backup after first setup.
+///
+/// SEC-003-03: the raw fleet AGE identity must not be reachable without an
+/// authenticated Admin. The setup-time backup remains available through
+/// `initialize_app_key(..., export_backup = Some(path))`, which is unchanged.
 #[tauri::command]
-pub fn export_app_key_backup() -> Result<String, String> {
-    cached_app_key().ok_or_else(|| {
+pub fn export_app_key_backup(state: State<AppState>) -> Result<String, String> {
+    let (session, _settings) =
+        authorize_command(&state, Action::AdminOnly, None).map_err(into_command_error)?;
+    state.touch_session();
+
+    let identity = cached_app_key().ok_or_else(|| {
         into_command_error(AppError::Configuration(
             "app key is locked — unlock the store before exporting a backup".into(),
         ))
-    })
+    })?;
+
+    // Best-effort telemetry (mirrors existing command patterns); DB may be
+    // unavailable in edge states — the export itself is unaffected.
+    if let Ok(guard) = state.get_db() {
+        if let Some(db) = guard.as_ref() {
+            let _ = TelemetryService::new(db.executor()).record_event(
+                TelemetryEventType::Backup,
+                TelemetryOutcome::Success,
+                None,
+                Some(serde_json::json!({ "export": "app_key_backup" })),
+                Some(&session.user_id),
+            );
+        }
+    }
+
+    Ok(identity)
 }
 
 /// Run the deferred DB bootstrap (ADR-0041 §5) and publish the database + the

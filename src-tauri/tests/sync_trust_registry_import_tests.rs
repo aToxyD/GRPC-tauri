@@ -774,6 +774,7 @@ fn unit_configured_state() -> grpc_lib::commands::AppState {
 fn set_session(state: &grpc_lib::commands::AppState, role: &str) {
     let mut session = common::create_test_session("u1", "bob", role);
     session.user_role = UserRole::from(role.to_string());
+    common::insert_test_user(state, "u1", "bob", role);
     *state.current_session.lock().expect("session mutex") = Some(session);
 }
 

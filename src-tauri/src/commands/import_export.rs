@@ -98,6 +98,112 @@ fn export_subject_type(node_type: crate::models::NodeType) -> SubjectType {
     }
 }
 
+/// `signature_version` value for Ed25519 (RFC 8032) issuer-bound signing —
+/// mirror of `SIGNATURE_VERSION_ED25519` (`domain::identity::signing`).
+///
+/// Rule 126 confines the asymmetric-identity symbols themselves to identity
+/// layers (RFC 2026-08-04-node-identity-trust / ADR-0038); this boundary
+/// policy lives in the command layer and only needs the numeric extension
+/// value. Keeping the mirror local is deliberate: commands must not import
+/// identity-layer constants.
+const SIGNATURE_VERSION_V2: u16 = 2;
+
+/// Package kinds whose authenticity is security-critical (SEC-003-02).
+/// These MUST be `signature_version = 2` (Ed25519, issuer-bound). Anything less
+/// — unsigned, V1/HMAC, or missing issuer/sequence/integrity metadata — is a
+/// downgrade/forgery window and is rejected at the import boundary.
+const SECURITY_CRITICAL_KINDS: &[&str] = &[
+    IDENTITY_ACCESS_PACKAGE_KIND,
+    TRUST_PACKAGE_KIND,
+    REGISTRY_PACKAGE_KIND,
+];
+
+/// Data/report package kinds that remain on the V1-with-signature compatibility
+/// window: `signature` and `integrity_hash` must be present, but V1 is still
+/// accepted until the window closes.
+const DATA_PACKAGE_KINDS: &[&str] = &[
+    PRODUCTS_PACKAGE_KIND,
+    DAILY_REPORT_PACKAGE_KIND,
+    MONTHLY_SUMMARY_PACKAGE_KIND,
+    STOCK_MOVEMENTS_PACKAGE_KIND,
+];
+
+/// Kind-aware authenticity requirements for the `.unit` setup-mode import
+/// (SEC-003-05-D).
+///
+/// The generic legacy deserializer tolerates a missing V1 signature (legacy
+/// compatibility); this boundary does NOT. Requiring a present, non-empty
+/// `signature` forces the deserializer's existing HMAC verification path to
+/// actually run, and `source_node_id` pins the signer identity for the
+/// trusted-signer check. A `.unit` failing these requirements is rejected
+/// before any unit/user/settings write.
+fn validate_unit_package_security_requirements(
+    metadata: &SyncPackageMetadata,
+) -> Result<(), AppError> {
+    if metadata.signature.as_deref().is_none_or(str::is_empty) {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "signature".into(),
+            message: "حزمة العقدة بدون توقيع — مرفوضة (متطلبات الأمان)".into(),
+        }));
+    }
+    if metadata.source_node_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "source_node_id".into(),
+            message: "حزمة العقدة بدون مصدر — مرفوضة (متطلبات الأمان)".into(),
+        }));
+    }
+    Ok(())
+}
+
+/// Kind-aware cryptographic authenticity requirements (SEC-003-02).
+///
+/// Runs after deserialization and before replay/sequence processing, the
+/// `ValidationGate`, and any state mutation. The generic deserializer remains
+/// legacy-tolerant; this boundary owns the per-kind policy.
+///
+/// - Security-critical kinds MUST be V2 (Ed25519) with a present, non-empty
+///   signature, issuer identity, package sequence, and integrity hash.
+/// - Data kinds MUST carry a present signature and integrity hash; V1-with-
+///   signature remains valid during the compatibility window; V2 remains valid.
+fn validate_import_security_requirements(
+    package_kind: &str,
+    metadata: &SyncPackageMetadata,
+) -> Result<(), AppError> {
+    let reject = |field: &str| {
+        AppError::Validation(ValidationError::InvalidFormat {
+            field: field.into(),
+            message: format!("حزمة {package_kind} بدون {field} — مرفوضة (متطلبات الأمان)"),
+        })
+    };
+
+    if SECURITY_CRITICAL_KINDS.contains(&package_kind) {
+        if metadata.signature_version != Some(SIGNATURE_VERSION_V2) {
+            return Err(reject("signature_version=V2"));
+        }
+        if metadata.signature.as_deref().is_none_or(str::is_empty) {
+            return Err(reject("signature"));
+        }
+        if metadata.issuer_identity_id.is_none() {
+            return Err(reject("issuer_identity_id"));
+        }
+        if metadata.package_sequence.is_none() {
+            return Err(reject("package_sequence"));
+        }
+        if metadata.integrity_hash.as_deref().is_none_or(str::is_empty) {
+            return Err(reject("integrity_hash"));
+        }
+    } else if DATA_PACKAGE_KINDS.contains(&package_kind) {
+        if metadata.signature.as_deref().is_none_or(str::is_empty) {
+            return Err(reject("signature"));
+        }
+        if metadata.integrity_hash.as_deref().is_none_or(str::is_empty) {
+            return Err(reject("integrity_hash"));
+        }
+    }
+
+    Ok(())
+}
+
 /// Export products catalog as an encrypted **sync package** (`.sync`) — intended for Wilaya → Units distribution.
 #[tauri::command]
 pub fn export_products_package(
@@ -379,6 +485,13 @@ pub fn import_unit_node_package(
     let package =
         read_unit_node_package_from_file(std::path::Path::new(&file_path), &state.crypto_port)
             .map_err(into_command_error)?;
+
+    // SEC-003-05-D: the `.unit` setup-mode import requires a present, non-empty
+    // signature (so the existing HMAC verification path runs) and a non-empty
+    // source_node_id (signer pinning). Rejected before any unit/user/settings
+    // write — even during anonymous setup bootstrap.
+    validate_unit_package_security_requirements(&package.metadata)
+        .map_err(into_command_error)?;
 
     let unit_id = package.payload.unit.id.clone();
     AuditTxService::execute_with_audit(db, AuditAction::ImportNodePackage, &user_ctx, |tx| {
@@ -1151,6 +1264,12 @@ where
     let package =
         loader(std::path::Path::new(&file_path), &state.crypto_port).map_err(into_command_error)?;
 
+    // SEC-003-02: kind-aware authenticity requirements. Rejects unsigned / V1
+    // downgraded critical kinds before replay/sequence processing, the
+    // ValidationGate, or any state mutation.
+    validate_import_security_requirements(package_kind, &package.metadata)
+        .map_err(into_command_error)?;
+
     let package_id = package.metadata.package_id.0.clone();
     let source_node_id =
         Some(package.metadata.source_node_id.trim().to_string()).filter(|s| !s.is_empty());
@@ -1366,5 +1485,305 @@ where
 
             Err(into_command_error(e))
         }
+    }
+}
+
+#[cfg(test)]
+mod security_requirement_tests {
+    use super::*;
+    use crate::application::sync::{PackageId, SchemaVersion};
+    use crate::application::usecases::exports::types::ProductsExportDataset;
+    use crate::infrastructure::security::AgeFileEncryptionProvider;
+    use crate::infrastructure::sync::packages::signing::HmacPackageSigner;
+    use crate::infrastructure::sync::packages::{
+        PackageBuilder, SerdeJsonSyncPackageDeserializer, SerdeJsonSyncPackageSerializer,
+    };
+    use crate::models::{Unit, UnitNodePackage, UserExport};
+
+    fn metadata() -> SyncPackageMetadata {
+        SyncPackageMetadata {
+            created_at: Utc::now(),
+            integrity_hash: Some("a".repeat(64)),
+            package_sequence: Some(1),
+            issuer_identity_id: Some(Uuid::new_v4()),
+            package_id: PackageId(Uuid::new_v4().to_string()),
+            schema_version: SchemaVersion::V2,
+            signature: Some("sig".to_string()),
+            signature_version: Some(SIGNATURE_VERSION_V2),
+            signing_key_id: Some("default".to_string()),
+            source_node_id: "wilaya-a".to_string(),
+        }
+    }
+
+    fn assert_rejected(kind: &str, metadata: &SyncPackageMetadata) {
+        let result = validate_import_security_requirements(kind, metadata);
+        assert!(
+            result.is_err(),
+            "{kind} must be rejected, got Ok: {metadata:?}"
+        );
+    }
+
+    fn assert_accepted(kind: &str, metadata: &SyncPackageMetadata) {
+        let result = validate_import_security_requirements(kind, metadata);
+        assert!(
+            result.is_ok(),
+            "{kind} must be accepted, got Err: {result:?}"
+        );
+    }
+
+    // ── Security-critical kinds (identity_access, trust, registry) ─────────
+
+    #[test]
+    fn critical_kinds_require_complete_v2_metadata() {
+        for kind in SECURITY_CRITICAL_KINDS {
+            // Valid V2 → accepted.
+            assert_accepted(kind, &metadata());
+
+            // 1. unsigned → rejected
+            let mut unsigned = metadata();
+            unsigned.signature = None;
+            assert_rejected(kind, &unsigned);
+
+            // 2. signature_version = None → rejected
+            let mut no_version = metadata();
+            no_version.signature_version = None;
+            assert_rejected(kind, &no_version);
+
+            // 3. V1 → rejected
+            let mut v1 = metadata();
+            v1.signature_version = Some(1);
+            assert_rejected(kind, &v1);
+
+            // 4. missing issuer → rejected
+            let mut no_issuer = metadata();
+            no_issuer.issuer_identity_id = None;
+            assert_rejected(kind, &no_issuer);
+
+            // 5. missing package sequence → rejected
+            let mut no_sequence = metadata();
+            no_sequence.package_sequence = None;
+            assert_rejected(kind, &no_sequence);
+
+            // 6. missing integrity hash → rejected
+            let mut no_hash = metadata();
+            no_hash.integrity_hash = None;
+            assert_rejected(kind, &no_hash);
+
+            // 7. empty signature → rejected
+            let mut empty_sig = metadata();
+            empty_sig.signature = Some(String::new());
+            assert_rejected(kind, &empty_sig);
+        }
+    }
+
+    #[test]
+    fn unknown_kind_is_not_required_to_be_v2() {
+        // A package kind outside the known critical/data sets is untouched by
+        // the gate (forward compatibility for new data kinds).
+        assert_accepted("future_kind", &metadata());
+    }
+
+    // ── Data/report package kinds (compatibility window) ───────────────────
+
+    #[test]
+    fn data_kinds_require_signature_and_hash_but_accept_v1() {
+        for kind in DATA_PACKAGE_KINDS {
+            // Valid V2 → accepted.
+            assert_accepted(kind, &metadata());
+
+            // V1-with-signature → accepted during the compatibility window.
+            let mut v1 = metadata();
+            v1.signature_version = Some(1);
+            v1.issuer_identity_id = None;
+            v1.package_sequence = None;
+            assert_accepted(kind, &v1);
+
+            // unsigned → rejected
+            let mut unsigned = metadata();
+            unsigned.signature = None;
+            assert_rejected(kind, &unsigned);
+
+            // missing integrity hash → rejected
+            let mut no_hash = metadata();
+            no_hash.integrity_hash = None;
+            assert_rejected(kind, &no_hash);
+        }
+    }
+
+    // ── Regression: the generic legacy deserializer still parses V1 data ──
+
+    #[test]
+    fn legacy_v1_data_package_still_parses_and_passes_pipeline_policy() {
+        let package: SyncPackage<ProductsExportDataset> = SyncPackage {
+            metadata: SyncPackageMetadata {
+                created_at: Utc::now(),
+                integrity_hash: None,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                schema_version: SchemaVersion::V1,
+                signature: None,
+                signature_version: None,
+                signing_key_id: Some("default".to_string()),
+                source_node_id: "unit-a".to_string(),
+            },
+            payload: ProductsExportDataset {
+                product_rows: Vec::new(),
+            },
+        };
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+        PackageBuilder::new()
+            .build_encrypted_stream_path(
+                &package,
+                &SerdeJsonSyncPackageSerializer,
+                &HmacPackageSigner,
+                &AgeFileEncryptionProvider::new(),
+                &path,
+            )
+            .expect("V1 package builds");
+
+        // Encrypted on disk — decrypt, then feed plaintext to the generic
+        // legacy deserializer (the same shape the encrypted_package_reader
+        // hands to it in production).
+        let encrypted = std::fs::read(&path).unwrap();
+        let plaintext = AgeFileEncryptionProvider::new()
+            .decrypt_data(&encrypted)
+            .expect("decrypts with the test/fallback key");
+
+        let round_trip = SerdeJsonSyncPackageDeserializer::products_from_reader(
+            std::io::BufReader::new(std::io::Cursor::new(plaintext)),
+        )
+        .expect("generic legacy deserializer still parses V1 fixtures");
+
+        // The builder always fills hash + signature; version stays legacy.
+        assert!(round_trip.metadata.signature.is_some());
+        assert!(round_trip.metadata.integrity_hash.is_some());
+        assert_eq!(round_trip.metadata.signature_version, None);
+
+        // And the pipeline gate accepts it for the data kind (window open).
+        validate_import_security_requirements(
+            PRODUCTS_PACKAGE_KIND,
+            &round_trip.metadata,
+        )
+        .expect("V1-with-signature data package accepted during compatibility window");
+    }
+
+    // ── SEC-003-05-D: `.unit` setup-mode import boundary ──────────────────
+
+    fn unit_metadata() -> SyncPackageMetadata {
+        SyncPackageMetadata {
+            created_at: Utc::now(),
+            integrity_hash: Some("a".repeat(64)),
+            package_sequence: None,
+            issuer_identity_id: None,
+            package_id: PackageId(Uuid::new_v4().to_string()),
+            schema_version: SchemaVersion::V1,
+            signature: Some("sig".to_string()),
+            signature_version: None,
+            signing_key_id: Some("default".to_string()),
+            source_node_id: "wilaya-a".to_string(),
+        }
+    }
+
+    #[test]
+    fn unsigned_unit_package_is_rejected() {
+        let mut metadata = unit_metadata();
+        metadata.signature = None;
+        assert!(
+            validate_unit_package_security_requirements(&metadata).is_err(),
+            "unsigned .unit must be rejected"
+        );
+    }
+
+    #[test]
+    fn empty_signature_unit_package_is_rejected() {
+        let mut metadata = unit_metadata();
+        metadata.signature = Some(String::new());
+        assert!(
+            validate_unit_package_security_requirements(&metadata).is_err(),
+            "empty-signature .unit must be rejected"
+        );
+    }
+
+    #[test]
+    fn unit_package_without_source_node_id_is_rejected() {
+        let mut metadata = unit_metadata();
+        metadata.source_node_id = String::new();
+        assert!(
+            validate_unit_package_security_requirements(&metadata).is_err(),
+            ".unit without source_node_id must be rejected"
+        );
+    }
+
+    #[test]
+    fn signed_unit_package_with_source_is_accepted() {
+        assert!(validate_unit_package_security_requirements(&unit_metadata()).is_ok());
+    }
+
+    #[test]
+    fn legitimate_wilaya_exporter_unit_package_passes_boundary() {
+        // Mirror the exact shape produced by export_unit_node_package:
+        // V1/HMAC, signing_key_id = active key, source_node_id = WILAYA id,
+        // no V2 issuer metadata — the signature is added by PackageBuilder and
+        // verified by the deserializer's HMAC path before this boundary.
+        let package: SyncPackage<UnitNodePackage> = SyncPackage {
+            metadata: SyncPackageMetadata {
+                created_at: Utc::now(),
+                integrity_hash: None,
+                package_sequence: None,
+                issuer_identity_id: None,
+                package_id: PackageId(Uuid::new_v4().to_string()),
+                schema_version: SchemaVersion::V1,
+                signature: None,
+                signature_version: None,
+                signing_key_id: Some("default".to_string()),
+                source_node_id: "wilaya-a".to_string(),
+            },
+            payload: UnitNodePackage {
+                unit: Unit {
+                    id: "unit-a".into(),
+                    code: "UA".into(),
+                    name: "Unit A".into(),
+                    wilaya_code: "16".into(),
+                    user_id: None,
+                    created_at: Utc::now(),
+                },
+                user: UserExport {
+                    username: "op".into(),
+                    password_hash: "hash".into(),
+                    role: "User".into(),
+                },
+            },
+        };
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+        PackageBuilder::new()
+            .build_encrypted_stream_path(
+                &package,
+                &SerdeJsonSyncPackageSerializer,
+                &HmacPackageSigner,
+                &AgeFileEncryptionProvider::new(),
+                &path,
+            )
+            .expect(".unit package builds");
+
+        // Decrypt and run the same reader the importer uses (HMAC verified).
+        let encrypted = std::fs::read(&path).unwrap();
+        let plaintext = AgeFileEncryptionProvider::new()
+            .decrypt_data(&encrypted)
+            .expect("decrypts with the test/fallback key");
+        let round_trip = SerdeJsonSyncPackageDeserializer::unit_node_package_from_reader(
+            std::io::BufReader::new(std::io::Cursor::new(plaintext)),
+        )
+        .expect("legitimate .unit round-trips through the HMAC-verified reader");
+
+        assert!(round_trip.metadata.signature.is_some());
+        assert!(!round_trip.metadata.source_node_id.is_empty());
+
+        validate_unit_package_security_requirements(&round_trip.metadata)
+            .expect("legitimate .unit passes the setup-import boundary");
     }
 }

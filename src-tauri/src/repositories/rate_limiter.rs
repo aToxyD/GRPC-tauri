@@ -129,3 +129,60 @@ impl RateLimiterStore for RateLimiterRepository {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::ConnectionFactory;
+    use crate::domain::rate_limiter::RateLimiter;
+
+    /// SEC-003-07: the node-wide global breaker shares the persisted store, so
+    /// its state must survive a reload (rate limiter reopens on restart).
+    #[test]
+    fn test_sec007_global_breaker_persists_and_reloads() {
+        let dir = std::env::temp_dir().join(format!("grpc_rl_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let db_path = dir.join("test.db");
+
+        // Keep the schema-backed connection alive for the whole test.
+        let _db = ConnectionFactory::new_with_path(&db_path).expect("schema db");
+
+        let open = || {
+            RateLimiter::with_store(
+                Box::new(
+                    RateLimiterRepository::new(
+                        rusqlite::Connection::open(&db_path).expect("open rl conn"),
+                    ),
+                ),
+                300,
+                5,
+            )
+        };
+
+        // One user at its per-user limit + distributed failures tripping global.
+        let limiter = open();
+        for _ in 0..5 {
+            limiter.record_login_failure("userA");
+        }
+        for i in 0..15 {
+            limiter.record_login_failure(&format!("attacker{i}"));
+        }
+        assert!(!limiter.is_allowed("userA"));
+        assert!(!limiter.is_global_login_allowed());
+        drop(limiter);
+
+        let reloaded = open();
+        assert!(
+            !reloaded.is_allowed("userA"),
+            "per-user lockout must survive reload"
+        );
+        assert!(
+            !reloaded.is_global_login_allowed(),
+            "global breaker state must survive reload"
+        );
+        assert!(
+            reloaded.get_global_remaining_lockout_secs().is_some(),
+            "remaining global backoff must survive reload"
+        );
+    }
+}

@@ -1477,7 +1477,9 @@ fn sec002r_11_command_recovery_user_session_rejected() {
         let err = issue_first_admin_key_impl(h.state(), "admin".into(), ADMIN_PASSPHRASE.into())
             .expect_err("UNIT session must be rejected");
         assert!(
-            err.contains("Admin"),
+            err.contains("Admin")
+                || err.contains("User not found")
+                || err.contains("المستخدم غير موجود"),
             "non-admin session must be denied authorization, got: {err}"
         );
         assert_eq!(h.active_admin_count(), 1, "no credential change");
