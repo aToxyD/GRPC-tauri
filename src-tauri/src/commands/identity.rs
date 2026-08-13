@@ -12,6 +12,9 @@
 
 use crate::application::authz::Action;
 use crate::application::services::identity_challenge_service::CHALLENGE_RATE_LIMIT_KEY;
+use crate::application::services::identity_authentication_policy::{
+    AdminCredentialState, IdentityAuthenticationPolicy,
+};
 use crate::application::services::{
     AuditService, FinalizeUnitProvisionResult, IdentityBootstrapStatusService,
     IdentityChallengeService, IdentityProvisioningService, IdentityRotationCoordinator,
@@ -103,11 +106,44 @@ pub fn finalize_wilaya_provision(
         .map_err(into_command_error)
 }
 
+/// Rate-limit key for the ADMIN credential RECOVERY ceremony (SEC-002-R).
+///
+/// Recovery re-issues the canonical ADMIN credential, so the budget is keyed to
+/// the node's ADMIN identity context rather than any caller-supplied username.
+/// The `grpc:admin-recovery` namespace keeps the recovery budget fully
+/// independent of the username-keyed login/challenge limiter
+/// (`CHALLENGE_RATE_LIMIT_KEY` = `BOOTSTRAP_ADMIN_USERNAME`): recovery failures
+/// never consume the login budget and vice versa. Shared `RateLimiter`
+/// semantics (5 attempts / 300s window, fail-closed while locked out; a
+/// successful recovery resets the budget). Defense in depth only — the
+/// wall-clock limiter is not a substitute for the Admin-session gate (A).
+pub const ADMIN_RECOVERY_RATE_LIMIT_KEY: &str = "grpc:admin-recovery";
+
 /// Issue the FIRST ADMIN key bound to `subject_username`, protecting the
 /// portable `.adminkey` with `passphrase`. Links the `users` row additively.
+///
+/// SEC-002-R authorization split:
+/// - **FIRST-ADMIN bootstrap** (no ACTIVE ADMIN): PRE-AUTH by design — the
+///   operator is on a freshly provisioned node with no session yet.
+/// - **RECOVERY** (an ACTIVE ADMIN certificate exists): requires an
+///   authenticated ADMIN session (`Action::AdminOnly`) plus the recovery rate
+///   limit. The frontend gate is NOT a security boundary; the backend enforces
+///   it here.
 #[tauri::command]
 pub fn issue_first_admin_key(
     state: State<AppState>,
+    subject_username: String,
+    passphrase: String,
+) -> Result<IdentityCertificate, String> {
+    issue_first_admin_key_impl(&state, subject_username, passphrase)
+}
+
+/// Testable backend for `issue_first_admin_key` (SEC-002-R enforcement).
+///
+/// `pub` so integration tests can exercise the security gate without a Tauri
+/// runtime; the `#[tauri::command]` wrapper above is the enforced entry point.
+pub fn issue_first_admin_key_impl(
+    state: &AppState,
     subject_username: String,
     passphrase: String,
 ) -> Result<IdentityCertificate, String> {
@@ -118,19 +154,78 @@ pub fn issue_first_admin_key(
             },
         )));
     }
+
+    // SEC-002-R mode detection: an ACTIVE ADMIN certificate means any issuance
+    // is a RECOVERY and MUST satisfy the Admin-session + rate-limit gates.
+    // Reuses the unified policy predicate so the command never re-implements
+    // the "admin present" decision and stays inside the services layer.
+    let has_active_admin = {
+        let guard = state.get_db().map_err(into_command_error)?;
+        let db = db_ref_or_command_error(guard.as_ref())?;
+        matches!(
+            IdentityAuthenticationPolicy::admin_credential_state(db, &adminkey_provider())
+                .map_err(into_command_error)?,
+            AdminCredentialState::Usable
+                | AdminCredentialState::MissingAdminkey
+                | AdminCredentialState::MismatchedAdminkey
+        )
+    };
+
+    if has_active_admin {
+        // Requires an authenticated ADMIN session. The DB guard above is DROPPED
+        // before this so the non-reentrant std Mutex is never re-locked inside
+        // `authorize_command` (which internally locks the DB for settings).
+        let (_session, _settings) =
+            authorize_command(state, Action::AdminOnly, None).map_err(into_command_error)?;
+        state.touch_session();
+
+        // Recovery rate limit — fail-closed while locked out.
+        let rate_limiter = state.rate_limiter.lock().map_err(|e| {
+            into_command_error(AppError::Internal(format!(
+                "Failed to lock rate limiter: {e}"
+            )))
+        })?;
+        if !rate_limiter.is_allowed(ADMIN_RECOVERY_RATE_LIMIT_KEY) {
+            let remaining_secs = rate_limiter
+                .get_remaining_lockout_secs(ADMIN_RECOVERY_RATE_LIMIT_KEY)
+                .unwrap_or(300);
+            return Err(into_command_error(AppError::Validation(
+                crate::errors::ValidationError::InvalidFormat {
+                    field: "admin-recovery".to_string(),
+                    message: format!(
+                        "Admin recovery attempts exceeded the limit; retry in {} minute(s)",
+                        remaining_secs / 60
+                    ),
+                },
+            )));
+        }
+    }
+
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
     let now = chrono::Utc::now().to_rfc3339();
-    IdentityProvisioningService::new(db)
-        .issue_first_admin_key(
-            &subject_username,
-            &passphrase,
-            &node_key_store(),
-            &adminkey_provider(),
-            &now,
-        )
-        .map_err(into_command_error)
+    let result = IdentityProvisioningService::new(db).issue_first_admin_key(
+        &subject_username,
+        &passphrase,
+        &node_key_store(),
+        &adminkey_provider(),
+        &now,
+    );
+
+    // SEC-002-R: record the recovery attempt outcome (best-effort — must not
+    // mask the command result). A successful recovery resets the budget.
+    if has_active_admin {
+        if let Ok(rate_limiter) = state.rate_limiter.lock() {
+            if result.is_ok() {
+                rate_limiter.record_success(ADMIN_RECOVERY_RATE_LIMIT_KEY);
+            } else {
+                rate_limiter.record_failure(ADMIN_RECOVERY_RATE_LIMIT_KEY);
+            }
+        }
+    }
+
+    result.map_err(into_command_error)
 }
 
 /// Begin UNIT bootstrap: resolve the LOCAL `subject_id` (the node's own `units`

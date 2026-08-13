@@ -9,7 +9,10 @@
 //!   self-signing, ADR-0039 §5); the private key is written to the portable
 //!   `.adminkey` (age::scrypt, operator passphrase) via `AdminKeyProvider`.
 
-use crate::application::services::NodeIdentityResolver;
+use crate::application::services::{
+    identity_authentication_policy::{AdminCredentialState, IdentityAuthenticationPolicy},
+    NodeIdentityResolver,
+};
 use crate::db::Database;
 use crate::domain::identity::{
     AdminKeyFile, CredentialStatus, Ed25519CertificateSignature, IdentityCertificate,
@@ -462,15 +465,49 @@ impl<'a> IdentityProvisioningService<'a> {
 
     /// Issue the FIRST ADMIN key linked to the bootstrap operator (B5).
     ///
-    /// Guards (one-way transitions):
-    /// - an ACTIVE WILAYA identity MUST exist (the local issuer);
-    /// - no ACTIVE ADMIN identity may exist for the subject yet.
+    /// SEC-002 + SEC-002-R hardening — canonical identity, one-time gate,
+    /// crash-consistent ordering, and a recovery carve-out:
+    /// - **Canonical identity (SEC-002-B):** the ceremony accepts ONLY
+    ///   `BOOTSTRAP_ADMIN_USERNAME` (the seeded fleet-wide `admin`). The
+    ///   frontend is NOT trusted; any other username is rejected here, so a
+    ///   mis-typed or injected name can never mint an out-of-band ACTIVE ADMIN.
+    /// - **One-time gate (SEC-002-A):** an ACTIVE WILAYA MUST exist (the local
+    ///   issuer), and the ceremony rejects as soon as an ACTIVE ADMIN identity
+    ///   is usable — the on-disk `.adminkey` embeds exactly that certificate
+    ///   (unified `AdminCredentialState`, shared with the password login gate).
+    /// - **Recovery carve-out (SEC-002-09 + SEC-002-R):** when an ACTIVE ADMIN
+    ///   certificate exists but the node cannot authenticate with it
+    ///   (`.adminkey` missing or its embedded certificate differs), the
+    ///   canonical ceremony re-provisions and SUPERSEDES the unusable
+    ///   certificate inside the same transaction, so the DB invariant "at most
+    ///   one ACTIVE ADMIN" (migration 008) always holds and the crash state
+    ///   never becomes a permanent lockout. **SEC-002-R:** because this branch
+    ///   re-issues operator credentials, it is gated at the COMMAND boundary —
+    ///   it requires an authenticated ADMIN session (`Action::AdminOnly`) plus
+    ///   recovery rate limiting. The first-admin branch (no ACTIVE ADMIN) stays
+    ///   pre-auth. A straight service call (integration tests, internal tooling)
+    ///   bypasses that command gate by design; the enforced entry point is the
+    ///   `issue_first_admin_key` command.
+    /// - **Crash-consistent ordering (SEC-002-C):** the `.adminkey` is written
+    ///   (atomically, tmp+rename) BEFORE the DB transaction commits. The DB is
+    ///   the last committed step, so `certificate present ⇒ .adminkey present`.
+    ///   A crash between the two leaves only an inert orphan `.adminkey` (no
+    ///   certificate → no ACTIVE ADMIN → state stays `WilayaActive`) that a
+    ///   retry atomically overwrites.
+    /// - **Documented limitation (SEC-002-R):** the ceremony provisions an
+    ///   identity-only admin (EMPTY password hash). If the operator never set a
+    ///   fleet `admin` password (B8) and the `.adminkey` is permanently lost,
+    ///   password-based recovery is UNAVAILABLE by design — the sanctioned
+    ///   offline/Root recovery path (re-provision via the operator-facing flow)
+    ///   is the documented recovery route. SEC-002-R never makes the password
+    ///   mandatory; it only requires an authenticated ADMIN session when an
+    ///   ACTIVE ADMIN exists.
     ///
     /// Links the `users` row for `subject_username`:
     /// - existing row → credential material is untouched (additive legacy window:
     ///   a pre-existing password hash stays valid; Challenge–Response is added);
-    /// - missing row → created with an EMPTY password hash = identity-only
-    ///   credential (password login is rejected; the `.adminkey` is the sole key).
+    /// - missing row → created identity-only (EMPTY hash) inside the same
+    ///   transaction that persists the certificate.
     ///
     /// The private key goes to the portable `.adminkey` (age::scrypt) ONLY.
     pub fn issue_first_admin_key(
@@ -489,6 +526,36 @@ impl<'a> IdentityProvisioningService<'a> {
                 },
             ));
         }
+        // SEC-002-B: the first ADMIN is ALWAYS the canonical `admin`. This check
+        // precedes the WILAYA/global gates so a non-canonical name can never
+        // trigger the recovery carve-out or mint an out-of-band ACTIVE ADMIN.
+        if username != BOOTSTRAP_ADMIN_USERNAME {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "The first ADMIN identity MUST be the canonical '{BOOTSTRAP_ADMIN_USERNAME}' username; got '{username}'"
+                    ),
+                },
+            ));
+        }
+        // SEC-002-A / SEC-002-09 / SEC-002-R: global one-time gate. The single
+        // source of truth for "is the ADMIN identity usable" is the unified
+        // `AdminCredentialState` predicate (shared with the password login
+        // policy, so the recovery ceremony and the login gate can never
+        // disagree):
+        // - NoActiveAdmin → first-admin bootstrap (pre-auth, unchanged).
+        // - Usable       → re-issuance rejected (the node CAN authenticate with
+        //                  the existing ACTIVE ADMIN identity).
+        // - Missing / Mismatched → the ACTIVE ADMIN is unusable and the
+        //                  operator is locked out of Challenge–Response; the
+        //                  ceremony recovers by superseding the unusable
+        //                  certificate inside the same transaction.
+        //
+        // NOTE (SEC-002-R): the session/authorization requirement for the
+        // RECOVERY branch is enforced at the COMMAND boundary (the command owns
+        // `AppState`; application services must not depend on the app layer).
+        // A call routed straight into this service bypasses that gate by
+        // design — the thin command wrapper is the enforced entry point.
         let store = self.db.executor().identity_store();
         let wilaya = store
             .get_active_by_subject_type(SubjectType::Wilaya)?
@@ -500,7 +567,34 @@ impl<'a> IdentityProvisioningService<'a> {
                 })
             })?;
 
-        let subject_id = {
+        let existing_admin = match IdentityAuthenticationPolicy::admin_credential_state(
+            self.db,
+            adminkey_provider,
+        )? {
+            AdminCredentialState::NoActiveAdmin => None,
+            AdminCredentialState::Usable => {
+                let admin = store
+                    .get_active_by_subject_type(SubjectType::Admin)?
+                    .expect("Usable implies an ACTIVE ADMIN certificate");
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::OperationNotPermitted {
+                        message: format!(
+                            "An ACTIVE ADMIN identity already exists for this node (credential {})",
+                            admin.credential_id
+                        ),
+                    },
+                ));
+            }
+            AdminCredentialState::MissingAdminkey | AdminCredentialState::MismatchedAdminkey => {
+                store.get_active_by_subject_type(SubjectType::Admin)?
+            }
+        };
+        let recovering = existing_admin.is_some();
+
+        // Resolve the canonical admin's `users` row. Existing row → linked
+        // additively (legacy password hash preserved); missing row → created
+        // identity-only INSIDE the same transaction that persists the cert.
+        let (subject_id, is_new_user) = {
             let users = self.db.executor().users();
             match users.get_user_by_username(username)? {
                 Some(existing) => {
@@ -510,39 +604,9 @@ impl<'a> IdentityProvisioningService<'a> {
                             username, existing.id
                         ))
                     })?;
-                    if let Some(existing_admin) =
-                        store.get_active_by_subject(SubjectType::Admin, &parsed)?
-                    {
-                        return Err(AppError::BusinessLogic(
-                            BusinessLogicError::OperationNotPermitted {
-                                message: format!(
-                                    "An ACTIVE ADMIN identity already exists for subject {parsed} (credential {})",
-                                    existing_admin.credential_id
-                                ),
-                            },
-                        ));
-                    }
-                    parsed
+                    (parsed, false)
                 }
-                None => {
-                    let id = Uuid::new_v4();
-                    let node_id =
-                        crate::infrastructure::security::NodeIdentityProvider::current_node_id(
-                            &crate::infrastructure::security::SettingsNodeIdentityProvider::new(
-                                self.db.executor(),
-                            ),
-                        )
-                        .unwrap_or_else(|_| "WILAYA".to_string());
-                    users.upsert_user(
-                        &id.to_string(),
-                        username,
-                        "",
-                        UserRole::Admin,
-                        &node_id,
-                        now,
-                    )?;
-                    id
-                }
+                None => (Uuid::new_v4(), true),
             }
         };
 
@@ -568,8 +632,7 @@ impl<'a> IdentityProvisioningService<'a> {
         };
         let cert = self.sign_identity_request(&request, &wilaya, &wilaya_signer)?;
 
-        store.upsert(&cert, now)?;
-
+        // SEC-002-C: persist the operator key material FIRST (atomic tmp+rename).
         let encrypted_key = adminkey_provider.encrypt_private_key(&admin_secret, passphrase)?;
         let adminkey = AdminKeyFile {
             format_version: ADMINKEY_FORMAT_VERSION,
@@ -578,6 +641,65 @@ impl<'a> IdentityProvisioningService<'a> {
             encrypted_private_key: encrypted_key,
         };
         adminkey_provider.write(&adminkey)?;
+
+        // THEN commit the database side in ONE transaction (the last committed
+        // step): new user row → supersede unusable admin (recovery) → cert.
+        // A failure here leaves only the inert orphan `.adminkey`, which the
+        // next ceremony attempt atomically overwrites (no lockout).
+        self.db.with_transaction(|ex| {
+            if is_new_user {
+                let node_id =
+                    crate::infrastructure::security::NodeIdentityProvider::current_node_id(
+                        &crate::infrastructure::security::SettingsNodeIdentityProvider::new(ex),
+                    )
+                    .unwrap_or_else(|_| "WILAYA".to_string());
+                ex.users().upsert_user(
+                    &subject_id.to_string(),
+                    username,
+                    "",
+                    UserRole::Admin,
+                    &node_id,
+                    now,
+                )?;
+            }
+            if let Some(prior) = &existing_admin {
+                let mut superseded = prior.clone();
+                superseded.status = CredentialStatus::Superseded;
+                ex.identity_store().upsert(&superseded, now)?;
+            }
+            ex.identity_store().upsert(&cert, now)?;
+            Ok(())
+        })?;
+
+        // SEC-002-D: audit the ceremony (best-effort). Only identity ids are
+        // recorded — never the passphrase, the private key, or the encrypted
+        // key material.
+        let audit = serde_json::json!({
+            "subject_type": "ADMIN",
+            "identity_id": cert.identity_id.to_string(),
+            "credential_id": cert.credential_id.to_string(),
+            "recovery": recovering,
+        });
+        if let Err(e) = crate::application::services::AuditService::new(self.db.executor())
+            .log_success(
+                &subject_id.to_string(),
+                username,
+                crate::domain::audit::AuditAction::FirstAdminProvisioned,
+                crate::domain::audit::EntityType::System,
+                Some(&subject_id.to_string()),
+                Some(username),
+                None,
+                None,
+                None,
+                Some(audit),
+            )
+        {
+            log::error!(
+                target: "grpc::identity",
+                "SEC-002: failed to audit FirstAdminProvisioned for subject {}: {e}",
+                subject_id
+            );
+        }
 
         Ok(cert)
     }

@@ -77,6 +77,8 @@ pub enum AuditAction {
     AccountStatusChanged,
     IdentityAccessPackageExported,
     IdentityAccessPackageImported,
+    // Pre-auth first-admin provisioning ceremony (SEC-002)
+    FirstAdminProvisioned,
 }
 
 impl AuditAction {
@@ -137,6 +139,7 @@ impl AuditAction {
             AuditAction::AccountStatusChanged => "AccountStatusChanged",
             AuditAction::IdentityAccessPackageExported => "IdentityAccessPackageExported",
             AuditAction::IdentityAccessPackageImported => "IdentityAccessPackageImported",
+            AuditAction::FirstAdminProvisioned => "FirstAdminProvisioned",
         }
     }
 
@@ -196,6 +199,7 @@ impl AuditAction {
             "AccountStatusChanged" => Some(AuditAction::AccountStatusChanged),
             "IdentityAccessPackageExported" => Some(AuditAction::IdentityAccessPackageExported),
             "IdentityAccessPackageImported" => Some(AuditAction::IdentityAccessPackageImported),
+            "FirstAdminProvisioned" => Some(AuditAction::FirstAdminProvisioned),
             _ => None,
         }
     }
@@ -258,6 +262,7 @@ impl AuditAction {
             AuditAction::AccountStatusChanged => "تغيير حالة حساب",
             AuditAction::IdentityAccessPackageExported => "تصدير حزمة حسابات",
             AuditAction::IdentityAccessPackageImported => "استيراد حزمة حسابات",
+            AuditAction::FirstAdminProvisioned => "إصدار أول حساب مسؤول",
         }
     }
 
@@ -317,6 +322,8 @@ impl AuditAction {
             | AuditAction::FiscalClosurePackageApplied => EntityType::Financial,
             // Identity rotation is a node/credential lifecycle fact (B7).
             AuditAction::IdentityRotated | AuditAction::IdentityReissued => EntityType::System,
+            // Pre-auth first-admin provisioning is a node bootstrap fact (SEC-002).
+            AuditAction::FirstAdminProvisioned => EntityType::System,
         }
     }
 }
@@ -937,6 +944,8 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
 
         // Identity rotation (B7) → SystemEvent (node/credential lifecycle)
         AuditAction::IdentityRotated | AuditAction::IdentityReissued => AuditEventType::SystemEvent,
+        // Pre-auth first-admin provisioning (SEC-002) → SystemEvent (bootstrap)
+        AuditAction::FirstAdminProvisioned => AuditEventType::SystemEvent,
     }
 }
 

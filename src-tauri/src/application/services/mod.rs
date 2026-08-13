@@ -48,7 +48,7 @@ pub use fifo_preview_service::FifoPreviewService;
 pub use fiscal_closing_service::FiscalClosingService;
 pub use fiscal_reporting_service::FiscalReportingService;
 pub use fiscal_validation_service::FiscalValidationService;
-pub use identity_authentication_policy::IdentityAuthenticationPolicy;
+pub use identity_authentication_policy::{AdminCredentialState, IdentityAuthenticationPolicy};
 pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;
 pub use identity_challenge_service::IdentityChallengeService;
 pub use identity_node_resolver::NodeIdentityResolver;
