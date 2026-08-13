@@ -21,7 +21,7 @@ pub use canonical::CANONICAL_ENCODING_VERSION;
 pub use certificate::{IdentityCertificate, IDENTITY_ALGORITHM_PROFILE_ED25519};
 pub use challenge::{
     ChallengeMessage, ChallengeState, IdentityChallengeState, CHALLENGE_PROTOCOL_VERSION,
-    CHALLENGE_VERSION,
+    CHALLENGE_TTL, CHALLENGE_VERSION, MAX_OUTSTANDING_CHALLENGES,
 };
 pub use ports::IdentityStorePort;
 pub use signature::Ed25519CertificateSignature;

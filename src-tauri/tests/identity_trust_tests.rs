@@ -20,10 +20,11 @@ use tempfile::TempDir;
 use grpc_lib::application::services::{IdentityChallengeService, IdentityProvisioningService};
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
-    ChallengeMessage, CredentialStatus, IdentityChallengeState, IdentitySigner, IdentityStorePort,
-    SubjectType,
+    ChallengeMessage, ChallengeState, CredentialStatus, IdentityChallengeState, IdentitySigner,
+    IdentityStorePort, SubjectType, MAX_OUTSTANDING_CHALLENGES,
 };
-use grpc_lib::errors::{AppError, AuthenticationError};
+use grpc_lib::domain::rate_limiter::RateLimiter;
+use grpc_lib::errors::{AppError, AppResult, AuthenticationError, ValidationError};
 use grpc_lib::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
 use grpc_lib::infrastructure::security::{
     Argon2PasswordHashProvider, Ed25519SignatureVerifier, Ed25519SigningProvider,
@@ -85,12 +86,23 @@ fn provision_device() -> ProvisionedDevice {
 fn challenge_service(
     device: &ProvisionedDevice,
 ) -> (Arc<Mutex<IdentityChallengeState>>, IdentityChallengeService) {
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    challenge_service_with_limiter(device, rate_limiter)
+}
+
+/// Variant that exposes the injected rate limiter so SEC-001 tests can inspect
+/// the lockout state directly.
+fn challenge_service_with_limiter(
+    device: &ProvisionedDevice,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
+) -> (Arc<Mutex<IdentityChallengeState>>, IdentityChallengeService) {
     let state = Arc::new(Mutex::new(IdentityChallengeState::default()));
     let service = IdentityChallengeService::new(
         state.clone(),
         device.adminkey_provider.clone(),
         Arc::new(Ed25519SignatureVerifier),
         Arc::new(Argon2PasswordHashProvider),
+        rate_limiter,
     );
     (state, service)
 }
@@ -110,9 +122,32 @@ fn begin_challenge(
     service: &IdentityChallengeService,
     device: &ProvisionedDevice,
 ) -> ChallengeMessage {
-    service
-        .begin(&IdentityStoreRepository::new(device.db.executor()))
-        .expect("challenge issued")
+    try_begin_challenge(service, device).expect("challenge issued")
+}
+
+fn try_begin_challenge(
+    service: &IdentityChallengeService,
+    device: &ProvisionedDevice,
+) -> AppResult<ChallengeMessage> {
+    service.begin(&IdentityStoreRepository::new(device.db.executor()))
+}
+
+/// Real wall clock as Unix epoch seconds (used to backdate challenges in
+/// deterministic TTL tests).
+fn now_epoch_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs() as i64
+}
+
+/// Backdate an already-issued challenge far beyond `CHALLENGE_TTL`.
+fn backdate_challenge(state: &Arc<Mutex<IdentityChallengeState>>, challenge: &ChallengeMessage) {
+    let mut guard = state.lock().expect("state lock");
+    assert!(
+        guard.try_begin(challenge.clone(), now_epoch_secs() - 100_000),
+        "backdated challenge must be accepted"
+    );
 }
 
 #[test]
@@ -331,5 +366,358 @@ fn adminkey_is_portable_and_passphrase_only() {
             .decrypt_private_key(&adminkey.encrypted_private_key, "wrong passphrase")
             .is_err(),
         "wrong passphrase must fail on the portable device"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// SEC-001 Challenge–Response hardening (AUTH-01..AUTH-12)
+// ---------------------------------------------------------------------------
+
+/// One wrong-passphrase attempt against a fresh challenge (each failed attempt
+/// consumes its challenge, so a fresh one is required per attempt).
+fn fail_challenge_attempt(service: &IdentityChallengeService, device: &mut ProvisionedDevice) {
+    let challenge = begin_challenge(service, device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let result = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        "wrong passphrase",
+        &signature,
+    );
+    assert!(
+        result.is_err(),
+        "wrong passphrase must fail, got {result:?}"
+    );
+}
+
+/// Asserts the error is the user-safe lockout rejection (same message family as
+/// the password path) and NOT an internal or credential error.
+fn assert_lockout_error(result: AppResult<grpc_lib::application::services::EstablishedSession>) {
+    assert!(
+        matches!(
+            result,
+            Err(AppError::Validation(ValidationError::InvalidFormat { .. }))
+        ),
+        "expected lockout rejection, got {result:?}"
+    );
+}
+
+#[test]
+fn auth01_repeated_failures_trigger_rate_limiting() {
+    let mut device = provision_device();
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    let (state, service) = challenge_service_with_limiter(&device, rate_limiter.clone());
+
+    for _ in 0..5 {
+        fail_challenge_attempt(&service, &mut device);
+    }
+    assert!(
+        !rate_limiter.lock().expect("rl lock").is_allowed("admin"),
+        "after 5 failures the admin principal must be locked out"
+    );
+
+    // The 6th attempt is blocked before it consumes anything.
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let blocked = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        "wrong passphrase",
+        &signature,
+    );
+    assert_lockout_error(blocked);
+    assert_eq!(
+        state.lock().expect("state lock").state(&challenge.session_id),
+        Some(ChallengeState::Pending),
+        "a blocked attempt must not consume the challenge"
+    );
+}
+
+#[test]
+fn auth02_new_challenge_does_not_bypass_rate_limiting() {
+    let mut device = provision_device();
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    let (_state, service) = challenge_service_with_limiter(&device, rate_limiter.clone());
+
+    for _ in 0..5 {
+        fail_challenge_attempt(&service, &mut device);
+    }
+    assert!(!rate_limiter.lock().expect("rl lock").is_allowed("admin"));
+
+    // A BRAND-NEW challenge with the CORRECT passphrase is still blocked:
+    // the limiter keys on the admin principal, never on the challenge UUID.
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let blocked = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
+    assert_lockout_error(blocked);
+}
+
+#[test]
+fn auth03_valid_passphrase_succeeds_before_lockout() {
+    let mut device = provision_device();
+    let (_state, service) = challenge_service(&device);
+
+    // Two failed attempts (below the 5-attempt limit), then a correct attempt.
+    fail_challenge_attempt(&service, &mut device);
+    fail_challenge_attempt(&service, &mut device);
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let established = service
+        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .expect("valid passphrase succeeds before lockout");
+    assert_eq!(established.session.username, "admin");
+}
+
+#[test]
+fn auth04_correct_passphrase_does_not_bypass_active_lockout() {
+    let mut device = provision_device();
+    let (_state, service) = challenge_service(&device);
+
+    for _ in 0..5 {
+        fail_challenge_attempt(&service, &mut device);
+    }
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let blocked = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
+    assert_lockout_error(blocked);
+}
+
+#[test]
+fn auth05_expired_challenge_is_rejected() {
+    let mut device = provision_device();
+    let (state, service) = challenge_service(&device);
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    // Backdate the stored challenge beyond CHALLENGE_TTL (deterministic, no sleep).
+    backdate_challenge(&state, &challenge);
+
+    let result = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
+    assert!(
+        matches!(
+            result,
+            Err(AppError::Authentication(
+                AuthenticationError::InvalidCredentials { .. }
+            ))
+        ),
+        "expired challenge must be rejected fail-closed, got {result:?}"
+    );
+}
+
+#[test]
+fn auth06_expired_challenge_is_removed() {
+    let mut device = provision_device();
+    let (state, service) = challenge_service(&device);
+
+    let challenge = begin_challenge(&service, &device);
+    backdate_challenge(&state, &challenge);
+
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let _ = service.complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature);
+
+    let guard = state.lock().expect("state lock");
+    assert_eq!(
+        guard.state(&challenge.session_id),
+        None,
+        "an expired challenge must be removed, not retained"
+    );
+    assert_eq!(guard.len(), 0);
+}
+
+#[test]
+fn auth07_challenge_cannot_be_used_twice() {
+    let mut device = provision_device();
+    let (_state, service) = challenge_service(&device);
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    service
+        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .expect("first completion succeeds");
+
+    let replay = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
+    assert!(
+        matches!(
+            replay,
+            Err(AppError::Authentication(
+                AuthenticationError::InvalidCredentials { .. }
+            ))
+        ),
+        "replayed challenge must be rejected, got {replay:?}"
+    );
+}
+
+#[test]
+fn auth08_failed_authentication_consumes_the_challenge() {
+    let mut device = provision_device();
+    let (state, service) = challenge_service(&device);
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let failed = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        "wrong passphrase",
+        &signature,
+    );
+    assert!(failed.is_err(), "wrong passphrase must fail");
+    assert_eq!(
+        state.lock().expect("state lock").state(&challenge.session_id),
+        Some(ChallengeState::Consumed),
+        "a failed attempt must consume the challenge (one-shot fail-closed)"
+    );
+}
+
+#[test]
+fn auth09_max_outstanding_challenges_is_enforced() {
+    let device = provision_device();
+    let (state, service) = challenge_service(&device);
+
+    for _ in 0..MAX_OUTSTANDING_CHALLENGES {
+        begin_challenge(&service, &device);
+    }
+    assert_eq!(
+        state.lock().expect("state lock").len(),
+        MAX_OUTSTANDING_CHALLENGES
+    );
+
+    let overflow = try_begin_challenge(&service, &device);
+    assert!(
+        matches!(overflow, Err(AppError::Internal(_))),
+        "a challenge beyond the cap must be rejected, got {overflow:?}"
+    );
+    assert_eq!(
+        state.lock().expect("state lock").len(),
+        MAX_OUTSTANDING_CHALLENGES,
+        "the cap must not be exceeded"
+    );
+}
+
+#[test]
+fn auth10_expired_challenges_do_not_consume_capacity() {
+    let device = provision_device();
+    let (state, service) = challenge_service(&device);
+
+    // Fill the store to the cap with already-expired challenges.
+    for _ in 0..MAX_OUTSTANDING_CHALLENGES {
+        let expired =
+            ChallengeMessage::new(uuid::Uuid::new_v4(), device.wilaya_identity_id, [1u8; 32]);
+        assert!(
+            state
+                .lock()
+                .expect("state lock")
+                .try_begin(expired, now_epoch_secs() - 100_000)
+        );
+    }
+    assert_eq!(state.lock().expect("state lock").len(), MAX_OUTSTANDING_CHALLENGES);
+
+    // A fresh begin prunes the expired entries and succeeds.
+    let fresh = try_begin_challenge(&service, &device).expect("fresh challenge accepted");
+    let guard = state.lock().expect("state lock");
+    assert_eq!(
+        guard.state(&fresh.session_id),
+        Some(ChallengeState::Pending),
+        "the fresh challenge must be tracked"
+    );
+    assert!(
+        guard.len() <= MAX_OUTSTANDING_CHALLENGES,
+        "expired challenges must not permanently consume capacity"
+    );
+}
+
+#[test]
+fn auth11_malformed_response_cannot_bypass_rate_limiter() {
+    let mut device = provision_device();
+    let (_state, service) = challenge_service(&device);
+
+    // Malformed responses: unknown valid-UUID session ids. Each is a failed
+    // completion and counts toward the limit.
+    for _ in 0..5 {
+        let bogus = uuid::Uuid::new_v4();
+        let result = service.complete(&mut device.db, &bogus, ADMIN_PASSPHRASE, &[0u8; 64]);
+        assert!(
+            matches!(
+                result,
+                Err(AppError::Authentication(
+                    AuthenticationError::InvalidCredentials { .. }
+                ))
+            ),
+            "malformed response must be rejected fail-closed, got {result:?}"
+        );
+    }
+
+    // Even a fully valid challenge with the correct signature is now blocked.
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let blocked = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
+    assert_lockout_error(blocked);
+}
+
+#[test]
+fn auth12_concurrent_attempts_respect_cap_and_limiter() {
+    // The outstanding-challenge cap is enforced atomically under the state
+    // mutex: no interleaving can push the store past the bound.
+    let state = Arc::new(Mutex::new(IdentityChallengeState::default()));
+    let mut handles = Vec::new();
+    for _ in 0..64 {
+        let state = state.clone();
+        handles.push(std::thread::spawn(move || {
+            let challenge =
+                ChallengeMessage::new(uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), [3u8; 32]);
+            state.lock().expect("state lock").try_begin(challenge, 0)
+        }));
+    }
+    let accepted: usize = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("thread") as usize)
+        .sum();
+    assert!(accepted <= MAX_OUTSTANDING_CHALLENGES);
+    assert!(state.lock().expect("state lock").len() <= MAX_OUTSTANDING_CHALLENGES);
+
+    // Concurrent failure recording on the shared limiter never panics and ends
+    // in a consistent (locked) state.
+    let limiter = Arc::new(Mutex::new(RateLimiter::with_settings(60, 5)));
+    let mut handles = Vec::new();
+    for _ in 0..20 {
+        let limiter = limiter.clone();
+        handles.push(std::thread::spawn(move || {
+            for _ in 0..3 {
+                limiter.lock().expect("rl lock").record_failure("admin");
+            }
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("thread");
+    }
+    assert!(
+        !limiter.lock().expect("rl lock").is_allowed("admin"),
+        "concurrent failures must still lock the principal out"
     );
 }

@@ -11,6 +11,7 @@
 //! `IdentityRotationCoordinator`.
 
 use crate::application::authz::Action;
+use crate::application::services::identity_challenge_service::CHALLENGE_RATE_LIMIT_KEY;
 use crate::application::services::{
     AuditService, FinalizeUnitProvisionResult, IdentityBootstrapStatusService,
     IdentityChallengeService, IdentityProvisioningService, IdentityRotationCoordinator,
@@ -36,6 +37,7 @@ fn challenge_service(state: &AppState) -> IdentityChallengeService {
         state.identity_challenge.clone(),
         adminkey_provider(),
         state.password_port.clone(),
+        state.rate_limiter.clone(),
     )
 }
 
@@ -500,11 +502,20 @@ pub fn complete_challenge(
             },
         )));
     }
-    let parsed_session_id = uuid::Uuid::parse_str(&session_id).map_err(|e| {
-        into_command_error(AppError::Internal(format!(
-            "Invalid challenge session id: {e}"
-        )))
-    })?;
+    let parsed_session_id = match uuid::Uuid::parse_str(&session_id) {
+        Ok(id) => id,
+        Err(e) => {
+            // SEC-001-A / AUTH-11: a malformed (non-UUID) session id is a
+            // failed completion and counts toward the limiter so it can never
+            // bypass the rate limit.
+            if let Ok(rl) = state.rate_limiter.lock() {
+                rl.record_failure(CHALLENGE_RATE_LIMIT_KEY);
+            }
+            return Err(into_command_error(AppError::Internal(format!(
+                "Invalid challenge session id: {e}"
+            ))));
+        }
+    };
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;

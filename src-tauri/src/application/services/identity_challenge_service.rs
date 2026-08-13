@@ -23,10 +23,12 @@ use std::sync::{Arc, Mutex};
 use crate::db::Database;
 use crate::domain::identity::{
     AdminKeyFile, ChallengeMessage, CredentialStatus, IdentityCertificate, IdentityChallengeState,
-    IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, SubjectType,
+    IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, MAX_OUTSTANDING_CHALLENGES,
+    SubjectType,
 };
+use crate::domain::rate_limiter::RateLimiter;
 use crate::domain::security::PasswordHashPort;
-use crate::errors::{AppError, AppResult, AuthenticationError};
+use crate::errors::{AppError, AppResult, AuthenticationError, ValidationError};
 use crate::infrastructure::identity::AdminKeyProvider;
 use crate::repositories::{identity_store::IdentityStoreRepository, RepositoryProvider};
 
@@ -34,12 +36,22 @@ use super::identity_provisioning_service::BOOTSTRAP_ADMIN_USERNAME;
 use super::session_establishment_service::{EstablishedSession, SessionEstablishmentService};
 use super::UserService;
 
+/// Rate-limit key for Admin Challenge–Response (SEC-001-A).
+///
+/// The challenge path authenticates exactly one principal: the node-local
+/// ADMIN operator (`BOOTSTRAP_ADMIN_USERNAME`). Keying the limiter on that
+/// principal — NEVER on the challenge UUID — guarantees that requesting a
+/// fresh challenge cannot reset the failure counter. This also unifies the
+/// per-principal attempt budget with the password path for the same identity.
+pub(crate) const CHALLENGE_RATE_LIMIT_KEY: &str = BOOTSTRAP_ADMIN_USERNAME;
+
 /// One-shot challenge login service.
 pub struct IdentityChallengeService {
     challenge_state: Arc<Mutex<IdentityChallengeState>>,
     adminkey_provider: AdminKeyProvider,
     verifier: Arc<dyn IdentitySignatureVerifier>,
     password_port: Arc<dyn PasswordHashPort>,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
 }
 
 impl IdentityChallengeService {
@@ -48,12 +60,14 @@ impl IdentityChallengeService {
         adminkey_provider: AdminKeyProvider,
         verifier: Arc<dyn IdentitySignatureVerifier>,
         password_port: Arc<dyn PasswordHashPort>,
+        rate_limiter: Arc<Mutex<RateLimiter>>,
     ) -> Self {
         Self {
             challenge_state,
             adminkey_provider,
             verifier,
             password_port,
+            rate_limiter,
         }
     }
 
@@ -65,12 +79,14 @@ impl IdentityChallengeService {
         challenge_state: Arc<Mutex<IdentityChallengeState>>,
         adminkey_provider: AdminKeyProvider,
         password_port: Arc<dyn PasswordHashPort>,
+        rate_limiter: Arc<Mutex<RateLimiter>>,
     ) -> Self {
         Self::new(
             challenge_state,
             adminkey_provider,
             Arc::new(crate::infrastructure::security::Ed25519SignatureVerifier),
             password_port,
+            rate_limiter,
         )
     }
 
@@ -83,6 +99,12 @@ impl IdentityChallengeService {
     }
 
     /// Issue a fresh one-shot challenge bound to the local WILAYA node identity.
+    ///
+    /// Bounded by `MAX_OUTSTANDING_CHALLENGES`: expired challenges are pruned
+    /// opportunistically and a store at capacity is rejected instead of growing
+    /// without limit (SEC-001-C). `begin` deliberately does NOT consult the
+    /// rate limiter — it is not an authentication attempt — so it can never
+    /// reset the failure counter (SEC-001-A).
     pub fn begin(&self, store: &dyn IdentityStorePort) -> AppResult<ChallengeMessage> {
         let wilaya = store
             .get_active_by_subject_type(SubjectType::Wilaya)?
@@ -91,10 +113,15 @@ impl IdentityChallengeService {
         use rand::RngCore;
         rand::rngs::OsRng.fill_bytes(&mut nonce);
         let challenge = ChallengeMessage::new(uuid::Uuid::new_v4(), wilaya.identity_id, nonce);
-        self.challenge_state
+        let mut state = self
+            .challenge_state
             .lock()
-            .map_err(|e| AppError::Internal(format!("Failed to lock challenge state: {e}")))?
-            .begin(challenge.clone());
+            .map_err(|e| AppError::Internal(format!("Failed to lock challenge state: {e}")))?;
+        if !state.begin(challenge.clone()) {
+            return Err(AppError::Internal(format!(
+                "Too many outstanding challenges (limit {MAX_OUTSTANDING_CHALLENGES}); try again later"
+            )));
+        }
         Ok(challenge)
     }
 
@@ -104,7 +131,71 @@ impl IdentityChallengeService {
     /// secret key, signs the challenge IN RUST, and follows the exact same
     /// verification path as `complete(...)`. The frontend never sees key
     /// material — only the passphrase crosses the IPC boundary.
+    ///
+    /// Rate limiting (SEC-001-A): a locked-out principal is rejected before any
+    /// challenge is consumed and nothing is recorded; every attempt that passes
+    /// the guard records success (reset) or a failure on
+    /// `CHALLENGE_RATE_LIMIT_KEY`.
     pub fn complete_with_passphrase(
+        &self,
+        db: &mut Database,
+        session_id: &uuid::Uuid,
+        passphrase: &str,
+    ) -> AppResult<EstablishedSession> {
+        self.guard_rate_limit()?;
+        let result = self.try_complete_with_passphrase(db, session_id, passphrase);
+        self.record_outcome(&result);
+        result
+    }
+
+    /// Rate-limit guard, mirroring the password path (`commands/auth.rs`):
+    /// blocked principals receive the same user-safe Arabic message and the
+    /// pending challenge is NOT consumed by a blocked attempt.
+    fn guard_rate_limit(&self) -> AppResult<()> {
+        let rate_limiter = self.rate_limiter.lock().map_err(|e| {
+            AppError::Internal(format!("Failed to lock rate limiter: {e}"))
+        })?;
+        if rate_limiter.is_allowed(CHALLENGE_RATE_LIMIT_KEY) {
+            return Ok(());
+        }
+        let remaining_secs = Option::unwrap_or(
+            rate_limiter.get_remaining_lockout_secs(CHALLENGE_RATE_LIMIT_KEY),
+            300,
+        );
+        log::warn!(
+            target: "grpc::auth",
+            "challenge login rate limited: principal={} remaining_secs={}",
+            CHALLENGE_RATE_LIMIT_KEY,
+            remaining_secs
+        );
+        Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "login".to_string(),
+            message: format!(
+                "عدد المحاولات تجاوز الحد. انتظر {} دقيقة",
+                remaining_secs / 60
+            ),
+        }))
+    }
+
+    /// Apply the existing security policy to the attempt outcome: a successful
+    /// authentication resets the failure counter (`record_success`); every
+    /// failed attempt counts toward the limit (`record_failure`).
+    fn record_outcome(&self, result: &AppResult<EstablishedSession>) {
+        let rate_limiter = match self.rate_limiter.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                log::warn!(target: "grpc::auth", "rate limiter lock failed on outcome record: {e}");
+                return;
+            }
+        };
+        match result {
+            Ok(_) => rate_limiter.record_success(CHALLENGE_RATE_LIMIT_KEY),
+            Err(_) => rate_limiter.record_failure(CHALLENGE_RATE_LIMIT_KEY),
+        }
+    }
+
+    /// Authentication attempt proper (after the rate-limit guard).
+    fn try_complete_with_passphrase(
         &self,
         db: &mut Database,
         session_id: &uuid::Uuid,
@@ -126,6 +217,20 @@ impl IdentityChallengeService {
     /// infrastructure failures (I/O, malformed key material) surface as their
     /// concrete `AppError` variants.
     pub fn complete(
+        &self,
+        db: &mut Database,
+        session_id: &uuid::Uuid,
+        passphrase: &str,
+        challenge_signature: &[u8],
+    ) -> AppResult<EstablishedSession> {
+        self.guard_rate_limit()?;
+        let result = self.try_complete(db, session_id, passphrase, challenge_signature);
+        self.record_outcome(&result);
+        result
+    }
+
+    /// Authentication attempt proper (after the rate-limit guard).
+    fn try_complete(
         &self,
         db: &mut Database,
         session_id: &uuid::Uuid,

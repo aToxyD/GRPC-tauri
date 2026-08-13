@@ -129,6 +129,9 @@ fn challenge_service(
         node.adminkey_provider.clone(),
         Arc::new(Ed25519SignatureVerifier),
         Arc::new(Argon2PasswordHashProvider),
+        Arc::new(Mutex::new(
+            grpc_lib::domain::rate_limiter::RateLimiter::new(),
+        )),
     );
     (state, service)
 }
