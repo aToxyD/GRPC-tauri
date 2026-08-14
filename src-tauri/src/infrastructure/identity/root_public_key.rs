@@ -34,7 +34,7 @@ const ED25519_PUBLIC_KEY_LEN: usize = 32;
 /// Authority Root public key here before release; until then, Release builds
 /// fail closed on WILAYA finalization unless `GRPC_ROOT_PUBLIC_KEY` supplies a
 /// real (non-test-vector) Authority Root public key.
-const PROD_ROOT_PUBLIC_KEY: &str = "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=";
+const PROD_ROOT_PUBLIC_KEY: &str = "FTMc0JHAEL0EHqzB408Aqlx8NP6FjvvbVLC5JRatd0Q=";
 
 /// Known RFC 8032 §7.1 public test vectors (Base64, 32 bytes). Their private
 /// keys are published in RFC 8032, so none of them may ever become a trusted
