@@ -57,3 +57,9 @@ docs/governance/frontend/SELF_AUDIT.md
 docs/governance/frontend/GOVERNANCE_ENGINE_METRICS.md
 docs/governance/frontend/GOVERNANCE_COVERAGE_REPORT.md
 docs/governance/frontend/.governance-telemetry.json
+
+# Root Authority ceremony artifacts (root-signer init) — must never be committed
+root-secret.hex
+root-public.key
+*.root-secret.hex
+*.root-public.key

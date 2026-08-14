@@ -136,6 +136,10 @@ fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+fn stdout(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
 // ---------------------------------------------------------------------------
 // Positive end-to-end path through the REAL binary
 // ---------------------------------------------------------------------------
@@ -351,5 +355,138 @@ fn binary_refuses_unsupported_algorithm_version() {
         stderr(&output).contains("algorithm_version"),
         "got: {}",
         stderr(&output)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// init ceremony (offline Authority Root keypair generation)
+// ---------------------------------------------------------------------------
+
+fn init_args(dir: &TempDir) -> (std::path::PathBuf, std::path::PathBuf, Vec<String>) {
+    let secret_file = dir.path().join("root-secret.hex");
+    let public_key_file = dir.path().join("root-public.key");
+    let args = vec![
+        "init".to_string(),
+        "--secret-file".to_string(),
+        secret_file.to_string_lossy().into_owned(),
+        "--public-key-file".to_string(),
+        public_key_file.to_string_lossy().into_owned(),
+    ];
+    (secret_file, public_key_file, args)
+}
+
+#[test]
+fn real_binary_init_creates_keypair_and_sign_consumes_it() {
+    use base64::Engine;
+
+    let dir = TempDir::new().expect("temp dir");
+    let (secret_file, public_key_file, args) = init_args(&dir);
+
+    let output = run_signer(&args, None);
+    assert!(
+        output.status.success(),
+        "root-signer init must succeed: {}",
+        stderr(&output)
+    );
+
+    let output_text = stdout(&output);
+    assert!(
+        output_text.contains("[root-signer] new Authority Root keypair initialized."),
+        "ceremony summary missing: {output_text}"
+    );
+
+    let secret_hex = std::fs::read_to_string(&secret_file).expect("secret file written");
+    let public_key_b64 = std::fs::read_to_string(&public_key_file).expect("public file written");
+    assert!(
+        output_text.contains(public_key_b64.trim()),
+        "stdout must surface the public key"
+    );
+    assert!(
+        !output_text.contains(secret_hex.trim()),
+        "stdout must NEVER contain the secret"
+    );
+
+    // Exact artifact formats.
+    assert_eq!(secret_hex.len(), 65, "64 hex chars + trailing newline");
+    assert!(secret_hex.ends_with('\n'));
+    assert!(secret_hex.trim().chars().all(|c| c.is_ascii_hexdigit()));
+    let seed: [u8; 32] = hex::decode(secret_hex.trim())
+        .expect("valid hex")
+        .try_into()
+        .expect("32 bytes");
+    assert!(public_key_b64.ends_with('\n'));
+    let public_bytes = base64::engine::general_purpose::STANDARD
+        .decode(public_key_b64.trim())
+        .expect("valid base64");
+    assert_eq!(public_bytes.len(), 32);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&secret_file)
+            .expect("secret metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "secret must be owner-only");
+    }
+
+    // The generated secret is consumable by `sign --key-file`, and the signed
+    // certificate verifies against the generated public key.
+    let mut node = fresh_node();
+    remove_seeded_admin(&mut node);
+    let csr = generate_csr(&mut node);
+    let csr_path = dir.path().join("wilaya-csr.json");
+    let signed_path = dir.path().join("wilaya-signed.json");
+    write_json(&csr_path, &csr);
+
+    let sign_output = run_signer(
+        &[
+            "sign".to_string(),
+            "--csr".to_string(),
+            csr_path.to_string_lossy().into_owned(),
+            "--out".to_string(),
+            signed_path.to_string_lossy().into_owned(),
+            "--key-file".to_string(),
+            secret_file.to_string_lossy().into_owned(),
+        ],
+        Some(public_key_b64.trim()),
+    );
+    assert!(
+        sign_output.status.success(),
+        "sign with the generated secret must succeed: {}",
+        stderr(&sign_output)
+    );
+
+    let signed_json = std::fs::read_to_string(&signed_path).expect("signed file written");
+    let signed_cert: IdentityCertificate = serde_json::from_str(&signed_json).expect("valid JSON");
+    let derived: [u8; 32] = Ed25519SigningProvider::new(seed)
+        .public_key()
+        .try_into()
+        .expect("32-byte key");
+    assert!(
+        Ed25519SignatureVerifier
+            .verify_certificate(
+                &signed_cert,
+                &derived,
+                signed_cert.signature.as_ref().expect("signature present"),
+            )
+            .expect("verify"),
+        "the signed certificate must verify against the generated public key"
+    );
+
+    // The keypair exists exactly once: re-running init must refuse without
+    // overwriting the existing secret.
+    let secret_before = std::fs::read_to_string(&secret_file).expect("secret file");
+    let rerun = run_signer(&args, None);
+    assert!(!rerun.status.success(), "re-running init must refuse");
+    assert!(
+        stderr(&rerun).contains("already exists"),
+        "got: {}",
+        stderr(&rerun)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&secret_file).expect("secret file"),
+        secret_before,
+        "a refused re-init must never overwrite the secret"
     );
 }

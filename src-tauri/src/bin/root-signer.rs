@@ -28,6 +28,11 @@
 //! release builds and loudly warned in debug builds. Passing end-to-end tests
 //! with TEST 1 proves protocol correctness only — NOT production readiness.
 
+use std::path::Path;
+
+use rand::rngs::OsRng;
+use rand::RngCore;
+
 use grpc_lib::domain::identity::{
     Ed25519CertificateSignature, IdentityCertificate, IdentitySignatureVerifier, IdentitySigner,
     CredentialStatus, IDENTITY_ALGORITHM_PROFILE_ED25519, SubjectType,
@@ -51,6 +56,17 @@ struct SignArgs {
     expected_root_public_key: Option<[u8; 32]>,
 }
 
+/// Arguments for the `init` ceremony subcommand.
+struct InitArgs {
+    secret_file: String,
+    public_key_file: String,
+}
+
+/// Default secret artifact name for `root-signer init`.
+const DEFAULT_SECRET_FILE: &str = "root-secret.hex";
+/// Default public-key artifact name for `root-signer init`.
+const DEFAULT_PUBLIC_KEY_FILE: &str = "root-public.key";
+
 enum KeyPolicy {
     AllowWithWarning(String),
     Refuse(String),
@@ -73,10 +89,17 @@ fn cli() -> Result<(), String> {
         print_usage();
         return Ok(());
     }
-    if args.first().map(String::as_str) != Some("sign") {
-        return Err("usage: root-signer sign --csr <file.json> --out <signed.json> [--key-file <path> | --key-hex <64hex>]".to_string());
+    match args.first().map(String::as_str) {
+        Some("sign") => run_sign_cli(&args),
+        Some("init") => run_init_cli(&args),
+        _ => Err(
+            "usage: root-signer sign --csr <file.json> --out <signed.json> [--key-file <path> | --key-hex <64hex>] | root-signer init [--secret-file <path>] [--public-key-file <path>]"
+                .to_string(),
+        ),
     }
+}
 
+fn run_sign_cli(args: &[String]) -> Result<(), String> {
     let mut csr_path: Option<String> = None;
     let mut out_path: Option<String> = None;
     let mut key_file: Option<String> = None;
@@ -85,10 +108,10 @@ fn cli() -> Result<(), String> {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--csr" => csr_path = Some(arg_value(&args, &mut i, "--csr")?),
-            "--out" => out_path = Some(arg_value(&args, &mut i, "--out")?),
-            "--key-file" => key_file = Some(arg_value(&args, &mut i, "--key-file")?),
-            "--key-hex" => key_hex = Some(arg_value(&args, &mut i, "--key-hex")?),
+            "--csr" => csr_path = Some(arg_value(args, &mut i, "--csr")?),
+            "--out" => out_path = Some(arg_value(args, &mut i, "--out")?),
+            "--key-file" => key_file = Some(arg_value(args, &mut i, "--key-file")?),
+            "--key-hex" => key_hex = Some(arg_value(args, &mut i, "--key-hex")?),
             other => return Err(format!("unknown argument: {other}")),
         }
         i += 1;
@@ -113,8 +136,10 @@ fn cli() -> Result<(), String> {
 fn print_usage() {
     eprintln!("root-signer — offline Authority Root WILAYA certificate signer");
     eprintln!("usage: root-signer sign --csr <file.json> --out <signed.json> [--key-file <path> | --key-hex <64hex>]");
+    eprintln!("       root-signer init [--secret-file <path>] [--public-key-file <path>]");
     eprintln!("       Root private key sources (exactly one): GRPC_ROOT_PRIVATE_KEY env, --key-file, --key-hex.");
     eprintln!("       Optional: GRPC_ROOT_PUBLIC_KEY (Base64) — when set, the derived Root public key MUST match.");
+    eprintln!("       init generates a fresh Authority Root keypair; defaults: ./root-secret.hex ./root-public.key. Run OUTSIDE the repository.");
 }
 
 fn arg_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
@@ -254,6 +279,217 @@ fn run_sign(args: &SignArgs) -> Result<(), String> {
         args.out_path
     );
     Ok(())
+}
+
+fn run_init_cli(args: &[String]) -> Result<(), String> {
+    let mut secret_file: Option<String> = None;
+    let mut public_key_file: Option<String> = None;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--secret-file" => secret_file = Some(arg_value(args, &mut i, "--secret-file")?),
+            "--public-key-file" => {
+                public_key_file = Some(arg_value(args, &mut i, "--public-key-file")?)
+            }
+            other => return Err(format!("unknown argument: {other}")),
+        }
+        i += 1;
+    }
+
+    run_init(&InitArgs {
+        secret_file: secret_file.unwrap_or_else(|| DEFAULT_SECRET_FILE.to_string()),
+        public_key_file: public_key_file.unwrap_or_else(|| DEFAULT_PUBLIC_KEY_FILE.to_string()),
+    })
+}
+
+/// Generates a fresh Authority Root Ed25519 keypair as two files. The secret is
+/// written owner-only (0600 on Unix) and the pair is self-verified before any
+/// file is created. The keypair exists only once: if either destination already
+/// exists (file, directory, or dangling symlink), the command refuses and exits
+/// without creating anything. This ceremony runs OUTSIDE the repository.
+fn run_init(args: &InitArgs) -> Result<(), String> {
+    if destination_occupied(&args.secret_file) {
+        return Err(format!(
+            "refusing to initialize: secret file {} already exists; the Authority Root keypair is created exactly once",
+            args.secret_file
+        ));
+    }
+    if destination_occupied(&args.public_key_file) {
+        return Err(format!(
+            "refusing to initialize: public key file {} already exists; the Authority Root keypair is created exactly once",
+            args.public_key_file
+        ));
+    }
+
+    let mut seed = [0u8; 32];
+    OsRng.fill_bytes(&mut seed);
+
+    let derived_public_key: [u8; 32] = Ed25519SigningProvider::new(seed)
+        .public_key()
+        .try_into()
+        .map_err(|_| "internal: signer produced a non-32-byte public key".to_string())?;
+
+    match test_key_policy(&derived_public_key) {
+        KeyPolicy::Refuse(reason) => return Err(reason),
+        KeyPolicy::AllowWithWarning(warning) => {
+            if !warning.is_empty() {
+                eprintln!("{warning}");
+            }
+        }
+    }
+
+    use base64::Engine;
+    let secret_hex = format!("{}\n", hex::encode(seed));
+    let public_key_b64 = format!(
+        "{}\n",
+        base64::engine::general_purpose::STANDARD.encode(derived_public_key)
+    );
+
+    verify_generated_pair(&secret_hex, &public_key_b64, &derived_public_key)?;
+    self_verify_sign_roundtrip(seed, &derived_public_key)?;
+
+    write_file_atomic(&args.secret_file, secret_hex.as_bytes(), true)?;
+    write_file_atomic(&args.public_key_file, public_key_b64.as_bytes(), false)?;
+
+    print!(
+        "{}",
+        operator_summary(&public_key_b64, &args.secret_file, &args.public_key_file)
+    );
+    Ok(())
+}
+
+/// Validates that the encoded secret and public key round-trip to a matching
+/// Ed25519 keypair. Runs BEFORE any file is written.
+fn verify_generated_pair(
+    secret_hex: &str,
+    public_key_b64: &str,
+    derived_public_key: &[u8; 32],
+) -> Result<(), String> {
+    use base64::Engine;
+    let decoded_secret = decode_private_key(secret_hex)?;
+    let rederived: [u8; 32] = Ed25519SigningProvider::new(decoded_secret)
+        .public_key()
+        .try_into()
+        .map_err(|_| "internal: re-derived public key has an invalid length".to_string())?;
+    if rederived != *derived_public_key {
+        return Err(
+            "internal error: generated keypair failed round-trip verification (public key mismatch); refusing to write"
+                .to_string(),
+        );
+    }
+    let decoded_public = base64::engine::general_purpose::STANDARD
+        .decode(public_key_b64.trim())
+        .map_err(|e| format!("internal error: generated public key encoding failed: {e}"))?;
+    if decoded_public.len() != ED25519_PUBLIC_KEY_LEN || decoded_public != derived_public_key {
+        return Err(
+            "internal error: generated public key failed base64 round-trip verification; refusing to write"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Signs and verifies a sample WILAYA certificate with the freshly generated
+/// keypair, proving the pair can produce a valid chain of trust before any file
+/// is created (ADR-0039 §5 — entity-level sign/verify, not raw key math).
+fn self_verify_sign_roundtrip(seed: [u8; 32], public_key: &[u8; 32]) -> Result<(), String> {
+    let mut certificate = IdentityCertificate {
+        identity_id: uuid::Uuid::nil(),
+        subject_type: SubjectType::Wilaya,
+        subject_id: uuid::Uuid::nil(),
+        issuer_identity_id: None,
+        credential_id: uuid::Uuid::nil(),
+        generation: 1,
+        status: CredentialStatus::Active,
+        public_key: vec![7u8; 32],
+        algorithm_version: IDENTITY_ALGORITHM_PROFILE_ED25519,
+        not_after: None,
+        package_sequence: None,
+        signature: None,
+    };
+    let signer = Ed25519SigningProvider::new(seed);
+    let signature_bytes = signer
+        .sign_certificate(&certificate)
+        .map_err(|e| format!("internal error: self-verification signing failed: {e}"))?;
+    let signature = Ed25519CertificateSignature::try_from(signature_bytes)
+        .map_err(|e| format!("internal error: self-verification signature creation failed: {e}"))?;
+    certificate.signature = Some(signature);
+    let valid = Ed25519SignatureVerifier
+        .verify_certificate(
+            &certificate,
+            public_key,
+            certificate
+                .signature
+                .as_ref()
+                .ok_or("internal: missing signature")?,
+        )
+        .map_err(|e| format!("internal error: self-verification failed: {e}"))?;
+    if !valid {
+        return Err(
+            "internal error: generated keypair failed signature round-trip verification; refusing to write"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Writes `contents` atomically (temp file in the same directory, then rename).
+/// With `restrictive` true, the temp file is chmod 0600 before the rename, so
+/// the final artifact is never briefly world-readable. Parent directories are
+/// created only when the destination path has a non-empty parent.
+fn write_file_atomic(path: &str, contents: &[u8], restrictive: bool) -> Result<(), String> {
+    let destination = Path::new(path);
+    if let Some(parent) = destination.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create directory {}: {e}", parent.display()))?;
+        }
+    }
+    let tmp_path = destination.with_extension("tmp");
+    std::fs::write(&tmp_path, contents)
+        .map_err(|e| format!("cannot write {}: {e}", tmp_path.display()))?;
+    if restrictive {
+        apply_restrictive_permissions(&tmp_path)?;
+    }
+    std::fs::rename(&tmp_path, destination)
+        .map_err(|e| format!("cannot finalize {}: {e}", destination.display()))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_restrictive_permissions(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("cannot restrict permissions on {}: {e}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn apply_restrictive_permissions(_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+/// True when `path` already exists as any filesystem entry — a regular file, a
+/// directory, or a dangling symlink (detected via `symlink_metadata`, which
+/// does not follow the final component).
+fn destination_occupied(path: &str) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+/// Operator-facing ceremony summary. Contains ONLY the public key, never the
+/// secret. The caller prints this to stdout.
+fn operator_summary(public_key_b64: &str, secret_file: &str, public_key_file: &str) -> String {
+    format!(
+        "[root-signer] new Authority Root keypair initialized.\n\
+         [root-signer] Root PUBLIC KEY (Base64, 32 bytes Ed25519) — the only value that may leave this ceremony:\n\
+         [root-signer]   {}\n\
+         [root-signer] secret: {} (owner-only, offline — destroy any copies)\n\
+         [root-signer] public: {}\n\
+         [root-signer] next step: write this PUBLIC KEY (trimmed, no newline) into GRPC's PROD_ROOT_PUBLIC_KEY pin and rebuild the release.\n",
+        public_key_b64.trim(),
+        secret_file,
+        public_key_file
+    )
 }
 
 fn guard_wilaya_only(certificate: &IdentityCertificate) -> Result<(), String> {
@@ -506,5 +742,192 @@ mod tests {
             KeyPolicy::AllowWithWarning(w) => assert!(w.is_empty()),
             KeyPolicy::Refuse(_) => panic!("an unknown key must be allowed"),
         }
+    }
+
+    fn init_in(dir: &tempfile::TempDir) -> InitArgs {
+        InitArgs {
+            secret_file: dir
+                .path()
+                .join("root-secret.hex")
+                .to_string_lossy()
+                .into_owned(),
+            public_key_file: dir
+                .path()
+                .join("root-public.key")
+                .to_string_lossy()
+                .into_owned(),
+        }
+    }
+
+    #[test]
+    fn init_generates_valid_keypair_files() {
+        use base64::Engine;
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        run_init(&args).unwrap();
+
+        let secret = std::fs::read_to_string(&args.secret_file).unwrap();
+        assert_eq!(secret.len(), 65, "64 hex chars + trailing newline");
+        assert!(secret.ends_with('\n'));
+        assert!(secret.trim().chars().all(|c| c.is_ascii_hexdigit()));
+        let seed = decode_private_key(&secret).unwrap();
+
+        let public = std::fs::read_to_string(&args.public_key_file).unwrap();
+        assert!(public.ends_with('\n'));
+        let pk = base64::engine::general_purpose::STANDARD
+            .decode(public.trim())
+            .unwrap();
+        assert_eq!(pk.len(), ED25519_PUBLIC_KEY_LEN);
+
+        let expected: [u8; 32] = Ed25519SigningProvider::new(seed)
+            .public_key()
+            .try_into()
+            .unwrap();
+        assert_eq!(pk, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn init_secret_is_owner_only_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        run_init(&args).unwrap();
+        let secret_mode = std::fs::metadata(&args.secret_file).unwrap().permissions().mode();
+        assert_eq!(secret_mode & 0o777, 0o600);
+        let public_mode = std::fs::metadata(&args.public_key_file).unwrap().permissions().mode();
+        assert_ne!(public_mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn init_refuses_existing_secret_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        std::fs::write(&args.secret_file, "x").unwrap();
+        let err = run_init(&args).unwrap_err();
+        assert!(err.contains("root-secret.hex"));
+        assert!(err.contains("already exists"));
+        assert!(!Path::new(&args.public_key_file).exists());
+    }
+
+    #[test]
+    fn init_refuses_existing_public_key_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        std::fs::write(&args.public_key_file, "x").unwrap();
+        let err = run_init(&args).unwrap_err();
+        assert!(err.contains("root-public.key"));
+        assert!(err.contains("already exists"));
+        assert!(!Path::new(&args.secret_file).exists());
+    }
+
+    #[test]
+    fn init_refuses_partial_initialization() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        run_init(&args).unwrap();
+        let secret_before = std::fs::read_to_string(&args.secret_file).unwrap();
+        let err = run_init(&args).unwrap_err();
+        assert!(err.contains("already exists"));
+        assert_eq!(
+            std::fs::read_to_string(&args.secret_file).unwrap(),
+            secret_before,
+            "a failed re-init must never overwrite the existing secret"
+        );
+    }
+
+    #[test]
+    fn init_refuses_directory_destination() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        std::fs::create_dir(&args.secret_file).unwrap();
+        let err = run_init(&args).unwrap_err();
+        assert!(err.contains("already exists"));
+        assert!(!Path::new(&args.public_key_file).exists());
+    }
+
+    #[test]
+    fn init_rejects_force_as_unknown_argument() {
+        let err = run_init_cli(&["init".to_string(), "--force".to_string()]).unwrap_err();
+        assert!(err.contains("unknown argument"));
+        assert!(err.contains("--force"));
+    }
+
+    #[test]
+    fn init_secret_never_enters_operator_output() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        run_init(&args).unwrap();
+        let secret = std::fs::read_to_string(&args.secret_file).unwrap();
+        let public = std::fs::read_to_string(&args.public_key_file).unwrap();
+        let summary = operator_summary(&public, &args.secret_file, &args.public_key_file);
+        assert!(!summary.contains(secret.trim()));
+    }
+
+    #[test]
+    fn init_generated_pair_signs_and_verifies() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        run_init(&args).unwrap();
+        let seed = decode_private_key(&std::fs::read_to_string(&args.secret_file).unwrap()).unwrap();
+        let public: [u8; 32] = Ed25519SigningProvider::new(seed)
+            .public_key()
+            .try_into()
+            .unwrap();
+        self_verify_sign_roundtrip(seed, &public).unwrap();
+    }
+
+    #[test]
+    fn init_secret_is_consumable_by_key_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let args = init_in(&dir);
+        run_init(&args).unwrap();
+
+        let secret =
+            decode_private_key(&std::fs::read_to_string(&args.secret_file).unwrap()).unwrap();
+        let csr_path = dir.path().join("csr.json");
+        let out_path = dir.path().join("signed.json");
+        std::fs::write(&csr_path, serde_json::to_string_pretty(&sample_wilaya_csr()).unwrap())
+            .unwrap();
+
+        run_sign(&SignArgs {
+            csr_path: csr_path.to_string_lossy().into_owned(),
+            out_path: out_path.to_string_lossy().into_owned(),
+            secret_key: secret,
+            expected_root_public_key: None,
+        })
+        .unwrap();
+
+        let signed: IdentityCertificate =
+            serde_json::from_str(&std::fs::read_to_string(&out_path).unwrap()).unwrap();
+        let pk: [u8; 32] = Ed25519SigningProvider::new(secret)
+            .public_key()
+            .try_into()
+            .unwrap();
+        assert!(Ed25519SignatureVerifier
+            .verify_certificate(&signed, &pk, signed.signature.as_ref().unwrap())
+            .unwrap());
+    }
+
+    #[test]
+    fn init_secret_encoding_roundtrips_a_fixed_seed() {
+        use base64::Engine;
+        let secret_hex = format!("{}\n", hex::encode(TEST_ROOT_SECRET));
+        let public: [u8; 32] = Ed25519SigningProvider::new(TEST_ROOT_SECRET)
+            .public_key()
+            .try_into()
+            .unwrap();
+        let public_key_b64 = format!(
+            "{}\n",
+            base64::engine::general_purpose::STANDARD.encode(public)
+        );
+        verify_generated_pair(&secret_hex, &public_key_b64, &public).unwrap();
+        assert_eq!(decode_private_key(&secret_hex).unwrap(), TEST_ROOT_SECRET);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(public_key_b64.trim())
+                .unwrap(),
+            public
+        );
     }
 }
