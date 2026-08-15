@@ -635,6 +635,8 @@ fn d1_unit_v2_export_is_fixed_sequence_one_and_ledger_untouched() {
             password_hash: "hash".into(),
             role: "User".into(),
         },
+        unit_certificate: None,
+        unit_private_key: None,
     };
 
     let sequence = IdentitySignedExportService::new(&db, &node_key_store)

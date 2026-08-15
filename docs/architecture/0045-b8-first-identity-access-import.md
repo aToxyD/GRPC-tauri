@@ -207,6 +207,16 @@ NORMAL_OPERATION            (Admin/User sessions; imports via AdminOnly — unch
 - **Partial failure**: single transaction rolls back; same-sequence retry succeeds (test `:882-928`).
 - **Rollback**: re-provisioning (re-import `.unit`, fresh UUIDs) unless separately decided otherwise (open decision #9).
 
+> **Amendment (2026-08-15 — packaged-identity bootstrap, ADR-0044 §8.3):** the
+> `UNIT_PACKAGE_ACCEPTED` transition may now also install the packaged UNIT
+> identity (certificate + guarded key install + executor identity install)
+> inside the same `.unit` import audit transaction, reaching
+> `UnitActive` without a separate CSR ceremony. This does NOT change the B8
+> `identity_access` exemption (predicates 1-13 unchanged), the anchor-first
+> requirement (predicate 2, §10 `ROOT_ANCHORED`), or any other invariant in
+> §11. The packaged UNIT identity is Ed25519-authenticated by the installed
+> ACTIVE WILAYA anchor, exactly like `finalize_unit_provision`.
+
 # 11. Security Invariants (NORMATIVE — preserved by this decision)
 
 1. Fresh UNIT does not possess the WILAYA private key. — CONFIRMED (RFC trust chain)

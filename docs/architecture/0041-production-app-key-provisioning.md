@@ -155,6 +155,29 @@ pre-auth lifecycle):
 - `unlock_app_key(passphrase)` → `AppKeyUnlockResult`
 - `export_app_key_backup()` → guarded re-export path (requires unlocked state)
 
+### 10.8 Packaged-identity exception — UNIT node secret transport (2026-08-15)
+
+> Amendment synchronized with the ADR-0044 packaged-identity bootstrap and the
+> RFC `2026-08-04-node-identity-trust` §3.12 D2 clarification (2026-08-15).
+
+The general rule — *node signing keys never leave the node* — has one narrow,
+explicit exception for the **packaged UNIT identity**:
+
+- In the packaged `.unit` bootstrap flow the WILAYA generates a **UNIT** Ed25519
+  keypair **in memory** at export time and embeds the signed UNIT certificate +
+  32-byte secret inside the encrypted `.unit` package.
+- The UNIT secret is transported **only** inside that encrypted artifact (App
+  Key-encrypted, §10.2) and is installed on the UNIT node's own `NodeKeyStore`
+  through a guarded, never-overwrite install. It is **never written to the
+  WILAYA `NodeKeyStore`** — the WILAYA retains no copy.
+- This does NOT change the WILAYA/UNIT node-key custody rule (ADR-0039 §3): the
+  WILAYA's own node signing key and the UNIT's own node signing key remain
+  x25519-protected node-managed secrets. `.adminkey` remains the only portable
+  secret (`age::scrypt`).
+- The App Key retains confidentiality-only status (§10.1) and is never a signing
+  credential; the packaged UNIT certificate is Ed25519-authenticated via the
+  WILAYA trust anchor (RFC §3.10), independent of the App Key.
+
 # Consequences
 
 - A clean release node reaches a UI on first run and can be provisioned in-product;

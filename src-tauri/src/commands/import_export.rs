@@ -7,9 +7,10 @@ use crate::application::authz::policies::{resolve_identity_access_import_path, I
 use crate::application::authz::Action;
 use crate::application::services::{
     record_export_with_reproducibility, AuditService, AuditTxService, B8FirstImportPredicatesService,
-    DailyReportService, ExportReproducibilityContext, IdentitySignedExportService,
-    NodePackageService, ProductService, SettingsService, StockMovementService,
-    SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService, UserService,
+    DailyReportService, ExportReproducibilityContext, IdentityProvisioningService,
+    IdentitySignedExportService, NodePackageService, ProductService, SettingsService,
+    StockMovementService, SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
+    UserService,
 };
 use crate::application::services::{
     ImportReproducibilityRecord, ImportReproducibilityService, MaintenanceBlockedOperation,
@@ -502,7 +503,18 @@ pub fn import_unit_node_package(
     // anchor (Root → WILAYA → Ed25519). Anchor-first: no anchor → no V2
     // `.unit` acceptance. The `.unit` is a one-time bootstrap artifact: fixed
     // sequence 1, never advancing the per-issuer transport ledger.
-    if package.metadata.signature_version == Some(SIGNATURE_VERSION_V2) {
+    let unit_id = package.payload.unit.id.clone();
+    let unit_subject_id = Uuid::parse_str(&unit_id).map_err(|e| {
+        into_command_error(AppError::Internal(format!(
+            "units.id '{unit_id}' is not a valid UUID: {e}"
+        )))
+    })?;
+
+    // ADR-0044 packaged-identity bootstrap — step 8 pre-write validation,
+    // before ANY persistence. A packaged identity is only accepted on the
+    // V2-authenticated transport; a legacy (V1/HMAC) package carrying identity
+    // fields is refused fail-closed (no WILAYA issuer authenticity).
+    let packaged_identity = if package.metadata.signature_version == Some(SIGNATURE_VERSION_V2) {
         let issuer = package.metadata.issuer_identity_id.ok_or_else(|| {
             into_command_error(AppError::Validation(ValidationError::InvalidFormat {
                 field: "issuer_identity_id".into(),
@@ -517,18 +529,60 @@ pub fn import_unit_node_package(
             package.metadata.package_sequence,
         )
         .map_err(into_command_error)?;
+        // `issuer` is the package issuer, already authenticated by
+        // verify_v2_signature + B8 against the installed ACTIVE WILAYA anchor.
+        IdentityProvisioningService::extract_packaged_unit_identity(
+            &package.payload,
+            &unit_subject_id,
+            &issuer,
+        )
+        .map_err(into_command_error)?
     } else {
         // Legacy V1/HMAC window (A44-07): present, non-empty signature so the
         // deserializer's HMAC verification path runs, plus the source pin
         // above. No new V1 packages are produced (V2-only export).
         validate_unit_package_security_requirements(&package.metadata)
             .map_err(into_command_error)?;
-    }
+        if package.payload.unit_certificate.is_some()
+            || package.payload.unit_private_key.is_some()
+        {
+            return Err(into_command_error(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "A packaged UNIT identity requires the V2-authenticated transport; refused on a legacy package"
+                        .into(),
+                },
+            )));
+        }
+        None
+    };
 
-    let unit_id = package.payload.unit.id.clone();
     AuditTxService::execute_with_audit(db, AuditAction::ImportNodePackage, &user_ctx, |tx| {
-        let svc = NodePackageService::new(tx.executor);
-        svc.import_unit_node_package(&package.payload)
+        let executor = tx.executor;
+        let svc = NodePackageService::new(executor);
+        svc.import_unit_node_package(&package.payload)?;
+
+        // ADR-0044 packaged-identity bootstrap: install the packaged UNIT key
+        // and identity INSIDE the same audit transaction as the base import.
+        // The key write is guarded (`install_node_key_matching` never
+        // overwrites a different key); the identity upsert is idempotent. A
+        // crash between the two leaves "key present, identity absent", which a
+        // re-import of the SAME package recovers from (both steps re-run).
+        if let Some(pkg_identity) = &packaged_identity {
+            let nks = node_key_store();
+            IdentityProvisioningService::install_node_key_matching(
+                &nks,
+                &pkg_identity.secret_key,
+                &pkg_identity.certificate.public_key,
+            )?;
+            let now = chrono::Utc::now().to_rfc3339();
+            IdentityProvisioningService::install_unit_identity_on_executor(
+                executor,
+                &pkg_identity.certificate,
+                &nks,
+                &now,
+            )?;
+        }
+        Ok(())
     })
     .map_err(into_command_error)?;
 
@@ -792,8 +846,8 @@ pub fn export_unit_node_package(
     state.touch_session();
 
     // 2. Perform export logic
-    let guard = state.get_db().map_err(into_command_error)?;
-    let db = db_ref_or_command_error(guard.as_ref())?;
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
     let start_time = std::time::Instant::now();
     let executor = db.executor();
 
@@ -813,6 +867,32 @@ pub fn export_unit_node_package(
     };
     let user = user.ok_or("User not found for unit")?;
 
+    let source_node_id =
+        resolve_export_source_node_id(executor, &settings).map_err(into_command_error)?;
+
+    // ADR-0044 packaged-identity bootstrap: the WILAYA generates the UNIT
+    // Ed25519 keypair IN MEMORY (never written to the WILAYA NodeKeyStore),
+    // signs the UNIT certificate with the ACTIVE local WILAYA identity, and
+    // registers the WILAYA-side Issuer Local State. RE-EXPORT RULE: the
+    // duplicate-ACTIVE guard inside `sign_unit_bootstrap_request` rejects a
+    // second export once an ACTIVE UNIT identity exists (RE-EXPORT = REJECT).
+    let unit_subject_id = Uuid::parse_str(&unit_id).map_err(|e| {
+        into_command_error(AppError::Internal(format!(
+            "units.id '{unit_id}' is not a valid UUID: {e}"
+        )))
+    })?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let (unit_secret, unit_cert) = {
+        let provisioning = IdentityProvisioningService::new(db);
+        let (secret, request) = provisioning
+            .generate_unit_identity_request_for_package(unit_subject_id)
+            .map_err(into_command_error)?;
+        let cert = provisioning
+            .sign_unit_bootstrap_request(&request, &node_key_store(), &now)
+            .map_err(into_command_error)?;
+        (secret, cert)
+    };
+
     let package_data = crate::models::UnitNodePackage {
         unit: unit.clone(),
         user: crate::models::UserExport {
@@ -820,10 +900,9 @@ pub fn export_unit_node_package(
             password_hash: user.password_hash.clone(),
             role: user.role.to_string(),
         },
+        unit_certificate: Some(unit_cert),
+        unit_private_key: Some(unit_secret.to_vec()),
     };
-
-    let source_node_id =
-        resolve_export_source_node_id(executor, &settings).map_err(into_command_error)?;
 
     // ADR-0044 A44-07/08: `.unit` export is V2-only (Ed25519 by the WILAYA
     // identity) — no new V1/HMAC packages are produced (RFC §3.10). The
@@ -847,7 +926,7 @@ pub fn export_unit_node_package(
     );
 
     let duration = start_time.elapsed().as_millis() as i64;
-    let _ = crate::application::services::TelemetryService::new(executor).record_event(
+    let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
         crate::application::services::TelemetryEventType::SyncExport,
         crate::application::services::TelemetryOutcome::Success,
         Some(duration),
@@ -1969,6 +2048,8 @@ mod security_requirement_tests {
                     password_hash: "hash".into(),
                     role: "User".into(),
                 },
+                unit_certificate: None,
+                unit_private_key: None,
             },
         };
 

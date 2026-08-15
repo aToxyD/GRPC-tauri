@@ -20,10 +20,11 @@ use crate::domain::identity::{
     IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, SubjectType,
     ADMINKEY_FORMAT_VERSION, IDENTITY_ALGORITHM_PROFILE_ED25519, SIGNATURE_VERSION_ED25519,
 };
-use crate::errors::{AppError, AppResult, BusinessLogicError};
+use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
 use crate::infrastructure::identity::{resolve_root_public_key, AdminKeyProvider, NodeKeyStore};
 use crate::infrastructure::security::Ed25519SigningProvider;
-use crate::models::UserRole;
+use crate::models::{UnitNodePackage, UserRole};
+use crate::repositories::executor::DbExecutor;
 use crate::repositories::RepositoryProvider;
 use uuid::Uuid;
 
@@ -50,6 +51,20 @@ pub enum FinalizeWilayaProvisionResult {
 pub enum FinalizeUnitProvisionResult {
     Provisioned(IdentityCertificate),
     AlreadyProvisioned(IdentityCertificate),
+}
+
+/// Packaged UNIT identity carried inside an encrypted `.unit` (ADR-0044
+/// packaged-identity bootstrap).
+///
+/// The WILAYA generates the UNIT Ed25519 keypair in memory at export time,
+/// signs the UNIT certificate with the ACTIVE local WILAYA identity, and embeds
+/// BOTH the signed certificate and the 32-byte secret into the encrypted
+/// package. On the UNIT node the secret is written to the local `NodeKeyStore`
+/// and the certificate installed inside the import audit transaction.
+#[derive(Debug, Clone)]
+pub struct PackagedUnitIdentity {
+    pub certificate: IdentityCertificate,
+    pub secret_key: [u8; 32],
 }
 
 /// Provisions WILAYA node identities and issues ADMIN certificates.
@@ -300,6 +315,37 @@ impl<'a> IdentityProvisioningService<'a> {
         node_key_store: &NodeKeyStore,
     ) -> AppResult<IdentityCertificate> {
         self.generate_identity_request(SubjectType::Wilaya, subject_id, node_key_store)
+    }
+
+    /// Generate the UNIT identity request for a **packaged** bootstrap (ADR-0044
+    /// packaged-identity flow) WITHOUT persisting anything on the WILAYA node.
+    ///
+    /// Unlike `generate_identity_request` (the UNIT-side CSR flow), this runs on
+    /// the WILAYA node and returns the freshly generated secret alongside the
+    /// UNSIGNED UNIT certificate. The secret is held in memory only — it is
+    /// embedded into the encrypted `.unit` by the exporter and is NEVER written
+    /// to the WILAYA `NodeKeyStore`. The subject_id is the local unit row on the
+    /// WILAYA (the issuer validates it at signing time).
+    pub fn generate_unit_identity_request_for_package(
+        &self,
+        subject_id: Uuid,
+    ) -> AppResult<([u8; 32], IdentityCertificate)> {
+        let (secret, signer) = Self::generate_keypair();
+        let request = IdentityCertificate {
+            identity_id: Uuid::new_v4(),
+            subject_type: SubjectType::Unit,
+            subject_id,
+            issuer_identity_id: None,
+            credential_id: Uuid::new_v4(),
+            generation: 1,
+            status: CredentialStatus::Active,
+            public_key: signer.public_key(),
+            algorithm_version: SIGNATURE_VERSION_ED25519,
+            not_after: None,
+            package_sequence: None,
+            signature: None,
+        };
+        Ok((secret, request))
     }
 
     /// Resolve the local UNIT `subject_id` from the persisted unit identity.
@@ -797,7 +843,35 @@ impl<'a> IdentityProvisioningService<'a> {
         node_key_store: &NodeKeyStore,
         now: &str,
     ) -> AppResult<FinalizeUnitProvisionResult> {
+        Self::finalize_unit_identity_core(self.db.executor(), signed_cert, node_key_store, now)
+    }
+
+    /// Shared UNIT-certificate verification + install core.
+    ///
+    /// Used by BOTH the legacy CSR finalize path (`finalize_unit_provision`) and
+    /// the packaged-identity import path (`install_unit_identity_on_executor`)
+    /// so the two cannot drift. It preserves every `finalize_unit_provision`
+    /// check and adds the ADR-0039 algorithm-profile pin
+    /// (`algorithm_version == 2`); every legitimate certificate in the system
+    /// already carries `SIGNATURE_VERSION_ED25519`, so the pin is
+    /// behavior-preserving for existing flows.
+    fn finalize_unit_identity_core(
+        executor: DbExecutor<'_>,
+        signed_cert: &IdentityCertificate,
+        node_key_store: &NodeKeyStore,
+        now: &str,
+    ) -> AppResult<FinalizeUnitProvisionResult> {
         signed_cert.require_signed()?;
+        if signed_cert.algorithm_version != IDENTITY_ALGORITHM_PROFILE_ED25519 {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "Unsupported identity algorithm profile {} (expected Ed25519)",
+                        signed_cert.algorithm_version
+                    ),
+                },
+            ));
+        }
         if signed_cert.subject_type != SubjectType::Unit {
             return Err(AppError::BusinessLogic(
                 BusinessLogicError::OperationNotPermitted {
@@ -818,7 +892,7 @@ impl<'a> IdentityProvisioningService<'a> {
                 message: "A UNIT certificate MUST be issued by a WILAYA identity".into(),
             })
         })?;
-        let store = self.db.executor().identity_store();
+        let store = executor.identity_store();
         let issuer = store
             .get_by_identity_id(&issuer_identity_id)?
             .ok_or_else(|| {
@@ -872,9 +946,7 @@ impl<'a> IdentityProvisioningService<'a> {
         }
 
         let unit_id = signed_cert.subject_id.to_string();
-        let unit = self
-            .db
-            .executor()
+        let unit = executor
             .units()
             .get_unit(&unit_id)?
             .ok_or_else(|| {
@@ -901,5 +973,175 @@ impl<'a> IdentityProvisioningService<'a> {
         Ok(FinalizeUnitProvisionResult::Provisioned(
             signed_cert.clone(),
         ))
+    }
+
+    /// Install a packaged UNIT identity on the importing node (ADR-0044
+    /// packaged-identity bootstrap).
+    ///
+    /// Executor-compatible twin of `finalize_unit_provision`: it runs the same
+    /// shared verification core (`finalize_unit_identity_core`) so the packaged
+    /// path can be invoked inside the import audit transaction with no
+    /// `&mut Database` (audit re-locks the non-reentrant `Mutex`). The caller
+    /// MUST have written the packaged secret to the local `NodeKeyStore` first
+    /// (see `install_node_key_matching`) — the core binds the certificate to the
+    /// installed key, which is exactly the "key present, identity absent"
+    /// crash-residual retry path.
+    pub fn install_unit_identity_on_executor(
+        executor: DbExecutor<'_>,
+        signed_cert: &IdentityCertificate,
+        node_key_store: &NodeKeyStore,
+        now: &str,
+    ) -> AppResult<FinalizeUnitProvisionResult> {
+        Self::finalize_unit_identity_core(executor, signed_cert, node_key_store, now)
+    }
+
+    /// Install the packaged UNIT secret into the local `NodeKeyStore` with a
+    /// never-overwrite guard (ADR-0044 packaged-identity bootstrap).
+    ///
+    /// Fail-closed:
+    /// - the secret MUST derive the certificate's public key (binding, checked
+    ///   BEFORE any disk write);
+    /// - key absent → written (atomic write + rename);
+    /// - key present and identical → no-op;
+    /// - key present but DIFFERENT → rejected (refuses to overwrite an existing
+    ///   node key — recovery flows are out of scope);
+    /// - corrupt/unreadable key file → fail closed (no overwrite).
+    pub fn install_node_key_matching(
+        node_key_store: &NodeKeyStore,
+        secret_key: &[u8; 32],
+        expected_public_key: &[u8],
+    ) -> AppResult<()> {
+        let derived = Ed25519SigningProvider::new(*secret_key).public_key();
+        if derived != expected_public_key {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "Packaged UNIT private key does not match its certificate public key"
+                        .into(),
+                },
+            ));
+        }
+        match node_key_store.read_if_exists()? {
+            None => node_key_store.write(secret_key)?,
+            Some(existing) => {
+                let existing_public = Ed25519SigningProvider::new(existing).public_key();
+                if existing_public != derived {
+                    return Err(AppError::BusinessLogic(
+                        BusinessLogicError::OperationNotPermitted {
+                            message:
+                                "A node signing key already exists and differs from the packaged UNIT key; refusing to overwrite"
+                                    .into(),
+                        },
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Extract + pre-write validate the packaged UNIT identity from a `.unit`
+    /// payload (ADR-0044 packaged-identity bootstrap, import step 8).
+    ///
+    /// Runs BEFORE any persistence and returns the in-memory identity material.
+    /// Fail-closed:
+    /// - both-or-neither: certificate and private key must be BOTH present or
+    ///   BOTH absent (`None` = legacy package, unchanged import path);
+    /// - the private key MUST be exactly 32 bytes;
+    /// - certificate: signed, UNIT subject, expected subject_id, ACTIVE,
+    ///   Ed25519 profile (`algorithm_version == 2`);
+    /// - `issuer_identity_id` MUST equal the package issuer — which has already
+    ///   been authenticated by `verify_v2_signature` + B8 against the installed
+    ///   ACTIVE WILAYA trust anchor;
+    /// - the secret MUST derive the certificate public key.
+    ///
+    /// The cryptographic signature verification against the resolved issuer
+    /// happens inside the transaction (`finalize_unit_identity_core`), on the
+    /// same snapshot as the key write and identity upsert.
+    pub fn extract_packaged_unit_identity(
+        package: &UnitNodePackage,
+        expected_subject_id: &Uuid,
+        expected_issuer_identity_id: &Uuid,
+    ) -> AppResult<Option<PackagedUnitIdentity>> {
+        let (cert, key) = match (&package.unit_certificate, &package.unit_private_key) {
+            (Some(cert), Some(key)) => (cert, key),
+            (None, None) => return Ok(None),
+            _ => {
+                return Err(AppError::Validation(ValidationError::InvalidFormat {
+                    field: "unit_certificate/unit_private_key".into(),
+                    message: "packaged identity must carry BOTH a certificate and a private key (or neither)"
+                        .into(),
+                }));
+            }
+        };
+
+        let secret_key: [u8; 32] = key.as_slice().try_into().map_err(|_| {
+            AppError::Validation(ValidationError::InvalidFormat {
+                field: "unit_private_key".into(),
+                message: format!("packaged UNIT private key must be exactly 32 bytes (got {})", key.len()),
+            })
+        })?;
+
+        cert.require_signed()?;
+        if cert.subject_type != SubjectType::Unit {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "packaged identity certificate MUST have a UNIT subject".into(),
+                },
+            ));
+        }
+        if &cert.subject_id != expected_subject_id {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "packaged identity subject_id {} does not match the imported unit {}",
+                        cert.subject_id, expected_subject_id
+                    ),
+                },
+            ));
+        }
+        if cert.status != CredentialStatus::Active {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "packaged identity certificate MUST be ACTIVE".into(),
+                },
+            ));
+        }
+        if cert.algorithm_version != IDENTITY_ALGORITHM_PROFILE_ED25519 {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "packaged identity algorithm profile {} is not Ed25519",
+                        cert.algorithm_version
+                    ),
+                },
+            ));
+        }
+        if cert.issuer_identity_id != Some(*expected_issuer_identity_id) {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "packaged identity issuer {} does not match the package issuer {}",
+                        cert.issuer_identity_id
+                            .map(|id| id.to_string())
+                            .unwrap_or_else(|| "<none>".into()),
+                        expected_issuer_identity_id
+                    ),
+                },
+            ));
+        }
+
+        let derived = Ed25519SigningProvider::new(secret_key).public_key();
+        if derived != cert.public_key {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::OperationNotPermitted {
+                    message: "packaged UNIT private key does not match its certificate public key"
+                        .into(),
+                },
+            ));
+        }
+
+        Ok(Some(PackagedUnitIdentity {
+            certificate: cert.clone(),
+            secret_key,
+        }))
     }
 }

@@ -258,6 +258,8 @@ mod tests {
                 password_hash: "hash".into(),
                 role: role.into(),
             },
+            unit_certificate: None,
+            unit_private_key: None,
         }
     }
 

@@ -5,6 +5,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::identity::IdentityCertificate;
 use crate::models::user::UserExport;
 
 /// Unit (military unit) under a Wilaya
@@ -44,6 +45,16 @@ pub struct CreateUnitRequest {
 pub struct UnitNodePackage {
     pub unit: Unit,
     pub user: UserExport,
+    /// WILAYA-signed UNIT identity certificate embedded at export time
+    /// (ADR-0044 packaged-identity bootstrap). Absent on legacy packages and
+    /// on legacy imports — serde-compatible (`None` = old shape).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_certificate: Option<IdentityCertificate>,
+    /// UNIT Ed25519 private key embedded at export time (ADR-0044 packaged
+    /// identity bootstrap). Transported ONLY inside the encrypted `.unit`;
+    /// never written to the WILAYA NodeKeyStore.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_private_key: Option<Vec<u8>>,
 }
 
 /// Monthly inventory snapshot for a unit

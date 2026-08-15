@@ -7,6 +7,14 @@
 //! (ADR-0039 §3). `.adminkey` is the ONLY portable secret (`age::scrypt`), see
 //! `adminkey_provider.rs`. This store reuses `AgeFileEncryptionProvider` and
 //! must never introduce `age::scrypt`.
+//!
+//! Packaged-identity exception (ADR-0044 amendment): in the packaged `.unit`
+//! bootstrap flow the WILAYA generates a UNIT Ed25519 keypair IN MEMORY at
+//! export time and embeds it inside the encrypted `.unit` package. That UNIT
+//! secret is never written to this store on the WILAYA node; it only reaches
+//! the UNIT node's own `NodeKeyStore`, through the guarded
+//! `install_node_key_matching` install (absent → write, identical → no-op,
+//! different/corrupt → fail closed — never overwrite).
 
 use std::path::PathBuf;
 

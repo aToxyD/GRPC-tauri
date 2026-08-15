@@ -669,6 +669,7 @@
           <div class="space-y-1">
             <p class="text-sm font-semibold">{bootstrapStatusLabel(identityState)}</p>
             <p class="text-xs">توقّع عقدة WILAYA شهادة الوحدة. المفتاح السري لا يغادر العقدة، وشهادة WILAYA (مرساة الثقة) تُثبَّت في خطوة مستقلة.</p>
+            <p class="text-xs">عند استيراد حزمة .unit بهوية مضمّنة، تُنشأ مفاتيح الوحدة على عقدة WILAYA وتنتقل مشفّرة داخل الحزمة فقط، ولا تُخزَّن في متجر مفاتيح WILAYA.</p>
           </div>
         </AppAlert>
 

@@ -47,6 +47,12 @@
 - [ ] **تسجيل الدخول**: بعد وجود هوية ADMIN نشطة، يُرفض تسجيل كلمة المرور (`login`) وتصبح
       المصادقة عبر Challenge–Response إلزامياً (`begin_challenge` → `complete_challenge`).
 
+- [ ] **2-أ. الهوية المضمّنة (Packaged-Identity — 2026-08-15، ADR-0044 §8.3)**: عند تصدير `.unit`
+      عبر `export_unit_node_package` تُضمَّن الشهادة الموقّعة + المفتاح السري (32 بايت) في الحزمة
+      وتُثبَّت هوية الوحدة تلقائيًا داخل معاملة الاستيراد (مفتاح → `install_node_key_matching`؛
+      هوية → `install_unit_identity_on_executor`) — تصبح العقدة `UnitActive` فورًا. **إعادة التصدير
+      = رفض** بمجرد وجود هوية UNIT ACTIVE. الخطوات 3-4 أدناه مطلوبة فقط للمسار القديم (CSR).
+
 ## ثالثاً: تركيب الترخيص (Licensing Provisioning)
 - [ ] التحقق من الحالة الحالية: `get_licensing_status`.
 - [ ] تثبيت مرساة الثقة: `import_trust_anchor` مع حزمة التزويد `provisioning-v1`

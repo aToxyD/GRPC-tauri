@@ -539,6 +539,8 @@ fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
                     password_hash: "hash".into(),
                     role: "User".into(),
                 },
+                unit_certificate: None,
+                unit_private_key: None,
             },
             "wilaya-test-node",
             &dir.path().join("unit-a.unit"),
