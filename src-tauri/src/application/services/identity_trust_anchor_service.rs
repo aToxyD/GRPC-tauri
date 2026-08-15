@@ -10,7 +10,7 @@
 //! and does not mutate `IdentityBootstrapState`. The same contract is reused
 //! for WILAYA certificate rotation (B7) via the Trust Package channel.
 
-use crate::db::Database;
+use crate::repositories::DbExecutor;
 use crate::domain::identity::{
     CredentialStatus, IdentityCertificate, IdentitySignatureVerifier, IdentityStorePort,
     SubjectType,
@@ -33,12 +33,12 @@ pub enum InstallWilayaCertificateResult {
 
 /// Installs and updates the ACTIVE WILAYA certificate (local trust anchor).
 pub struct IdentityTrustAnchorService<'a> {
-    db: &'a mut Database,
+    executor: DbExecutor<'a>,
 }
 
 impl<'a> IdentityTrustAnchorService<'a> {
-    pub fn new(db: &'a mut Database) -> Self {
-        Self { db }
+    pub fn new(executor: DbExecutor<'a>) -> Self {
+        Self { executor }
     }
 
     /// Install (or idempotently re-confirm) the ACTIVE WILAYA trust anchor.
@@ -92,7 +92,7 @@ impl<'a> IdentityTrustAnchorService<'a> {
             ));
         }
 
-        let store = self.db.executor().identity_store();
+        let store = self.executor.identity_store();
         if let Some(existing) = store.get_active_by_subject_type(SubjectType::Wilaya)? {
             if existing.is_identical_to(signed_cert) {
                 return Ok(InstallWilayaCertificateResult::AlreadyInstalled(existing));
@@ -161,9 +161,9 @@ mod tests {
 
     #[test]
     fn installs_active_wilaya_trust_anchor() {
-        let mut db = ConnectionFactory::new_for_test().unwrap();
+        let db = ConnectionFactory::new_for_test().unwrap();
         let cert = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
-        let outcome = IdentityTrustAnchorService::new(&mut db)
+        let outcome = IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&cert, FIXED_NOW)
             .unwrap();
         assert!(matches!(
@@ -174,17 +174,17 @@ mod tests {
 
     #[test]
     fn identical_reinstall_is_idempotent_zero_writes() {
-        let mut db = ConnectionFactory::new_for_test().unwrap();
+        let db = ConnectionFactory::new_for_test().unwrap();
         let cert = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
         {
-            let mut service = IdentityTrustAnchorService::new(&mut db);
+            let mut service = IdentityTrustAnchorService::new(db.executor());
             service
                 .install_wilaya_certificate(&cert, FIXED_NOW)
                 .unwrap();
         }
         let before = db.executor().identity_store().list_all().unwrap().len();
         {
-            let mut service = IdentityTrustAnchorService::new(&mut db);
+            let mut service = IdentityTrustAnchorService::new(db.executor());
             let outcome = service
                 .install_wilaya_certificate(&cert, FIXED_NOW)
                 .unwrap();
@@ -199,10 +199,10 @@ mod tests {
 
     #[test]
     fn same_identity_different_credential_fails_closed() {
-        let mut db = ConnectionFactory::new_for_test().unwrap();
+        let db = ConnectionFactory::new_for_test().unwrap();
         let identity_id = Uuid::new_v4();
         let first = root_signed(&wilaya_cert(identity_id, root_signer().public_key()));
-        let mut service = IdentityTrustAnchorService::new(&mut db);
+        let mut service = IdentityTrustAnchorService::new(db.executor());
         service
             .install_wilaya_certificate(&first, FIXED_NOW)
             .unwrap();
@@ -221,17 +221,17 @@ mod tests {
 
     #[test]
     fn rejects_unsigned_non_wilaya_non_active_and_node_issued() {
-        let mut db = ConnectionFactory::new_for_test().unwrap();
+        let db = ConnectionFactory::new_for_test().unwrap();
 
         let unsigned = wilaya_cert(Uuid::new_v4(), root_signer().public_key());
-        let err = IdentityTrustAnchorService::new(&mut db)
+        let err = IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&unsigned, FIXED_NOW)
             .unwrap_err();
         assert!(matches!(err, AppError::Internal(_)), "got {err:?}");
 
         let mut as_admin = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
         as_admin.subject_type = SubjectType::Admin;
-        let err = IdentityTrustAnchorService::new(&mut db)
+        let err = IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&as_admin, FIXED_NOW)
             .unwrap_err();
         assert!(
@@ -241,14 +241,14 @@ mod tests {
 
         let mut revoked = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
         revoked.status = CredentialStatus::Revoked;
-        let err = IdentityTrustAnchorService::new(&mut db)
+        let err = IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&revoked, FIXED_NOW)
             .unwrap_err();
         assert!(err.to_string().contains("ACTIVE"), "got {err:?}");
 
         let mut node_issued = root_signed(&wilaya_cert(Uuid::new_v4(), root_signer().public_key()));
         node_issued.issuer_identity_id = Some(Uuid::new_v4());
-        let err = IdentityTrustAnchorService::new(&mut db)
+        let err = IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&node_issued, FIXED_NOW)
             .unwrap_err();
         assert!(
@@ -259,12 +259,12 @@ mod tests {
 
     #[test]
     fn rejects_imposter_root_signature() {
-        let mut db = ConnectionFactory::new_for_test().unwrap();
+        let db = ConnectionFactory::new_for_test().unwrap();
         let mut cert = wilaya_cert(Uuid::new_v4(), root_signer().public_key());
         let imposter = Ed25519SigningProvider::new([7u8; 32]);
         let signature = imposter.sign_certificate(&cert).unwrap();
         cert.signature = Some(Ed25519CertificateSignature::try_from(signature).unwrap());
-        let err = IdentityTrustAnchorService::new(&mut db)
+        let err = IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&cert, FIXED_NOW)
             .unwrap_err();
         assert!(

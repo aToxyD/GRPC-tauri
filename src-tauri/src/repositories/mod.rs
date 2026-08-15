@@ -13,6 +13,7 @@ pub mod fiscal_package_registry;
 pub mod fiscal_snapshots;
 pub mod fiscal_transitions;
 pub mod fiscal_year_status;
+pub mod identity_access_export_sequence_state;
 pub mod identity_store;
 pub mod import_audit_events;
 pub mod integrity;
@@ -47,6 +48,9 @@ pub use fiscal_package_registry::{FiscalPackageRegistryEntry, FiscalPackageRegis
 pub use fiscal_snapshots::FiscalSnapshotRepository;
 pub use fiscal_transitions::FiscalTransitionRepository;
 pub use fiscal_year_status::FiscalYearStatusRepository;
+pub use identity_access_export_sequence_state::{
+    IdentityAccessExportSequenceStateRepository, PendingIdentityAccessSequence,
+};
 pub use identity_store::IdentityStoreRepository;
 pub use import_audit_events::ImportAuditEventsRepository;
 pub use integrity::IntegrityRepository;
@@ -83,6 +87,7 @@ impl crate::architecture::Repository for FiscalYearStatusRepository<'_> {}
 impl crate::architecture::Repository for FiscalSnapshotRepository<'_> {}
 impl crate::architecture::Repository for FiscalTransitionRepository<'_> {}
 impl crate::architecture::Repository for ImportAuditEventsRepository<'_> {}
+impl crate::architecture::Repository for IdentityAccessExportSequenceStateRepository<'_> {}
 impl crate::architecture::Repository for IdentityStoreRepository<'_> {}
 impl crate::architecture::Repository for UnitRepository<'_> {}
 impl crate::architecture::Repository for OrderRepository<'_> {}
@@ -122,6 +127,9 @@ pub trait RepositoryProvider<'a> {
     fn units(&self) -> UnitRepository<'a>;
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a>;
     fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a>;
+    fn identity_access_export_sequence_state(
+        &self,
+    ) -> IdentityAccessExportSequenceStateRepository<'a>;
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a>;
     fn identity_store(&self) -> IdentityStoreRepository<'a>;
     fn system(&self) -> SystemRepository<'a>;
@@ -189,6 +197,11 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a> {
         SyncIssuerSequenceStateRepository::new(*self)
+    }
+    fn identity_access_export_sequence_state(
+        &self,
+    ) -> IdentityAccessExportSequenceStateRepository<'a> {
+        IdentityAccessExportSequenceStateRepository::new(*self)
     }
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a> {
         ImportAuditEventsRepository::new(*self)

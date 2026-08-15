@@ -20,10 +20,10 @@ use crate::application::services::identity_authentication_policy::{
     AdminCredentialState, IdentityAuthenticationPolicy,
 };
 use crate::application::services::{
-    AuditService, FinalizeUnitProvisionResult, IdentityBootstrapStatusService,
+    AuditService, AuditTxService, FinalizeUnitProvisionResult, IdentityBootstrapStatusService,
     IdentityChallengeService, IdentityProvisioningService, IdentityRotationCoordinator,
     IdentityTrustAnchorService, InstallWilayaCertificateResult, RotationFinalizeOutcome,
-    RotationOperation, RotationPlan, SignedUnitRotation,
+    RotationOperation, RotationPlan, SignedUnitRotation, UserContext,
 };
 use crate::commands::common::{
     adminkey_provider, db_mut_or_command_error, db_ref_or_command_error, node_key_store,
@@ -403,9 +403,21 @@ pub fn install_wilaya_certificate(
     let db = db_mut_or_command_error(guard.as_mut())?;
 
     let now = chrono::Utc::now().to_rfc3339();
-    IdentityTrustAnchorService::new(db)
-        .install_wilaya_certificate(&signed_cert, &now)
-        .map_err(into_command_error)
+    // ADR-0044 A45-04: the local trust anchor installation is an audited
+    // bootstrap event. A system context is used because the anchor is
+    // installed BEFORE any account exists on a fresh UNIT node (anchor-first
+    // `.unit` V2 acceptance).
+    let user_ctx = UserContext::new("system", "system_bootstrap", None);
+    AuditTxService::execute_with_audit(
+        db,
+        AuditAction::TrustAnchorInstalled,
+        &user_ctx,
+        |tx| {
+            let mut svc = IdentityTrustAnchorService::new(tx.executor);
+            svc.install_wilaya_certificate(&signed_cert, &now)
+        },
+    )
+    .map_err(into_command_error)
 }
 
 /// Authorization action matching the requested rotation operation.

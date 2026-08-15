@@ -4,9 +4,34 @@
 //! No wildcard fallthrough anywhere in the policy tree.
 
 use super::{Action, AuthorizationError, Principal, ResourceContext};
+use crate::models::{NodeType, UserRole};
 
 mod reports;
 mod system;
+
+/// B8 (ADR-0045) pipeline selection for `identity_access` imports.
+///
+/// The role decision is an authorization decision and therefore owned by the
+/// authz layer — commands must not branch on roles directly. Only UNIT-node
+/// sessions resolve to a path: Admin keeps the AdminOnly pipeline (the
+/// regular, post-provisioning re-import), User is admitted ONLY through the
+/// fail-closed first-import pipeline (predicates enforced inside the import
+/// transaction). WILAYA nodes and any other session are denied outright.
+pub enum IdentityAccessImportPath {
+    AdminOnly,
+    FirstImportBootstrap,
+}
+
+pub fn resolve_identity_access_import_path(
+    role: &UserRole,
+    node_type: NodeType,
+) -> Result<IdentityAccessImportPath, AuthorizationError> {
+    match (node_type, role) {
+        (NodeType::Unit, UserRole::Admin) => Ok(IdentityAccessImportPath::AdminOnly),
+        (NodeType::Unit, UserRole::User) => Ok(IdentityAccessImportPath::FirstImportBootstrap),
+        _ => Err(AuthorizationError::InsufficientPermissions),
+    }
+}
 
 /// Top-level authorization dispatcher.
 /// Every Action variant MUST appear in exactly one arm — the compiler enforces exhaustiveness.
@@ -218,5 +243,20 @@ mod tests {
             },
         );
         assert!(denied_unit.is_err());
+    }
+
+    #[test]
+    fn resolve_identity_access_import_path_unit_routes_by_role() {
+        assert!(matches!(
+            resolve_identity_access_import_path(&UserRole::Admin, NodeType::Unit),
+            Ok(IdentityAccessImportPath::AdminOnly)
+        ));
+        assert!(matches!(
+            resolve_identity_access_import_path(&UserRole::User, NodeType::Unit),
+            Ok(IdentityAccessImportPath::FirstImportBootstrap)
+        ));
+        assert!(resolve_identity_access_import_path(&UserRole::Admin, NodeType::Wilaya)
+            .is_err());
+        assert!(resolve_identity_access_import_path(&UserRole::User, NodeType::Wilaya).is_err());
     }
 }

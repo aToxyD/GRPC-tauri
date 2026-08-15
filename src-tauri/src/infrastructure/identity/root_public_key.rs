@@ -12,10 +12,11 @@
 //! 2. Debug builds (`#[cfg(debug_assertions)]`) fall back to an embedded
 //!    development key with a loud warning — mirrors the `GRPC_APP_KEY` /
 //!    `DEV_AGE_KEY` pattern.
-//! 3. Otherwise the compiled-in pin (`PROD_ROOT_PUBLIC_KEY`) is used — but ONLY
-//!    if it is NOT a known RFC 8032 test-vector key. While the pin is the TEST-2
-//!    placeholder, Release builds fail closed on WILAYA finalization until a
-//!    real Authority Root key is pinned or supplied via `GRPC_ROOT_PUBLIC_KEY`.
+//! 3. Otherwise the compiled-in pin (`PROD_ROOT_PUBLIC_KEY`) is used — the
+//!    certified Production Authority Root key (A44-06, 2026-08-15 — record:
+//!    `docs/security/A44-06-production-root-key-certification.md`). As
+//!    defense-in-depth, Release builds fail closed if the pin ever regresses
+//!    to a known RFC 8032 test-vector key.
 //!
 //! Resolved LAZILY by the finalize command, NOT by
 //! `validate_production_security_environment()`: existing fleets that never use
@@ -30,10 +31,12 @@ const ED25519_PUBLIC_KEY_LEN: usize = 32;
 
 /// Compiled-in Authority Root verification key (Base64, 32 bytes).
 ///
-/// RFC 8032 §7.1 TEST 2 vector placeholder. Certification MUST pin the real
-/// Authority Root public key here before release; until then, Release builds
-/// fail closed on WILAYA finalization unless `GRPC_ROOT_PUBLIC_KEY` supplies a
-/// real (non-test-vector) Authority Root public key.
+/// CERTIFIED Production Authority Root public key (A44-06, 2026-08-15 —
+/// certification record: `docs/security/A44-06-production-root-key-certification.md`).
+/// Matches the offline ceremony artifact `root-public.key` byte-exact (SHA-256
+/// `7b38f2e1…`). NOT a test vector. Release builds trust this pin when
+/// `GRPC_ROOT_PUBLIC_KEY` is absent; the fail-closed TEST-vector denial list
+/// below remains in force for all known RFC 8032 §7.1 test keys.
 const PROD_ROOT_PUBLIC_KEY: &str = "FTMc0JHAEL0EHqzB408Aqlx8NP6FjvvbVLC5JRatd0Q=";
 
 /// Known RFC 8032 §7.1 public test vectors (Base64, 32 bytes). Their private
@@ -167,8 +170,10 @@ mod tests {
 
     #[test]
     fn missing_env_in_prod_fails_closed_when_pin_is_a_test_vector() {
-        // PROD_ROOT_PUBLIC_KEY is currently the RFC 8032 §7.1 TEST-2 placeholder,
-        // so Release + missing env MUST fail closed instead of trusting TEST-2.
+        // PROD_ROOT_PUBLIC_KEY is the CERTIFIED Production Authority Root key
+        // (A44-06, record: docs/security/A44-06-production-root-key-certification.md),
+        // so Release + missing env accepts the certified pin. If the pin ever
+        // regresses to a known RFC 8032 test vector, Release MUST fail closed.
         let pin = decode_root_public_key(PROD_ROOT_PUBLIC_KEY, "pin").unwrap();
         if is_known_rfc8032_test_public_key(&pin) {
             let err = resolve_root_public_key_impl(None, false).unwrap_err();

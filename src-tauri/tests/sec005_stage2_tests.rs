@@ -444,7 +444,7 @@ fn unit_command_fixture() -> UnitCommandFixture {
     {
         let mut guard = state.get_db().expect("lock");
         let db = guard.as_mut().expect("db");
-        IdentityTrustAnchorService::new(db)
+        IdentityTrustAnchorService::new(db.executor())
             .install_wilaya_certificate(&wilaya_cert, FIXED_NOW)
             .expect("anchor installed");
         match IdentityProvisioningService::new(db)

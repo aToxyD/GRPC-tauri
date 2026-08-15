@@ -337,6 +337,17 @@ impl<'a> UserRepository<'a> {
         Ok(count)
     }
 
+    /// Count active Admin accounts (B8 bootstrap predicate: a fresh UNIT has
+    /// no canonical Admin until the first identity_access import).
+    pub fn count_active_admins(&self) -> Result<i64, AppError> {
+        let count = self.executor.query_row(
+            "SELECT COUNT(*) FROM users WHERE deleted = 0 AND role = 'Admin'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     /// Update a user's username.
     /// Called by UnitService when a unit's credentials change.
     pub fn update_username(

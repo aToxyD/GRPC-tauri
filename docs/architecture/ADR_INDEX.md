@@ -67,6 +67,8 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0041 | `0041-production-app-key-provisioning.md` | Production Application-Key Provisioning — GRPC_APP_KEY via Passphrase-Protected Store | Accepted | 2026-08-08 | Architecture / Security |
 | 0042 | `0042-licensing-consumer-integration.md` | Licensing Consumer Integration — Signed Licensing Artifact Consumption in GRPC | Accepted | 2026-08-08 | Architecture / Licensing Integration |
 | 0043 | `0043-backup-async-exception.md` | Backup Command Async Exception (Permanent) — narrow carve-out to the no-async freeze for `spawn_blocking` in `commands/backup.rs` | Accepted | 2026-08-09 | Architecture |
+| 0044 | `0044-unit-trust-first-v2-bootstrap.md` | `.unit` Bootstrap Migration — Trust-First V2 (Ed25519) / HMAC-V1 Retirement (amends RFC 2026-08-04-node-identity-trust §3.10/§3.12, supersedes ADR-0008) | Accepted | 2026-08-14 | Architecture / Security |
+| 0045 | `0045-b8-first-identity-access-import.md` | B8 First `identity_access` Import — Bootstrap Authorization Exemption (companion to ADR-0044 §12.1; proposed amendment to ADR-0040) | Accepted | 2026-08-14 | Architecture / Security |
 
 ---
 

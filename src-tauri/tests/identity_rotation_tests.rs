@@ -190,7 +190,7 @@ fn provisioned_unit() -> ProvisionedUnit {
     let wilaya_cert = active_wilaya(&wilaya);
     let signed_unit_cert = sign_unit(&mut wilaya, &csr);
 
-    let mut service = IdentityTrustAnchorService::new(&mut unit.db);
+    let mut service = IdentityTrustAnchorService::new(unit.db.executor());
     service
         .install_wilaya_certificate(&wilaya_cert, FIXED_NOW)
         .expect("anchor installed");

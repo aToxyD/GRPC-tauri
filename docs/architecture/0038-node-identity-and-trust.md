@@ -68,9 +68,20 @@ admin افتراضي `admin/admin` مثبّت في الكود، WILAYA بلا UU
 - `signature_version = 2` = Ed25519؛ يبقى HMAC لقراءة V1 خلال نافذة إهمال بنمط ADR-0007.
   منذ Commit ④b: حزم الإنتاج الأربع (products/daily_report/monthly_summary/
   stock_movements) تُصدَّر حصريًا V2/Ed25519 عبر `IdentitySignedExportService` بلا مسار
-  تراجع HMAC (عقدة غير مجهَّزة → فشل مغلق). `.unit` تبقى HMAC — **استثناء Bootstrap
-  دائم**: مسار استيراد `.unit` يتجاوز `run_import_pipeline` ولا تملك UNIT مرساة
-  ثقة/هوية عند التزويد (دائرة «تحتاج ثقة ← تحتاج `.unit`»).
+  تراجع HMAC (عقدة غير مجهَّزة → فشل مغلق).
+  - **تعديل مرآة (2026-08-14 — RFC-AMENDMENT GOVERNANCE GATE، مرجع RFC §3.10):**
+    استُبدل «استثناء Bootstrap الدائم» لـ `.unit` بـ **Trust-First V2/Ed25519 معياري**
+    (اعتماد ADR-0044 A44-01/07/08/09/10/12 وADR-0045 A45-08): `.unit` يُوقَّع V2/Ed25519
+    بهوية WILAYA ويُتحقق عبر مرساة WILAYA ACTIVE مثبَّتة **قبل قبوله** (موثوقة بسلسلة
+    الجذر)؛ دور `.unit` = **User فقط** (`role=Admin` غير صالح)؛ أول حزمة V2 بـ
+    `package_sequence = 1`؛ لا سر توقيع أسطوري (HMAC) على UNIT ولا مفتاح WILAYA خاص؛
+    لا استبدال صامت للمرساة؛ فشل مغلق عبر WILAYA؛ التراجع = إعادة توفير؛ دوران الجذر
+    بنافذة قبول صريحة. HMAC-V1 (.unit) أصبح **إرثًا قيد التقاعد** — قراءة إرثية فقط
+    خلال نافذة إغلاق مبنية على الأدلة (A44-07) بانتقال fleet-sync (A44-09)؛ لا إصدار
+    حزم V1 جديدة. السياق التاريخي: استُخدم HMAC لأن مسار `.unit` لم يكن يمر على
+    `run_import_pipeline` ولم تكن تملك UNIT مرساة/هوية — حُلَّ بتركيب المرساة قبل
+    القبول؛ لا تُصدَّر حزم HMAC عبر `IdentitySignedExportService`. السجل الكامل:
+    ADR-0044 §28.6 / ADR-0045 §26.6.
 - `algorithm_version` ثابت لكل credential صادر ولا يتغير إلا عبر Rotate/Re-Issue.
 
 ## 7. قواعد `check_arch` الجديدة (GROUP 24)

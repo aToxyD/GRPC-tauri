@@ -189,7 +189,7 @@ fn provisioned_unit() -> ProvisionedUnit {
     let wilaya_cert = active_wilaya_cert(&wilaya);
     let signed_unit_cert = sign_unit(&mut wilaya, &csr);
 
-    let mut service = IdentityTrustAnchorService::new(&mut unit.db);
+    let mut service = IdentityTrustAnchorService::new(unit.db.executor());
     service
         .install_wilaya_certificate(&wilaya_cert, FIXED_NOW)
         .expect("anchor installed");
@@ -356,7 +356,7 @@ fn full_unit_bootstrap_reaches_unit_active() {
     let signed = sign_unit(&mut wilaya, &csr);
 
     // Step 1 — install the WILAYA trust anchor (standalone, never bundled).
-    let anchor = IdentityTrustAnchorService::new(&mut unit_node.db)
+    let anchor = IdentityTrustAnchorService::new(unit_node.db.executor())
         .install_wilaya_certificate(&wilaya_cert, FIXED_NOW)
         .expect("wilaya trust anchor installed");
     assert!(
@@ -545,7 +545,7 @@ fn finalize_rejects_subject_id_not_matching_local_unit() {
 
 #[test]
 fn identical_wilaya_anchor_reinstall_is_idempotent_zero_writes() {
-    let mut p = provisioned_unit();
+    let p = provisioned_unit();
     let before = p
         .unit
         .db
@@ -555,7 +555,7 @@ fn identical_wilaya_anchor_reinstall_is_idempotent_zero_writes() {
         .expect("list")
         .len();
     let outcome = {
-        let mut service = IdentityTrustAnchorService::new(&mut p.unit.db);
+        let mut service = IdentityTrustAnchorService::new(p.unit.db.executor());
         service
             .install_wilaya_certificate(&p.wilaya_cert, FIXED_NOW)
             .expect("re-install identical")
@@ -577,7 +577,7 @@ fn identical_wilaya_anchor_reinstall_is_idempotent_zero_writes() {
 
 #[test]
 fn trust_anchor_rejects_same_identity_different_credential() {
-    let mut p = provisioned_unit();
+    let p = provisioned_unit();
     let mut rotated = p.wilaya_cert.clone();
     rotated.credential_id = uuid::Uuid::new_v4();
     rotated.signature = Some(
@@ -588,7 +588,7 @@ fn trust_anchor_rejects_same_identity_different_credential() {
         )
         .expect("wrap"),
     );
-    let err = IdentityTrustAnchorService::new(&mut p.unit.db)
+    let err = IdentityTrustAnchorService::new(p.unit.db.executor())
         .install_wilaya_certificate(&rotated, FIXED_NOW)
         .expect_err("different credential for same identity must fail closed");
     assert!(err.to_string().contains("already installed"), "got {err:?}");

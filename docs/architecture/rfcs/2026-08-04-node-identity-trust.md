@@ -272,6 +272,24 @@ IdentityState {
   يحرق تسلسلًا، وإعادة المحاولة تعيد نفس الرقم. `IdentitySignedExportService` هو
   المدخل الوحيد لتصدير V2 (products/daily_report/monthly_summary/stock_movements).
 
+- **سجل المُنتِج لـ `identity_access` (تعديل 2026-08-15 — F-1 Option A، ADR-0045 §26.9):**
+  حزم `identity_access` (B8) تخصّص تسلسلها النقلي من **تدفق مُنتِج نطاقه
+  `(issuer_identity_id, target_unit_code)`** — جدول `identity_access_export_sequence`
+  (الهجرة 009) — وليس من سجل المُنتِج العام `sync_issuer_sequence_state`. القاعدة
+  المعيارية: **يستعمل `identity_access` تدفق تسلسل مُنتِج مقيّدًا بـ
+  `(issuer_identity_id, target_unit_code)`**. تبعًا لذلك، تحصل كل وحدة UNIT
+  مستهدفة جديدة على تدفقها الخاص `1, 2, 3, ...` من نفس مُصدر WILAYA، فيتوافق
+  المُنتِج مع حارس المستهلك المعتمد "أول استيراد من مُصدِر على سجل فارغ يجب أن
+  يكون 1" (A45-06 / ضابط B8 رقم 11) لكل وحدة في الأسطول. القاعدة العامة الحالية
+  (لكل مُصدِر) تبقى سارية على الأنواع الأخرى: products / daily_report /
+  monthly_summary / stock_movements. الهدف المستهدف (target_unit_code) مصدره
+  موثوق من جهة الخادم: حقل `payload.unit_code` المبني من صف `units` المحلي عبر
+  `UserAccountSyncService::export` (يفشل مغلقًا عند غياب الوحدة) — لا يُؤتمن أي
+  قيمة من الطبقة العرضية لاختيار التدفق. نمط التخصيص والفصل (begin/commit) ونمط
+  advance-on-success ونمط عدم الحرق عند الفشل مطابق تمامًا لسجل المُنتِج العام،
+  تحت نفس قفل كاتب واحد `Mutex<Option<Connection>>`. حزم `.unit` (A44-08) لا
+  تستهلك هذا التدفق ولا تقدم أي سجل.
+
 #### 3.4.2 Credential Guard — `(credential_id, generation)`
 
 - **النطاق:** لكل شهادة.
@@ -449,10 +467,33 @@ Challenge {
   (products/daily_report/monthly_summary/stock_movements) تُصدَّر حصريًا
   `signature_version = 2` عبر `IdentitySignedExportService` — بدون أي مسار تراجع
   HMAC: عقدة غير مجهَّزة تفشل مغلقةً ولا تصدر حزمة V2.
-- **استثناء Bootstrap الوحيد:** `.unit` تبقى موقّعة HMAC (بدون `signature_version`)
-  — استثناء دائم. السبب: مسار استيراد `.unit` يتجاوز `run_import_pipeline` (لا يمر
-  على Transport Guard) ولا تملك عقدة UNIT مرساة ثقة/هوية عند التزويد — دائرة
-  «تحتاج ثقة ← تحتاج `.unit`». لا تُصدَّر عبر `IdentitySignedExportService`.
+- **تعديل (2026-08-14 — RFC-AMENDMENT GOVERNANCE GATE):** بمقتضى اعتماد المالك لـ
+  ADR-0044 (A44-01/07/08/09/10/11/12) وADR-0045 (A45-01/02/03/08/09/10/12)،
+  استُبدل «استثناء Bootstrap الدائم» بـ **Trust-First V2/Ed25519 كمسار `.unit`
+  المعياري**:
+  - `.unit` يُوقَّع V2/Ed25519 بهوية WILAYA (سلطة الإصدار)؛ التحقق عبر مرساة الثقة
+    المثبَّتة — شهادة WILAYA **ACTIVE** تُثبَّت **قبل قبول أي `.unit` V2**، وتُتحقق
+    بسلسلة الجذر الإنتاجي (Root → WILAYA → Ed25519).
+  - لا يُوضع على UNIT أي سر توقيع أسطوري مشترك (HMAC) ولا مفتاح خاص لـ WILAYA؛
+    التوقيع والتشفير منفصلان — تشفير الحزم يبقى age/App Key دون إعادة تصميم.
+  - دور `.unit` = **User فقط**؛ حمولة `.unit` بـ `role=Admin` غير صالحة (ADR-0045
+    A45-08) ولا تُستخدم بديلًا للإقلاع/الاسترداد/الهجرة.
+  - أول حزمة `.unit` V2 بـ `package_sequence = 1` (A44-08)؛ دلالات Transport Guard
+    دون تغيير.
+  - لا استبدال صامت لمرساة الثقة؛ عدم تطابق عابر بين المُصدِّر والمرساة أو بين
+    WILAYA/WILAYA يفشل مغلقًا (A44-01/11).
+  - التراجع = إعادة توفير منضبطة، لا تراجع V2→V1 كاختصار استرداد (A44-12).
+  - دوران الجذر: حدث حوكمة صريح بنافذة قبول محدَّدة بين الجذر القديم/الجديد؛ لا
+    استبدال صامت؛ فشل مغلق عند غموض الثقة (A44-10).
+  - **HMAC-V1 (بلا `signature_version`) أصبح إرثًا قيد التقاعد:** قراءة إرثية فقط
+    خلال نافذة إغلاق **مبنية على الأدلة** (A44-07: أسطول مؤهل V2، لا وحدة إنتاج
+    تحتاج V1، لا حزم V1 متداولة شرعيًا، تكامل V2 أخضر، أدلة تراجع/استرداد، تسجيل
+    حدث حوكمة) وفق انتقال **fleet-sync** (A44-09)؛ لا إصدار حزم V1 جديدة.
+  - **السياق التاريخي (يُحفظ):** استُخدم HMAC لأن مسار استيراد `.unit` لم يكن يمر
+    على `run_import_pipeline` ولم تكن تملك UNIT مرساة ثقة/هوية عند التزويد — دائرة
+    «تحتاج ثقة ← تحتاج `.unit`». حُلَّت الدائرة بتركيب المرساة قبل القبول (§3.12 D2).
+    لا تُصدَّر حزم HMAC عبر `IdentitySignedExportService`.
+  - السجل الكامل: ADR-0044 §28.6 / ADR-0045 §26.6.
 - Ed25519 حتمي (RFC 8032) — لا أثر على حتمية Freeze §2.5.
 - Canonical JSON V2 (ADR-0009) يبقى؛ يوقّع Ed25519 نفس البايتات القانونية.
 - **التشفير على مستويين (ADR-0039):** `age::x25519` للأسرار المدارة على العقدة
@@ -485,9 +526,11 @@ Challenge {
 | آلية مصادقة العقدة البديلة | تحليل/تسليم مفاتيح UNIT عبر مسار CSR موحّد (`generate_identity_request`/`sign_identity_request`/`finalize_identity_provision` — D2) في Commit ②. |
 | تسليم شهادة WILAYA إلى عقدة UNIT (D2) | **خطوتان صارمتان — لا تُضمَّن أبدًا** في ملف إمداد UNIT. الترتيب: UNIT تصدّر `generate_identity_request()` → WILAYA توقّع `sign_unit_identity_request()` → UNIT تُثبّت/تحدّث شهادة WILAYA النشطة كمرساة ثقة محلية عبر `install_wilaya_certificate()` (خدمة مستقلة، لا تقرأ `NodeKeyStore`، لا تفحص حالة UNIT، لا تمسّ `IdentityBootstrapState`؛ قابلة لإعادة الاستخدام في B7 rotation) → ثم `finalize_unit_provision()`. |
 | مصدر `subject_id` لـ UNIT (D2) | يُحلّ **محليًا** على عقدة UNIT: `settings.unit_code → units.get_unit_by_code → units.id` عند توليد الـ CSR. WILAYA لا تفرض/تعيد ربطه — تتحقق فقط fail-closed أن `CSR.subject_id` يطابق صف `units` معروفًا (`units.get_unit`). |
+| الترتيب المعياري للثقة (تعديل 2026-08-14 — ADR-0044 A44-01) | تُثبَّت مرساة الثقة المحلية (شهادة WILAYA النشطة عبر `install_wilaya_certificate` — خدمة ما قبل المصادقة) **قبل قبول أي حزمة `.unit` V2 وقبل أول استيراد `identity_access`**: `.unit` → تركيب مرساة WILAYA → حالة موثوقة → أول `identity_access`. لا يُقبل `.unit` V2 ولا أول `identity_access` على عقدة UNIT دون مرساة مثبَّتة صالحة موثوقة بسلسلة الجذر. |
 | معرّف المُصدِر عند إنهاء إمداد UNIT (D2) | يُحلّ حصريًا عبر `signed_cert.issuer_identity_id → IdentityStore.get_by_identity_id(...)` ثم التحقق (موجود + `ACTIVE` + `subject_type == WILAYA`) — وليس عبر `get_active_by_subject_type(Wilaya)`. |
 | تعريف الـ idempotency لمرساة الثقة | **نفس الشهادة حرفيًا** (`is_identical_to`): نفس `identity_id` مع `credential_id` مختلف → Fail-Closed وليس `AlreadyInstalled`. |
 | حالة bootstrap لعقدة UNIT | سلسلة UNIT مستقلة: `Uninitialized → UnitWaitingForCertificate → UnitActive`؛ لا ADMIN على عقدة UNIT إطلاقًا. `IdentityBootstrapStatusService::compute()` تتفرّع حسب `node_type` (نص خام `"UNIT"` فقط) مع **افتراض WILAYA** — بذرة `UNCONFIGURED` ليست عقدة UNIT. |
+| أول استيراد `identity_access` على عقدة UNIT جديدة (B8 bootstrap — تعديل 2026-08-14، ADR-0045 A45-01..05/12) | إعفاء package-authenticated **واحد ذاتي الإنهاء**: تُستورد أول حزمة `identity_access` **بدون جلسة Admin** (مجهول على طبقة التخويل — لا يوجد حساب Admin بعد؛ التخويل من سلسلة المصادقة الكاملة للحزمة). الشروط المسبقة الإلزامية: عقدة UNIT؛ مرساة WILAYA مثبَّتة وصالحة قبل الاستيراد؛ مُصدِّر الحزمة = المرساة؛ kind = `identity_access`؛ V2؛ SEC-003-01 وSEC-003-02 ساريتان؛ `payload.unit_code` = كود UNIT المحلي؛ لا حساب Admin معياري موجود؛ سجل B8 فارغ؛ أول تسلسل = 1؛ تطبيق ذري؛ حماية إعادة اللعب سارية؛ إنهاء ذاتي — بعد النجاح تعود التخويلات إلى AdminOnly المعتادة. لا حساب Admin مؤقت؛ لا `.unit role=Admin` بديل؛ لا صنف/قطعة إقلاع جديدة. لا يمنح الإعفاء استيرادًا ثانيًا ولا يُنشئ هوية ADMIN — يبقى SEC-002 منفصلًا (لا `issue_first_admin_key` على UNIT). |
 
 #### توضيح B7: تسجيل دوران UNIT كـ **Issuer Local State** (وليس قناة توزيع)
 
@@ -667,7 +710,8 @@ Rollback/RejectZero (نزاع توليد) تُتخطَّى المعالجة ال
   التحقق من توقيع Root + مطابقة المفتاح العام لمفتاح العقدة + المُصدِر `None` (Root)
   + Upsert WILAYA ACTIVE. `provision_wilaya`/`issue_admin` يبقيان للاختبار فقط.
 - **تثبيت المفتاح العام لـ Root:** `infrastructure/identity/root_public_key.rs` —
-  `PROD_ROOT_PUBLIC_KEY` مُثبّت (RFC 8032 §7.1 TEST 2 placeholder) + `GRPC_ROOT_PUBLIC_KEY`
+  `PROD_ROOT_PUBLIC_KEY` مُثبّت (المفتاح المعتمد لإنتاج — A44-06، سجل الاعتماد:
+  `docs/security/A44-06-production-root-key-certification.md`) + `GRPC_ROOT_PUBLIC_KEY`
   override + fallback dev لـ `debug_assertions` (TEST 1؛ سرّه `TEST_ROOT_SECRET`).
   يُحلّ لاحقًا عبر `resolve_root_public_key()` — وليس في
   `validate_production_security_environment()`.

@@ -79,6 +79,10 @@ pub enum AuditAction {
     AccountStatusChanged,
     IdentityAccessPackageExported,
     IdentityAccessPackageImported,
+    // B8 first-import bootstrap + trust anchor installation (ADR-0044/0045)
+    TrustAnchorInstalled,
+    IdentityAccessBootstrapImported,
+    IdentityAccessBootstrapImportFailed,
     // Pre-auth first-admin provisioning ceremony (SEC-002)
     FirstAdminProvisioned,
 }
@@ -142,6 +146,11 @@ impl AuditAction {
             AuditAction::AccountStatusChanged => "AccountStatusChanged",
             AuditAction::IdentityAccessPackageExported => "IdentityAccessPackageExported",
             AuditAction::IdentityAccessPackageImported => "IdentityAccessPackageImported",
+            AuditAction::TrustAnchorInstalled => "TrustAnchorInstalled",
+            AuditAction::IdentityAccessBootstrapImported => "IdentityAccessBootstrapImported",
+            AuditAction::IdentityAccessBootstrapImportFailed => {
+                "IdentityAccessBootstrapImportFailed"
+            }
             AuditAction::FirstAdminProvisioned => "FirstAdminProvisioned",
         }
     }
@@ -203,6 +212,11 @@ impl AuditAction {
             "AccountStatusChanged" => Some(AuditAction::AccountStatusChanged),
             "IdentityAccessPackageExported" => Some(AuditAction::IdentityAccessPackageExported),
             "IdentityAccessPackageImported" => Some(AuditAction::IdentityAccessPackageImported),
+            "TrustAnchorInstalled" => Some(AuditAction::TrustAnchorInstalled),
+            "IdentityAccessBootstrapImported" => Some(AuditAction::IdentityAccessBootstrapImported),
+            "IdentityAccessBootstrapImportFailed" => {
+                Some(AuditAction::IdentityAccessBootstrapImportFailed)
+            }
             "FirstAdminProvisioned" => Some(AuditAction::FirstAdminProvisioned),
             _ => None,
         }
@@ -267,6 +281,9 @@ impl AuditAction {
             AuditAction::AccountStatusChanged => "تغيير حالة حساب",
             AuditAction::IdentityAccessPackageExported => "تصدير حزمة حسابات",
             AuditAction::IdentityAccessPackageImported => "استيراد حزمة حسابات",
+            AuditAction::TrustAnchorInstalled => "تثبيت مرساة الثقة المحلية",
+            AuditAction::IdentityAccessBootstrapImported => "أول استيراد حزم حسابات (B8)",
+            AuditAction::IdentityAccessBootstrapImportFailed => "فشل أول استيراد حزم حسابات (B8)",
             AuditAction::FirstAdminProvisioned => "إصدار أول حساب مسؤول",
         }
     }
@@ -315,7 +332,10 @@ impl AuditAction {
             AuditAction::ImportTrustPackage
             | AuditAction::ImportRegistryPackage
             | AuditAction::IdentityAccessPackageExported
-            | AuditAction::IdentityAccessPackageImported => EntityType::System,
+            | AuditAction::IdentityAccessPackageImported
+            | AuditAction::TrustAnchorInstalled
+            | AuditAction::IdentityAccessBootstrapImported
+            | AuditAction::IdentityAccessBootstrapImportFailed => EntityType::System,
             AuditAction::FiscalYearOpened
             | AuditAction::FiscalYearClosed
             | AuditAction::FiscalYearArchived
@@ -942,7 +962,12 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
         | AuditAction::ImportRegistryPackage
         | AuditAction::UnitNodeImport
         | AuditAction::IdentityAccessPackageExported
-        | AuditAction::IdentityAccessPackageImported => AuditEventType::SyncEvent,
+        | AuditAction::IdentityAccessPackageImported
+        | AuditAction::IdentityAccessBootstrapImported
+        | AuditAction::IdentityAccessBootstrapImportFailed => AuditEventType::SyncEvent,
+
+        // Trust anchor installation (B8, ADR-0044) → SystemEvent
+        AuditAction::TrustAnchorInstalled => AuditEventType::SystemEvent,
 
         // Integrity/backup failures → IntegrityEvent
         AuditAction::BackupCheckpointFailed

@@ -49,6 +49,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "Single ACTIVE ADMIN invariant (SEC-002)",
             include_str!("migrations/008_single_active_admin.sql"),
         ),
+        (
+            9,
+            "identity_access per-target producer sequence stream (RFC 2026-08-04 §3.4.1 amendment, ADR-0045 §26.9 F-1 Option A)",
+            include_str!("migrations/009_identity_access_export_sequence.sql"),
+        ),
     ]
 }
 

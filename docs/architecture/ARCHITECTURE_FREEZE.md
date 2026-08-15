@@ -108,6 +108,7 @@ The following contracts, boundaries, and guarantees are **frozen** and may not b
 - **🔒 Backend-only authz** — frontend role checks are UX-only; backend is sole authority.
 - **🔒 Structured authorization** — via `application/authz/` with policies, principal, resource context. No bare role comparisons in commands.
 - **🔒 Password operations** — confined to `commands/auth.rs`. No `verify_password_argon2` elsewhere.
+- **🔒 B8 first-`identity_access` bootstrap exemption (ADR-0045 — Accepted 2026-08-14)** — استثناء ضيّق معتمد من قاعدة الرفض الافتراضي: استيراد أول حزمة `identity_access` على عقدة UNIT جديدة **بدون جلسة Admin** (مجهول على طبقة التخويل — لا يوجد حساب Admin بعد؛ التخويل من سلسلة المصادقة الكاملة للحزمة). Package-authenticated، ذاتي الإنهاء، V2-only، بضوابط SEC-003-01/02 إلزامية، تركيب مرساة WILAYA صالحة سابقًا مع ربط المُصدِّر والمرساة و`payload.unit_code` بالوحدة المحلية، سجل B8 فارغ، أول تسلسل = 1، تطبيق ذري مع حماية إعادة اللعب، ثم تعود التخويلات إلى AdminOnly. لا حساب Admin مؤقت؛ لا `.unit role=Admin` بديل؛ لا صنف/قطعة إقلاع جديدة. لا يُنشئ الإعفاء هوية ADMIN ويبقى SEC-002 منفصلًا. **تحديث 2026-08-15 (F-1 Option A، ADR-0045 §26.9):** مُنتِج `identity_access` يخصّص التسلسل من تدفق **`(issuer_identity_id, target_unit_code)`** (الهجرة 009) بدل سجل المُنتِج العام، فتحصل كل وحدة UNIT جديدة على حزمة أولى `sequence = 1` من نفس مُصدِّر WILAYA؛ ضابط "أول تسلسل = 1" يُطبَّق **لكل تدفق وحدة مستهدفة** دون إضعاف أي ضابط مستهلك؛ الأنواع الأخرى تحتفظ بسجل المُنتِج العام لكل مُصدِّر. بقية القرارات: ADR-0045 §26.6.
 
 ### 2.3 Audit Trail
 - **🔒 Dual-write model** — every audit write populates flat columns + structured columns + details JSON.
@@ -161,12 +162,14 @@ The following contracts, boundaries, and guarantees are **frozen** and may not b
 - **🔒 Replay detection before mutation** — `ValidationGate` checks are all-or-nothing before any DB write (Rule 83-84).
 - **🔒 No nested transactions in sync** — single transaction boundary per import (Rule 89).
 - **🔒 Trust/Registry packages** — new `trust` (certificates + revocations) and `registry` (fleet state) kinds flow through `run_import_pipeline` with two independent fail-closed guards, no wall-clock (RFC `2026-08-04-node-identity-trust`): Transport Guard `(issuer_identity_id, package_sequence)` and Credential Guard `(credential_id, generation)`.
+- **🔒 `.unit` Trust-First V2/Ed25519 (ADR-0044 — Accepted 2026-08-14)** — `.unit` يُوقَّع V2/Ed25519 بهوية WILAYA (سلطة الإصدار) ويُتحقق عبر مرساة WILAYA **ACTIVE** مثبَّتة **قبل القبول** وموثوقة بسلسلة الجذر الإنتاجي (Root → WILAYA → Ed25519). دور `.unit` = **User فقط** (`role=Admin` غير صالح)؛ أول حزمة V2 بـ `package_sequence = 1`؛ لا سر توقيع أسطوري مشترك (HMAC) على UNIT ولا مفتاح WILAYA خاص؛ لا استبدال صامت للمرساة؛ عدم تطابق عابر يفشل مغلقًا؛ التراجع = إعادة توفير منضبطة. **HMAC-V1 (`.unit` بلا `signature_version`) قراءة إرثية فقط** خلال نافذة إغلاق **مبنية على الأدلة** (A44-07) بانتقال **fleet-sync** (A44-09)؛ لا إصدار حزم V1 جديدة. بقية القرارات: ADR-0044 §28.6.
 
 ### 2.8 Production Safety
 - **🔒 Error exposure gate (ADR-0012)** — `details` field in error strings gated behind `#[cfg(debug_assertions)]`.
 - **🔒 No overclaims** — "O(1)", "zero-copy", "military grade", "unbreakable", etc. banned (Rules 32, 36). [arch:allow-overclaim]
 - **🔒 No deprecated terminology** — BSS, .bss, .bssync, grpcsync, grpcunit banned (Rule 37). [arch:allow-history]
 - **🔒 Zero-warning policy** — all `check_arch.ts` warnings are treated as errors. CI fails if any warning exists.
+- **🔒 Production Root-key prerequisite (A44-06 — unchanged 2026-08-14)** — قبول ADR-0044 وADR-0045 (2026-08-14) **لا يساوي اعتمادًا إنتاجيًا**: الإنتاج يبقى **محجوبًا** حتى اعتماد مفتاح Root الإنتاجي (مراسم + تثبيت + حيازة + توزيع + تحقق — ADR-0044 §9.4). `root_public_key.rs` يحمل ناقل TEST-2 ولا يُغيَّر في هذه العملية. يُحظر ادعاء الجاهزية الإنتاجية قبل اكتمال هذا العائق.
 
 ---
 

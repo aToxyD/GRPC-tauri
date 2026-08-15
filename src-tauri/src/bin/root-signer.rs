@@ -45,8 +45,10 @@ const ED25519_PUBLIC_KEY_LEN: usize = 32;
 
 /// RFC 8032 §7.1 TEST 1 public key (Base64) — the debug-mode dev Root fallback.
 const RFC8032_TEST1_PUBLIC_KEY_B64: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=";
-/// RFC 8032 §7.1 TEST 2 public key (Base64) — the PROD_ROOT_PUBLIC_KEY pin
-/// placeholder in `root_public_key.rs`. Never a real production key.
+/// RFC 8032 §7.1 TEST 2 public key (Base64) — former `PROD_ROOT_PUBLIC_KEY`
+/// placeholder, superseded 2026-08-15 by the certified Production Authority
+/// Root key (A44-06, docs/security/A44-06-production-root-key-certification.md).
+/// Never a real production key — remains on the refusal list.
 const RFC8032_TEST2_PUBLIC_KEY_B64: &str = "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=";
 
 struct SignArgs {

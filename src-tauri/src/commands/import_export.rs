@@ -3,12 +3,13 @@
 //! Handles file imports (packages) and exports
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
+use crate::application::authz::policies::{resolve_identity_access_import_path, IdentityAccessImportPath};
 use crate::application::authz::Action;
 use crate::application::services::{
-    record_export_with_reproducibility, AuditService, AuditTxService, DailyReportService,
-    ExportReproducibilityContext, IdentitySignedExportService, NodePackageService, ProductService,
-    SettingsService, StockMovementService, SyncPackageIdentityVerificationService, UnitService,
-    UserAccountSyncService, UserService,
+    record_export_with_reproducibility, AuditService, AuditTxService, B8FirstImportPredicatesService,
+    DailyReportService, ExportReproducibilityContext, IdentitySignedExportService,
+    NodePackageService, ProductService, SettingsService, StockMovementService,
+    SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService, UserService,
 };
 use crate::application::services::{
     ImportReproducibilityRecord, ImportReproducibilityService, MaintenanceBlockedOperation,
@@ -18,7 +19,7 @@ use crate::application::sync::import::{
     ImportAuditEvent, ImportAuditEventType, ImportAuditLogger, ImportFailureReason,
 };
 use crate::application::sync::{
-    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+    SyncPackage, SyncPackageMetadata,
 };
 use crate::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use crate::application::usecases::exports::types::{
@@ -71,20 +72,19 @@ use crate::infrastructure::db::read::import_audit::{
 use crate::infrastructure::db::sync_import::{
     SqliteImportAuditLogger, SqliteImportedPackageRegistry,
 };
-use crate::infrastructure::security::resolve_active_signing_key_id;
 use crate::infrastructure::sync::{
     read_daily_report_package_from_file, read_identity_access_package_from_file,
     read_monthly_summary_package_from_file, read_products_package_from_file,
     read_registry_package_from_file, read_stock_movements_package_from_file,
     read_trust_package_from_file, read_unit_node_package_from_file, resolve_export_source_node_id,
-    HmacPackageSigner, PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
 
 use crate::models::{
-    DailyReportImportResult, IdentityAccessPackageImportResult, PackageExportResult,
-    RegistryPackageImportResult, TrustPackageImportResult, XlsxExportResult,
+    DailyReportImportResult, IdentityAccessPackageImportResult, IdentityAccessPayload,
+    PackageExportResult, RegistryPackageImportResult, Settings, TrustPackageImportResult,
+    XlsxExportResult,
 };
-use chrono::{Datelike, Utc};
+use chrono::Datelike;
 use tauri::State;
 use uuid::Uuid;
 
@@ -486,12 +486,44 @@ pub fn import_unit_node_package(
         read_unit_node_package_from_file(std::path::Path::new(&file_path), &state.crypto_port)
             .map_err(into_command_error)?;
 
-    // SEC-003-05-D: the `.unit` setup-mode import requires a present, non-empty
-    // signature (so the existing HMAC verification path runs) and a non-empty
-    // source_node_id (signer pinning). Rejected before any unit/user/settings
-    // write — even during anonymous setup bootstrap.
-    validate_unit_package_security_requirements(&package.metadata)
+    // SEC-003-05-D boundary: `.unit` packages must pin a non-empty
+    // source_node_id (signer identity) regardless of signature version.
+    if package.metadata.source_node_id.trim().is_empty() {
+        return Err(into_command_error(AppError::Validation(
+            ValidationError::InvalidFormat {
+                field: "source_node_id".into(),
+                message: "حزمة العقدة بدون مصدر — مرفوضة (متطلبات الأمان)".into(),
+            },
+        )));
+    }
+
+    // Trust-First V2 path (ADR-0044, RFC §3.10): Ed25519 by the WILAYA
+    // issuing identity, verified against the locally installed ACTIVE trust
+    // anchor (Root → WILAYA → Ed25519). Anchor-first: no anchor → no V2
+    // `.unit` acceptance. The `.unit` is a one-time bootstrap artifact: fixed
+    // sequence 1, never advancing the per-issuer transport ledger.
+    if package.metadata.signature_version == Some(SIGNATURE_VERSION_V2) {
+        let issuer = package.metadata.issuer_identity_id.ok_or_else(|| {
+            into_command_error(AppError::Validation(ValidationError::InvalidFormat {
+                field: "issuer_identity_id".into(),
+                message: "حزمة عقدة V2 بدون هوية مُصدِر — مرفوضة".into(),
+            }))
+        })?;
+        SyncPackageIdentityVerificationService::verify_v2_signature(db.executor(), &package)
+            .map_err(into_command_error)?;
+        B8FirstImportPredicatesService::verify_unit_v2_acceptance(
+            &db.executor(),
+            &issuer.to_string(),
+            package.metadata.package_sequence,
+        )
         .map_err(into_command_error)?;
+    } else {
+        // Legacy V1/HMAC window (A44-07): present, non-empty signature so the
+        // deserializer's HMAC verification path runs, plus the source pin
+        // above. No new V1 packages are produced (V2-only export).
+        validate_unit_package_security_requirements(&package.metadata)
+            .map_err(into_command_error)?;
+    }
 
     let unit_id = package.payload.unit.id.clone();
     AuditTxService::execute_with_audit(db, AuditAction::ImportNodePackage, &user_ctx, |tx| {
@@ -793,30 +825,17 @@ pub fn export_unit_node_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings).map_err(into_command_error)?;
 
-    let package = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
-            created_at: Utc::now(),
-            source_node_id,
-            package_sequence: None,
-            issuer_identity_id: None,
-            package_id: PackageId(Uuid::new_v4().to_string()),
-            signature_version: None,
-            signing_key_id: resolve_active_signing_key_id(),
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: package_data,
-    };
-
-    let builder = PackageBuilder::new();
-    builder
-        .build_encrypted_stream_path(
-            &package,
-            &SerdeJsonSyncPackageSerializer,
-            &HmacPackageSigner,
-            &state.crypto_port,
+    // ADR-0044 A44-07/08: `.unit` export is V2-only (Ed25519 by the WILAYA
+    // identity) — no new V1/HMAC packages are produced (RFC §3.10). The
+    // bootstrap artifact carries the FIXED sequence 1 and never touches the
+    // per-issuer ledger; the receiving UNIT accepts it anchor-first.
+    IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_bootstrap_package(
+            package_data.clone(),
+            &source_node_id,
             std::path::Path::new(&file_path),
+            export_subject_type(settings.node_type),
+            &state.crypto_port,
         )
         .map_err(into_command_error)?;
 
@@ -1109,7 +1128,25 @@ pub fn export_identity_access_package(
     unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
-    let (session, settings) = authorize_command(&state, Action::ExportIdentityAccessPackage, None)
+    export_identity_access_package_impl(&state, unit_code, file_path)
+}
+
+/// Implementation of `export_identity_access_package` (testable without a
+/// Tauri runtime).
+///
+/// F-1 Option A (ADR-0045 §26.9): the producer allocates the transport
+/// sequence from the per-`(issuer, target_unit_code)` stream
+/// (`IdentitySignedExportService::export_v2_identity_access_package`). The
+/// target unit is the authoritative server-side one: `UserAccountSyncService`
+/// resolves `unit_code` against the local `units` table and builds the payload
+/// from that row (fails closed when the unit does not exist) — the renderer
+/// value can only select an existing unit, never choose a sequence stream.
+pub fn export_identity_access_package_impl(
+    state: &AppState,
+    unit_code: String,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    let (session, settings) = authorize_command(state, Action::ExportIdentityAccessPackage, None)
         .map_err(into_command_error)?;
     validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
@@ -1127,10 +1164,9 @@ pub fn export_identity_access_package(
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
     let _sequence = IdentitySignedExportService::new(db, &node_key_store())
-        .export_v2_package(
-            payload.clone(),
+        .export_v2_identity_access_package(
+            payload,
             &source_node_id,
-            IDENTITY_ACCESS_PACKAGE_KIND,
             std::path::Path::new(&file_path),
             export_subject_type(settings.node_type),
             &state.crypto_port,
@@ -1189,37 +1225,106 @@ pub fn import_identity_access_package(
     state: State<AppState>,
     file_path: String,
 ) -> Result<IdentityAccessPackageImportResult, String> {
-    run_import_pipeline(
-        &state,
-        Action::ImportIdentityAccessPackage,
-        file_path,
-        IDENTITY_ACCESS_PACKAGE_KIND,
-        AuditAction::IdentityAccessPackageImported,
-        read_identity_access_package_from_file,
-        |executor, registry, package, session, _importer_wilaya: &str| {
-            let password_port = state.password_port.as_ref();
-            let input = ImportIdentityAccessPackageInput {
-                package,
-                imported_by: session.username.clone(),
-            };
-            let outcome = apply_identity_access_package(executor, registry, password_port, input)?;
-            Ok(IdentityAccessPackageImportResult {
-                admin_updated: outcome.admin_updated,
-                user_updated: outcome.user_updated,
-                user_renamed: outcome.user_renamed,
-                package_id: outcome.package_id,
-                imported_by: session.username.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            })
-        },
-    )
+    import_identity_access_package_impl(&state, file_path)
+}
+
+/// Implementation of `import_identity_access_package` (testable without a
+/// Tauri runtime).
+pub fn import_identity_access_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<IdentityAccessPackageImportResult, String> {
+    // B8 (ADR-0045, RFC 2026-08-04 §3.12): on a fresh UNIT node no Admin
+    // session exists yet — the command-authorization layer is anonymous for
+    // the FIRST identity_access import. A User session is admitted ONLY
+    // through the fail-closed first-import predicates (re-evaluated inside
+    // the import transaction); every other caller keeps the AdminOnly policy.
+    // `AuthenticatedOnly` establishes the session; the Admin-vs-User routing
+    // is an authorization decision resolved in the authz layer.
+    let (session, settings) = authorize_command(state, Action::AuthenticatedOnly, None)
+        .map_err(into_command_error)?;
+    match resolve_identity_access_import_path(&session.user_snapshot.role, settings.node_type)
+        .map_err(|e| into_command_error(AppError::Authorization(e)))?
+    {
+        IdentityAccessImportPath::FirstImportBootstrap => {
+            // Captured BEFORE the pipeline acquires the DB guard (the importer
+            // closure runs inside the guard-held transaction).
+            let local_unit_code: Option<String> = settings.unit_code.clone();
+            run_import_pipeline_bootstrap(
+                state,
+                file_path,
+                IDENTITY_ACCESS_PACKAGE_KIND,
+                read_identity_access_package_from_file,
+                |executor, registry, package, session, _importer_wilaya: &str| {
+                    let verdict = B8FirstImportPredicatesService::evaluate(
+                        &executor,
+                        &package.payload.unit_code,
+                        package
+                            .metadata
+                            .issuer_identity_id
+                            .as_ref()
+                            .map(|u| u.to_string())
+                            .as_deref(),
+                        local_unit_code.as_deref(),
+                    )?;
+                    if !verdict.all_hold() {
+                        return Err(AppError::BusinessLogic(
+                            BusinessLogicError::OperationNotPermitted {
+                                message: B8FirstImportPredicatesService::rejection_message(
+                                    &verdict,
+                                )
+                                .to_string(),
+                            },
+                        ));
+                    }
+                    apply_identity_access_package_import(
+                        state, executor, registry, package, session,
+                    )
+                },
+            )
+        }
+        IdentityAccessImportPath::AdminOnly => run_import_pipeline(
+            state,
+            Action::ImportIdentityAccessPackage,
+            file_path,
+            IDENTITY_ACCESS_PACKAGE_KIND,
+            AuditAction::IdentityAccessPackageImported,
+            read_identity_access_package_from_file,
+            |executor, registry, package, session, _importer_wilaya: &str| {
+                apply_identity_access_package_import(state, executor, registry, package, session)
+            },
+        ),
+    }
+}
+
+fn apply_identity_access_package_import(
+    state: &AppState,
+    executor: crate::repositories::executor::DbExecutor<'_>,
+    registry: &SqliteImportedPackageRegistry<'_>,
+    package: SyncPackage<IdentityAccessPayload>,
+    session: &CurrentSession,
+) -> Result<IdentityAccessPackageImportResult, AppError> {
+    let password_port = state.password_port.as_ref();
+    let input = ImportIdentityAccessPackageInput {
+        package,
+        imported_by: session.username.clone(),
+    };
+    let outcome = apply_identity_access_package(executor, registry, password_port, input)?;
+    Ok(IdentityAccessPackageImportResult {
+        admin_updated: outcome.admin_updated,
+        user_updated: outcome.user_updated,
+        user_renamed: outcome.user_renamed,
+        package_id: outcome.package_id,
+        imported_by: session.username.clone(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    })
 }
 
 /// Core pipeline for encrypted sync package imports.
 /// Handles: Authorization, Session Touch, Package Loading, Audit Logging (Start/Success/Failure),
 /// Transaction Orchestration (AuditTxService), and Error Mapping.
 fn run_import_pipeline<T, R, L, I>(
-    state: &State<AppState>,
+    state: &AppState,
     action: Action,
     file_path: String,
     package_kind: &str,
@@ -1241,8 +1346,101 @@ where
         &str,
     ) -> Result<R, AppError>,
 {
+    run_import_pipeline_core(
+        state,
+        file_path,
+        package_kind,
+        audit_action,
+        None,
+        loader,
+        importer,
+        |state| authorize_command(state, action, None),
+    )
+}
+
+/// B8 first-import variant of the import pipeline (ADR-0045).
+///
+/// The command-authorization layer is anonymous: a User session is admitted
+/// when the fail-closed first-import predicates (enforced inside the import
+/// transaction, on the same snapshot) hold. No other caller reaches this
+/// path — Admin sessions always use `run_import_pipeline` with the AdminOnly
+/// policy. Once the first import succeeds a canonical Admin exists and the
+/// exemption is self-terminating.
+fn run_import_pipeline_bootstrap<T, R, L, I>(
+    state: &AppState,
+    file_path: String,
+    package_kind: &str,
+    loader: L,
+    importer: I,
+) -> Result<R, String>
+where
+    T: serde::de::DeserializeOwned + Clone + Send + Sync + serde::Serialize,
+    L: FnOnce(
+        &std::path::Path,
+        &crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider,
+    ) -> Result<SyncPackage<T>, AppError>,
+    I: FnOnce(
+        crate::repositories::executor::DbExecutor<'_>,
+        &SqliteImportedPackageRegistry<'_>,
+        SyncPackage<T>,
+        &CurrentSession,
+        &str,
+    ) -> Result<R, AppError>,
+{
+    run_import_pipeline_core(
+        state,
+        file_path,
+        package_kind,
+        AuditAction::IdentityAccessBootstrapImported,
+        Some(AuditAction::IdentityAccessBootstrapImportFailed),
+        loader,
+        importer,
+        |state| {
+            // Any authenticated session on the UNIT node is admitted here —
+            // the B8 first-import predicates (enforced inside the import
+            // transaction) are the actual gate; the structural guard below
+            // restricts the exemption to UNIT nodes only.
+            let (session, settings) = authorize_command(state, Action::AuthenticatedOnly, None)?;
+            // Structural guard: the first-import exemption exists only on a
+            // UNIT node. On a WILAYA node the AdminOnly policy is absolute.
+            if settings.node_type != crate::models::NodeType::Unit {
+                return Err(AppError::Authorization(
+                    crate::errors::AuthorizationError::InsufficientPermissions,
+                ));
+            }
+            Ok((session, settings))
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_import_pipeline_core<T, R, L, I, A>(
+    state: &AppState,
+    file_path: String,
+    package_kind: &str,
+    audit_action: AuditAction,
+    failure_audit_action: Option<AuditAction>,
+    loader: L,
+    importer: I,
+    authorize: A,
+) -> Result<R, String>
+where
+    T: serde::de::DeserializeOwned + Clone + Send + Sync + serde::Serialize,
+    L: FnOnce(
+        &std::path::Path,
+        &crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider,
+    ) -> Result<SyncPackage<T>, AppError>,
+    I: FnOnce(
+        crate::repositories::executor::DbExecutor<'_>,
+        &SqliteImportedPackageRegistry<'_>,
+        SyncPackage<T>,
+        &CurrentSession,
+        &str,
+    ) -> Result<R, AppError>,
+    A: FnOnce(&AppState) -> Result<(CurrentSession, Settings), AppError>,
+{
     // 1. Authorization & Session Touch
-    let (session, settings) = authorize_command(state, action, None).map_err(into_command_error)?;
+    let (session, settings) = authorize(state).map_err(into_command_error)?;
     require_maintenance_allows(state, MaintenanceBlockedOperation::Import)
         .map_err(into_command_error)?;
     state.touch_session();
@@ -1466,6 +1664,21 @@ where
                     rejected_records_count: 1,
                 },
             );
+            // B8: distinguishable failure audit for the first-import path
+            // (ADR-0045 §25 A45-05), written alongside the ImportRejected
+            // import-audit event above.
+            if let Some(fail_action) = failure_audit_action {
+                let entity_type = fail_action.default_entity_type();
+                let _ = AuditService::new(db.executor()).log_failure(
+                    &session.user_id,
+                    &session.username,
+                    fail_action,
+                    entity_type,
+                    Some(&package_id),
+                    reason.code(),
+                    None,
+                );
+            }
             log::warn!(
                 target: "grpc::import_export",
                 "import pipeline failed kind={} package_id={} reason={}",
@@ -1491,6 +1704,7 @@ where
 #[cfg(test)]
 mod security_requirement_tests {
     use super::*;
+    use chrono::Utc;
     use crate::application::sync::{PackageId, SchemaVersion};
     use crate::application::usecases::exports::types::ProductsExportDataset;
     use crate::infrastructure::security::AgeFileEncryptionProvider;

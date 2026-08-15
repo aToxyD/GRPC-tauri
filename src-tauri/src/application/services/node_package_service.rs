@@ -141,6 +141,17 @@ impl<'a> NodePackageService<'a> {
         // rejected package leaves the node untouched (fail-closed).
         let role = validate_unit_node_role(&package.user.role)?;
 
+        // A45-08 (ADR-0045): `.unit` payloads are User-only. A `role=Admin`
+        // package is not a valid bootstrap path and is rejected — the first
+        // canonical Admin is established exclusively via the B8 first
+        // `identity_access` import (ADR-0045).
+        if role == crate::models::UserRole::Admin {
+            return Err(AppError::Validation(ValidationError::InvalidFormat {
+                field: "role".into(),
+                message: "دور المسؤول غير صالح في حزمة العقدة (B8) — دور الحزمة يجب أن يكون User".into(),
+            }));
+        }
+
         let settings_repo = self.executor.settings();
         let user_repo = self.executor.users();
         let unit_repo = self.executor.units();
@@ -197,7 +208,15 @@ impl<'a> NodePackageService<'a> {
         unit_repo.upsert_raw_unit(unit_id, unit_code, unit_name, wilaya_code, &now)?;
 
         let user_role = match role_str {
-            "Admin" => crate::models::UserRole::Admin,
+            // A45-08 (ADR-0045): `.unit` payloads are User-only — Admin is
+            // never a valid bootstrap role (first Admin = B8 import).
+            "Admin" => {
+                return Err(AppError::Validation(ValidationError::InvalidFormat {
+                    field: "role".into(),
+                    message: "دور المسؤول غير صالح في حزمة العقدة (B8) — دور الحزمة يجب أن يكون User"
+                        .into(),
+                }));
+            }
             _ => crate::models::UserRole::User,
         };
 
@@ -261,14 +280,21 @@ mod tests {
     }
 
     #[test]
-    fn import_unit_package_accepts_valid_roles() {
+    fn import_unit_package_accepts_user_and_rejects_admin_role() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let svc = NodePackageService::new(db.executor());
 
-        for role in ["Admin", "User"] {
-            let result = svc.import_unit_node_package(&unit_package(role));
-            assert!(result.is_ok(), "valid {role} package accepted: {result:?}");
-        }
+        // A45-08 (ADR-0045): `.unit` payloads are User-only — Admin is not a
+        // valid bootstrap role (the first canonical Admin is established via
+        // the B8 `identity_access` import).
+        let user_result = svc.import_unit_node_package(&unit_package("User"));
+        assert!(user_result.is_ok(), "User package accepted: {user_result:?}");
+
+        let admin_result = svc.import_unit_node_package(&unit_package("Admin"));
+        assert!(
+            admin_result.is_err(),
+            "Admin-role .unit must be rejected (A45-08)"
+        );
     }
 
     #[test]
