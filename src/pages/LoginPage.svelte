@@ -562,6 +562,9 @@
     {#if !isAppConfigured}
       <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-3 text-center">لم يتم تكوين العقدة بعد</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
+          تُعدّ عقدة WILAYA هوية الوحدة ضمن حزمة .unit وتضمّنها فيها، ويتضمن التصدير مادة هوية الوحدة. المفتاح الخاص محمي ولا يُعرَض للمستخدم، وتُفعَّل هوية الوحدة على هذه العقدة بعد التحقق من الحزمة.
+        </p>
         <AppButton
           variant="secondary"
           size="lg"
@@ -668,8 +671,7 @@
         <AppAlert intent="info">
           <div class="space-y-1">
             <p class="text-sm font-semibold">{bootstrapStatusLabel(identityState)}</p>
-            <p class="text-xs">توقّع عقدة WILAYA شهادة الوحدة. المفتاح السري لا يغادر العقدة، وشهادة WILAYA (مرساة الثقة) تُثبَّت في خطوة مستقلة.</p>
-            <p class="text-xs">عند استيراد حزمة .unit بهوية مضمّنة، تُنشأ مفاتيح الوحدة على عقدة WILAYA وتنتقل مشفّرة داخل الحزمة فقط، ولا تُخزَّن في متجر مفاتيح WILAYA.</p>
+            <p class="text-xs">توقّع عقدة WILAYA شهادة الوحدة وتُعدّ هويتها ضمن حزمة .unit. المفتاح الخاص محمي ولا يُعرَض للمستخدم، وشهادة WILAYA (مرساة الثقة) تُثبَّت في خطوة مستقلة.</p>
           </div>
         </AppAlert>
 
