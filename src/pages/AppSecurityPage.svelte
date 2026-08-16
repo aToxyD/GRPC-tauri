@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { saveFile, getAppWindow, createLogicalSize } from '../lib/tauri';
+  import { saveFile, openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
   import {
     getSecurityStatus,
     initializeAppKey,
+    importAppKey,
     unlockAppKey,
     type AppKeyStatusDto,
   } from '../lib/contracts';
@@ -38,6 +39,14 @@
   let exportBackup = false;
   // @category TransientState
   let localError = '';
+  // @category TransientState
+  let importPassphrase = '';
+  // @category TransientState
+  let importArtifactPath = '';
+  // @category UiState
+  let importSuccess = false;
+  // @category TransientState
+  let importError = '';
 
   // @category UiState
   $: unlocked = status?.requires_action === false;
@@ -113,6 +122,45 @@
       showSuccess('تم إعداد مفتاح التطبيق بنجاح. احتفظ بنسخة المفتاح في مكان آمن.');
       push('/login');
     });
+  }
+
+  // APPKEY-003: fleet-path import — pick the WILAYA portable artifact; the
+  // backend reads, validates, and encrypts it into the local store. The raw
+  // identity never enters the DOM or IPC (only the path is sent).
+  async function pickArtifact() {
+    const selected = await openFile({
+      multiple: false,
+      filters: [{ name: 'مفتاح الأسطول المحمول (age)', extensions: ['age', 'key', 'txt'] }],
+    });
+    if (selected) {
+      importArtifactPath = selected as string;
+      importError = '';
+    }
+  }
+
+  async function handleImport() {
+    if (!importArtifactPath) {
+      importError = 'اختر ملف grpc-app-key.age أولاً';
+      return;
+    }
+    if (importPassphrase.length < 8) {
+      importError = 'كلمة مرور التخزين المحلي يجب أن تكون 8 أحرف على الأقل';
+      return;
+    }
+    importError = '';
+    importSuccess = false;
+    try {
+      await op.run(async () => {
+        await importAppKey(importPassphrase, importArtifactPath);
+        importPassphrase = '';
+        importArtifactPath = '';
+        importSuccess = true;
+        showSuccess('تم استيراد مفتاح الأسطول وفتح التطبيق. يمكنك الآن تسجيل الدخول.');
+        push('/login');
+      });
+    } catch (e) {
+      importError = formatErrorMessage(e);
+    }
   }
 </script>
 
@@ -235,6 +283,55 @@
                   عن مفتاح WILAYA ويفشل فك تشفير <code class="font-mono">.unit</code>.
                 </li>
               </ol>
+              <div class="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+                <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                  أو استورد الملف المحمول مباشرة: يقرأ التطبيق
+                  <code class="font-mono">grpc-app-key.age</code> من WILAYA ويخزنه
+                  محلياً مشفراً بكلمة مرور — بدون تعديل الملف الأصلي.
+                </p>
+                {#if importSuccess}
+                  <AppAlert intent="success">
+                    <p class="text-sm">تم استيراد مفتاح الأسطول بنجاح.</p>
+                  </AppAlert>
+                {/if}
+                {#if importError}
+                  <AppAlert intent="danger">
+                    <p class="text-sm">{importError}</p>
+                  </AppAlert>
+                {/if}
+                <form class="space-y-2" on:submit|preventDefault={handleImport}>
+                  <div class="flex items-center gap-2">
+                    <AppButton
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={$loading}
+                      on:click={pickArtifact}
+                    >
+                      اختيار الملف…
+                    </AppButton>
+                    {#if importArtifactPath}
+                      <code class="text-xs text-gray-600 dark:text-gray-300 truncate flex-1" dir="ltr">
+                        {importArtifactPath}
+                      </code>
+                    {:else}
+                      <span class="text-xs text-gray-400 flex-1">لم يتم اختيار ملف بعد</span>
+                    {/if}
+                  </div>
+                  <AppInput
+                    id="security-import-passphrase"
+                    label="كلمة مرور التخزين المحلي"
+                    type="password"
+                    bind:value={importPassphrase}
+                    placeholder="8 أحرف على الأقل"
+                    autocomplete="new-password"
+                    disabled={$loading}
+                  />
+                  <AppButton type="submit" variant="primary" size="sm" fullWidth loading={$loading}>
+                    استيراد المفتاح وفتح التطبيق
+                  </AppButton>
+                </form>
+              </div>
             </AppCard>
             <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>

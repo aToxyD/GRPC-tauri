@@ -360,6 +360,16 @@ pub struct AppKeyUnlockResult {
     pub store_path: String,
 }
 
+/// Result of `import_app_key` (APPKEY-003, ADR-0041 §10.4 amendment): the
+/// WILAYA-sourced portable artifact `grpc-app-key.age` was imported into the
+/// encrypted local store. Metadata only — the App Key value never crosses IPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppKeyImportResult {
+    pub provisioned: bool,
+    pub unlocked: bool,
+    pub store_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncPreflightCheck {
     pub status: String, // ok | warn | fail

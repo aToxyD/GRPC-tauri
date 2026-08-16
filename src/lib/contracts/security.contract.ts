@@ -26,6 +26,12 @@ export interface AppKeyUnlockResultDto {
   store_path: string;
 }
 
+export interface AppKeyImportResultDto {
+  provisioned: boolean;
+  unlocked: boolean;
+  store_path: string;
+}
+
 /** Live provisioning status (ADR-0041 §9). */
 export async function getSecurityStatus(): Promise<AppKeyStatusDto> {
   return await safeInvoke('get_security_status');
@@ -58,4 +64,17 @@ export async function unlockAppKey(passphrase: string): Promise<AppKeyUnlockResu
 /** Guarded re-export of the raw application identity (requires unlocked store). */
 export async function exportAppKeyBackup(): Promise<string> {
   return await safeInvoke('export_app_key_backup');
+}
+
+/**
+ * Import the WILAYA-sourced portable artifact `grpc-app-key.age` into the
+ * encrypted local store (APPKEY-003, ADR-0041 §10.4 amendment). The renderer
+ * sends only the artifact path; the backend reads, validates, and encrypts it.
+ * The raw identity never crosses IPC, the DOM, or logs.
+ */
+export async function importAppKey(
+  passphrase: string,
+  artifactPath: string,
+): Promise<AppKeyImportResultDto> {
+  return await safeInvoke('import_app_key', { passphrase, artifactPath });
 }

@@ -162,6 +162,8 @@ pre-auth lifecycle):
 
 - `get_security_status` → `{ provisioned, unlocked, store_path, source }`
 - `initialize_app_key(passphrase, export_backup?)` → `AppKeyInitializeResult`
+- `import_app_key(passphrase, artifact_path)` → `AppKeyImportResult` (fleet
+  artifact import, APPKEY-003 Design B; ratified in §10.4)
 - `unlock_app_key(passphrase)` → `AppKeyUnlockResult`
 - `export_app_key_backup()` → guarded re-export path (requires unlocked state)
 
@@ -204,7 +206,10 @@ pre-auth lifecycle):
 - The approved mechanism for supplying the shared value is the **`GRPC_APP_KEY`
   environment variable** (rank 1 in the resolution hierarchy, §1), set by the
   operator to the **same** valid `age` identity on the WILAYA node and every
-  target UNIT at deployment/bootstrap time.
+  target UNIT at deployment/bootstrap time. As a project-native convenience,
+  `import_app_key` (§9, §10.4) imports the same value from the portable
+  artifact into a fresh local store — the store remains rank 2 in the
+  resolution hierarchy.
 - The operator-controlled value is typically the one-time **portable provisioning
   artifact** `grpc-app-key.age` (§7) exported from the WILAYA node — raw plaintext
   App-Key material, carried on the same trusted offline channel as the provisioning
@@ -216,8 +221,31 @@ pre-auth lifecycle):
 
 - **Copying `appkey.age` between nodes is PROHIBITED.** The store is a
   passphrase-protected node-local artifact (§2); it is not an interchange
-  vehicle. Interchange uses the approved `GRPC_APP_KEY` mechanism (§10.3).
-- No App Key import command exists or is added by this decision.
+  vehicle. Interchange uses the approved `GRPC_APP_KEY` mechanism (§10.3) or
+  the ratified `import_app_key` command (below).
+- **`import_app_key` (APPKEY-003, Design B — ratified amendment)** is the
+  project-native provisioning command for the fleet path: it reads the
+  WILAYA-sourced portable artifact `grpc-app-key.age` (§7) on the backend
+  (the renderer sends only the artifact path), validates it (extension
+  `age`/`key`/`txt`, 64 KiB cap, single line, `AGE-SECRET-KEY-1` prefix),
+  wraps the App Key with the operator passphrase into a **fresh** local
+  `appkey.age` store via the standard `AppKeyStore` write path (scrypt +
+  atomic write + `0600`), primes the runtime cache, and runs the deferred
+  DB bootstrap (`finish_unlock`). Constraints:
+  - Refuses in ALL cases when `appkey.age` already exists — existing stores
+    are never overwritten, replaced, rotated, or deleted; the local
+    generation path (`initialize_app_key`) and the import path are mutually
+    exclusive per node.
+  - The artifact is never modified, renamed, or deleted; no `0600` is applied
+    to it (plaintext portable-artifact semantics, §10.4 artifact
+    distinction); its raw value never crosses IPC, the DOM, or logs.
+  - Import is confidentiality/decryption material provisioning only — it
+    introduces no identity, trust, signing, or B8 semantics (no role
+    detection, no UNIT-only authorization, no import for identity/certs/
+    trust/`.unit`).
+  - The `GRPC_APP_KEY` resolution rank (env rank 1, §1) is unchanged: while
+    the env var is set, it wins over the imported store; an imported store is
+    inert until then.
 - **Artifact distinction (authoritative)**: `appkey.age` (node-local protected
   store) and `grpc-app-key.age` (portable plaintext provisioning/export artifact)
   are NOT the same kind of artifact. The portable artifact is intentionally

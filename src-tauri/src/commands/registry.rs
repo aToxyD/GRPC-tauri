@@ -6,6 +6,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         // Application-key provisioning (ADR-0041, pre-auth lifecycle)
         commands::get_security_status,
         commands::initialize_app_key,
+        commands::import_app_key,
         commands::unlock_app_key,
         commands::export_app_key_backup,
         // Authentication
