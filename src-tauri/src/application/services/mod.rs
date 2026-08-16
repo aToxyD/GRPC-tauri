@@ -86,7 +86,9 @@ pub use sync_import_models::{
     ReplayProtectionResult, ResolutionPolicy, SyncImportRequest, SyncImportResult, SyncPackageKind,
 };
 pub use sync_import_validation_service::SyncImportValidationService;
-pub use sync_package_identity_verification_service::SyncPackageIdentityVerificationService;
+pub use sync_package_identity_verification_service::{
+    PayloadUnitIdExtractor, SyncPackageIdentityVerificationService, V2ImportPolicy,
+};
 pub use system_diagnostics_service::SystemDiagnosticsService;
 pub use system_health_service::SystemHealthService;
 pub use system_stats_service::SystemStatsService;

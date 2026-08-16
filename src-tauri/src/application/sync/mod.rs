@@ -8,6 +8,7 @@ pub mod constants;
 pub mod import;
 pub mod import_provenance;
 pub mod import_validation;
+pub mod unit_issuer_membership;
 
 mod package;
 mod package_kind;
@@ -28,6 +29,7 @@ pub use import_validation::{
     validate_daily_report_package_for_import, validate_monthly_summary_package_for_import,
     validate_products_package_for_import,
 };
+pub use unit_issuer_membership::verify_unit_issuer_membership;
 pub use package::SyncPackage;
 pub use package_kind::SyncPackageKind;
 pub use package_metadata::{PackageId, SyncPackageMetadata};

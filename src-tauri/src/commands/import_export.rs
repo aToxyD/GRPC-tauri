@@ -8,9 +8,9 @@ use crate::application::authz::Action;
 use crate::application::services::{
     record_export_with_reproducibility, AuditService, AuditTxService, B8FirstImportPredicatesService,
     DailyReportService, ExportReproducibilityContext, IdentityProvisioningService,
-    IdentitySignedExportService, NodePackageService, ProductService, SettingsService,
-    StockMovementService, SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
-    UserService,
+    IdentitySignedExportService, NodePackageService, PayloadUnitIdExtractor, ProductService,
+    SettingsService, StockMovementService, SyncPackageIdentityVerificationService, UnitService,
+    UserAccountSyncService, UserService, V2ImportPolicy,
 };
 use crate::application::services::{
     ImportReproducibilityRecord, ImportReproducibilityService, MaintenanceBlockedOperation,
@@ -288,8 +288,17 @@ pub fn import_products_package(
     state: State<AppState>,
     file_path: String,
 ) -> Result<crate::models::PackageImportResult, String> {
+    import_products_package_impl(&state, file_path)
+}
+
+/// Testable implementation of `import_products_package` (without a Tauri
+/// runtime).
+pub fn import_products_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<crate::models::PackageImportResult, String> {
     run_import_pipeline(
-        &state,
+        state,
         Action::ImportProductsPackage,
         file_path,
         PRODUCTS_PACKAGE_KIND,
@@ -308,6 +317,8 @@ pub fn import_products_package(
                 deleted: outcome.skipped,
             })
         },
+        None,
+        None,
     )
 }
 
@@ -318,8 +329,18 @@ pub fn import_daily_report_package(
     file_path: String,
     unit_id: String,
 ) -> Result<crate::models::DailyReportImportResult, String> {
+    import_daily_report_package_impl(&state, file_path, unit_id)
+}
+
+/// Testable implementation of `import_daily_report_package` (without a Tauri
+/// runtime).
+pub fn import_daily_report_package_impl(
+    state: &AppState,
+    file_path: String,
+    unit_id: String,
+) -> Result<crate::models::DailyReportImportResult, String> {
     run_import_pipeline(
-        &state,
+        state,
         Action::ImportDailyReportPackage,
         file_path,
         DAILY_REPORT_PACKAGE_KIND,
@@ -342,6 +363,8 @@ pub fn import_daily_report_package(
                 timestamp: chrono::Utc::now().to_rfc3339(),
             })
         },
+        Some(&unit_id),
+        None,
     )
 }
 
@@ -599,6 +622,16 @@ pub fn import_monthly_summary_package(
     file_path: String,
     unit_id: String,
 ) -> Result<DailyReportImportResult, String> {
+    import_monthly_summary_package_impl(&state, file_path, unit_id)
+}
+
+/// Testable implementation of `import_monthly_summary_package` (without a Tauri
+/// runtime).
+pub fn import_monthly_summary_package_impl(
+    state: &AppState,
+    file_path: String,
+    unit_id: String,
+) -> Result<DailyReportImportResult, String> {
     if unit_id.trim().is_empty() {
         return Err(into_command_error(AppError::Validation(
             ValidationError::Required {
@@ -608,7 +641,7 @@ pub fn import_monthly_summary_package(
     }
 
     run_import_pipeline(
-        &state,
+        state,
         Action::ImportMonthlySummaryPackage,
         file_path,
         MONTHLY_SUMMARY_PACKAGE_KIND,
@@ -631,6 +664,8 @@ pub fn import_monthly_summary_package(
                 timestamp: chrono::Utc::now().to_rfc3339(),
             })
         },
+        Some(&unit_id),
+        None,
     )
 }
 
@@ -1011,8 +1046,18 @@ pub fn import_stock_movements_package(
     file_path: String,
     unit_id: String,
 ) -> Result<crate::models::StockMovementsImportResult, String> {
+    import_stock_movements_package_impl(&state, file_path, unit_id)
+}
+
+/// Testable implementation of `import_stock_movements_package` (without a Tauri
+/// runtime).
+pub fn import_stock_movements_package_impl(
+    state: &AppState,
+    file_path: String,
+    unit_id: String,
+) -> Result<crate::models::StockMovementsImportResult, String> {
     run_import_pipeline(
-        &state,
+        state,
         Action::ImportStockMovements,
         file_path,
         STOCK_MOVEMENTS_PACKAGE_KIND,
@@ -1034,6 +1079,16 @@ pub fn import_stock_movements_package(
                 timestamp: chrono::Utc::now().to_rfc3339(),
             })
         },
+        Some(&unit_id),
+        Some(&|payload: &StockMovementsExportDataset| {
+            payload
+                .movements
+                .iter()
+                .filter_map(|m| m.unit_id.as_deref())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        }),
     )
 }
 
@@ -1046,8 +1101,16 @@ pub fn import_trust_package(
     state: State<AppState>,
     file_path: String,
 ) -> Result<TrustPackageImportResult, String> {
+    import_trust_package_impl(&state, file_path)
+}
+
+/// Testable implementation of `import_trust_package` (without a Tauri runtime).
+pub fn import_trust_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<TrustPackageImportResult, String> {
     run_import_pipeline(
-        &state,
+        state,
         Action::ImportTrustPackage,
         file_path,
         TRUST_PACKAGE_KIND,
@@ -1067,6 +1130,8 @@ pub fn import_trust_package(
                 timestamp: chrono::Utc::now().to_rfc3339(),
             })
         },
+        None,
+        None,
     )
 }
 
@@ -1078,8 +1143,17 @@ pub fn import_registry_package(
     state: State<AppState>,
     file_path: String,
 ) -> Result<RegistryPackageImportResult, String> {
+    import_registry_package_impl(&state, file_path)
+}
+
+/// Testable implementation of `import_registry_package` (without a Tauri
+/// runtime).
+pub fn import_registry_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<RegistryPackageImportResult, String> {
     run_import_pipeline(
-        &state,
+        state,
         Action::ImportRegistryPackage,
         file_path,
         REGISTRY_PACKAGE_KIND,
@@ -1099,6 +1173,8 @@ pub fn import_registry_package(
                 timestamp: chrono::Utc::now().to_rfc3339(),
             })
         },
+        None,
+        None,
     )
 }
 
@@ -1360,6 +1436,8 @@ pub fn import_identity_access_package_impl(
                         state, executor, registry, package, session,
                     )
                 },
+                None,
+                None,
             )
         }
         IdentityAccessImportPath::AdminOnly => run_import_pipeline(
@@ -1372,6 +1450,8 @@ pub fn import_identity_access_package_impl(
             |executor, registry, package, session, _importer_wilaya: &str| {
                 apply_identity_access_package_import(state, executor, registry, package, session)
             },
+            None,
+            None,
         ),
     }
 }
@@ -1402,6 +1482,7 @@ fn apply_identity_access_package_import(
 /// Core pipeline for encrypted sync package imports.
 /// Handles: Authorization, Session Touch, Package Loading, Audit Logging (Start/Success/Failure),
 /// Transaction Orchestration (AuditTxService), and Error Mapping.
+#[allow(clippy::too_many_arguments)]
 fn run_import_pipeline<T, R, L, I>(
     state: &AppState,
     action: Action,
@@ -1410,6 +1491,8 @@ fn run_import_pipeline<T, R, L, I>(
     audit_action: AuditAction,
     loader: L,
     importer: I,
+    import_unit_id: Option<&str>,
+    payload_unit_ids: PayloadUnitIdExtractor<'_, T>,
 ) -> Result<R, String>
 where
     T: serde::de::DeserializeOwned + Clone + Send + Sync + serde::Serialize,
@@ -1434,6 +1517,8 @@ where
         loader,
         importer,
         |state| authorize_command(state, action, None),
+        import_unit_id,
+        payload_unit_ids,
     )
 }
 
@@ -1445,12 +1530,15 @@ where
 /// path — Admin sessions always use `run_import_pipeline` with the AdminOnly
 /// policy. Once the first import succeeds a canonical Admin exists and the
 /// exemption is self-terminating.
+#[allow(clippy::too_many_arguments)]
 fn run_import_pipeline_bootstrap<T, R, L, I>(
     state: &AppState,
     file_path: String,
     package_kind: &str,
     loader: L,
     importer: I,
+    import_unit_id: Option<&str>,
+    payload_unit_ids: PayloadUnitIdExtractor<'_, T>,
 ) -> Result<R, String>
 where
     T: serde::de::DeserializeOwned + Clone + Send + Sync + serde::Serialize,
@@ -1489,6 +1577,8 @@ where
             }
             Ok((session, settings))
         },
+        import_unit_id,
+        payload_unit_ids,
     )
 }
 
@@ -1502,6 +1592,8 @@ fn run_import_pipeline_core<T, R, L, I, A>(
     loader: L,
     importer: I,
     authorize: A,
+    import_unit_id: Option<&str>,
+    payload_unit_ids: PayloadUnitIdExtractor<'_, T>,
 ) -> Result<R, String>
 where
     T: serde::de::DeserializeOwned + Clone + Send + Sync + serde::Serialize,
@@ -1525,8 +1617,12 @@ where
     state.touch_session();
     validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
 
-    // 2. Context Extraction
-    let importer_wilaya = settings.wilaya_code.as_deref().ok_or_else(|| {
+    // 2. Context Extraction — fail-fast: the node must be wilaya-configured.
+    // The value used by the security predicates is re-read INSIDE the import
+    // transaction (F-04, SYNC-007) so it matches the membership row's DB
+    // snapshot; this early check only surfaces misconfiguration before the
+    // encrypted file is decrypted.
+    let _ = settings.wilaya_code.as_deref().ok_or_else(|| {
         into_command_error(AppError::Validation(ValidationError::Required {
             field: "wilaya_code".into(),
         }))
@@ -1583,10 +1679,41 @@ where
         );
 
         let out = {
-            // B4 signature_version=2 verification (RFC 2026-08-04 §3.10): Ed25519
-            // node identity against the Identity Store. Runs before the Transport
+            // F-04 (SYNC-007): re-read the local settings INSIDE the import
+            // transaction so the security-relevant context (importer node role
+            // and wilaya code used by the issuer policy, membership, and the
+            // importer's own validation) is the SAME DB snapshot as the
+            // membership row read. The authorize-time snapshot remains the
+            // authorization decision; this transactional read closes the
+            // pre-transaction TOCTOU window without changing the transaction
+            // architecture and without granting the renderer or the package
+            // metadata any authority (settings stay local persisted state).
+            let tx_settings = SettingsService::new(executor).get_settings()?;
+            let importer_wilaya = tx_settings.wilaya_code.as_deref().ok_or_else(|| {
+                AppError::Validation(ValidationError::Required {
+                    field: "wilaya_code".into(),
+                })
+            })?;
+
+            // B4 signature_version=2 verification (RFC 2026-08-04 §3.10, ADR-0046):
+            // Ed25519 node identity against the Identity Store, with the kind-scoped
+            // issuer policy (UNIT issuers accepted ONLY for the data kinds, on
+            // WILAYA importers, and ONLY after signature authentication + membership
+            // + issuer↔import-target/payload binding). Runs before the Transport
             // Guard so unauthenticated packages cannot probe sequence state.
-            SyncPackageIdentityVerificationService::verify_v2_signature(executor, &package)?;
+            let importer_is_wilaya = tx_settings.node_type == crate::models::NodeType::Wilaya;
+            let v2_policy = V2ImportPolicy::new(
+                package_kind,
+                importer_is_wilaya,
+                importer_wilaya,
+                import_unit_id,
+                payload_unit_ids,
+            );
+            SyncPackageIdentityVerificationService::verify_v2_package_for_import(
+                executor,
+                &package,
+                &v2_policy,
+            )?;
 
             // B4 Transport Guard (RFC 2026-08-04 §3.4.1): per-issuer sequence
             // continuity, enforced ONLY in the import pipeline.

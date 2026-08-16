@@ -467,6 +467,17 @@ Challenge {
   (products/daily_report/monthly_summary/stock_movements) تُصدَّر حصريًا
   `signature_version = 2` عبر `IdentitySignedExportService` — بدون أي مسار تراجع
   HMAC: عقدة غير مجهَّزة تفشل مغلقةً ولا تصدر حزمة V2.
+- **تعديل (2026-08-16 — ADR-0046 §9، نطاق مُصدِّر الحزم البيانات):** حزم البيانات
+  الثلاث (`stock_movements`/`daily_report`/`monthly_summary`) الموقَّعة V2/Ed25519
+  بهوية **UNIT** (المُصدِّر = شهادة UNIT نشطة) **مقبولة على عقدة WILAYA المستوردة**
+  فقط، بشرط كلٍّ مما يلي (ADR-0046 §3 I3): المستورد عقدة WILAYA؛ الشهادة ACTIVE
+  وغير منتهية؛ التحقق الناجح لتوقيع Ed25519 على البايتات القانونية؛ **بعد**
+  المصادقة فقط: `cert.subject_id` → صف `units` محلي، و`wilaya_code` له ==
+  `settings.wilaya_code` المحلي، و`unit_id` المستهدف == `cert.subject_id`، ولكل
+  حركة مخزون موقَّعة `unit_id` حاضرة/غير فارغة == `cert.subject_id`. حزم
+  `products` و`identity_access` و`trust` و`registry` و`.unit` تبقى **WILAYA-only**
+  حصريًا (لا توسيع نطاق عام — «لا سلطة توقيع عامة لشهادة UNIT»). لا تغيير في
+  التنسيق/التشفير/الترتيب/نموذج الثقة Root → WILAYA → UNIT.
 - **تعديل (2026-08-14 — RFC-AMENDMENT GOVERNANCE GATE):** بمقتضى اعتماد المالك لـ
   ADR-0044 (A44-01/07/08/09/10/11/12) وADR-0045 (A45-01/02/03/08/09/10/12)،
   استُبدل «استثناء Bootstrap الدائم» بـ **Trust-First V2/Ed25519 كمسار `.unit`
