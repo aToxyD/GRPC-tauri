@@ -535,6 +535,49 @@ mod key_resolution_tests {
         assert!(cached_app_key().is_none());
     }
 
+    // ---- file_encryption boundary (ADR-0041 §10 / Model C interchange) ----
+
+    #[test]
+    fn file_encryption_same_key_roundtrips_different_key_fails_closed() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+
+        let provider = AgeFileEncryptionProvider::new();
+        let to_str = |id: age::x25519::Identity| {
+            use age::secrecy::ExposeSecret;
+            id.to_string().expose_secret().to_string()
+        };
+        let key_a = to_str(age::x25519::Identity::generate());
+        let key_b = to_str(age::x25519::Identity::generate());
+        assert_ne!(key_a, key_b);
+
+        // Model C premise: the exporter App Key value is shared verbatim between
+        // WILAYA and the UNIT fleet (`GRPC_APP_KEY`, ADR-0041 §10.3).
+        std::env::set_var("GRPC_APP_KEY", &key_a);
+        let plaintext = b"GRPC APP KEY INTERCHANGE BOUNDARY";
+        let encrypted = provider
+            .encrypt_data(plaintext)
+            .expect("encrypt with key A");
+
+        // Same App Key → decrypt succeeds (round-trip).
+        let roundtrip = provider
+            .decrypt_data(&encrypted)
+            .expect("same App Key must decrypt");
+        assert_eq!(roundtrip, plaintext, "round-trip plaintext mismatch");
+
+        // Different App Key → decrypt fails closed (fail-closed, ADR-0041 §10.5).
+        std::env::set_var("GRPC_APP_KEY", &key_b);
+        let err = provider
+            .decrypt_data(&encrypted)
+            .expect_err("different App Key must fail closed");
+        assert!(
+            matches!(err, AppError::Io(_) | AppError::Internal(_)),
+            "wrong App Key must produce a decryption failure, got {err:?}"
+        );
+
+        clear_key_env();
+    }
+
     // ---- resolve_package_signing_key_32_impl ----
 
     #[test]

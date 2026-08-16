@@ -103,6 +103,13 @@
     (identityState === 'UNINITIALIZED' ||
       identityState === 'UNIT_WAITING_FOR_CERTIFICATE' ||
       identityState === 'UNIT_ACTIVE');
+  // B8 anchor-first (ADR-0045): on a fresh (unconfigured) node the identity
+  // projection walks the default WILAYA chain, so an ACTIVE WILAYA certificate
+  // — the local trust anchor — is present exactly when `identityState` reports
+  // WILAYA_ACTIVE. Presentation-only gate; the backend B8 predicate remains the
+  // authoritative enforcement.
+  // @category UiState
+  $: unitAnchorInstalled = identityState === 'WILAYA_ACTIVE';
 
   // @category UiState
   $: displayError = $loginError || localError;
@@ -560,8 +567,11 @@
 
     <!-- استيراد حزمة التكوين -->
     {#if !isAppConfigured}
-      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3 text-center">لم يتم تكوين العقدة بعد</p>
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
+        <p class="text-sm text-gray-500 dark:text-gray-400 text-center">لم يتم تكوين العقدة بعد</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
+          الخطوة 1: ثبّت شهادة WILAYA كمرساة ثقة قبل استيراد الحزمة (B8 / ADR-0045)
+        </p>
         <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
           تُعدّ عقدة WILAYA هوية الوحدة ضمن حزمة .unit وتضمّنها فيها، ويتضمن التصدير مادة هوية الوحدة. المفتاح الخاص محمي ولا يُعرَض للمستخدم، وتُفعَّل هوية الوحدة على هذه العقدة بعد التحقق من الحزمة.
         </p>
@@ -569,13 +579,23 @@
           variant="secondary"
           size="lg"
           fullWidth
+          loading={$bootstrapLoading}
+          on:click={handleInstallWilayaCert}
+        >
+          الخطوة 1: تثبيت شهادة WILAYA (مرساة الثقة)
+        </AppButton>
+        <AppButton
+          variant="secondary"
+          size="lg"
+          fullWidth
           loading={$importLoading}
+          disabled={!unitAnchorInstalled}
           on:click={handleImportPackage}
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
           </svg>
-          استيراد حزمة التكوين (.unit)
+          الخطوة 2: استيراد حزمة التكوين (.unit)
         </AppButton>
       </div>
     {/if}

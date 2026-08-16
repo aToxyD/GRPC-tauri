@@ -23,6 +23,11 @@
       (`initialize_app_key`) لتوليد مفتاح `age` وحفظه مشفّراً في `appkey.age`. متغير البيئة
       `GRPC_APP_KEY` اختياري (Override) للبيئات غير التفاعلية (headless / CI / الهجرة / الاستعادة)،
       ويجب أن يكون هوية `age` صالحة تبدأ بـ `AGE-SECRET-KEY-1...`.
+      > **أسطول WILAYA ↔ UNIT (ADR-0041 §10 — Model C)**: لأن `.unit` وحزم التبادل تُشفَّر بمفتاح
+      > App الخاص بالمُصدِّر، يجب أن تكون **نفس قيمة** `GRPC_APP_KEY` مضبوطة على عقدة WILAYA
+      > وكل وحدة مستهدفة **قبل أول تشغيل** (قيمة مشغّل واحدة عبر قناة موثوقة دون اتصال).
+      > **يُحظر نسخ `appkey.age` بين العقد** — التبادل عبر `GRPC_APP_KEY` فقط. توفير القيمة
+      > بنفس الصيغة لكل عقدة (التحقق تشغيلي بالـ hash، لأن المفتاح بلا هوية عقدة).
 - [ ] توليد مفتاح توقيع فريد `GRPC_PACKAGE_SIGNING_KEY` (قيمة **Base64** تمثل **32 بايت تماماً** بعد فك الترميز)، متطابق بين كافة العقد.
 - [ ] **مفتاح جذر السلطة `GRPC_ROOT_PUBLIC_KEY`**: قيمة Base64 (STANDARD) تمثل **32 بايت تماماً**
       (مفتاح Ed25519 العام لسلطة Root المستخدمة للتحقق من شهادة الإقلاع دون اتصال).
@@ -47,11 +52,24 @@
 - [ ] **تسجيل الدخول**: بعد وجود هوية ADMIN نشطة، يُرفض تسجيل كلمة المرور (`login`) وتصبح
       المصادقة عبر Challenge–Response إلزامياً (`begin_challenge` → `complete_challenge`).
 
+## ثاني-ب: إقلاع هوية الوحدة (UNIT Bootstrap — anchor-first)
+
+الترتيب ملزم (B8 / ADR-0045): **تثبيت شهادة WILAYA (مرساة الثقة) قبل استيراد `.unit`**.
+
+- [ ] **1. تثبيت مرساة الثقة**: `install_wilaya_certificate(certFile)` بشهادة WILAYA موقّعة من
+      Root (المفتاح العام الجذر المعتمد A44-06). هذه خطوة قبل استيراد `.unit` على العقدة الجديدة.
+- [ ] **2. استيراد حزمة الوحدة**: `import_unit_node_package(.unit)` — يُرفض (Fail-Closed) قبل
+      تركيب المرساة (بوابة `b8_first_import_predicates_service` / `verify_unit_v2_acceptance`).
 - [ ] **2-أ. الهوية المضمّنة (Packaged-Identity — 2026-08-15، ADR-0044 §8.3)**: عند تصدير `.unit`
       عبر `export_unit_node_package` تُضمَّن الشهادة الموقّعة + المفتاح السري (32 بايت) في الحزمة
       وتُثبَّت هوية الوحدة تلقائيًا داخل معاملة الاستيراد (مفتاح → `install_node_key_matching`؛
       هوية → `install_unit_identity_on_executor`) — تصبح العقدة `UnitActive` فورًا. **إعادة التصدير
       = رفض** بمجرد وجود هوية UNIT ACTIVE. الخطوات 3-4 أدناه مطلوبة فقط للمسار القديم (CSR).
+- [ ] **3. طلب الوحدة (CSR — المسار القديم فقط)**: `begin_unit_provision` → ملف JSON يُنقل إلى
+      عقدة WILAYA للتوقيع (`sign_unit_identity_request`).
+- [ ] **4. إكمال الوحدة (المسار القديم فقط)**: `finalize_unit_provision` بالشهادة الموقّعة من
+      WILAYA (مكررة = no-op).
+- [ ] بعد الإقلاع: `identity_access` (B8) يُستورد مرة واحدة بتسلسل 1 مع المرساة نفسها كـ issuer.
 
 ## ثالثاً: تركيب الترخيص (Licensing Provisioning)
 - [ ] التحقق من الحالة الحالية: `get_licensing_status`.

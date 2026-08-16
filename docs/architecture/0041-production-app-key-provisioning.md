@@ -155,6 +155,84 @@ pre-auth lifecycle):
 - `unlock_app_key(passphrase)` → `AppKeyUnlockResult`
 - `export_app_key_backup()` → guarded re-export path (requires unlocked state)
 
+## 10. Interchange Encryption Key Scope (WILAYA ↔ UNIT bootstrap) — Model C
+
+> Decision record for the previously open App Key interchange question
+> (ADR-0044 §12 / A44-13): the current architecture resolves it as **Model C**
+> — a shared App Key between WILAYA and its UNIT fleet. This section is the
+> canonical scope definition.
+
+### 10.1 Confidentiality root, not identity/signing credential
+
+- The App Key (`age::x25519` identity) is an **encryption / confidentiality
+  root only**. It carries no node identity, no authorization, and no signing
+  authority.
+- It MUST NOT be treated as an Ed25519 signing credential. Package authenticity
+  is bound to node identity (`signature_version = 2`, RFC
+  `2026-08-04-node-identity-trust`), the WILAYA trust anchor, and the Root
+  chain — never to the App Key.
+- The App Key and `GRPC_PACKAGE_SIGNING_KEY` remain unrelated secrets
+  (ADR-0044 §12 / ADR-0045 §22.2): no derivation, no shared root.
+
+### 10.2 Shared key requirement (bootstrap)
+
+- `.unit` and all encrypted interchange use the **exporter's** App Key
+  (`file_encryption.rs`, `AgeFileEncryptionProvider`), not a recipient-targeted
+  key. There is no recipient-targeted encryption mechanism in the current
+  architecture.
+- Consequently, WILAYA ↔ UNIT bootstrap **requires the same App Key material**
+  on the WILAYA node and the intended UNIT fleet: the shared value is what
+  decrypts the `.unit` package (and every encrypted `.sync` / backup artifact).
+- Recipient-targeted encryption (B5) remains a **future** architectural
+  decision for post-bootstrap packages; it is NOT implemented here.
+
+### 10.3 Approved deployment/bootstrap mechanism: `GRPC_APP_KEY`
+
+- The approved mechanism for supplying the shared value is the **`GRPC_APP_KEY`
+  environment variable** (rank 1 in the resolution hierarchy, §1), set by the
+  operator to the **same** valid `age` identity on the WILAYA node and every
+  target UNIT at deployment/bootstrap time.
+- The operator-controlled value is typically the one-time raw backup export
+  from `export_app_key_backup()` (§7), carried on the same trusted offline
+  channel as the provisioning ceremony.
+- The store (`appkey.age`) remains the primary path for interactive single-node
+  onboarding (§1 rank 2); `GRPC_APP_KEY` is the fleet-deployment path.
+
+### 10.4 Prohibited operations
+
+- **Copying `appkey.age` between nodes is PROHIBITED.** The store is a
+  passphrase-protected node-local artifact (§2); it is not an interchange
+  vehicle. Interchange uses the approved `GRPC_APP_KEY` mechanism (§10.3).
+- No App Key import command exists or is added by this decision.
+
+### 10.5 Node binding (operational, not cryptographic)
+
+- App Key equality **cannot be cryptographically node-bound**: the `age`
+  x25519 identity carries no node identity, so the app cannot prove "this key
+  belongs to this node". Enforcement is operational:
+  - same operator-controlled value supplied consistently to WILAYA and the
+    intended UNIT fleet (§10.3);
+  - mismatched keys surface as undecryptable material (fail-closed, §8);
+  - operator-custody rules (below).
+
+### 10.6 Operational controls
+
+- Operator custody: the shared key is operator-managed and operator-carried; it
+  is never written into source, never committed to git, never logged by CI, and
+  never included in provisioning packages (§7).
+- Protected handling: file mode `0600`, atomic writes (§2), secrets only via
+  environment / protected secret storage.
+- The same value must be supplied consistently to WILAYA and the intended UNIT
+  fleet; divergent per-node values produce fail-closed decryption failures.
+
+### 10.7 Scope exclusions
+
+- App Key **rotation is outside the current scope** (as in §"Out of scope").
+- Recipient-targeted encryption (B5) and any `.unit` / package format change are
+  out of scope for this decision.
+- The Ed25519 trust chain, the WILAYA trust anchor, and the B8 anchor-first
+  gate are unchanged by this decision.
+
 ### 10.8 Packaged-identity exception — UNIT node secret transport (2026-08-15)
 
 > Amendment synchronized with the ADR-0044 packaged-identity bootstrap and the
