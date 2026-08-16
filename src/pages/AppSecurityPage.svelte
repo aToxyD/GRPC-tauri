@@ -143,6 +143,13 @@
       {:else if unlocked}
         <AppAlert intent="success">
           <p class="text-sm font-semibold">مفتاح التطبيق مفتوح — لا إجراء مطلوب.</p>
+          {#if status?.source === 'env'}
+            <p class="text-xs mt-1">مفتاح الأسطول متوفر عبر GRPC_APP_KEY (لا يُعرض السر هنا).</p>
+          {:else if status?.source === 'store'}
+            <p class="text-xs mt-1">المصدر: المخزن المحلي appkey.age.</p>
+          {:else if status?.source === 'dev'}
+            <p class="text-xs mt-1">المصدر: مفتاح تطوير مضمّن — ليس للإنتاج.</p>
+          {/if}
         </AppAlert>
         <div class="mt-6">
           <AppButton variant="primary" size="lg" fullWidth on:click={() => push('/login')}>
@@ -169,6 +176,74 @@
           </div>
         {/if}
 
+        {#if status?.source === 'env'}
+          <div class="mb-4">
+            <AppAlert intent="success">
+              <p class="text-sm font-semibold">مفتاح الأسطول متوفر عبر GRPC_APP_KEY</p>
+              <p class="text-xs mt-1">
+                المفتاح مُوفَّر من بيئة التشغيل (نفس قيمة WILAYA) ولا يُعرض هنا — لا حاجة
+                لإعداد محلي.
+              </p>
+            </AppAlert>
+          </div>
+        {:else if status?.source === 'store'}
+          <div class="mb-4">
+            <AppAlert intent="info">
+              <p class="text-sm font-semibold">مخزن المفتاح المحلي متوفر</p>
+              <p class="text-xs mt-1">أدخل كلمة المرور لفتح المخزن المحلي (appkey.age).</p>
+            </AppAlert>
+          </div>
+        {:else if status?.source === 'dev'}
+          <div class="mb-4">
+            <AppAlert intent="warning">
+              <p class="text-sm font-semibold">مفتاح تطوير مضمّن — ليس للإنتاج</p>
+              <p class="text-xs mt-1">وضع التطوير فقط؛ وفّر GRPC_APP_KEY أو أنشئ مخزناً محلياً للإنتاج.</p>
+            </AppAlert>
+          </div>
+        {/if}
+
+        {#if setupMode && status?.source === 'none'}
+          <div class="mb-4 space-y-3">
+            <AppAlert intent="danger">
+              <p class="text-sm font-semibold">لا يوجد مفتاح App متاح بعد</p>
+              <p class="text-xs mt-1 leading-relaxed">
+                إذا كانت هذه العقدة وحدة (UNIT) تابعة لـ WILAYA، يجب توفير
+                <code class="font-mono">GRPC_APP_KEY</code> بنفس قيمة مفتاح WILAYA
+                <b>قبل أول تشغيل</b>. إنشاء مفتاح محلي جديد يختلف عن مفتاح WILAYA
+                وسيؤدي إلى <b>فشل فك تشفير حزمة .unit</b> عند الاستيراد (Fail-Closed).
+              </p>
+            </AppAlert>
+            <AppCard>
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                مسار الأسطول — لديّ مفتاح WILAYA (موصى به لعقد UNIT)
+              </p>
+              <ol class="text-xs text-gray-600 dark:text-gray-300 mt-2 list-decimal list-inside space-y-1">
+                <li>
+                  احصل على قيمة مفتاح الأسطول من WILAYA (أداة التوفير المحمولة
+                  <code class="font-mono"> grpc-app-key.age</code>).
+                </li>
+                <li>
+                  اضبط متغير البيئة <code class="font-mono">GRPC_APP_KEY</code> بنفس
+                  القيمة تماماً.
+                </li>
+                <li>
+                  أعد تشغيل التطبيق — سيعرض هذا القسم حالة «مفتاح الأسطول متوفر عبر
+                  GRPC_APP_KEY».
+                </li>
+                <li>
+                  لا تنشئ مفتاحاً محلياً في مسار الأسطول: المفتاح المحلي الجديد مختلف
+                  عن مفتاح WILAYA ويفشل فك تشفير <code class="font-mono">.unit</code>.
+                </li>
+              </ol>
+            </AppCard>
+            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+              أو — إعداد مفتاح محلي (عقدة مستقلة / WILAYA)
+              <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+            </div>
+          </div>
+        {/if}
+
         {#if setupMode}
           <form class="space-y-4" on:submit|preventDefault={handleInitialize} novalidate>
             <AppAlert intent="warning">
@@ -176,6 +251,14 @@
                 سيتم توليد مفتاح تشفير جديد وتخزينه محمياً بكلمة مرور. <b>فقدان كلمة المرور
                 يعني فقدان البيانات</b> — احتفظ بها في مكان آمن.
               </p>
+              {#if status?.source === 'none'}
+                <p class="text-xs mt-2 leading-relaxed">
+                  هذا المسار صحيح فقط للعقد المستقلة أو عقدة WILAYA. إذا كانت العقدة UNIT
+                  تابعة للأسطول، استخدم مسار <code class="font-mono">GRPC_APP_KEY</code>
+                  أعلاه — المفتاح المحلي المتباين سيفشل فك تشفير حزمة
+                  <code class="font-mono">.unit</code>.
+                </p>
+              {/if}
             </AppAlert>
 
             <AppInput

@@ -126,12 +126,22 @@ is a deliberate contract amendment, not an `[arch:allow-*]` exception.
 - Generation requires a strong passphrase (minimum length enforced at the boundary;
   policy mirrors `.adminkey`).
 
-## 7. Optional offline backup export
+## 7. Optional offline portable export (`grpc-app-key.age`)
 
 - On first `initialize_app_key`, the operator may **opt-in** to export the raw identity
   once, to a destination they choose, with an explicit warning that anyone with the
   exported key can decrypt node data. No automatic export, no persistence of the raw key,
   no inclusion in provisioning packages.
+- This export is the **portable provisioning artifact** conventionally named
+  `grpc-app-key.age`. It contains the **raw plaintext** `AGE-SECRET-KEY-1...` App Key:
+  the `.age` extension does NOT mean the artifact is itself age-encrypted.
+- `grpc-app-key.age` is **not** the node-local store `appkey.age` (§2) and is **not**
+  subject to the store's `0600` filesystem invariant. It is an operator-controlled
+  interchange artifact; its security boundary is operator custody and trusted offline
+  transfer (§10.6), not file permissions.
+- WILAYA is the parent node and operational source of the fleet App Key; UNIT nodes
+  obtain the shared value from this artifact (currently via `GRPC_APP_KEY`, §10.3)
+  rather than independently generating a divergent key.
 
 ## 8. Failure semantics (fail-closed)
 
@@ -188,13 +198,17 @@ pre-auth lifecycle):
 
 ### 10.3 Approved deployment/bootstrap mechanism: `GRPC_APP_KEY`
 
+- WILAYA is the **parent node** and the operational source of fleet security: it holds
+  the fleet App Key and provisions it to UNIT child nodes. UNIT nodes do not
+  independently generate a different App Key for `.unit` provisioning.
 - The approved mechanism for supplying the shared value is the **`GRPC_APP_KEY`
   environment variable** (rank 1 in the resolution hierarchy, §1), set by the
   operator to the **same** valid `age` identity on the WILAYA node and every
   target UNIT at deployment/bootstrap time.
-- The operator-controlled value is typically the one-time raw backup export
-  from `export_app_key_backup()` (§7), carried on the same trusted offline
-  channel as the provisioning ceremony.
+- The operator-controlled value is typically the one-time **portable provisioning
+  artifact** `grpc-app-key.age` (§7) exported from the WILAYA node — raw plaintext
+  App-Key material, carried on the same trusted offline channel as the provisioning
+  ceremony.
 - The store (`appkey.age`) remains the primary path for interactive single-node
   onboarding (§1 rank 2); `GRPC_APP_KEY` is the fleet-deployment path.
 
@@ -204,6 +218,13 @@ pre-auth lifecycle):
   passphrase-protected node-local artifact (§2); it is not an interchange
   vehicle. Interchange uses the approved `GRPC_APP_KEY` mechanism (§10.3).
 - No App Key import command exists or is added by this decision.
+- **Artifact distinction (authoritative)**: `appkey.age` (node-local protected
+  store) and `grpc-app-key.age` (portable plaintext provisioning/export artifact)
+  are NOT the same kind of artifact. The portable artifact is intentionally
+  plaintext App-Key material; its `.age` extension does not imply encryption, it
+  is NOT a node-local credential store, and no mandatory `0600` filesystem
+  invariant applies to it. The `0600` requirement applies to the local
+  `appkey.age` store only and is unchanged.
 
 ### 10.5 Node binding (operational, not cryptographic)
 
@@ -220,8 +241,15 @@ pre-auth lifecycle):
 - Operator custody: the shared key is operator-managed and operator-carried; it
   is never written into source, never committed to git, never logged by CI, and
   never included in provisioning packages (§7).
-- Protected handling: file mode `0600`, atomic writes (§2), secrets only via
-  environment / protected secret storage.
+- The portable artifact `grpc-app-key.age` is **plaintext**: possession of the
+  artifact exposes the fleet App Key. Its security depends on operator custody,
+  trusted offline transfer, avoiding Git/CI/public/untrusted storage, limiting
+  unnecessary copies, and deleting temporary copies when provisioning is
+  complete where operationally appropriate. Filesystem mode is NOT the primary
+  security boundary for this artifact; no `0600` invariant is imposed on it.
+- The node-local `appkey.age` store keeps its protected handling: file mode
+  `0600`, atomic writes (§2), secrets only via environment / protected secret
+  storage.
 - The same value must be supplied consistently to WILAYA and the intended UNIT
   fleet; divergent per-node values produce fail-closed decryption failures.
 
