@@ -180,11 +180,5 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::verify_integrity,
         commands::get_system_maintenance_state,
         commands::list_operational_sessions,
-        // Licensing (ADR-0042)
-        commands::get_licensing_status,
-        commands::import_trust_anchor,
-        commands::import_license,
-        commands::dry_run_verify_license,
-        commands::verify_license,
     ]
 }

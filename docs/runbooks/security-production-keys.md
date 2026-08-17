@@ -146,7 +146,7 @@
 
 ## القاعدة الحاسمة
 - توقيع شهادات WILAYA (سلطة Root) يتم عبر أداة `root-signer` (راجع
-  `admin-bootstrap.md`). `grpc-licensing` **ليست** سلطة هوية ولا توقّع شهادات Identity.
+  `admin-bootstrap.md`).
 - `GRPC_ROOT_PUBLIC_KEY` (Base64، 32 بايت) هو المسار المعتمد لتوفير مفتاح Root
   العام الحقيقي لكل عقدة، ويتجاوز الـ placeholder المضمّن عند ضبطه.
 - **مفتاح Root الخاص المستخدم بواسطة `root-signer` يجب أن يطابق المفتاح العام

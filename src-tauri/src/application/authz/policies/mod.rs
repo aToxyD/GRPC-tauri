@@ -161,13 +161,6 @@ pub fn authorize(
                 Err(AuthorizationError::InsufficientPermissions)
             }
         }
-
-        // ── Licensing management (ADR-0042 / B7-licensing) ─────────────────
-        // Status is readable by any authenticated user; installing the trust
-        // anchor and importing licenses is an Admin authority on any node
-        // (per-node licenses are imported directly on the node they bind to).
-        Action::ReadLicensingStatus => system::authorize_authenticated(principal, resource),
-        Action::ManageLicensing => system::authorize_system(principal, Action::AdminOnly, resource),
     }
 }
 

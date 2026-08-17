@@ -30,7 +30,5 @@
 - [إجراءات التعامل مع أخطاء الإنتاج](../runbooks/production-error-handling.md)
 - [إجراءات أمان مفاتيح الإنتاج](../runbooks/security-production-keys.md)
 - [تهيئة المسؤول (Admin Bootstrap)](../runbooks/admin-bootstrap.md)
-- [تركيب وتفعيل التراخيص (Licensing Installation)](../runbooks/licensing-installation.md)
-- [سلوك ربط الترخيص بالعقدة (Node-A / Node-B Binding)](../runbooks/licensing-node-binding.md)
 - [فقدان المفاتيح وإعادة التزويد (Key Loss & Re-Provisioning)](../runbooks/key-loss-and-reprovisioning.md)
 - [قائمة التحقق للنشر التجريبي (Trial Deployment Checklist)](../runbooks/trial-deployment-checklist.md)

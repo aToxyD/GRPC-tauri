@@ -85,17 +85,6 @@ pub enum AuthorizationError {
     /// Catch-all deny — emitted by the fail-closed policy default.
     #[error("غير مصرح: صلاحيات غير كافية لتنفيذ هذه العملية")]
     InsufficientPermissions,
-    /// Licensing gate: no enforceable license grants the required entitlement
-    /// (ADR-0042 §5, fail-closed). Arabic message mirrors the UI contract.
-    #[error("غير مرخّص: لا يوجد ترخيص سارٍ لهذه العملية")]
-    LicenseRequired,
-    /// Licensing gate: a node-bound license exists but does not grant the
-    /// entitlement required by the action.
-    #[error("غير مرخّص: الترخيص لا يمنح الصلاحية المطلوبة ({entitlement})")]
-    EntitlementRequired { entitlement: String },
-    /// Licensing gate: the only valid licenses are bound to a different node.
-    #[error("غير مرخّص: هذا الترخيص غير مربوط بهذه العقدة")]
-    LicenseNotForThisNode,
 }
 
 impl AuthorizationError {
@@ -108,9 +97,6 @@ impl AuthorizationError {
             AuthorizationError::RequiresUnitNode => "AUTH_REQUIRES_UNIT_NODE",
             AuthorizationError::UnitScopeMismatch => "AUTH_UNIT_SCOPE_MISMATCH",
             AuthorizationError::InsufficientPermissions => "AUTH_INSUFFICIENT_PERMISSIONS",
-            AuthorizationError::LicenseRequired => "AUTH_LICENSE_REQUIRED",
-            AuthorizationError::EntitlementRequired { .. } => "AUTH_ENTITLEMENT_REQUIRED",
-            AuthorizationError::LicenseNotForThisNode => "AUTH_LICENSE_NOT_FOR_THIS_NODE",
         }
     }
 }

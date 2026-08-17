@@ -16,13 +16,6 @@ pub(crate) fn node_key_store() -> NodeKeyStore {
     NodeKeyStore::new(dir)
 }
 
-/// Derive the node's public key for licensing subject binding (ADR-0042 §4).
-/// `None` when the node is not provisioned. The derivation itself lives in the
-/// identity layer (`NodeKeyStore`).
-pub(crate) fn resolve_node_public_key() -> Option<Vec<u8>> {
-    node_key_store().node_public_key().ok().flatten()
-}
-
 pub(crate) fn adminkey_provider() -> AdminKeyProvider {
     let dir = default_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("GRPC"));
     AdminKeyProvider::new(dir)

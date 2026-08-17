@@ -40,11 +40,6 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             include_str!("migrations/006_issuer_sequence_state.sql"),
         ),
         (
-            7,
-            "Licensing consumer derived view (ADR-0042, Phase B)",
-            include_str!("migrations/007_licensing.sql"),
-        ),
-        (
             8,
             "Single ACTIVE ADMIN invariant (SEC-002)",
             include_str!("migrations/008_single_active_admin.sql"),

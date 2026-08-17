@@ -7,7 +7,6 @@ pub mod backup;
 pub mod db;
 pub mod export;
 pub mod identity;
-pub mod licensing;
 pub mod logging;
 pub mod rate_limiter;
 pub mod security;

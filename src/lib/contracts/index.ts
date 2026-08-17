@@ -14,4 +14,3 @@ export * from './dashboard.contract';
 export * from './platform.contract';
 export * from './identity.contract';
 export * from './security.contract';
-export * from './licensing.contract';

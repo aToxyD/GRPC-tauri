@@ -33,7 +33,6 @@
   import FiscalDiagnosticsPage from './pages/FiscalDiagnosticsPage.svelte';
   import NotFoundPage from './pages/NotFoundPage.svelte';
   import AppSecurityPage from './pages/AppSecurityPage.svelte';
-  import LicensingPage from './pages/LicensingPage.svelte';
   
   // Import components
   import Notifications from './components/Notifications.svelte';
@@ -85,7 +84,6 @@
     '/admin/conflicts': ConflictCenterPage,
     '/admin/fiscal': FiscalManagementPage,
     '/admin/diagnostics': FiscalDiagnosticsPage,
-    '/admin/licensing': LicensingPage,
     // Fallback to 404
     '*': NotFoundPage
   };

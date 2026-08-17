@@ -362,7 +362,6 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
         (4, include_str!("../src/db/migrations/004_sync_issuer_sequence.sql")),
         (5, include_str!("../src/db/migrations/005_registry_snapshots.sql")),
         (6, include_str!("../src/db/migrations/006_issuer_sequence_state.sql")),
-        (7, include_str!("../src/db/migrations/007_licensing.sql")),
         (8, include_str!("../src/db/migrations/008_single_active_admin.sql")),
     ] {
         conn.execute_batch(sql).expect("apply simulated migration");

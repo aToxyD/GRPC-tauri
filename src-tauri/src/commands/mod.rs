@@ -13,7 +13,6 @@ pub mod identity;
 pub mod import_export;
 pub mod integrity;
 pub mod inventory;
-pub mod licensing;
 pub mod observability;
 pub mod operational;
 pub mod orders;
@@ -82,6 +81,3 @@ pub use operational::*;
 
 // Re-export application-key provisioning commands (ADR-0041)
 pub use security::*;
-
-// Re-export licensing commands (ADR-0042)
-pub use licensing::*;

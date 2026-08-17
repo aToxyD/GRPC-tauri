@@ -280,7 +280,7 @@ pub fn sign_unit_identity_request(
 
 /// Testable command body for `sign_unit_identity_request`.
 ///
-/// Owns authentication, authorization, licensing gate, session freshness, and
+/// Owns authentication, authorization, session freshness, and
 /// audit actor context — the same split as the POST-AUTH rotation commands
 /// (e.g. `sign_unit_rotation_request`). All business decisions (CSR validation,
 /// duplicate-ACTIVE guard, issuer resolution, signing, WILAYA-side registration)
