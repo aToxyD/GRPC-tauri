@@ -160,6 +160,7 @@ pub mod operational_recommendation_service;
 pub mod operational_session_service;
 pub mod operator_safety_service;
 pub mod runtime_bootstrap;
+pub mod security_regression_guard;
 pub mod system_maintenance_state;
 pub mod telemetry_service;
 
@@ -184,7 +185,10 @@ pub use operational_consistency_verifier::{
 pub use operational_session_service::{
     OperationalSessionRecord, OperationalSessionService, SessionCounterKind, SessionEndReason,
 };
-pub use runtime_bootstrap::{bootstrap_runtime, RuntimeBootstrap};
+pub use runtime_bootstrap::{
+    apply_pending_restore_ledger_overlays, bootstrap_runtime, consume_restore_markers,
+    RuntimeBootstrap,
+};
 pub use system_maintenance_state::{
     MaintenanceBlockedOperation, SystemMaintenanceHandle, SystemMaintenanceState,
 };
@@ -219,4 +223,5 @@ pub use operational_recommendation_service::{
     OperationalRecommendation, OperationalRecommendationService, RecommendationPriority,
 };
 pub use operator_safety_service::{CriticalOperation, OperatorSafetyService};
+pub use security_regression_guard::{RestoreRegressionStatus, SecurityRegressionGuard};
 pub use system_integrity_state_service::SystemIntegrityState;

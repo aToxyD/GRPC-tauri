@@ -80,7 +80,11 @@ fn test_orphan_temp_restore_cleanup_on_startup() {
     fs::write(&orphan_journal, b"{}").unwrap(); // Invalid journal but should be cleaned up
 
     let crypto = AgeFileEncryptionProvider::new();
-    recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+    let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+    assert!(
+        !outcome.restore_completed,
+        "invalid journal is not a completed restore"
+    );
 
     assert!(!orphan_tmp.exists());
     assert!(!orphan_journal.exists());

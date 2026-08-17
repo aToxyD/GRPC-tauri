@@ -1,4 +1,6 @@
-use crate::domain::ports::backup::{BackupInfo, BackupPort};
+use crate::domain::ports::backup::{
+    BackupInfo, BackupPort, LedgerPackageRow, RestoreLedgerSnapshot, SecurityFingerprint,
+};
 use crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use crate::infrastructure::MAX_IMPORT_SIZE;
 use chrono::{DateTime, Utc};
@@ -394,7 +396,16 @@ impl SqliteBackupAdapter {
         Ok(())
     }
 
-    fn validate_restore_path(&self, path: &Path) -> io::Result<()> {
+    /// Validate a restore candidate as a canonical filesystem path contained
+    /// by the authorized backup directory (BR-10).
+    ///
+    /// Security rule: containment is established via filesystem canonicalization
+    /// (symlinks resolved, relative paths resolved against the process CWD),
+    /// never via string inspection. A candidate that cannot be canonicalized,
+    /// or whose canonical form lies outside the canonical backup root, is
+    /// rejected. Traversal markers are additionally rejected textually as a
+    /// first-line defense.
+    pub fn validate_restore_path(&self, path: &Path) -> io::Result<()> {
         let path_str = path.to_string_lossy();
         if crate::domain::security::contains_path_traversal(&path_str) {
             return Err(io::Error::new(
@@ -403,25 +414,49 @@ impl SqliteBackupAdapter {
             ));
         }
 
-        if path.is_absolute() {
-            let canonical_backup_dir = self
-                .backup_dir
-                .canonicalize()
-                .unwrap_or_else(|_| self.backup_dir.clone());
-            let canonical_path = path.canonicalize().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("Invalid backup path: {}", e),
-                )
-            })?;
-            if !canonical_path.starts_with(&canonical_backup_dir) {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "Security violation: backup path outside allowed directory",
-                ));
-            }
+        // Canonicalize the candidate: resolves relative paths (against CWD)
+        // and symlinks; a path that cannot be canonicalized is rejected.
+        let canonical_path = path.canonicalize().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Invalid backup path: {}", e),
+            )
+        })?;
+
+        let canonical_root = self.canonical_backup_root()?;
+
+        // Component-wise containment (never string-prefix comparison).
+        if !canonical_path.starts_with(&canonical_root) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Security violation: backup path outside allowed directory",
+            ));
         }
         Ok(())
+    }
+
+    /// Canonical form of the authorized backup directory. If the directory
+    /// does not exist yet, the nearest existing ancestor is canonicalized and
+    /// the leaf name appended, so the root stays symlink-free.
+    fn canonical_backup_root(&self) -> io::Result<PathBuf> {
+        match self.backup_dir.canonicalize() {
+            Ok(root) => Ok(root),
+            Err(_) => {
+                let parent = self.backup_dir.parent().ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::NotFound, "backup dir has no parent")
+                })?;
+                let canonical_parent = parent.canonicalize().map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::NotFound,
+                        format!("backup dir unresolvable: {}", e),
+                    )
+                })?;
+                let name = self.backup_dir.file_name().ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::NotFound, "backup dir has no name")
+                })?;
+                Ok(canonical_parent.join(name))
+            }
+        }
     }
 
     fn clear_journal(&self) {
@@ -689,6 +724,250 @@ impl BackupPort for SqliteBackupAdapter {
         crate::infrastructure::db::metadata::get_max_archived_year_in_file(temp_candidate.path())
             .map_err(|e| io::Error::other(e.to_string()))
     }
+
+    fn compute_security_fingerprints(
+        &self,
+        backup_path: &Path,
+    ) -> io::Result<(SecurityFingerprint, SecurityFingerprint)> {
+        let temp_candidate = self.decrypt_to_temp_file(backup_path)?;
+        let candidate = read_security_fingerprint(temp_candidate.path())?;
+        let live = read_security_fingerprint(&self.db_path)?;
+        Ok((candidate, live))
+    }
+
+    fn snapshot_restore_ledger(&self) -> io::Result<RestoreLedgerSnapshot> {
+        use rusqlite::Connection;
+        let conn = Connection::open_with_flags(
+            &self.db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| io::Error::other(format!("open live DB for ledger snapshot: {e}")))?;
+
+        let mut packages = Vec::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT package_id, kind, source_node_id, imported_by, package_sequence, issuer_identity_id
+                       FROM applied_sync_packages ORDER BY package_id"#,
+                )
+                .map_err(|e| io::Error::other(format!("prepare ledger snapshot: {e}")))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(LedgerPackageRow {
+                        package_id: row.get(0)?,
+                        kind: row.get(1)?,
+                        source_node_id: row.get(2)?,
+                        imported_by: row.get(3)?,
+                        package_sequence: row.get::<_, Option<i64>>(4)?.and_then(|s| {
+                            u64::try_from(s).ok()
+                        }),
+                        issuer_identity_id: row.get(5)?,
+                    })
+                })
+                .map_err(|e| io::Error::other(format!("query ledger snapshot: {e}")))?;
+            for row in rows {
+                packages.push(row.map_err(|e| io::Error::other(format!("map ledger row: {e}")))?);
+            }
+        }
+
+        let mut sequences = Vec::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT issuer_identity_id, last_applied_sequence
+                       FROM sync_issuer_sequence ORDER BY issuer_identity_id"#,
+                )
+                .map_err(|e| io::Error::other(format!("prepare issuer ledger: {e}")))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let seq = row.get::<_, i64>(1)?;
+                    let seq = u64::try_from(seq).map_err(|_| rusqlite::Error::InvalidColumnType(1, "u64".into(), rusqlite::types::Type::Integer))?;
+                    Ok((row.get::<_, String>(0)?, seq))
+                })
+                .map_err(|e| io::Error::other(format!("query issuer ledger: {e}")))?;
+            for row in rows {
+                sequences.push(row.map_err(|e| io::Error::other(format!("map issuer row: {e}")))?);
+            }
+        }
+
+        Ok(RestoreLedgerSnapshot {
+            applied_packages: packages,
+            issuer_sequences: sequences,
+        })
+    }
+
+    fn apply_ledger_snapshot(&self, snapshot: &RestoreLedgerSnapshot) -> io::Result<()> {
+        use rusqlite::Connection;
+        let mut conn = Connection::open(&self.db_path)
+            .map_err(|e| io::Error::other(format!("open DB for ledger overlay: {e}")))?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| io::Error::other(format!("begin ledger overlay: {e}")))?;
+
+        for row in &snapshot.applied_packages {
+            tx.execute(
+                r#"INSERT OR IGNORE INTO applied_sync_packages
+                   (package_id, kind, source_node_id, imported_at, imported_by, package_sequence, issuer_identity_id)
+                   VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6)"#,
+                rusqlite::params![
+                    row.package_id,
+                    row.kind,
+                    row.source_node_id,
+                    row.imported_by,
+                    row.package_sequence.map(|s| s as i64),
+                    row.issuer_identity_id,
+                ],
+            )
+            .map_err(|e| io::Error::other(format!("overlay registry row: {e}")))?;
+        }
+
+        for (issuer_identity_id, sequence) in &snapshot.issuer_sequences {
+            tx.execute(
+                r#"INSERT INTO sync_issuer_sequence (issuer_identity_id, last_applied_sequence, updated_at)
+                   VALUES (?1, ?2, datetime('now'))
+                   ON CONFLICT(issuer_identity_id) DO UPDATE SET
+                     last_applied_sequence = MAX(sync_issuer_sequence.last_applied_sequence, excluded.last_applied_sequence),
+                     updated_at = datetime('now')"#,
+                rusqlite::params![issuer_identity_id, *sequence as i64],
+            )
+            .map_err(|e| io::Error::other(format!("overlay issuer sequence: {e}")))?;
+        }
+
+        tx.commit()
+            .map_err(|e| io::Error::other(format!("commit ledger overlay: {e}")))
+    }
+}
+
+/// Read the monotonic security fingerprint of a SQLite file (SEC-005 BR-03/14).
+///
+/// Only SELECTs over persisted monotonic security state; identical queries are
+/// run against the candidate and the live database so the comparison is exact.
+fn read_security_fingerprint(db_file: &Path) -> io::Result<SecurityFingerprint> {
+    use rusqlite::Connection;
+    let conn = Connection::open_with_flags(
+        db_file,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| io::Error::other(format!("open DB for fingerprint: {e}")))?;
+
+    let credential_states = {
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT credential_id,
+                          MAX(generation),
+                          MAX(CASE status
+                              WHEN 'ACTIVE' THEN 0
+                              WHEN 'REVOKED' THEN 1
+                              WHEN 'SUPERSEDED' THEN 1
+                              WHEN 'EXPIRED' THEN 1
+                              ELSE 0 END)
+                   FROM identity_store WHERE deleted = 0
+                   GROUP BY credential_id ORDER BY credential_id"#,
+            )
+            .map_err(|e| io::Error::other(format!("prepare credential fingerprint: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let gen = row.get::<_, i64>(1)?;
+                let gen = u64::try_from(gen).map_err(|_| {
+                    rusqlite::Error::InvalidColumnType(
+                        1,
+                        "u64".into(),
+                        rusqlite::types::Type::Integer,
+                    )
+                })?;
+                let watermark = row.get::<_, i64>(2)?;
+                let watermark = u64::try_from(watermark).map_err(|_| {
+                    rusqlite::Error::InvalidColumnType(
+                        2,
+                        "u64".into(),
+                        rusqlite::types::Type::Integer,
+                    )
+                })?;
+                Ok((row.get::<_, String>(0)?, gen, watermark))
+            })
+            .map_err(|e| io::Error::other(format!("query credential fingerprint: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| io::Error::other(format!("map credential row: {e}")))?);
+        }
+        out
+    };
+
+    let active_wilaya_anchor_generation = conn
+        .query_row(
+            r#"SELECT MAX(generation) FROM identity_store
+               WHERE subject_type = 'WILAYA' AND status = 'ACTIVE' AND deleted = 0"#,
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .map_err(|e| io::Error::other(format!("query WILAYA anchor: {e}")))?
+        .and_then(|g| u64::try_from(g).ok());
+
+    let registry_package_ids = {
+        let mut stmt = conn
+            .prepare(r#"SELECT package_id FROM applied_sync_packages ORDER BY package_id"#)
+            .map_err(|e| io::Error::other(format!("prepare registry fingerprint: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| io::Error::other(format!("query registry fingerprint: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| io::Error::other(format!("map registry row: {e}")))?);
+        }
+        out
+    };
+
+    let issuer_sequences = {
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT issuer_identity_id, last_applied_sequence
+                   FROM sync_issuer_sequence ORDER BY issuer_identity_id"#,
+            )
+            .map_err(|e| io::Error::other(format!("prepare issuer fingerprint: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let seq = row.get::<_, i64>(1)?;
+                    let seq = u64::try_from(seq).map_err(|_| rusqlite::Error::InvalidColumnType(1, "u64".into(), rusqlite::types::Type::Integer))?;
+                Ok((row.get::<_, String>(0)?, seq))
+            })
+            .map_err(|e| io::Error::other(format!("query issuer fingerprint: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| io::Error::other(format!("map issuer row: {e}")))?);
+        }
+        out
+    };
+
+    let active_admin_credential = {
+        use rusqlite::OptionalExtension;
+        conn.query_row(
+            r#"SELECT credential_id, generation FROM identity_store
+               WHERE subject_type = 'ADMIN' AND status = 'ACTIVE' AND deleted = 0
+               ORDER BY generation DESC LIMIT 1"#,
+            [],
+            |row| {
+                let gen = row.get::<_, i64>(1)?;
+                let gen = u64::try_from(gen).map_err(|_| {
+                    rusqlite::Error::InvalidColumnType(
+                        1,
+                        "u64".into(),
+                        rusqlite::types::Type::Integer,
+                    )
+                })?;
+                Ok((row.get::<_, String>(0)?, gen))
+            },
+        )
+        .optional()
+        .map_err(|e| io::Error::other(format!("query ACTIVE ADMIN credential: {e}")))?
+    };
+
+    Ok(SecurityFingerprint {
+        credential_states,
+        active_wilaya_anchor_generation,
+        registry_package_ids,
+        issuer_sequences,
+        active_admin_credential,
+    })
 }
 
 impl SqliteBackupAdapter {
@@ -730,18 +1009,33 @@ impl SqliteBackupAdapter {
     }
 }
 
+/// Outcome of boot-time interrupted-restore recovery.
+///
+/// `restore_completed` distinguishes "the candidate backup became the live
+/// database" from "the old database remains live". Journal existence alone is
+/// NOT proof of completion: a failed swap can leave the journal behind after
+/// the rollback was restored. Audit emission must depend on this outcome, not
+/// on journal presence (SEC-005 residual LOW).
+pub struct RestoreRecoveryOutcome {
+    /// True iff recovery established the candidate backup as the live DB.
+    pub restore_completed: bool,
+}
+
 /// Boot-time recovery: finish an interrupted restore or remove stale artifacts.
 /// Safe to call before opening the main database file.
 ///
-/// ADR-0017: crash recovery guarantees.
+/// ADR-0017: crash recovery guarantees (Cases A–E unchanged). The returned
+/// outcome reports whether the candidate actually became the live database.
 pub fn recover_interrupted_restore_and_orphans(
     db_path: &Path,
     _crypto: &AgeFileEncryptionProvider,
-) -> io::Result<()> {
+) -> io::Result<RestoreRecoveryOutcome> {
     let journal = db_path.with_extension("restore.journal");
     if !journal.exists() {
         cleanup_loose_restore_artifacts(db_path)?;
-        return Ok(());
+        return Ok(RestoreRecoveryOutcome {
+            restore_completed: false,
+        });
     }
 
     // The journal file is naturally small (contains a few paths), so fs::read is acceptable.
@@ -750,6 +1044,7 @@ pub fn recover_interrupted_restore_and_orphans(
         io::Error::other(format!("restore journal read: {}", e))
     })?;
 
+    let mut restore_completed = false;
     match serde_json::from_slice::<RestoreJournalV1>(&raw) {
         Ok(parsed) => {
             if parsed.phase == RestorePhase::ReadySwap {
@@ -775,14 +1070,16 @@ pub fn recover_interrupted_restore_and_orphans(
                     if parsed.rollback_path.exists() {
                         let _ = fs::remove_file(&parsed.rollback_path);
                     }
+                    restore_completed = true;
                 } else if parsed.candidate_path.exists() && !db_path.exists() {
                     // Case B: live already at rollback; promote candidate.
-                    let _ = fs::rename(&parsed.candidate_path, db_path);
+                    restore_completed = fs::rename(&parsed.candidate_path, db_path).is_ok();
                 }
 
                 // Case C: swap finished; rollback may still exist while journal remained.
                 if parsed.rollback_path.exists() && db_path.exists() {
                     let _ = fs::remove_file(&parsed.rollback_path);
+                    restore_completed = true;
                 }
 
                 // Case E: live missing, rollback holds prior live, candidate already gone.
@@ -790,6 +1087,8 @@ pub fn recover_interrupted_restore_and_orphans(
                     && parsed.rollback_path.exists()
                     && !parsed.candidate_path.exists()
                 {
+                    // Restoring the rollback brings the OLD database back live —
+                    // the restore did NOT complete.
                     let _ = fs::rename(&parsed.rollback_path, db_path);
                 }
             }
@@ -801,7 +1100,7 @@ pub fn recover_interrupted_restore_and_orphans(
 
     let _ = fs::remove_file(&journal);
     cleanup_loose_restore_artifacts(db_path)?;
-    Ok(())
+    Ok(RestoreRecoveryOutcome { restore_completed })
 }
 
 /// Overwrite file contents with zeros before deleting to reduce plaintext
@@ -929,7 +1228,11 @@ mod tests {
         std::fs::rename(&tmp_j, &journal_path).unwrap();
 
         let crypto = AgeFileEncryptionProvider::new();
-        recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        assert!(
+            outcome.restore_completed,
+            "Case A swap completed — candidate became live"
+        );
 
         assert!(!candidate.exists(), "Orphan candidate must be removed");
         assert!(db_path.exists(), "Live DB must remain intact");
@@ -961,7 +1264,8 @@ mod tests {
         );
 
         let crypto = AgeFileEncryptionProvider::new();
-        recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        assert!(outcome.restore_completed, "Case A: full swap completed");
 
         let body = std::fs::read_to_string(&db_path).unwrap();
         assert_eq!(
@@ -996,7 +1300,8 @@ mod tests {
         );
 
         let crypto = AgeFileEncryptionProvider::new();
-        recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        assert!(outcome.restore_completed, "Case B: candidate promoted to live");
 
         let body = std::fs::read_to_string(&db_path).unwrap();
         assert_eq!(body, "FROM_CAND");
@@ -1031,7 +1336,8 @@ mod tests {
         );
 
         let crypto = AgeFileEncryptionProvider::new();
-        recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        assert!(outcome.restore_completed, "Case C: candidate already live");
 
         assert_eq!(std::fs::read_to_string(&db_path).unwrap(), "NEW_LIVE");
         assert!(!rollback_path.exists());
@@ -1048,7 +1354,11 @@ mod tests {
         std::fs::write(&orphan, b"junk").unwrap();
 
         let crypto = AgeFileEncryptionProvider::new();
-        recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        assert!(
+            !outcome.restore_completed,
+            "no journal → nothing to complete"
+        );
 
         assert!(!orphan.exists(), "orphan tempfile must be removed");
         assert!(db_path.exists());
@@ -1077,7 +1387,11 @@ mod tests {
         );
 
         let crypto = AgeFileEncryptionProvider::new();
-        recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
+        assert!(
+            !outcome.restore_completed,
+            "Case E: old DB restored from rollback — restore did NOT complete"
+        );
 
         assert_eq!(std::fs::read_to_string(&db_path).unwrap(), "ROLLBACK_BODY");
         assert!(!rollback_path.exists());
@@ -1314,5 +1628,148 @@ mod tests {
             temp_path.exists(),
             "Validation should not delete the temp file"
         );
+    }
+
+    // ── BR-10: canonical restore-path validation ─────────────────────────────
+
+    // The chdir-based tests mutate the process-global CWD; a static lock
+    // serializes them against each other. All other tests in this module use
+    // absolute paths and are CWD-insensitive.
+    static CHDIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct CwdGuard {
+        original: PathBuf,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
+    fn chdir_guard() -> CwdGuard {
+        let _lock = CHDIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let original = std::env::current_dir().expect("current cwd");
+        CwdGuard { original, _lock }
+    }
+
+    fn br10_adapter() -> (SqliteBackupAdapter, tempfile::TempDir) {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let db_path = tmp_dir.path().join("live.db");
+        let adapter = SqliteBackupAdapter::new(&db_path, AgeFileEncryptionProvider::new());
+        (adapter, tmp_dir)
+    }
+
+    #[test]
+    fn validate_restore_path_accepts_absolute_path_inside_backup_dir() {
+        let (adapter, _dir) = br10_adapter();
+        std::fs::create_dir_all(&adapter.backup_dir).unwrap();
+        let candidate = adapter.backup_dir.join("snap.bak");
+        std::fs::write(&candidate, b"x").unwrap();
+        adapter.validate_restore_path(&candidate).expect("accepted");
+    }
+
+    #[test]
+    fn validate_restore_path_accepts_nested_path_inside_backup_dir() {
+        let (adapter, _dir) = br10_adapter();
+        let nested = adapter.backup_dir.join("sub").join("snap.bak");
+        std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        std::fs::write(&nested, b"x").unwrap();
+        adapter.validate_restore_path(&nested).expect("accepted");
+    }
+
+    #[test]
+    fn validate_restore_path_resolves_relative_paths_against_cwd() {
+        let (adapter, _dir) = br10_adapter();
+        std::fs::create_dir_all(&adapter.backup_dir).unwrap();
+        let candidate = adapter.backup_dir.join("snap.bak");
+        std::fs::write(&candidate, b"x").unwrap();
+
+        // A relative path inside the backup dir, resolved from a CWD whose
+        // canonical location is inside the backup root, must be accepted.
+        let _guard = chdir_guard();
+        std::env::set_current_dir(&adapter.backup_dir).expect("chdir");
+        adapter
+            .validate_restore_path(Path::new("snap.bak"))
+            .expect("relative path inside backup dir accepted");
+    }
+
+    #[test]
+    fn validate_restore_path_rejects_relative_path_outside_backup_dir() {
+        let (adapter, tmp_dir) = br10_adapter();
+        // CWD points at a directory OUTSIDE the backup root: a relative
+        // candidate must be rejected after canonicalization, never accepted
+        // by textual inspection alone.
+        let outside = tmp_dir.path().join("outside.bak");
+        std::fs::write(&outside, b"x").unwrap();
+        let _guard = chdir_guard();
+        std::env::set_current_dir(tmp_dir.path()).expect("chdir");
+        let err = adapter
+            .validate_restore_path(Path::new("outside.bak"))
+            .expect_err("relative path outside backup dir must be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn validate_restore_path_rejects_traversal_markers() {
+        let (adapter, _dir) = br10_adapter();
+        let err = adapter
+            .validate_restore_path(Path::new("../outside.bak"))
+            .expect_err("traversal rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn validate_restore_path_rejects_path_outside_backup_root() {
+        let (adapter, tmp_dir) = br10_adapter();
+        let outside = tmp_dir.path().join("outside.bak");
+        std::fs::write(&outside, b"x").unwrap();
+        let err = adapter
+            .validate_restore_path(&outside)
+            .expect_err("outside backup root rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn validate_restore_path_rejects_nonexistent_path() {
+        let (adapter, _dir) = br10_adapter();
+        let ghost = adapter.backup_dir.join("ghost.bak");
+        let err = adapter
+            .validate_restore_path(&ghost)
+            .expect_err("nonexistent path rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_restore_path_rejects_symlink_escape() {
+        let (adapter, tmp_dir) = br10_adapter();
+        std::fs::create_dir_all(&adapter.backup_dir).unwrap();
+        let outside = tmp_dir.path().join("secret.bak");
+        std::fs::write(&outside, b"secret").unwrap();
+        let link = adapter.backup_dir.join("innocent.bak");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let err = adapter
+            .validate_restore_path(&link)
+            .expect_err("symlink escape rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_backup_atomic_rejects_escape_before_any_decrypt() {
+        // BR-10 ordering: the path is validated BEFORE the candidate is read
+        // or decrypted. A symlink escape must surface as a validation error
+        // (PermissionDenied), never as a decryption/parse failure.
+        let (adapter, tmp_dir) = br10_adapter();
+        std::fs::create_dir_all(&adapter.backup_dir).unwrap();
+        let outside = tmp_dir.path().join("secret.bak");
+        std::fs::write(&outside, b"secret").unwrap();
+        let link = adapter.backup_dir.join("innocent.bak");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let err = adapter
+            .restore_backup_atomic(&link)
+            .expect_err("restore must reject escape path");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }

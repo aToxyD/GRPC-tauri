@@ -353,11 +353,13 @@ export async function restoreBackup(
   backupPath: string,
   confirmation: string,
   executionToken: string,
+  olderStateConfirmation?: string | null,
 ): Promise<void> {
   return await safeInvoke('restore_backup', {
     backupPath,
     confirmation,
     executionToken,
+    olderStateConfirmation: olderStateConfirmation ?? null,
   });
 }
 

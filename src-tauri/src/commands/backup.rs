@@ -5,17 +5,23 @@
 use crate::application::authz::Action;
 use crate::application::services::{
     BackupIntegrityService, CriticalOperation, FiscalHistoricalGuard, GuardedOperation,
-    OperationExecutionGuard, OperatorSafetyService, SystemMaintenanceState,
+    OperationExecutionGuard, OperatorSafetyService, RestoreRegressionStatus,
+    SecurityRegressionGuard, SystemMaintenanceState,
 };
 use crate::commands::common::{db_mut_or_command_error, db_ref_or_command_error};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
-use crate::domain::ports::backup::{BackupInfo, BackupPort};
+use crate::domain::ports::backup::{
+    BackupInfo, BackupPort, RestoreLedgerSnapshot, RestoreMarker, RestoreMarkerCommit,
+    SecurityFingerprint, restore_ledger_sidecar_path, restore_marker_history_path,
+};
 use crate::errors::{into_command_error, AppError};
 use crate::infrastructure::backup::SqliteBackupAdapter;
-use std::path::PathBuf;
+use crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
+use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
+use uuid::Uuid;
 
 #[derive(serde::Serialize)]
 pub struct RestoreResult {
@@ -362,6 +368,7 @@ pub async fn restore_backup(
     backup_path: String,
     confirmation: String,
     execution_token: String,
+    older_state_confirmation: Option<String>,
 ) -> Result<RestoreResult, String> {
     let (session, _settings) =
         authorize_command(&state, Action::AdminOnly, None).map_err(into_command_error)?;
@@ -397,6 +404,17 @@ pub async fn restore_backup(
     let backup_path_p = std::path::PathBuf::from(&backup_path);
     let backup_manager = SqliteBackupAdapter::new(&db_path, state.crypto_port);
 
+    // BR-10: the restore candidate must be a canonical path inside the
+    // authorized backup directory BEFORE any preflight read/decrypt/inspect
+    // (fiscal guard, integrity verification, fingerprint computation).
+    backup_manager
+        .validate_restore_path(&backup_path_p)
+        .map_err(|e| {
+            into_command_error(AppError::Internal(format!(
+                "فشل التحقق من مسار النسخة الاحتياطية: {e}"
+            )))
+        })?;
+
     {
         let guard = state.get_db().map_err(into_command_error)?;
         let db = db_ref_or_command_error(guard.as_ref())?;
@@ -428,10 +446,24 @@ pub async fn restore_backup(
         Err(e) => return Err(into_command_error(e)),
     }
 
+    // SEC-005 BR-03/BR-14: trust-regression guard + BR-06 external marker +
+    // BR-05 ledger sidecar. Everything is written BEFORE take_db()/swap, and
+    // any failure here aborts the restore before any DB mutation.
+    let preflight = prepare_restore_backup(
+        &db_path,
+        &backup_path_p,
+        older_state_confirmation.as_deref(),
+        &session_user_id,
+        state.crypto_port,
+    )
+    .map_err(into_command_error)?;
+
     log::info!(
         target: "grpc::backup",
-        "restore_backup: starting from backup_path={}",
-        backup_path_p.display()
+        "restore_backup: starting from backup_path={} marker={} regression={:?}",
+        backup_path_p.display(),
+        preflight.marker_id,
+        preflight.regression
     );
 
     state
@@ -466,9 +498,30 @@ pub async fn restore_backup(
             e
         )))
     });
+
+    if restore_res.is_err() {
+        // SEC-005: the swap never committed — drop this restore's pending-work
+        // sidecar so boot never emits a success audit for it. The marker
+        // history line is retained as append-only evidence of the attempt.
+        cleanup_failed_restore_artifacts(&db_path, &preflight.marker_id);
+    }
     let duration = start_time.elapsed().as_millis() as i64;
 
     restore_res?;
+
+    // SEC-005 BR-06: record the commit BEFORE restarting. Boot emits the
+    // RestoreBackup audit only for committed restores (or interrupted swaps
+    // completed by boot recovery), never for mere attempts. The swap is
+    // already committed, so a commit-line write failure must not abort the
+    // restart; it is logged loudly instead (audit loss edge, see report).
+    if let Err(e) = append_restore_marker_commit(&db_path, &preflight.marker_id) {
+        log::error!(
+            target: "grpc::backup",
+            "[RESTORE_COMMIT_LINE_FAILED] marker={} error={}",
+            preflight.marker_id,
+            e
+        );
+    }
 
     log::info!(
         target: "grpc::backup",
@@ -495,4 +548,162 @@ pub async fn restore_backup(
 
     #[allow(unreachable_code)]
     Ok(RestoreResult { success: true })
+}
+
+/// External restore artifacts for one restore operation (SEC-005).
+///
+/// The ledger sidecar (pending work) is written first, then the marker history
+/// line. A crash between the two leaves a sidecar without a marker line; boot
+/// fails closed on that condition rather than guessing.
+pub struct RestorePreflight {
+    pub marker_id: String,
+    pub regression: RestoreRegressionStatus,
+}
+
+/// Run the SEC-005 pre-swap checks: trust-regression fingerprint comparison,
+/// optional older-state ceremony, live ledger snapshot, and external marker
+/// writes. Must run before `take_db()` — on error the restore is aborted with
+/// no DB mutation.
+pub fn prepare_restore_backup(
+    db_path: &Path,
+    backup_path: &Path,
+    older_state_confirmation: Option<&str>,
+    session_user_id: &str,
+    crypto_port: AgeFileEncryptionProvider,
+) -> Result<RestorePreflight, AppError> {
+    let backup_manager = SqliteBackupAdapter::new(db_path, crypto_port);
+
+    let (candidate_fp, live_fp) = backup_manager
+        .compute_security_fingerprints(backup_path)
+        .map_err(|e| {
+            AppError::Internal(format!("فشل حساب بصمة الحالة الأمنية للنسخة: {e}"))
+        })?;
+    let regression = SecurityRegressionGuard::compare(&candidate_fp, &live_fp);
+
+    if regression.is_regressing() {
+        log::warn!(
+            target: "grpc::backup",
+            "[BACKUP_TRUST_REGRESSION] candidate_is_older=true backup_path={}",
+            backup_path.display()
+        );
+        OperatorSafetyService::require_confirmation(
+            CriticalOperation::RestoreOlderTrust,
+            older_state_confirmation.unwrap_or(""),
+        )?;
+    }
+
+    let ledger_snapshot = backup_manager.snapshot_restore_ledger().map_err(|e| {
+        AppError::Internal(format!("فشل التقاط حالة السجل الحية قبل الاستعادة: {e}"))
+    })?;
+
+    let marker_id = Uuid::new_v4().to_string();
+    write_restore_artifacts(
+        db_path,
+        backup_path,
+        &marker_id,
+        session_user_id,
+        &candidate_fp,
+        regression.is_regressing(),
+        &ledger_snapshot,
+    )?;
+
+    Ok(RestorePreflight {
+        marker_id,
+        regression,
+    })
+}
+
+/// Best-effort cleanup of the artifacts of a restore whose swap never
+/// committed. Only this restore's pending-work sidecar is removed; the
+/// append-only marker history is preserved as evidence of the attempt.
+pub fn cleanup_failed_restore_artifacts(db_path: &Path, marker_id: &str) {
+    let sidecar = restore_ledger_sidecar_path(db_path, marker_id);
+    if sidecar.exists() {
+        log::warn!(
+            target: "grpc::backup",
+            "[BACKUP_FAILED_CLEANUP] removing pending sidecar marker={}",
+            marker_id
+        );
+        let _ = std::fs::remove_file(sidecar);
+    }
+}
+
+/// Sidecar first (atomic temp+rename), then marker history line (append).
+/// Any failure aborts the restore before DB mutation.
+fn write_restore_artifacts(
+    db_path: &Path,
+    backup_path: &Path,
+    marker_id: &str,
+    session_user_id: &str,
+    fingerprint: &SecurityFingerprint,
+    regressing: bool,
+    ledger_snapshot: &RestoreLedgerSnapshot,
+) -> Result<(), AppError> {
+    let sidecar_path = restore_ledger_sidecar_path(db_path, marker_id);
+    let sidecar_json = serde_json::to_string_pretty(ledger_snapshot)
+        .map_err(|e| AppError::Internal(format!("serialize ledger snapshot: {e}")))?;
+    atomic_write_file(&sidecar_path, sidecar_json.as_bytes())?;
+
+    let marker = RestoreMarker {
+        marker_id: marker_id.to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        backup_path: backup_path.to_string_lossy().into_owned(),
+        session_user_id: Some(session_user_id.to_string()),
+        fingerprint: fingerprint.clone(),
+        regressing,
+    };
+    let line = serde_json::to_string(&marker)
+        .map_err(|e| AppError::Internal(format!("serialize restore marker: {e}")))?;
+    if let Err(e) = append_line(&restore_marker_history_path(db_path), &line) {
+        // Never leave a pending-work sidecar without its marker line.
+        let _ = std::fs::remove_file(&sidecar_path);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Atomic write via temp file + rename in the same directory.
+fn atomic_write_file(path: &Path, data: &[u8]) -> Result<(), AppError> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::Internal("مسار أداة الاستعادة بدون مجلد أب".into()))?;
+    let tmp = parent.join(format!(".tmp-{}", Uuid::new_v4()));
+    {
+        let mut f = std::fs::File::create(&tmp)
+            .map_err(|e| AppError::Internal(format!("create marker temp file: {e}")))?;
+        f.write_all(data)
+            .map_err(|e| AppError::Internal(format!("write marker temp file: {e}")))?;
+        f.sync_all()
+            .map_err(|e| AppError::Internal(format!("sync marker temp file: {e}")))?;
+    }
+    std::fs::rename(&tmp, path)
+        .map_err(|e| AppError::Internal(format!("finalize marker file: {e}")))?;
+    Ok(())
+}
+
+/// Append one JSONL line to the restore history (create if missing).
+fn append_line(path: &Path, line: &str) -> Result<(), AppError> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| AppError::Internal(format!("open restore history: {e}")))?;
+    writeln!(f, "{line}")
+        .map_err(|e| AppError::Internal(format!("append restore history: {e}")))?;
+    f.flush()
+        .map_err(|e| AppError::Internal(format!("flush restore history: {e}")))?;
+    Ok(())
+}
+
+/// Append the commit record for a successfully swapped restore.
+pub fn append_restore_marker_commit(db_path: &Path, marker_id: &str) -> Result<(), AppError> {
+    let commit = RestoreMarkerCommit {
+        marker_id: marker_id.to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+    let line = serde_json::to_string(&commit)
+        .map_err(|e| AppError::Internal(format!("serialize restore commit: {e}")))?;
+    append_line(&restore_marker_history_path(db_path), &line)
 }

@@ -5,6 +5,7 @@
 //!   - Archive year          → must type "ARCHIVE"
 //!   - Restore backup        → must type "RESTORE"
 //!   - Import historical pkg → must type "IMPORT-HISTORICAL"
+//!   - Older-trust restore   → must type "RESTORE-OLDER-TRUST"
 //!
 //! Hard constraints:
 //!   - NO modal framework, NO workflow engine
@@ -23,6 +24,7 @@ pub enum CriticalOperation {
     FiscalClose { year: i32 },
     ArchiveYear,
     RestoreBackup,
+    RestoreOlderTrust,
     ImportHistoricalPackage,
 }
 
@@ -33,6 +35,7 @@ impl CriticalOperation {
             CriticalOperation::FiscalClose { year } => year.to_string(),
             CriticalOperation::ArchiveYear => "ARCHIVE".to_string(),
             CriticalOperation::RestoreBackup => "RESTORE".to_string(),
+            CriticalOperation::RestoreOlderTrust => "RESTORE-OLDER-TRUST".to_string(),
             CriticalOperation::ImportHistoricalPackage => "IMPORT-HISTORICAL".to_string(),
         }
     }
@@ -43,6 +46,7 @@ impl CriticalOperation {
             CriticalOperation::FiscalClose { .. } => "إغلاق السنة المالية",
             CriticalOperation::ArchiveYear => "أرشفة السنة",
             CriticalOperation::RestoreBackup => "استعادة النسخة الاحتياطية",
+            CriticalOperation::RestoreOlderTrust => "استعادة حالة الثقة الأقدم",
             CriticalOperation::ImportHistoricalPackage => "استيراد الحزمة التاريخية",
         }
     }
