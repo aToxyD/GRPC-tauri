@@ -30,8 +30,6 @@ export class ProcessManager {
 
     // Default development AGE-X25519 identity key
     const testAppKey = 'AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ';
-    // 32-byte signing key (base64 encoded 32 zeros)
-    const testSigningKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
     this.config = {
       port,
@@ -40,7 +38,6 @@ export class ProcessManager {
         GRPC_DB_PATH: dbPath,
         GRPC_ENV: 'test',
         GRPC_APP_KEY: testAppKey,
-        GRPC_PACKAGE_SIGNING_KEY: testSigningKey,
         WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
         WEBVIEW2_USER_DATA_FOLDER: path.join(this.tempDir, 'webview2'),
         TAURI_ENV_DEBUG: 'true'

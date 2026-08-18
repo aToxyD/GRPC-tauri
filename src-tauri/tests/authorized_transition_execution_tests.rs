@@ -15,6 +15,10 @@ fn test_authorized_transition_execution_flow() {
         2024,
         2025,
         &Utc::now().to_rfc3339(),
+        &grpc_lib::application::services::FiscalClosurePackageSignerInfo {
+            issuer_identity_id: "11111111-1111-1111-1111-111111111111".to_string(),
+            signing_key_id: "unused-test-signing-key".to_string(),
+        },
         None,
     )
     .unwrap();
@@ -41,6 +45,10 @@ fn test_transition_window_expiration() {
         2024,
         2025,
         &now.to_rfc3339(),
+        &grpc_lib::application::services::FiscalClosurePackageSignerInfo {
+            issuer_identity_id: "11111111-1111-1111-1111-111111111111".to_string(),
+            signing_key_id: "unused-test-signing-key".to_string(),
+        },
         None,
     )
     .unwrap();
@@ -68,6 +76,10 @@ fn test_transition_window_not_yet_started() {
         2024,
         2025,
         &now.to_rfc3339(),
+        &grpc_lib::application::services::FiscalClosurePackageSignerInfo {
+            issuer_identity_id: "11111111-1111-1111-1111-111111111111".to_string(),
+            signing_key_id: "unused-test-signing-key".to_string(),
+        },
         None,
     )
     .unwrap();
@@ -94,6 +106,10 @@ fn test_transition_replay_protection() {
         2024,
         2025,
         &Utc::now().to_rfc3339(),
+        &grpc_lib::application::services::FiscalClosurePackageSignerInfo {
+            issuer_identity_id: "11111111-1111-1111-1111-111111111111".to_string(),
+            signing_key_id: "unused-test-signing-key".to_string(),
+        },
         None,
     )
     .unwrap();

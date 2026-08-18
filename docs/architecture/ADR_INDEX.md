@@ -71,6 +71,7 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0045 | `0045-b8-first-identity-access-import.md` | B8 First `identity_access` Import — Bootstrap Authorization Exemption (companion to ADR-0044 §12.1; proposed amendment to ADR-0040) | Accepted | 2026-08-14 | Architecture / Security |
 | 0046 | `0046-unit-to-wilaya-data-sync-trust.md` | UNIT → WILAYA Data Sync Trust — Kind-Scoped UNIT Issuer Acceptance for `stock_movements`/`daily_report`/`monthly_summary` (amends RFC 2026-08-04-node-identity-trust §3.10, SEC-003-01 scope) | Accepted | 2026-08-16 | Architecture / Security |
 | 0047 | `0047-sync-v1-hmac-removal.md` | Sync Package V1/HMAC Removal — V2-Only (Ed25519) Enforcement (SEC-007; supersedes V1 window clauses of ADR-0003/0007/0038/0044/0046; fiscal closure HMAC exception `[arch:allow-hmac-fiscal]`, follow-up ADR-0048) | Accepted | 2026-08-18 | Architecture / Security |
+| 0048 | `0048-fiscal-closure-ed25519-migration.md` | Fiscal Closure Ed25519 Migration — Identity-Bound Signing (SEC-008; closes exception #29 `[arch:allow-hmac-fiscal]` of ADR-0047; removes `GRPC_PACKAGE_SIGNING_KEY` / `GRPC_ACTIVE_SIGNING_KEY_ID`) | Accepted | 2026-08-18 | Architecture / Security |
 
 ---
 

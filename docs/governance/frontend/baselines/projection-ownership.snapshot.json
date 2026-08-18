@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-07T01:28:41.000Z",
+  "generated": "2026-08-18T00:00:00.000Z",
   "totalTypes": 103,
   "types": [
     {
@@ -1085,16 +1085,8 @@
           "type": "boolean"
         },
         {
-          "name": "has_package_signing_key_env",
-          "type": "boolean"
-        },
-        {
           "name": "bootstrap_would_fail",
           "type": "boolean"
-        },
-        {
-          "name": "active_signing_key_id",
-          "type": "string"
         }
       ]
     },
@@ -2387,6 +2379,10 @@
           "type": "string"
         },
         {
+          "name": "issuer_identity_id",
+          "type": "string"
+        },
+        {
           "name": "closure_authority_username",
           "type": "string"
         },
@@ -2396,6 +2392,10 @@
         },
         {
           "name": "package_created_at",
+          "type": "string"
+        },
+        {
+          "name": "package_fingerprint",
           "type": "string"
         },
         {

@@ -22,16 +22,21 @@
 //! - `FiscalClosingService::close_year` is the single source of truth for the
 //!   carry-forward logic — this service does NOT duplicate it.
 
+use crate::domain::identity::{
+    CredentialStatus, IdentityStorePort, SubjectType, SIGNATURE_VERSION_ED25519,
+};
 use crate::errors::{AppError, BusinessLogicError};
-use crate::infrastructure::security::{
-    resolve_active_signing_key_id, resolve_package_signing_key_32,
+use crate::infrastructure::sync::packages::signing::{
+    Ed25519PackageSigner, Ed25519PackageVerifier, PackageSigner, PackageVerifier,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use serde::{Deserialize, Serialize};
 
+use super::NodeIdentityResolver;
+
 // ─── Package schema version ───────────────────────────────────────────────────
-/// Current schema version for `.fiscal-close.sync` packages.
-pub const FISCAL_CLOSURE_PACKAGE_VERSION: u32 = 2;
+/// Current schema version for `.fiscal-close.sync` packages (SEC-008).
+pub const FISCAL_CLOSURE_PACKAGE_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorizedExecutionWindow {
@@ -40,7 +45,7 @@ pub struct AuthorizedExecutionWindow {
 }
 
 /// Structured content of a fiscal closure authorization package.
-/// Serialized as JSON; the HMAC covers the canonical JSON bytes.
+/// Serialized as JSON; the Ed25519 signature covers the canonical JSON bytes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FiscalClosurePackage {
     /// Package schema version — reject packages with unknown versions.
@@ -53,13 +58,17 @@ pub struct FiscalClosurePackage {
     pub closure_timestamp_utc: String,
     /// node_id of the Wilaya node that issued this package.
     pub closure_authority_node_id: String,
+    /// identity_id (UUID) of the WILAYA node identity that signed this
+    /// package with Ed25519 — covered by the signature and the fingerprint.
+    pub issuer_identity_id: String,
     /// Username of the operator who performed `close_year` on Wilaya.
     pub closure_authority_username: String,
     /// UUID — unique per fiscal transition; used for replay protection.
     pub fiscal_transition_id: String,
     /// RFC3339 UTC timestamp when the package file was created.
     pub package_created_at: String,
-    /// Signing key id used to produce the HMAC (for key rotation support).
+    /// Hex-encoded Ed25519 public key of the signing WILAYA identity
+    /// (SEC-008 — replaces the retired shared HMAC key id).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signing_key_id: Option<String>,
     /// Window in which this package can be applied.
@@ -68,12 +77,16 @@ pub struct FiscalClosurePackage {
     pub package_fingerprint: String,
 }
 
-/// On-disk envelope: the package JSON + its HMAC hex-digest.
+/// On-disk envelope: the package JSON + its Ed25519 signature (SEC-008).
 #[derive(Debug, Serialize, Deserialize)]
 struct FiscalClosureEnvelope {
     pub package: FiscalClosurePackage,
-    /// HMAC-SHA256 over the canonical JSON of `package`, hex-encoded.
-    pub hmac_hex: String,
+    /// Signature scheme version — must equal `SIGNATURE_VERSION_ED25519` (2).
+    pub signature_version: u32,
+    /// Hex-encoded Ed25519 public key of the signer (32 bytes).
+    pub signer_public_key_hex: String,
+    /// Ed25519 signature (hex, 64 bytes) over the canonical JSON of `package`.
+    pub signature_hex: String,
 }
 
 /// What the Unit operator sees before committing to apply a package.
@@ -108,6 +121,17 @@ pub struct FiscalClosureApplyResult {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Signer metadata stamped into a fiscal closure package (SEC-008).
+///
+/// `issuer_identity_id` is the identity_id of the ACTIVE WILAYA identity whose
+/// Ed25519 key will sign the package; `signing_key_id` is that key's
+/// hex-encoded public key. Both are covered by the signature.
+#[derive(Debug, Clone)]
+pub struct FiscalClosurePackageSignerInfo {
+    pub issuer_identity_id: String,
+    pub signing_key_id: String,
+}
+
 pub struct FiscalClosurePackageService<'a> {
     executor: DbExecutor<'a>,
 }
@@ -117,27 +141,37 @@ impl<'a> FiscalClosurePackageService<'a> {
         Self { executor }
     }
 
-    // ── HMAC helpers ─────────────────────────────────────────────────────────
-
-    fn compute_hmac(key: &[u8; 32], payload: &[u8]) -> String {
-        use hmac::{Hmac, Mac};
-        use sha2::Sha256;
-        type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
-        mac.update(payload);
-        hex::encode(mac.finalize().into_bytes())
+    /// Resolve the local WILAYA signing identity (SEC-008 / ADR-0048).
+    ///
+    /// Fail-closed: a WILAYA node without a provisioned node key + ACTIVE
+    /// WILAYA certificate (or with an R5-mismatched / revoked / non-Ed25519
+    /// identity) cannot export fiscal closure packages. No environment-based
+    /// signing secret is ever consulted.
+    pub fn resolve_wilaya_signer(
+        db: &crate::db::Database,
+        node_key_store: &crate::infrastructure::identity::NodeKeyStore,
+    ) -> Result<(FiscalClosurePackageSignerInfo, Ed25519PackageSigner), AppError> {
+        let resolved = NodeIdentityResolver::resolve_local_signer(
+            db,
+            node_key_store,
+            SubjectType::Wilaya,
+        )?
+        .ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                message:
+                    "لا يمكن تصدير حزمة الإغلاق المالي — هوية الولاية غير مُزوّدة على هذه العقدة"
+                        .to_string(),
+            })
+        })?;
+        let signer = Ed25519PackageSigner::from_provider(resolved.signer);
+        let signer_info = FiscalClosurePackageSignerInfo {
+            issuer_identity_id: resolved.certificate.identity_id.to_string(),
+            signing_key_id: signer.public_key_hex(),
+        };
+        Ok((signer_info, signer))
     }
 
-    fn verify_hmac(key: &[u8; 32], payload: &[u8], expected_hex: &str) -> bool {
-        use hmac::{Hmac, Mac};
-        use sha2::Sha256;
-        type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
-        mac.update(payload);
-        let computed = hex::encode(mac.finalize().into_bytes());
-        // Constant-time comparison via simple string equality (both are hex; no secret timing leak).
-        computed == expected_hex
-    }
+    // ── Signature helpers ────────────────────────────────────────────────────
 
     fn canonical_json(pkg: &FiscalClosurePackage) -> Result<Vec<u8>, AppError> {
         serde_json::to_vec(pkg)
@@ -170,6 +204,7 @@ impl<'a> FiscalClosurePackageService<'a> {
         closed_year: i32,
         opened_year: i32,
         closure_timestamp_utc: &str,
+        signer_info: &FiscalClosurePackageSignerInfo,
         existing_transition_id: Option<String>,
     ) -> Result<FiscalClosurePackage, AppError> {
         let fiscal_transition_id =
@@ -189,10 +224,11 @@ impl<'a> FiscalClosurePackageService<'a> {
             opened_year,
             closure_timestamp_utc: closure_timestamp_utc.to_string(),
             closure_authority_node_id: closure_authority_node_id.to_string(),
+            issuer_identity_id: signer_info.issuer_identity_id.clone(),
             closure_authority_username: closure_authority_username.to_string(),
             fiscal_transition_id,
             package_created_at,
-            signing_key_id: resolve_active_signing_key_id(),
+            signing_key_id: Some(signer_info.signing_key_id.clone()),
             authorized_execution_window,
             package_fingerprint: "".to_string(),
         };
@@ -281,15 +317,17 @@ impl<'a> FiscalClosurePackageService<'a> {
     pub fn export_to_file(
         &self,
         pkg: &FiscalClosurePackage,
+        signer: &Ed25519PackageSigner,
         file_path: &str,
     ) -> Result<(), AppError> {
-        let key = resolve_package_signing_key_32()?;
         let payload = Self::canonical_json(pkg)?;
-        let hmac_hex = Self::compute_hmac(&key, &payload);
+        let signature_hex = signer.sign(&payload)?;
 
         let envelope = FiscalClosureEnvelope {
             package: pkg.clone(),
-            hmac_hex,
+            signature_version: u32::from(signer.signature_version()),
+            signer_public_key_hex: signer.public_key_hex(),
+            signature_hex,
         };
         let json = serde_json::to_string_pretty(&envelope).map_err(|e| {
             AppError::Internal(format!("fiscal closure envelope serialization: {}", e))
@@ -299,7 +337,7 @@ impl<'a> FiscalClosurePackageService<'a> {
             AppError::Internal(format!("cannot write fiscal closure package: {}", e))
         })?;
 
-        // Registry entry (Migration 013)
+        // Fiscal package registry entry (SEC-008)
         let registry_entry = crate::repositories::FiscalPackageRegistryEntry {
             id: 0,
             transition_id: pkg.fiscal_transition_id.clone(),
@@ -336,7 +374,23 @@ impl<'a> FiscalClosurePackageService<'a> {
 
     // ── Unit: parse & verify ──────────────────────────────────────────────────
 
-    fn read_and_verify_envelope(file_path: &str) -> Result<FiscalClosurePackage, AppError> {
+    /// Read a `.fiscal-close.sync` envelope and verify it fail-closed:
+    ///
+    /// 1. schema version must be the current one;
+    /// 2. `signature_version` must be Ed25519 (`SIGNATURE_VERSION_ED25519`);
+    /// 3. signature must be present and a valid 64-byte hex string;
+    /// 4. signer public key must be a valid 32-byte hex string;
+    /// 5. `issuer_identity_id` must resolve to a known identity;
+    /// 6. the issuer must be a WILAYA identity;
+    /// 7. the issuer certificate must be ACTIVE;
+    /// 8. the issuer certificate must not be expired;
+    /// 9. the envelope public key must match the issuer certificate's key;
+    /// 10. the issuer must be the trust anchor (ACTIVE WILAYA) of this node;
+    /// 11. the Ed25519 signature must verify over the canonical JSON bytes.
+    ///
+    /// Any failure returns `OperationNotPermitted` — there is no fallback to
+    /// any shared-secret scheme (SEC-008 / ADR-0048).
+    fn read_and_verify_envelope(&self, file_path: &str) -> Result<FiscalClosurePackage, AppError> {
         let raw = std::fs::read_to_string(file_path).map_err(|e| {
             AppError::Internal(format!("cannot read fiscal closure package file: {}", e))
         })?;
@@ -345,33 +399,144 @@ impl<'a> FiscalClosurePackageService<'a> {
             AppError::FileFormat(format!("fiscal closure package is not valid JSON: {}", e))
         })?;
 
-        // Schema version guard
+        let reject = |reason: &str, message: &str| -> AppError {
+            log::warn!(
+                target: "grpc::fiscal",
+                "[FISCAL_CLOSURE_PACKAGE_REJECTED] reason={} transition_id={} closed_year={}",
+                reason, envelope.package.fiscal_transition_id, envelope.package.closed_year,
+            );
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                message: message.to_string(),
+            })
+        };
+
+        // 1: Schema version guard
         if envelope.package.schema_version != FISCAL_CLOSURE_PACKAGE_VERSION {
-            return Err(AppError::BusinessLogic(
-                BusinessLogicError::OperationNotPermitted {
-                    message: format!(
-                        "نسخة مخطط حزمة الإغلاق المالي غير مدعومة {} (المتوقع {})",
-                        envelope.package.schema_version, FISCAL_CLOSURE_PACKAGE_VERSION
-                    ),
-                },
+            return Err(reject(
+                "unsupported_schema_version",
+                &format!(
+                    "نسخة مخطط حزمة الإغلاق المالي غير مدعومة {} (المتوقع {})",
+                    envelope.package.schema_version, FISCAL_CLOSURE_PACKAGE_VERSION
+                ),
             ));
         }
 
-        // HMAC verification — fail-closed
-        let key = resolve_package_signing_key_32()?;
+        // 2: Signature scheme must be Ed25519 — legacy V1/HMAC envelopes and
+        // any other scheme are rejected, never silently downgraded.
+        if envelope.signature_version != u32::from(SIGNATURE_VERSION_ED25519) {
+            return Err(reject(
+                "unsupported_signature_version",
+                "نسخة توقيع حزمة الإغلاق المالي غير مدعومة (يُتوقّع Ed25519)",
+            ));
+        }
+
+        // 3: Signature must be present and well-formed
+        if envelope.signature_hex.trim().is_empty() {
+            return Err(reject(
+                "missing_signature",
+                "توقيع حزمة الإغلاق المالي مفقود — رُفضت الحزمة",
+            ));
+        }
+
+        // 4: Signer public key must be well-formed
+        let verifier = match Ed25519PackageVerifier::from_hex(&envelope.signer_public_key_hex) {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(reject(
+                    "malformed_signer_public_key",
+                    "مفتاح توقيع حزمة الإغلاق المالي غير صالح — رُفضت الحزمة",
+                ));
+            }
+        };
+
+        // 5: Issuer identity must be known on this node
+        let issuer_id = match envelope.package.issuer_identity_id.parse::<uuid::Uuid>() {
+            Ok(id) => id,
+            Err(_) => {
+                return Err(reject(
+                    "malformed_issuer_identity_id",
+                    "هوية مُصدِر حزمة الإغلاق المالي غير صالحة — رُفضت الحزمة",
+                ));
+            }
+        };
+        let Some(certificate) = self
+            .executor
+            .identity_store()
+            .get_by_identity_id(&issuer_id)?
+        else {
+            return Err(reject(
+                "unknown_signer",
+                "هوية مُصدِر حزمة الإغلاق المالي غير معروفة على هذه العقدة — رُفضت الحزمة",
+            ));
+        };
+
+        // 6: Only a WILAYA identity may authorize a fiscal closure
+        if certificate.subject_type != SubjectType::Wilaya {
+            return Err(reject(
+                "signer_not_wilaya",
+                "مُصدِر حزمة الإغلاق المالي ليس هوية ولاية — رُفضت الحزمة",
+            ));
+        }
+
+        // 7: Issuer certificate must be ACTIVE
+        if certificate.status != CredentialStatus::Active {
+            return Err(reject(
+                "signer_not_active",
+                "هوية مُصدِر حزمة الإغلاق المالي ليست نشطة — رُفضت الحزمة",
+            ));
+        }
+
+        // 8: Issuer certificate must not be expired (advisory expiry; None = no expiry)
+        if let Some(not_after) = certificate.not_after {
+            if chrono::Utc::now() > not_after {
+                return Err(reject(
+                    "signer_certificate_expired",
+                    "انتهت صلاحية هوية مُصدِر حزمة الإغلاق المالي — رُفضت الحزمة",
+                ));
+            }
+        }
+
+        // 9: Envelope key must match the issuer certificate key (case-insensitive)
+        if !certificate
+            .public_key
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+            .eq_ignore_ascii_case(&envelope.signer_public_key_hex)
+        {
+            return Err(reject(
+                "signer_key_mismatch",
+                "مفتاح توقيع حزمة الإغلاق المالي لا يطابق هوية المُصدِر — رُفضت الحزمة",
+            ));
+        }
+
+        // 10: Defense-in-depth — the issuer must be the ACTIVE WILAYA trust
+        // anchor provisioned on this UNIT (Invariant 6: single ACTIVE WILAYA).
+        match self
+            .executor
+            .identity_store()
+            .get_active_by_subject_type(SubjectType::Wilaya)?
+        {
+            Some(active_wilaya) if active_wilaya.identity_id == issuer_id => {}
+            _ => {
+                return Err(reject(
+                    "signer_not_trusted_anchor",
+                    "مُصدِر حزمة الإغلاق المالي غير موثوق على هذه العقدة — رُفضت الحزمة",
+                ));
+            }
+        }
+
+        // 11: Ed25519 signature verification over the canonical JSON bytes
         let payload = Self::canonical_json(&envelope.package)?;
-        if !Self::verify_hmac(&key, &payload, &envelope.hmac_hex) {
-            log::warn!(
-                target: "grpc::fiscal",
-                "[FISCAL_CLOSURE_PACKAGE_REJECTED] reason=invalid_signature transition_id={} closed_year={}",
-                envelope.package.fiscal_transition_id, envelope.package.closed_year,
-            );
-            return Err(AppError::BusinessLogic(
-                BusinessLogicError::OperationNotPermitted {
-                    message:
-                        "فشل التحقق من توقيع حزمة الإغلاق المالي — قد تكون الحزمة قد تعرضت للتلاعب"
-                            .to_string(),
-                },
+        let signature_ok = verifier
+            .verify(&payload, &envelope.signature_hex)
+            .map_err(|e| {
+                AppError::Internal(format!("fiscal closure signature verification error: {}", e))
+            })?;
+        if !signature_ok {
+            return Err(reject(
+                "invalid_signature",
+                "فشل التحقق من توقيع حزمة الإغلاق المالي — قد تكون الحزمة قد تعرضت للتلاعب",
             ));
         }
 
@@ -449,12 +614,12 @@ impl<'a> FiscalClosurePackageService<'a> {
 
     // ── Unit: preview (no state mutation) ────────────────────────────────────
 
-    /// Read, verify HMAC, run pre-flight checks — do NOT apply anything.
+    /// Read, verify Ed25519 signature, run pre-flight checks — do NOT apply anything.
     pub fn preview_closure_package(
         &self,
         file_path: &str,
     ) -> Result<FiscalClosurePreview, AppError> {
-        let pkg = Self::read_and_verify_envelope(file_path)?;
+        let pkg = self.read_and_verify_envelope(file_path)?;
         let issues = self.pre_flight_checks(&pkg)?;
         let ok = issues.is_empty();
 
@@ -485,7 +650,7 @@ impl<'a> FiscalClosurePackageService<'a> {
         applying_username: &str,
     ) -> Result<FiscalClosureApplyResult, AppError> {
         // ── 1 & 2: Verify signature + pre-flight ─────────────────────────
-        let pkg = Self::read_and_verify_envelope(file_path)?;
+        let pkg = self.read_and_verify_envelope(file_path)?;
         let issues = self.pre_flight_checks(&pkg)?;
 
         if !issues.is_empty() {

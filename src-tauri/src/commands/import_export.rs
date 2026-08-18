@@ -254,9 +254,12 @@ pub fn export_products_package(
         "encrypted".to_string(),
     );
 
+    let signing_key_id =
+        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
     let _ = db.with_transaction(|tx| {
         record_export_with_reproducibility(
             tx,
+            signing_key_id.clone(),
             ExportReproducibilityContext {
                 export_hash,
                 fiscal_year: settings.current_year,
@@ -1325,9 +1328,12 @@ pub fn export_identity_access_package_impl(
     let export_hash = Uuid::new_v4().to_string();
     let result = PackageExportResult::success(file_path.clone(), 1, "encrypted".to_string());
 
+    let signing_key_id =
+        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
     let _ = db.with_transaction(|tx| {
         record_export_with_reproducibility(
             tx,
+            signing_key_id.clone(),
             ExportReproducibilityContext {
                 export_hash,
                 fiscal_year: settings.current_year,

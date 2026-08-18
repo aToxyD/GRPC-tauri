@@ -66,7 +66,16 @@ pub fn bootstrap_runtime() -> crate::errors::AppResult<RuntimeBootstrap> {
 
     let rate_limiter = open_persisted_rate_limiter(&db_path)?;
 
-    match DeploymentReadinessService::new(db.executor(), db_path.clone()).verify() {
+    // Node key store (SEC-008): the WILAYA signing identity for fiscal closure
+    // exports — shared data dir, mirroring `commands/common::node_key_store`.
+    let node_key_store = crate::infrastructure::identity::NodeKeyStore::new(
+        crate::infrastructure::identity::AdminKeyProvider::default_data_dir()
+            .unwrap_or_else(|_| std::env::temp_dir().join("GRPC")),
+    );
+
+    match DeploymentReadinessService::new(db.executor(), db_path.clone(), &db, &node_key_store)
+        .verify()
+    {
         Ok(report) => {
             for w in &report.warnings {
                 log::warn!(target: "grpc::deployment", "readiness warning: {}", w);

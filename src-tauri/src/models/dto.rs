@@ -309,19 +309,18 @@ pub struct UnitNodePackageImportResult {
     pub success: bool,
 }
 
-/// Live sync/security diagnostics (SEC-007, ADR-0047).
+/// Live sync/security diagnostics (SEC-007 ADR-0047 / SEC-008 ADR-0048).
 ///
 /// V1/HMAC fields (accepted/deprecated verification keys, trusted signers,
-/// deprecation deadline) were removed with the V1 sync-package machinery.
-/// `has_package_signing_key_env` / `active_signing_key_id` reflect the fiscal
-/// closure HMAC key ([arch:allow-hmac-fiscal] see ADR-0047), not sync packages.
+/// deprecation deadline) were removed with the V1 sync-package machinery, and
+/// the fiscal closure HMAC key fields (`has_package_signing_key_env` /
+/// `active_signing_key_id`) were removed with the Ed25519 migration — package
+/// signing now uses node identities, never shared env secrets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSecurityDiagnostics {
     pub production_mode: bool,
     pub has_app_key_env: bool,
-    pub has_package_signing_key_env: bool,
     pub bootstrap_would_fail: bool,
-    pub active_signing_key_id: String,
 }
 
 // ============================================================================

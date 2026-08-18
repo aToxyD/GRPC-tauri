@@ -164,6 +164,11 @@ Enforcement points (all reject, none bypass):
 
 # 8. Temporary Exception: Fiscal Closure HMAC Envelope (`[arch:allow-hmac-fiscal]`)
 
+> **CLOSED (2026-08-18, SEC-008 / ADR-0048):** this exception was remediated —
+> the fiscal closure package now uses WILAYA-identity Ed25519 signing; every
+> item listed below was removed by ADR-0048 and registry row #29 is CLOSED.
+> This section remains as the historical record of the temporary exception.
+
 The fiscal closure authorization package (`.fiscal-close.sync`) is a
 **separate production fiscal envelope** with its own versioning
 (`FISCAL_CLOSURE_PACKAGE_VERSION = 2`, unrelated to sync schema V2). It signs

@@ -559,9 +559,14 @@ pub fn verify_deployment_readiness(
         .get_connection_path()
         .map_err(|e| into_command_error(AppError::Internal(e.to_string())))?;
 
-    DeploymentReadinessService::new(db.executor(), db_path)
-        .verify()
-        .map_err(into_command_error)
+    DeploymentReadinessService::new(
+        db.executor(),
+        db_path,
+        db,
+        &crate::commands::common::node_key_store(),
+    )
+    .verify()
+    .map_err(into_command_error)
 }
 
 #[tauri::command]

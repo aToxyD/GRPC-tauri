@@ -183,8 +183,10 @@ pre-auth lifecycle):
   is bound to node identity (`signature_version = 2`, RFC
   `2026-08-04-node-identity-trust`), the WILAYA trust anchor, and the Root
   chain — never to the App Key.
-- The App Key and `GRPC_PACKAGE_SIGNING_KEY` remain unrelated secrets
-  (ADR-0044 §12 / ADR-0045 §22.2): no derivation, no shared root.
+- The App Key and the retired `GRPC_PACKAGE_SIGNING_KEY` remain unrelated
+  secrets (ADR-0044 §12 / ADR-0045 §22.2): no derivation, no shared root.
+  (SEC-008/ADR-0048: the signing key was removed entirely — package signing
+  is identity-bound Ed25519; this clause is historical.)
 
 ### 10.2 Shared key requirement (bootstrap)
 
@@ -327,7 +329,8 @@ explicit exception for the **packaged UNIT identity**:
 
 # Out of scope
 
-- `GRPC_PACKAGE_SIGNING_KEY` provisioning — stays env-only, lazy-resolved, fleet secret.
+- `GRPC_PACKAGE_SIGNING_KEY` provisioning — removed entirely by ADR-0048
+  (SEC-008); no shared signing secret exists. (Historical scope clause.)
 - Key rotation (ADR-0006 scope) — this ADR provisions the first key only.
 - Changing `AgeFileEncryptionProvider` encryption semantics (x25519 unchanged).
 - Any change to `grpc-licensing` (addressed separately by ADR-0042).

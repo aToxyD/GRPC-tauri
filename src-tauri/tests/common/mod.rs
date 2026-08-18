@@ -203,3 +203,37 @@ pub fn clear_fiscal_status(state: &grpc_lib::commands::AppState) {
         .execute("DELETE FROM fiscal_year_status", [])
         .expect("clear fiscal_year_status");
 }
+
+/// Seed an ACTIVE WILAYA identity whose Ed25519 signing key is derived from
+/// `secret` (SEC-008 test pattern — the fiscal closure signer).
+///
+/// Returns the identity_id so callers can reference the issuer in packages.
+#[allow(dead_code)]
+pub fn seed_wilaya_identity(db: &grpc_lib::db::Database, secret: [u8; 32]) -> uuid::Uuid {
+    use grpc_lib::domain::identity::{
+        CredentialStatus, IdentityCertificate, IdentitySigner, IdentityStorePort, SubjectType,
+        SIGNATURE_VERSION_ED25519,
+    };
+    use grpc_lib::infrastructure::security::Ed25519SigningProvider;
+    use grpc_lib::repositories::RepositoryProvider;
+    let identity_id = uuid::Uuid::new_v4();
+    let certificate = IdentityCertificate {
+        identity_id,
+        subject_type: SubjectType::Wilaya,
+        subject_id: identity_id,
+        issuer_identity_id: None,
+        credential_id: uuid::Uuid::new_v4(),
+        generation: 1,
+        status: CredentialStatus::Active,
+        public_key: Ed25519SigningProvider::new(secret).public_key(),
+        algorithm_version: SIGNATURE_VERSION_ED25519,
+        not_after: None,
+        package_sequence: Some(1),
+        signature: None,
+    };
+    db.executor()
+        .identity_store()
+        .upsert(&certificate, &chrono::Utc::now().to_rfc3339())
+        .expect("seed wilaya identity");
+    identity_id
+}

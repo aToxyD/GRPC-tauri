@@ -364,14 +364,13 @@ export interface SystemMetrics {
   active_users: number;
 }
 
-// SEC-007 (ADR-0047): V1/HMAC diagnostics fields removed; the remaining
-// signing-key fields reflect the fiscal closure HMAC key, not sync packages.
+// SEC-007 (ADR-0047) / SEC-008 (ADR-0048): V1/HMAC diagnostics fields and the
+// fiscal closure HMAC key fields were removed — package signing uses node
+// identities (Ed25519), never shared env secrets.
 export interface SyncSecurityDiagnostics {
   production_mode: boolean;
   has_app_key_env: boolean;
-  has_package_signing_key_env: boolean;
   bootstrap_would_fail: boolean;
-  active_signing_key_id: string;
 }
 
 export interface SyncPreflightCheck {
@@ -783,11 +782,13 @@ export interface FiscalClosurePackage {
   opened_year: number;
   closure_timestamp_utc: string;
   closure_authority_node_id: string;
+  issuer_identity_id: string;
   closure_authority_username: string;
   fiscal_transition_id: string;
   package_created_at: string;
   signing_key_id: string | null;
   authorized_execution_window: AuthorizedExecutionWindow;
+  package_fingerprint: string;
 }
 
 export interface FiscalClosurePreview {

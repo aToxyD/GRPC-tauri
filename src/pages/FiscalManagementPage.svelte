@@ -240,7 +240,7 @@
   // @category UiState
   $: isReplay = preview && preview.validation_issues.some(i => i.includes('replay'));
   // @category UiState
-  $: isInvalidSignature = message.includes('HMAC verification failed');
+  $: isInvalidSignature = message.includes('فشل التحقق من توقيع حزمة الإغلاق المالي') || message.includes('رُفضت الحزمة');
 </script>
 
 <Layout {nodeType} title="إدارة السنة المالية">
