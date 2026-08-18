@@ -1,6 +1,7 @@
 //! Roundtrip + validation tests for additional sync package kinds.
-
-use std::path::Path;
+//!
+//! SEC-007 (ADR-0047): fixtures are V2-only (Ed25519). Legacy V1 shape is
+//! rejected by the deserializer and the import-validators.
 
 use chrono::{NaiveDate, TimeZone, Utc};
 
@@ -11,6 +12,9 @@ use grpc_lib::application::sync::{
 use grpc_lib::application::usecases::exports::types::{
     DailyReportExportDataset, ProductsExportDataset,
 };
+use grpc_lib::infrastructure::sync::packages::signing::{
+    DEFAULT_SIGNATURE_VERSION, Ed25519PackageSigner,
+};
 use grpc_lib::infrastructure::sync::{
     read_daily_report_package_from_file, read_products_package_from_file,
 };
@@ -18,6 +22,11 @@ use grpc_lib::models::{
     DailyConsumptionSyncLine, DailyReportSyncSnapshot, MealSectionSyncSnapshot, MealType, Product,
     ProductExportRow,
 };
+
+// Fixed test signing key (RFC 8032 — deterministic for fixed secret).
+fn v2_signer() -> Ed25519PackageSigner {
+    Ed25519PackageSigner::new([0u8; 32])
+}
 
 fn fixture_products_package() -> SyncPackage<ProductsExportDataset> {
     let created_at = Utc.with_ymd_and_hms(2026, 2, 1, 10, 0, 0).unwrap();
@@ -40,8 +49,8 @@ fn fixture_products_package() -> SyncPackage<ProductsExportDataset> {
             package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("pkg-products-rt-1".into()),
-            signature_version: None,
-            signing_key_id: None,
+            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
+            signing_key_id: Some(v2_signer().public_key_hex()),
             integrity_hash: None,
             signature: None,
         },
@@ -66,8 +75,8 @@ fn fixture_daily_package() -> SyncPackage<DailyReportExportDataset> {
             package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("pkg-daily-rt-1".into()),
-            signature_version: None,
-            signing_key_id: None,
+            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
+            signing_key_id: Some(v2_signer().public_key_hex()),
             integrity_hash: None,
             signature: None,
         },
@@ -109,7 +118,7 @@ fn products_package_roundtrip_and_validation() {
 
     let crypto_port = grpc_lib::infrastructure::security::AgeFileEncryptionProvider;
     let serializer = grpc_lib::infrastructure::sync::SerdeJsonSyncPackageSerializer;
-    let signer = grpc_lib::infrastructure::sync::HmacPackageSigner;
+    let signer = v2_signer();
     let builder = grpc_lib::infrastructure::sync::PackageBuilder::new();
 
     builder
@@ -129,7 +138,7 @@ fn daily_package_roundtrip_and_validation() {
 
     let crypto_port = grpc_lib::infrastructure::security::AgeFileEncryptionProvider;
     let serializer = grpc_lib::infrastructure::sync::SerdeJsonSyncPackageSerializer;
-    let signer = grpc_lib::infrastructure::sync::HmacPackageSigner;
+    let signer = v2_signer();
     let builder = grpc_lib::infrastructure::sync::PackageBuilder::new();
 
     builder
@@ -144,23 +153,29 @@ fn daily_package_roundtrip_and_validation() {
 }
 
 #[test]
-fn products_package_json_matches_golden() {
-    let pkg = fixture_products_package();
-    let actual = serde_json::to_value(&pkg).expect("value");
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/snapshots/sync/products_package_plain.json");
-    let expected: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&p).expect("golden")).expect("json");
-    assert_eq!(actual, expected);
-}
-
-#[test]
-fn daily_package_json_matches_golden() {
-    let pkg = fixture_daily_package();
-    let actual = serde_json::to_value(&pkg).expect("value");
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/snapshots/sync/daily_report_package_plain.json");
-    let expected: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&p).expect("golden")).expect("json");
-    assert_eq!(actual, expected);
+fn v1_shaped_package_is_rejected_by_deserializer() {
+    // SEC-007 (ADR-0047): the generic V1 shape (no signature_version, no
+    // integrity_hash, no signature) must fail closed on the read path.
+    let pkg = SyncPackage {
+        metadata: SyncPackageMetadata {
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+            created_at: Utc.with_ymd_and_hms(2026, 2, 1, 10, 0, 0).unwrap(),
+            source_node_id: "16".into(),
+            package_sequence: None,
+            issuer_identity_id: None,
+            package_id: PackageId("pkg-v1-rt-1".into()),
+            signature_version: None,
+            signing_key_id: Some("default".into()),
+            integrity_hash: None,
+            signature: None,
+        },
+        payload: ProductsExportDataset {
+            product_rows: Vec::new(),
+        },
+    };
+    let plaintext = serde_json::to_vec(&pkg).expect("serialize");
+    let err = grpc_lib::infrastructure::sync::SerdeJsonSyncPackageDeserializer
+        ::products_from_reader(std::io::BufReader::new(std::io::Cursor::new(plaintext)))
+        .expect_err("V1 legacy package must be rejected");
+    assert!(matches!(err, grpc_lib::errors::AppError::Validation(_)));
 }

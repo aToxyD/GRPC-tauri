@@ -9,9 +9,9 @@
 //! what `PackageBuilder`/`Ed25519PackageSigner` produced.
 //!
 //! Fail-closed: an unknown issuer, missing/absent verification material, or an
-//! invalid signature rejects the package. V1/legacy packages (`signature_version`
-//! absent or 1) are untouched — they remain verified by the deserializer's HMAC
-//! path during the deprecation window.
+//! invalid signature rejects the package. SEC-007 (ADR-0047): V1/HMAC is
+//! removed, so a non-V2 package (`signature_version` absent or 1) is REJECTED
+//! here — there is no legacy no-op path.
 //!
 //! Issuer policy (ADR-0046): `verify_v2_signature` preserves the legacy
 //! SEC-003-01 WILAYA-only gate (`.unit` dedicated path). The import pipeline
@@ -54,6 +54,15 @@ fn reject(message: &str) -> AppError {
     })
 }
 
+/// SEC-007 (ADR-0047): the V1/HMAC deprecation window is closed — a package
+/// without `signature_version = 2` is rejected, never skipped.
+fn reject_non_v2() -> AppError {
+    AppError::Validation(ValidationError::InvalidFormat {
+        field: "signature_version".into(),
+        message: "حزمة غير V2 مرفوضة — إصدار التوقيع يجب أن يكون V2 (Ed25519)".into(),
+    })
+}
+
 /// Issuer validity gate shared by both V2 entry points (SEC-003-01, ADR-0046
 /// §5 steps 5-6).
 ///
@@ -83,7 +92,7 @@ fn validate_issuer_status(certificate: &IdentityCertificate) -> AppResult<()> {
 }
 
 /// Resolve the authenticated issuer certificate for a V2 package (ADR-0046
-/// §5 steps 1-2). No-op semantics for non-V2 packages are owned by the callers.
+/// §5 steps 1-2). Callers must have already enforced `signature_version = 2`.
 fn resolve_v2_issuer_certificate<T: Serialize>(
     executor: DbExecutor<'_>,
     package: &SyncPackage<T>,
@@ -135,14 +144,14 @@ impl SyncPackageIdentityVerificationService {
     /// Legacy WILAYA-only V2 entry point (SEC-003-01, `.unit` dedicated path).
     ///
     /// Kept as the strict gate for the `.unit` bootstrap (ADR-0044): the issuer
-    /// of a `.unit` package MUST be a WILAYA certificate. No-op for V1/legacy
-    /// packages.
+    /// of a `.unit` package MUST be a WILAYA certificate. SEC-007 (ADR-0047):
+    /// non-V2 packages are rejected, not skipped.
     pub fn verify_v2_signature<T: Serialize>(
         executor: DbExecutor<'_>,
         package: &SyncPackage<T>,
     ) -> AppResult<()> {
         if package.metadata.signature_version != Some(SIGNATURE_VERSION_ED25519) {
-            return Ok(());
+            return Err(reject_non_v2());
         }
         let certificate = resolve_v2_issuer_certificate(executor, package)?;
         validate_issuer_status(&certificate)?;
@@ -215,13 +224,14 @@ impl SyncPackageIdentityVerificationService {
     ///
     /// The critical invariant (ADR-0046 §3 I4): `cert.subject_id` is never used as
     /// an authorization/binding authority before the signature has been verified.
+    /// SEC-007 (ADR-0047): non-V2 packages are rejected, never bypassed.
     pub fn verify_v2_package_for_import<T: Serialize>(
     executor: DbExecutor<'_>,
     package: &SyncPackage<T>,
     policy: &V2ImportPolicy<'_, T>,
 ) -> AppResult<()> {
     if package.metadata.signature_version != Some(SIGNATURE_VERSION_ED25519) {
-        return Ok(());
+        return Err(reject_non_v2());
     }
 
     // Steps 1-2 (Ed25519 authentication, I4): resolve the certificate and
@@ -509,7 +519,8 @@ mod tests {
     }
 
     #[test]
-    fn v1_legacy_package_is_a_noop() {
+    fn v1_legacy_package_is_rejected() {
+        // SEC-007 (ADR-0047): the V1 no-op window is closed.
         let db = ConnectionFactory::new_for_test().unwrap();
         let package = SyncPackage {
             metadata: crate::application::sync::SyncPackageMetadata {
@@ -526,16 +537,15 @@ mod tests {
             },
             payload: json!({ "items": [] }),
         };
-        // No issuer seeded — V1 must be untouched (no-op early return).
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_ok());
+        assert!(result.is_err(), "V1 package must be rejected: {result:?}");
     }
 
     #[test]
-    fn non_v2_signature_version_is_a_noop() {
+    fn non_v2_signature_version_is_rejected() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let package = SyncPackage {
             metadata: crate::application::sync::SyncPackageMetadata {
@@ -556,7 +566,7 @@ mod tests {
             make_executor(&db),
             &package,
         );
-        assert!(result.is_ok());
+        assert!(result.is_err(), "signature_version=1 must be rejected: {result:?}");
     }
 
     // ── SEC-003-01: issuer validity (WILAYA + ACTIVE + not expired) ──────
@@ -1133,7 +1143,9 @@ mod tests {
     }
 
     #[test]
-    fn non_v2_package_bypasses_issuer_policy() {
+    fn non_v2_package_is_rejected_by_import_policy() {
+        // SEC-007 (ADR-0047): the legacy bypass (V1 packages skipping issuer
+        // policy) is removed — non-V2 packages are rejected.
         let db = ConnectionFactory::new_for_test().unwrap();
         let mut package = build_v2_package(Uuid::new_v4());
         package.metadata.signature_version = None;
@@ -1151,6 +1163,6 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_ok(), "V1/legacy packages remain untouched by issuer policy: {result:?}");
+        assert!(result.is_err(), "non-V2 package must be rejected: {result:?}");
     }
 }

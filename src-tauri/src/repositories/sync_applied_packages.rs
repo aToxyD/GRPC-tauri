@@ -16,7 +16,9 @@ impl<'a> SyncAppliedPackagesRepository<'a> {
     /// Returns `Ok(true)` if this was the first time this `package_id` was recorded.
     ///
     /// `package_sequence` / `issuer_identity_id` are the B4 transport metadata
-    /// (RFC 2026-08-04 §3.4.1); legacy HMAC/V1 packages pass `None`.
+    /// (RFC 2026-08-04 §3.4.1). SEC-007 (ADR-0047): all accepted packages are
+    /// V2, so both columns are always populated; the columns remain nullable
+    /// for schema stability (no migration).
     pub fn insert_if_new(
         &self,
         package_id: &str,
@@ -138,11 +140,12 @@ mod tests {
         assert!(first);
         assert!(repo.has_imported("pkg-1").unwrap());
 
-        // Legacy V1 package: transport columns stay NULL.
-        let legacy = repo
+        // NULL transport columns remain tolerated by the schema (no migration
+        // per SEC-007); production imports always populate them (V2-only).
+        let nullable = repo
             .insert_if_new("pkg-2", "daily_report", Some("u-1"), "admin", None, None)
             .unwrap();
-        assert!(legacy);
+        assert!(nullable);
         assert!(repo.has_imported("pkg-2").unwrap());
     }
 

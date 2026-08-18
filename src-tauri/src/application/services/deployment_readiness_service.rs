@@ -227,6 +227,9 @@ impl<'a> DeploymentReadinessService<'a> {
         let key_present = resolve_active_signing_key_id().is_some();
         let key_resolves =
             crate::infrastructure::security::resolve_package_signing_key_32().is_ok();
+        // SEC-007 (ADR-0047): sync packages no longer consume this key; it is
+        // required in production ONLY for the fiscal closure package HMAC
+        // envelope ([arch:allow-hmac-fiscal] see ADR-0047).
         let passed = if is_prod {
             key_present && key_resolves
         } else {

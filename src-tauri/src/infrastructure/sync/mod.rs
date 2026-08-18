@@ -12,7 +12,7 @@ pub use packages::{
     read_stock_movements_package_from_file,
     read_trust_package_from_file,
     read_unit_node_package_from_file,
-    signing::{HmacPackageSigner, PackageSigner, PackageVerifier},
+    signing::{PackageSigner, PackageVerifier},
     PackageBuilder,
     SerdeJsonSyncPackageDeserializer,
     SerdeJsonSyncPackageSerializer,

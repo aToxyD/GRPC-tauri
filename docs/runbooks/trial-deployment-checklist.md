@@ -30,7 +30,10 @@
       > (الامتداد `.age` لا يعني تشفيرًا) — ليست المخزن المحلي `appkey.age` (المشفَّر
       > `age::scrypt` بصلاحيات `0600`)؛ حمايتها بحاضنة المشغّل والنقل الموثوق دون اتصال،
       > وليس بثابت `0600`.
-- [ ] توليد مفتاح توقيع فريد `GRPC_PACKAGE_SIGNING_KEY` (قيمة **Base64** تمثل **32 بايت تماماً** بعد فك الترميز)، متطابق بين كافة العقد.
+- [ ] توليد مفتاح توقيع فريد `GRPC_PACKAGE_SIGNING_KEY` (قيمة **Base64** تمثل **32 بايت تماماً** بعد فك الترميز)، متطابق بين كافة العقد — **SEC-007 (ADR-0047):** حصرياً لغلاف الإذن المالي `.fiscal-close.sync` (حزم المزامنة V2/Ed25519 لا تستخدمه)؛
+      > ملاحظة: المتغيرات `GRPC_ENFORCE_TRUSTED_SIGNERS` / `GRPC_TRUSTED_SIGNER_IDS` /
+      > `GRPC_ACCEPTED_SIGNING_KEY_IDS` / `GRPC_DEPRECATED_SIGNING_KEY_IDS` /
+      > `GRPC_SIGNING_KEY_DEPRECATION_DEADLINE_UTC` أُزيلت نهائياً (تُتجاهل إن وُجدت).
 - [ ] **مفتاح جذر السلطة `GRPC_ROOT_PUBLIC_KEY`**: قيمة Base64 (STANDARD) تمثل **32 بايت تماماً**
       (مفتاح Ed25519 العام لسلطة Root المستخدمة للتحقق من شهادة الإقلاع دون اتصال).
       > ملاحظة Release: المفتاح المضمّن في الكود (`PROD_ROOT_PUBLIC_KEY`) هو **مفتاح جذر

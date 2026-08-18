@@ -62,6 +62,12 @@ All `[arch:allow-*]` architectural exceptions must be registered here with ADR l
 | 27 | `commands/backup.rs` | 45 | 117 | ADR-0043 | `create_backup` offloads blocking DB-copy + encryption via `tauri::async_runtime::spawn_blocking` to avoid UI freeze on the Tauri main thread — sanctioned exception, no async beyond the two backup command handlers | 2026-08-09 | Permanent | Architecture |
 | 28 | `commands/backup.rs` | 357 | 117 | ADR-0043 | `restore_backup` offloads blocking DB restore + verification via `tauri::async_runtime::spawn_blocking` to avoid UI freeze on the Tauri main thread — sanctioned exception, no async beyond the two backup command handlers | 2026-08-09 | Permanent | Architecture |
 
+## Exception: `[arch:allow-hmac-fiscal]`
+
+| # | File | Line | Rule | ADR | Reason | Created | Renewed | Expires | Owner |
+|---|------|------|------|-----|--------|---------|---------|---------|-------|
+| 29 | `infrastructure/security/mod.rs` | ~202-295 | — | ADR-0047 | Fiscal closure package (`.fiscal-close.sync`) retains its own HMAC envelope — `resolve_package_signing_key_32(_impl)` / `resolve_active_signing_key_id` + zero-key debug fallback kept for `fiscal_closure_package_service`/`export_reproducibility_helper`/`D_signing_key` after sync-V1 removal; follow-up ADR-0048 migrates fiscal closure to Ed25519 and removes this exception | 2026-08-18 | — | 2026-11-16 | Architecture / Security |
+
 ---
 
 ## Summary
@@ -75,6 +81,7 @@ All `[arch:allow-*]` architectural exceptions must be registered here with ADR l
 | `[arch:allow-sql]` | 1 | ADR-011 |
 | `[arch:allow-memory-unsafe]` | 1 | ADR-017 |
 | `[arch:allow-async]` (Permanent) | 2 | ADR-0043 |
-| **Total** | **21** | |
+| `[arch:allow-hmac-fiscal]` | 1 | ADR-0047 |
+| **Total** | **22** | |
 
 **Review cadence:** All exceptions must be reviewed at least every 90 days. Expired exceptions must be renewed or closed. All rows renewed 2026-08-09; next review window closes 2026-11-07. `[arch:allow-async]` is **Permanent** per ADR-0043 — exempt from the 90-day renewal cycle.

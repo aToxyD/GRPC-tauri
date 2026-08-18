@@ -309,6 +309,12 @@ pub struct UnitNodePackageImportResult {
     pub success: bool,
 }
 
+/// Live sync/security diagnostics (SEC-007, ADR-0047).
+///
+/// V1/HMAC fields (accepted/deprecated verification keys, trusted signers,
+/// deprecation deadline) were removed with the V1 sync-package machinery.
+/// `has_package_signing_key_env` / `active_signing_key_id` reflect the fiscal
+/// closure HMAC key ([arch:allow-hmac-fiscal] see ADR-0047), not sync packages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSecurityDiagnostics {
     pub production_mode: bool,
@@ -316,11 +322,6 @@ pub struct SyncSecurityDiagnostics {
     pub has_package_signing_key_env: bool,
     pub bootstrap_would_fail: bool,
     pub active_signing_key_id: String,
-    pub accepted_verification_key_ids: Vec<String>,
-    pub deprecated_signing_key_ids: Vec<String>,
-    pub deprecation_deadline_utc: Option<String>,
-    pub enforce_trusted_signers: bool,
-    pub trusted_signer_ids: Vec<String>,
 }
 
 // ============================================================================

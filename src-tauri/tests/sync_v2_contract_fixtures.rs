@@ -1,4 +1,4 @@
-//! Protocol contract checks for sync schema V2 (canonical JSON + HMAC + SHA-256).
+//! Protocol contract checks for sync schema V2 (canonical JSON + Ed25519 + SHA-256).
 //!
 //! Golden JSON files under `tests/fixtures/sync/` document stable **shape**; builders still
 //! emit fresh `integrity_hash` / `signature` per key material. This test locks **determinism**
@@ -11,8 +11,11 @@ use grpc_lib::application::sync::{
 };
 use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
 use grpc_lib::infrastructure::security::AgeFileEncryptionProvider;
+use grpc_lib::infrastructure::sync::packages::signing::{
+    DEFAULT_SIGNATURE_VERSION, Ed25519PackageSigner,
+};
 use grpc_lib::infrastructure::sync::{
-    HmacPackageSigner, PackageBuilder, SerdeJsonSyncPackageSerializer,
+    PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
 use grpc_lib::models::{DailyDetailSyncSnapshot, MonthlySummary};
 // PlaintextSeal is no longer needed as we test through the real age-encryption provider
@@ -31,7 +34,7 @@ fn monthly_fixture_package() -> SyncPackage<MonthlySummaryExportDataset> {
             package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("contract-pkg-monthly-001".into()),
-            signature_version: None,
+            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
@@ -63,14 +66,19 @@ fn monthly_fixture_package() -> SyncPackage<MonthlySummaryExportDataset> {
 
 #[test]
 fn v2_builder_is_deterministic_for_fixed_key_and_payload() {
-    use base64::{engine::general_purpose, Engine as _};
-    let key_bytes = [0u8; 32];
-    let key = general_purpose::STANDARD.encode(key_bytes);
-    std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", &key);
-    std::env::remove_var("GRPC_ENV");
+    // SEC-007 (ADR-0047): V1/HMAC is removed; determinism is locked on Ed25519,
+    // which is deterministic by construction (RFC 8032) for a fixed private key.
+    let signer = Ed25519PackageSigner::new([0u8; 32]);
 
-    let pkg = monthly_fixture_package();
+    let mut pkg = monthly_fixture_package();
+    // The builder fills integrity_hash + signature; signing_key_id is the
+    // signer's public key (fixed secret → fixed key → deterministic).
+    pkg.metadata.signing_key_id = Some(signer.public_key_hex());
     assert_eq!(pkg.metadata.schema_version.as_u16(), 2);
+    assert_eq!(
+        pkg.metadata.signature_version,
+        Some(DEFAULT_SIGNATURE_VERSION)
+    );
 
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let path_a = temp_dir.path().join("a.sync");
@@ -79,7 +87,6 @@ fn v2_builder_is_deterministic_for_fixed_key_and_payload() {
     let builder = PackageBuilder::new();
     let crypto_port = AgeFileEncryptionProvider::new();
     let serializer = SerdeJsonSyncPackageSerializer;
-    let signer = HmacPackageSigner;
 
     // Build twice to different files
     builder
@@ -102,10 +109,10 @@ fn v2_builder_is_deterministic_for_fixed_key_and_payload() {
 
     let v: serde_json::Value = serde_json::from_str(&content_a).expect("json");
     assert_eq!(v["metadata"]["schema_version"], 2);
+    assert_eq!(v["metadata"]["signature_version"], 2);
     assert!(v["metadata"]["integrity_hash"].is_string());
     assert!(v["metadata"]["signature"].is_string());
-
-    std::env::remove_var("GRPC_PACKAGE_SIGNING_KEY");
+    assert!(v["metadata"]["signing_key_id"].is_string());
 }
 
 fn decrypt_to_temp(

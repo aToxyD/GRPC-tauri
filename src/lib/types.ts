@@ -364,17 +364,14 @@ export interface SystemMetrics {
   active_users: number;
 }
 
+// SEC-007 (ADR-0047): V1/HMAC diagnostics fields removed; the remaining
+// signing-key fields reflect the fiscal closure HMAC key, not sync packages.
 export interface SyncSecurityDiagnostics {
   production_mode: boolean;
   has_app_key_env: boolean;
   has_package_signing_key_env: boolean;
   bootstrap_would_fail: boolean;
   active_signing_key_id: string;
-  accepted_verification_key_ids: string[];
-  deprecated_signing_key_ids: string[];
-  deprecation_deadline_utc: string | null;
-  enforce_trusted_signers: boolean;
-  trusted_signer_ids: string[];
 }
 
 export interface SyncPreflightCheck {

@@ -5,7 +5,7 @@ import fs from 'fs';
 test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
   test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
-  test('export products sync package verifies package structure and HMAC signing', async ({ tauriApp }) => {
+  test('export products sync package verifies package structure and V2 signing', async ({ tauriApp }) => {
     const { page, driver } = tauriApp;
 
     // Login and setup node

@@ -120,6 +120,11 @@ pub fn validate_production_security_environment() -> Result<(), String> {
         }
     }
 
+    // SEC-007 (ADR-0047): V1/HMAC sync-package signing is removed; the sync
+    // package path no longer consumes GRPC_PACKAGE_SIGNING_KEY. The key remains
+    // REQUIRED in production exclusively for the fiscal closure authorization
+    // package (`.fiscal-close.sync`), which retains its own HMAC envelope
+    // (see [arch:allow-hmac-fiscal]).
     let sign = std::env::var("GRPC_PACKAGE_SIGNING_KEY").map_err(|_| {
         "Configuration error: GRPC_PACKAGE_SIGNING_KEY is required when GRPC_ENV=production"
             .to_string()
@@ -137,34 +142,6 @@ pub fn validate_production_security_environment() -> Result<(), String> {
             "Validation error: GRPC_PACKAGE_SIGNING_KEY must decode to exactly 32 bytes (got {}).",
             decoded.len()
         ));
-    }
-
-    // SEC-003-05-C: in production, trusted-signer enforcement is mandatory and
-    // cannot silently degrade to permissive mode. GRPC_ENFORCE_TRUSTED_SIGNERS
-    // must be exactly "1" and GRPC_TRUSTED_SIGNER_IDS must declare at least one
-    // signer. This mirrors `should_enforce_trusted_signers` but is strict: it
-    // rejects partial/misspelled truthy values that dev mode tolerates.
-    match std::env::var("GRPC_ENFORCE_TRUSTED_SIGNERS") {
-        Ok(v) if v.trim() == "1" => {}
-        Ok(v) => {
-            return Err(format!(
-                "Validation error: GRPC_ENFORCE_TRUSTED_SIGNERS must be exactly \"1\" when GRPC_ENV=production (got \"{}\").",
-                v
-            ))
-        }
-        Err(_) => {
-            return Err(
-                "Configuration error: GRPC_ENFORCE_TRUSTED_SIGNERS is required and must be \"1\" when GRPC_ENV=production"
-                    .to_string(),
-            )
-        }
-    }
-
-    if resolve_trusted_signer_ids().is_empty() {
-        return Err(
-            "Configuration error: GRPC_TRUSTED_SIGNER_IDS must declare at least one trusted signer (non-empty comma-separated list) when GRPC_ENV=production"
-                .to_string(),
-        );
     }
 
     Ok(())
@@ -217,6 +194,11 @@ pub fn resolve_app_encryption_key() -> AppResult<String> {
 ///
 /// `allow_dev_fallback` is threaded explicitly so both debug and release
 /// semantics are testable in a single (debug) test binary.
+///
+/// [arch:allow-hmac-fiscal] see ADR-0047 — SEC-007 removed V1/HMAC sync-package
+/// support; this HMAC key resolver is retained EXCLUSIVELY for the fiscal
+/// closure authorization package (`.fiscal-close.sync`, FiscalClosurePackageService),
+/// whose Ed25519 migration is deferred to a follow-up ADR/mission (ADR-0048).
 fn resolve_package_signing_key_32_impl(
     env_raw: Option<String>,
     allow_dev_fallback: bool,
@@ -256,6 +238,8 @@ fn resolve_package_signing_key_32_impl(
     }
 }
 
+// [arch:allow-hmac-fiscal] see ADR-0047 — fiscal closure HMAC key resolution
+// (see `resolve_package_signing_key_32_impl`); not part of sync packages.
 pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
     resolve_package_signing_key_32_impl(
         std::env::var("GRPC_PACKAGE_SIGNING_KEY").ok(),
@@ -263,93 +247,16 @@ pub fn resolve_package_signing_key_32() -> AppResult<[u8; 32]> {
     )
 }
 
-/// Active signing key id for **new** package exports. `None` preserves legacy packages (no id in metadata).
+/// Active signing key id for **new** fiscal closure package exports.
+///
+/// [arch:allow-hmac-fiscal] see ADR-0047 — retained for the fiscal closure
+/// package (`FiscalClosurePackage.signing_key_id` and the export-reproducibility
+/// audit field); sync packages no longer reference it.
 pub fn resolve_active_signing_key_id() -> Option<String> {
     std::env::var("GRPC_ACTIVE_SIGNING_KEY_ID")
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
-}
-
-pub fn resolve_accepted_verification_key_ids() -> Vec<String> {
-    let raw = std::env::var("GRPC_ACCEPTED_SIGNING_KEY_IDS")
-        .ok()
-        .unwrap_or_else(|| {
-            resolve_active_signing_key_id().unwrap_or_else(|| "default".to_string())
-        });
-    let mut out: Vec<String> = raw
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-    if out.is_empty() {
-        out.push("default".to_string());
-    }
-    out
-}
-
-pub fn is_signing_key_deprecated(key_id: &str) -> bool {
-    let deprecated: Vec<String> = std::env::var("GRPC_DEPRECATED_SIGNING_KEY_IDS")
-        .ok()
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-    if deprecated.is_empty() || !deprecated.iter().any(|k| k == key_id) {
-        return false;
-    }
-
-    let Some(deadline_raw) = std::env::var("GRPC_SIGNING_KEY_DEPRECATION_DEADLINE_UTC")
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-    else {
-        return false;
-    };
-
-    match chrono::DateTime::parse_from_rfc3339(&deadline_raw) {
-        Ok(deadline) => chrono::Utc::now() >= deadline.with_timezone(&chrono::Utc),
-        Err(e) => {
-            log::warn!(
-                "Invalid GRPC_SIGNING_KEY_DEPRECATION_DEADLINE_UTC value: {} ({})",
-                deadline_raw,
-                e
-            );
-            false
-        }
-    }
-}
-
-pub fn resolve_trusted_signer_ids() -> Vec<String> {
-    std::env::var("GRPC_TRUSTED_SIGNER_IDS")
-        .ok()
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-pub fn should_enforce_trusted_signers() -> bool {
-    matches!(
-        std::env::var("GRPC_ENFORCE_TRUSTED_SIGNERS"),
-        Ok(v) if v.eq_ignore_ascii_case("1")
-            || v.eq_ignore_ascii_case("true")
-            || v.eq_ignore_ascii_case("yes")
-            || v.eq_ignore_ascii_case("on")
-    )
-}
-
-pub fn is_trusted_signer(source_node_id: &str) -> bool {
-    let trusted = resolve_trusted_signer_ids();
-    if trusted.is_empty() {
-        return !should_enforce_trusted_signers();
-    }
-    trusted.iter().any(|id| id == source_node_id)
 }
 
 pub fn get_sync_security_diagnostics() -> AppResult<crate::models::SyncSecurityDiagnostics> {
@@ -360,6 +267,8 @@ pub fn get_sync_security_diagnostics() -> AppResult<crate::models::SyncSecurityD
         Err(_) => false,
     };
 
+    // [arch:allow-hmac-fiscal] see ADR-0047 — the fiscal closure package still
+    // requires the HMAC key in production; the diagnostic reflects that.
     let has_package_signing_key_env = match std::env::var("GRPC_PACKAGE_SIGNING_KEY") {
         Ok(s) => {
             use base64::engine::general_purpose::STANDARD;
@@ -380,17 +289,6 @@ pub fn get_sync_security_diagnostics() -> AppResult<crate::models::SyncSecurityD
         has_package_signing_key_env,
         bootstrap_would_fail: is_prod && (!has_app_key_env || !has_package_signing_key_env),
         active_signing_key_id: resolve_active_signing_key_id().unwrap_or_default(),
-        accepted_verification_key_ids: resolve_accepted_verification_key_ids(),
-        deprecated_signing_key_ids: std::env::var("GRPC_DEPRECATED_SIGNING_KEY_IDS")
-            .ok()
-            .unwrap_or_default()
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        deprecation_deadline_utc: std::env::var("GRPC_SIGNING_KEY_DEPRECATION_DEADLINE_UTC").ok(),
-        enforce_trusted_signers: should_enforce_trusted_signers(),
-        trusted_signer_ids: resolve_trusted_signer_ids(),
     })
 }
 
@@ -422,11 +320,6 @@ mod key_resolution_tests {
 
     fn valid_sign_env() -> String {
         b64(&[42u8; 32])
-    }
-
-    fn set_valid_trusted_signers_env() {
-        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
-        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a,unit-1");
     }
 
     // ---- resolve_app_encryption_key_impl ----
@@ -650,7 +543,6 @@ mod key_resolution_tests {
         clear_key_env();
         std::env::set_var("GRPC_ENV", "production");
         std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        set_valid_trusted_signers_env();
         let result = validate_production_security_environment();
         assert!(
             result.is_ok(),
@@ -665,7 +557,6 @@ mod key_resolution_tests {
         std::env::set_var("GRPC_ENV", "production");
         std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
         std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        set_valid_trusted_signers_env();
         assert!(validate_production_security_environment().is_ok());
     }
 
@@ -731,96 +622,13 @@ mod key_resolution_tests {
         std::env::set_var("GRPC_ENV", "production");
         std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
         std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        set_valid_trusted_signers_env();
         assert!(validate_production_security_environment().is_ok());
     }
 
-    // ---- SEC-003-05-C: trusted-signer enforcement in production ----
-
-    #[test]
-    fn validate_rejects_missing_enforce_in_production() {
-        let _g = ENV_LOCK.lock().unwrap();
-        clear_key_env();
-        std::env::set_var("GRPC_ENV", "production");
-        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a");
-        let err = validate_production_security_environment().unwrap_err();
-        assert!(
-            err.contains("GRPC_ENFORCE_TRUSTED_SIGNERS") && err.starts_with("Configuration error:"),
-            "missing enforce flag must be a configuration error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_non_one_enforce_in_production() {
-        let _g = ENV_LOCK.lock().unwrap();
-        clear_key_env();
-        std::env::set_var("GRPC_ENV", "production");
-        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a");
-        for bad in ["0", "false", "true", "yes", "on", "   ", "2"] {
-            std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", bad);
-            let err = validate_production_security_environment().unwrap_err();
-            assert!(
-                err.contains("GRPC_ENFORCE_TRUSTED_SIGNERS") && err.starts_with("Validation error:"),
-                "enforce value {bad:?} must be rejected, got: {err}"
-            );
-        }
-    }
-
-    #[test]
-    fn validate_rejects_missing_trusted_signer_ids_in_production() {
-        let _g = ENV_LOCK.lock().unwrap();
-        clear_key_env();
-        std::env::set_var("GRPC_ENV", "production");
-        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
-        let err = validate_production_security_environment().unwrap_err();
-        assert!(
-            err.contains("GRPC_TRUSTED_SIGNER_IDS") && err.starts_with("Configuration error:"),
-            "missing trusted signer ids must be a configuration error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_empty_or_blank_trusted_signer_ids_in_production() {
-        let _g = ENV_LOCK.lock().unwrap();
-        clear_key_env();
-        std::env::set_var("GRPC_ENV", "production");
-        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
-        for bad in ["", "   ", ",,", " , ,"] {
-            std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", bad);
-            let err = validate_production_security_environment().unwrap_err();
-            assert!(
-                err.contains("GRPC_TRUSTED_SIGNER_IDS") && err.starts_with("Configuration error:"),
-                "trusted signer ids {bad:?} must be rejected, got: {err}"
-            );
-        }
-    }
-
-    #[test]
-    fn validate_accepts_enforce_one_with_non_empty_ids_in_production() {
-        let _g = ENV_LOCK.lock().unwrap();
-        clear_key_env();
-        std::env::set_var("GRPC_ENV", "production");
-        std::env::set_var("GRPC_APP_KEY", VALID_APP_KEY);
-        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "1");
-        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "wilaya-a");
-        assert!(validate_production_security_environment().is_ok());
-    }
-
-    #[test]
-    fn validate_trusted_signers_skipped_when_not_production() {
-        let _g = ENV_LOCK.lock().unwrap();
-        clear_key_env();
-        std::env::set_var("GRPC_ENV", "test");
-        std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", valid_sign_env());
-        std::env::set_var("GRPC_ENFORCE_TRUSTED_SIGNERS", "0");
-        std::env::set_var("GRPC_TRUSTED_SIGNER_IDS", "");
-        assert!(validate_production_security_environment().is_ok());
-    }
+    // ---- SEC-007 (ADR-0047): trusted-signer enforcement is removed ----
+    // GRPC_ENFORCE_TRUSTED_SIGNERS / GRPC_TRUSTED_SIGNER_IDS are no longer
+    // read anywhere; leftover values in external environments must not cause
+    // the application to fail (they are simply ignored).
 
     // ---- public wrappers (debug build: env honored, fallback available) ----
 

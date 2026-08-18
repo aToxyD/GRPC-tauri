@@ -1095,26 +1095,6 @@
         {
           "name": "active_signing_key_id",
           "type": "string"
-        },
-        {
-          "name": "accepted_verification_key_ids",
-          "type": "string[]"
-        },
-        {
-          "name": "deprecated_signing_key_ids",
-          "type": "string[]"
-        },
-        {
-          "name": "deprecation_deadline_utc",
-          "type": "string | null"
-        },
-        {
-          "name": "enforce_trusted_signers",
-          "type": "boolean"
-        },
-        {
-          "name": "trusted_signer_ids",
-          "type": "string[]"
         }
       ]
     },

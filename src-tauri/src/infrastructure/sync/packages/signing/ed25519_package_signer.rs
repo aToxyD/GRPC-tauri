@@ -2,8 +2,9 @@
 //!
 //! RFC 2026-08-04-node-identity-trust §3.10: B4 sync packages are signed by
 //! the issuing node identity with Ed25519 over the Canonical JSON V2 bytes
-//! (ADR-0009) — the same envelope the integrity hash covers. HMAC V1 remains
-//! readable during the deprecation window (`HmacPackageSigner`).
+//! (ADR-0009) — the same envelope the integrity hash covers. SEC-007
+//! (ADR-0047): V1/HMAC is permanently removed — Ed25519 is the only supported
+//! sync-package signature scheme.
 //!
 //! Placement: `infrastructure/sync/packages/signing` — check_arch Rule 126
 //! permits the ed25519 token in infrastructure layers; it is forbidden in

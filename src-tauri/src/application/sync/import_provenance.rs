@@ -68,13 +68,13 @@ mod tests {
     fn pkg_with_source(source: &str) -> SyncPackage<MonthlySummaryExportDataset> {
         SyncPackage {
             metadata: SyncPackageMetadata {
-                schema_version: SchemaVersion::V1,
+                schema_version: SchemaVersion::V2,
                 created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
                 source_node_id: source.into(),
                 package_sequence: None,
                 issuer_identity_id: None,
                 package_id: PackageId("p".into()),
-                signature_version: None,
+                signature_version: Some(crate::domain::identity::SIGNATURE_VERSION_ED25519),
                 signing_key_id: None,
                 integrity_hash: None,
                 signature: None,
