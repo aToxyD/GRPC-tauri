@@ -3,13 +3,18 @@
 # Decision Status
 
 **ACCEPTED — 2026-08-19 (architectural ratification — SEC-013 Phase 0)**
+**IMPLEMENTED — 2026-08-20 (SEC-013 Phase 1)**
 
 This ADR is an explicit security-policy decision. It reverses, **for normal
 WILAYA Admin login only**, the B6-B permanent gate that forced Challenge–
 Response when a usable ADMIN identity exists, and records the accepted
-residual-risk trade-off. Acceptance is **architectural only**: implementation
-is **NOT AUTHORIZED** (requires a separate implementation gate). No code,
-tests, configuration, or runtime behavior were modified.
+residual-risk trade-off. Architectural acceptance was ratified 2026-08-19
+(implementation NOT AUTHORIZED at that point). Implementation was authorized
+and landed 2026-08-20 (SEC-013 Phase 1): the password gate became an
+account-credential predicate (`IdentityAuthenticationPolicy::password_login_allowed`
+now takes the username), the login command routes only hash-less identity-only
+accounts to Challenge–Response, and the login page keeps the password tab on
+every node with `.adminkey` Challenge–Response retained as the recovery path.
 
 | Item | Status |
 |------|--------|

@@ -77,15 +77,11 @@
   const bootstrapOp = createOperationGuard({ scope });
   const bootstrapLoading = bootstrapOp.loading;
 
-  // B6-A (ADR-0038): the legacy password path is available only while no ACTIVE
-  // ADMIN identity exists. Once the admin identity is present (ADMIN_PROVISIONED
-  // or READY) Challenge–Response is the mandatory login path — the password tab
-  // is hidden and the admin-key tab becomes the default.
-  // @category UiState
-  $: passwordLoginAvailable =
-    identityState !== 'ADMIN_PROVISIONED' && identityState !== 'READY';
-  // @category UiState
-  $: effectiveAuthTab = passwordLoginAvailable ? authTab : 'adminkey';
+  // ADR-0050 (SEC-013): password is the normal login path on every node —
+  // WILAYA Admin authenticates with the B8 fleet credential. Challenge–
+  // Response (`.adminkey`) remains available as the recovery / high-assurance
+  // path (admin-key tab). The backend gate still routes accounts without a
+  // usable password credential (identity-only ADMIN ceremony) to the challenge.
   // @category UiState
   $: adminkeyAvailable =
     identityState === 'WILAYA_ACTIVE' ||
@@ -395,7 +391,8 @@
       const request: LoginRequest = { username, password };
       const response: LoginResponse = await login(request);
       if (response.identity_challenge_required) {
-        // The backend gate closed the password path (ACTIVE ADMIN identity).
+        // The backend gate routed an account WITHOUT a usable password
+        // credential (identity-only ADMIN ceremony) to Challenge–Response.
         // Route the operator to the admin-key challenge.
         authTab = 'adminkey';
         authTabDirty = true;
@@ -475,23 +472,21 @@
 
     <!-- التبويبات -->
     <div class="flex mb-4 border-b border-gray-200 dark:border-gray-700" role="tablist">
-      {#if passwordLoginAvailable}
       <button
         type="button"
         role="tab"
-        aria-selected={effectiveAuthTab === 'password'}
-        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {effectiveAuthTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        aria-selected={authTab === 'password'}
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {authTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
         on:click={() => { authTab = 'password'; authTabDirty = true; localError = ''; }}
       >
         كلمة المرور
       </button>
-      {/if}
       <button
         type="button"
         role="tab"
-        aria-selected={effectiveAuthTab === 'adminkey'}
+        aria-selected={authTab === 'adminkey'}
         disabled={!adminkeyAvailable}
-        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {effectiveAuthTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {authTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
         on:click={() => { authTab = 'adminkey'; authTabDirty = true; localError = ''; }}
       >
         المفتاح الإداري
@@ -499,7 +494,7 @@
     </div>
 
     <!-- نموذج الدخول بكلمة المرور -->
-    {#if effectiveAuthTab === 'password'}
+    {#if authTab === 'password'}
     <form class="space-y-4" on:submit|preventDefault={handleLogin} novalidate>
       <AppInput
         id="username"
@@ -539,7 +534,7 @@
     {/if}
 
     <!-- نموذج الدخول بالمفتاح الإداري (Challenge–Response) -->
-    {#if effectiveAuthTab === 'adminkey'}
+    {#if authTab === 'adminkey'}
     <form class="space-y-4" on:submit|preventDefault={handleChallengeLogin} novalidate>
       <AppInput
         id="passphrase"
