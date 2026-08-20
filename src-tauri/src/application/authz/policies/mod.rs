@@ -179,6 +179,53 @@ mod tests {
     }
 
     #[test]
+    fn trust_package_import_remains_wilaya_admin_only() {
+        // SEC-010: trust distribution is a WILAYA authority duty. A UNIT node
+        // must NEVER be able to import a trust package (Unit stores stay
+        // unreachable through this path).
+        let ok = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportTrustPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(ok.is_ok());
+
+        let denied_user = authorize(
+            &principal(UserRole::User),
+            Action::ImportTrustPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(
+            matches!(denied_user, Err(AuthorizationError::RequiresAdmin)),
+            "WILAYA non-admin must be denied trust import, got: {denied_user:?}"
+        );
+
+        let denied_unit = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportTrustPackage,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(
+                denied_unit,
+                Err(AuthorizationError::RequiresWilayaNode)
+            ),
+            "UNIT nodes must never import trust packages, got: {denied_unit:?}"
+        );
+
+        let denied_unit_scope = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportTrustPackage,
+            &ResourceContext::UnitScope {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(denied_unit_scope.is_err());
+    }
+
+    #[test]
     fn import_identity_access_package_requires_unit_admin() {
         let unit_node = ResourceContext::UnitNode {
             unit_id: "unit-a".to_string(),

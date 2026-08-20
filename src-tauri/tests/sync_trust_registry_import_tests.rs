@@ -16,7 +16,9 @@ use std::path::Path;
 use uuid::Uuid;
 
 use grpc_lib::application::authz::Action;
-use grpc_lib::application::services::SyncPackageIdentityVerificationService;
+use grpc_lib::application::services::{
+    IdentityTrustAnchorService, SyncPackageIdentityVerificationService,
+};
 use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
 use grpc_lib::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use grpc_lib::application::usecases::sync::import_registry_package::{
@@ -56,6 +58,56 @@ use grpc_lib::repositories::RepositoryProvider;
 const ISSUER_SECRET: [u8; 32] = [42u8; 32];
 /// A DIFFERENT key: used to prove that signature validity ≠ identity binding.
 const OTHER_SECRET: [u8; 32] = [7u8; 32];
+/// RFC 8032 §7.1 TEST 1 secret — matches the debug Root fallback
+/// (`DEV_ROOT_PUBLIC_KEY` in `infrastructure/identity/root_public_key.rs`).
+const TEST_ROOT_SECRET: [u8; 32] = [
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
+    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
+    0x7f, 0x60,
+];
+
+fn root_signed(cert: &IdentityCertificate) -> IdentityCertificate {
+    let signature = Ed25519SigningProvider::new(TEST_ROOT_SECRET)
+        .sign_certificate(cert)
+        .expect("root sign");
+    let mut signed = cert.clone();
+    signed.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("wrap"));
+    signed
+}
+
+/// Seed the ACTIVE WILAYA anchor through the install ceremony (Root-verified)
+/// and return its `identity_id` — the identity that must sign trust packages
+/// (SEC-010 issuer pin).
+fn seed_wilaya_anchor(db: &Database, secret: [u8; 32]) -> Uuid {
+    let identity_id = Uuid::new_v4();
+    let certificate = IdentityCertificate {
+        identity_id,
+        subject_type: SubjectType::Wilaya,
+        subject_id: identity_id,
+        issuer_identity_id: None,
+        credential_id: Uuid::new_v4(),
+        generation: 1,
+        status: CredentialStatus::Active,
+        public_key: Ed25519SigningProvider::new(secret).public_key(),
+        algorithm_version: SIGNATURE_VERSION_ED25519,
+        not_after: None,
+        package_sequence: None,
+        signature: None,
+    };
+    let signed = root_signed(&certificate);
+    IdentityTrustAnchorService::new(make_executor(db))
+        .install_wilaya_certificate(&signed, "2026-08-04T00:00:00Z")
+        .expect("install WILAYA anchor");
+    identity_id
+}
+
+fn anchor_cert(db: &Database) -> IdentityCertificate {
+    make_executor(db)
+        .identity_store()
+        .get_active_by_subject_type(SubjectType::Wilaya)
+        .expect("read")
+        .expect("WILAYA anchor present")
+}
 
 fn make_executor(db: &Database) -> DbExecutor<'_> {
     db.executor()
@@ -302,21 +354,21 @@ fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn trust_import_happy_path_persists_certificates_and_advances_ledger() {
+fn trust_import_happy_path_accepts_identical_anchor_and_advances_ledger() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_issuer(&db, issuer_id, ISSUER_SECRET);
+    let issuer_id = seed_wilaya_anchor(&db, ISSUER_SECRET);
+    let anchor = anchor_cert(&db);
 
-    let cert_identity = Uuid::new_v4();
-    let certificate = unit_certificate(cert_identity, issuer_id);
-
+    // SEC-010: the ONLY certificate a trust package may carry is the ACTIVE
+    // WILAYA anchor itself (Root-signed, issuer None) — re-presented verbatim
+    // (anchor immutability: an identical anchor is an idempotent no-op).
     let package = sign_v2_package(
         trust_package(
             "trust-pkg-1",
             issuer_id,
             ISSUER_SECRET,
             1,
-            vec![certificate],
+            vec![anchor.clone()],
         ),
         ISSUER_SECRET,
     );
@@ -340,15 +392,63 @@ fn trust_import_happy_path_persists_certificates_and_advances_ledger() {
     )
     .expect("trust import succeeds");
 
-    let stored = make_executor(&db)
-        .identity_store()
-        .get_by_identity_id(&cert_identity)
-        .expect("read cert")
-        .expect("certificate persisted");
-    assert_eq!(stored.identity_id, cert_identity);
-    assert_eq!(stored.issuer_identity_id, Some(issuer_id));
+    let stored = anchor_cert(&db);
+    assert!(
+        stored.is_identical_to(&anchor),
+        "the WILAYA anchor must remain unchanged (zero-write no-op)"
+    );
 
     assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
+}
+
+#[test]
+fn trust_import_unit_certificate_is_rejected_sec010() {
+    // SEC-010: UNIT certificates MUST NOT be distributed through trust
+    // packages — even inside a WILAYA-signed, transport-valid package.
+    // UNIT issuance remains the local R5 ceremony only.
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    let issuer_id = seed_wilaya_anchor(&db, ISSUER_SECRET);
+
+    let cert_identity = Uuid::new_v4();
+    let certificate = unit_certificate(cert_identity, issuer_id);
+
+    let package = sign_v2_package(
+        trust_package(
+            "trust-pkg-unit-rejected",
+            issuer_id,
+            ISSUER_SECRET,
+            1,
+            vec![certificate],
+        ),
+        ISSUER_SECRET,
+    );
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        package,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
+    .expect_err("UNIT certificate must be rejected under SEC-010");
+
+    match err {
+        AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
+        e => panic!("expected OperationNotPermitted, got {e:?}"),
+    }
+
+    assert!(make_executor(&db)
+        .identity_store()
+        .get_by_identity_id(&cert_identity)
+        .expect("read")
+        .is_none());
+    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
 }
 
 #[test]
