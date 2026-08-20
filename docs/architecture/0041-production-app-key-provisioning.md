@@ -3,6 +3,14 @@
 # Status
 Accepted (2026-08-08)
 
+**Amended 2026-08-19 (§11 — Post-Provisioning Startup Model, SEC-013 Phase 0):**
+the post-provisioning startup model is ratified (non-interactive App-Key
+resolution before Login; user authentication remains mandatory). The OS
+secret-storage / keyring resolution source is documented as a **proposed
+future amendment — NOT yet approved**; implementation requires a separate
+approved architecture decision. All certified sections (§1–§10) remain
+unchanged.
+
 # Date
 2026-08-08
 
@@ -313,6 +321,132 @@ explicit exception for the **packaged UNIT identity**:
 - The App Key retains confidentiality-only status (§10.1) and is never a signing
   credential; the packaged UNIT certificate is Ed25519-authenticated via the
   WILAYA trust anchor (RFC §3.10), independent of the App Key.
+
+## 11. Post-Provisioning Startup Model — Amendment (2026-08-19, SEC-013 Phase 0)
+
+> Amendment synchronized with ADR-0050 (WILAYA Admin normal authentication
+> model) and the SEC-013 analysis. Architectural ratification only —
+> implementation is NOT AUTHORIZED by this amendment.
+
+### 11.1 Approved target startup model
+
+For a provisioned node (WILAYA or UNIT), the intended post-provisioning
+startup is:
+
+```
+application start
+    ↓
+App-Key resolves non-interactively (approved resolver)
+    ↓
+runtime bootstrap (deferred-bootstrap sequence runs)
+    ↓
+Login screen
+    ↓
+username + password
+    ↓
+local CurrentSession
+```
+
+- **Normal user authentication remains mandatory.** Automatic login is never
+  part of this model; no App-Key material ever authenticates a user.
+- The interactive App-Key passphrase prompt is eliminated from **normal
+  post-provisioning startup only**. Recovery, first provisioning, and
+  fail-closed flows (§8) are unchanged and may require the passphrase.
+- `appkey.age` format, `age::scrypt` wrapping, atomic write semantics,
+  `0600` permissions, fail-closed behavior, and all approved recovery
+  mechanisms (§8, §10.3, §10.4) are unchanged.
+
+### 11.2 Approved lifecycle states
+
+```
+UNPROVISIONED
+    ↓
+initial App-Key setup/import (initialize_app_key / import_app_key)
+    ↓
+PROVISIONED
+    ↓
+App-Key available through the approved resolver
+    ↓
+runtime bootstrap
+    ↓
+LOGIN (username + password)
+    ↓
+local CurrentSession
+```
+
+If App-Key resolution fails:
+
+```
+startup
+    ↓
+locked state (DB bootstrap deferred, §5)
+    ↓
+existing recovery/unlock flow (§4 UnlockFailed / §8 fail-closed)
+```
+
+### 11.3 Security invariants (normative)
+
+I1. App-Key unlock ≠ authentication.
+I2. App-Key resolution ≠ session creation.
+I3. User login remains mandatory after App-Key resolution.
+I4. App-Key plaintext MUST NOT be persisted in ordinary files or the database.
+I5. `appkey.age` remains the protected-at-rest artifact (scrypt, atomic, `0600`).
+I6. Fail-closed behavior remains (wrong passphrase / corrupt store / mismatched
+    key → locked or undecryptable material, §8).
+I7. Recovery remains possible through existing approved mechanisms (env
+    override, portable artifact import, guarded re-export).
+I8. No user password is used as a replacement App-Key root unless an
+    independently approved architecture decision explicitly says so.
+I9. No App-Key material is transported between WILAYA and UNIT as part of
+    authentication/session state.
+I10. Session portability remains forbidden.
+
+### 11.4 OS secret storage / keyring — PROPOSED (not approved)
+
+The repository's certified architecture (§1 resolution order: env → unlocked
+store cache → dev fallback → fail-closed) does **not** currently include an OS
+keyring source. §10.6 already anticipates "secrets only via environment /
+protected secret storage" for the store's custody class, but **no OS keyring
+mechanism is approved in this amendment**.
+
+The intended future resolution source is therefore documented here as a
+**proposed amendment**:
+
+```
+environment override (GRPC_APP_KEY — rank 1, unchanged, terminal when present)
+    ↓
+OS secret storage / keyring (PROPOSED rank)
+    ↓
+in-memory unlocked state (existing cache, unchanged)
+    ↓
+development fallback (debug only, unchanged)
+    ↓
+fail closed (unchanged)
+```
+
+Constraints that any future approval MUST satisfy:
+
+- The keyring MUST NEVER create a user session.
+- The keyring MUST NEVER identify the user as Admin.
+- The keyring MUST NEVER bypass Login.
+- The keyring MUST NEVER authorize commands.
+- The keyring MUST NEVER replace username + password authentication.
+- Keyring unavailability/corruption/deletion MUST fall back to the existing
+  interactive unlock / fail-closed behavior — never to plaintext.
+- The environment override semantics (§1 rank 1, terminal when present) are
+  preserved exactly.
+
+**Implementation of the keyring source requires a separate approved
+architecture decision** (follow-up amendment or ADR) at the implementation
+phase; this amendment ratifies only the startup model of §11.1–11.3.
+
+### 11.5 Relationship to ADR-0050
+
+App-Key resolution remains strictly separated from user authentication
+(§11.3 I1–I3). ADR-0050 governs which credential authenticates the user after
+startup (username + password on WILAYA and UNIT; `.adminkey` reserved for
+recovery/high-assurance); this section governs how the App-Key becomes
+available before Login. The two decisions are independent by design.
 
 # Consequences
 
