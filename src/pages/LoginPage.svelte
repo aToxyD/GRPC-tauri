@@ -60,6 +60,12 @@
   // @category ProjectionState
   let isRateLimited = false;
 
+  // ADR-0041 §11.4 (SEC-013 Phase 2): when the app key resolves from the OS
+  // keyring, show a notice that auto-unlock is enabled + a link to the
+  // security surface (manage / forget). The key itself is never displayed.
+  // @category ProjectionState
+  let appKeySource: string | null = null;
+
   // B5 identity bootstrap (RFC 2026-08-04 §3.6–3.7 / ADR-0038)
   // @category ProjectionState
   let identityState: IdentityBootstrapState = 'UNINITIALIZED';
@@ -152,6 +158,7 @@
     // command below can run yet.
     try {
       const security = await getSecurityStatus();
+      appKeySource = security.source;
       if (security.requires_action) {
         push('/security');
         return;
@@ -445,6 +452,26 @@
     {#if displayError}
       <div class="mb-4">
         <AppAlert intent="danger">{displayError}</AppAlert>
+      </div>
+    {/if}
+
+    <!-- فتح تلقائي للمفتاح (ADR-0041 §11.4): مصدر keyring — إشعار + إدارة -->
+    {#if appKeySource === 'keyring'}
+      <div class="mb-4">
+        <AppAlert intent="info">
+          <p class="text-sm font-semibold">فتح تلقائي لمفتاح التطبيق مفعّل</p>
+          <p class="text-xs mt-1">
+            المفتاح محفوظ على هذا الجهاز. هذا لا يعني تسجيل الدخول — أدخل اسم
+            المستخدم وكلمة المرور للمتابعة.
+          </p>
+          <button
+            type="button"
+            class="text-xs underline mt-2 text-civil-blue dark:text-civil-blue"
+            on:click={() => push('/security')}
+          >
+            إدارة / نسيان المفتاح المحفوظ
+          </button>
+        </AppAlert>
       </div>
     {/if}
 

@@ -327,16 +327,19 @@ pub struct SyncSecurityDiagnostics {
 // Application-key provisioning (ADR-0041)
 // ============================================================================
 
-/// Live app-key provisioning status (ADR-0041 §9 `get_security_status`).
+/// Live app-key provisioning status (ADR-0041 §9 `get_security_status`, as
+/// amended by §11.4).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppKeyStatus {
     /// `appkey.age` store exists on disk.
     pub provisioned: bool,
-    /// An app key resolves now (env, unlocked store cache, or dev fallback).
+    /// An app key resolves now (env, OS keyring, unlocked store cache, or dev
+    /// fallback).
     pub unlocked: bool,
     /// Absolute path of the store file (`appkey.age`).
     pub store_path: String,
-    /// `env` | `store` | `dev` | `none` — the active resolution source.
+    /// `env` | `keyring` | `cache` | `dev` | `none` — the active resolution
+    /// source (ADR-0041 §1 + §11.4). Never carries the key itself.
     pub source: String,
     /// Backend projection: the operator must act (unlock or first-run setup).
     pub requires_action: bool,

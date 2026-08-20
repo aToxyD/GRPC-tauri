@@ -237,3 +237,129 @@ pub fn seed_wilaya_identity(db: &grpc_lib::db::Database, secret: [u8; 32]) -> uu
         .expect("seed wilaya identity");
     identity_id
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-013 Phase 2 (ADR-0041 §11.4) — keyring test isolation
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Deterministic keyring tests MUST NOT touch the machine's ambient desktop
+// keyring: every test that exercises the rank-2 keyring source installs an
+// in-memory `SecretStoragePort` fake through the `install_test_keyring_port`
+// seam (production semantics unchanged) and serializes on `KEYRING_SEAM_LOCK`
+// (the override is process-global).
+
+use grpc_lib::domain::ports::SecretStoragePort;
+use grpc_lib::errors::AppResult;
+use std::collections::HashMap;
+
+static KEYRING_SEAM_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII guard: holds the seam lock, installs a fake port for the duration of
+/// the test, and restores the real provider on drop.
+#[allow(dead_code)]
+pub struct KeyringSeamGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl KeyringSeamGuard {
+    #[allow(dead_code)]
+    pub fn install(port: Arc<dyn SecretStoragePort + Send + Sync>) -> Self {
+        let lock = KEYRING_SEAM_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        grpc_lib::infrastructure::security::install_test_keyring_port(port);
+        Self { _lock: lock }
+    }
+
+    /// Keyring ABSENT — rank 2 falls through to the next rank (cache / dev).
+    #[allow(dead_code)]
+    pub fn absent() -> Self {
+        Self::install(Arc::new(InMemorySecretStorage::new()))
+    }
+}
+
+impl Drop for KeyringSeamGuard {
+    fn drop(&mut self) {
+        grpc_lib::infrastructure::security::uninstall_test_keyring_port();
+    }
+}
+
+/// In-memory `SecretStoragePort` fake with failure injection. TEST ONLY.
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct InMemorySecretStorage {
+    entries: Mutex<HashMap<String, String>>,
+    unavailable: bool,
+}
+
+impl InMemorySecretStorage {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[allow(dead_code)]
+    pub fn with_secret(key: &str, value: &str) -> Self {
+        let store = Self::new();
+        store
+            .entries
+            .lock()
+            .expect("entries lock")
+            .insert(key.to_string(), value.to_string());
+        store
+    }
+
+    #[allow(dead_code)]
+    pub fn unavailable() -> Self {
+        let mut store = Self::new();
+        store.unavailable = true;
+        store
+    }
+
+    #[allow(dead_code)]
+    pub fn entries_snapshot(&self) -> HashMap<String, String> {
+        self.entries.lock().expect("entries lock").clone()
+    }
+}
+
+impl SecretStoragePort for InMemorySecretStorage {
+    fn get_secret(&self, key: &str) -> AppResult<Option<String>> {
+        if self.unavailable {
+            return Err(grpc_lib::errors::AppError::Internal(
+                "keyring service unavailable (injected)".into(),
+            ));
+        }
+        Ok(self.entries.lock().expect("entries lock").get(key).cloned())
+    }
+
+    fn set_secret(&self, key: &str, value: &str) -> AppResult<()> {
+        if self.unavailable {
+            return Err(grpc_lib::errors::AppError::Internal(
+                "keyring write failed (injected)".into(),
+            ));
+        }
+        self.entries
+            .lock()
+            .expect("entries lock")
+            .insert(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    fn delete_secret(&self, key: &str) -> AppResult<bool> {
+        if self.unavailable {
+            return Err(grpc_lib::errors::AppError::Internal(
+                "keyring delete failed (injected)".into(),
+            ));
+        }
+        Ok(self.entries.lock().expect("entries lock").remove(key).is_some())
+    }
+}
+
+/// Two distinct, valid age x25519 identities for precedence tests (A = the
+/// "keyring" identity, B = the "cache" identity).
+#[allow(dead_code)]
+pub const IDENTITY_A: &str =
+    "AGE-SECRET-KEY-1L0CATH79GGL7DQN3E8ZWF63VWERZN5LJYYVHKM34E5P9QYLEDT6SZJA4MC";
+#[allow(dead_code)]
+pub const IDENTITY_B: &str =
+    "AGE-SECRET-KEY-1F9TAYLD8SCU6QNPRHDPUEGEY2EMDZLXDL5HGQ3M4NP6U6U8LQEMQCUQGCS";

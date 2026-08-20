@@ -38,6 +38,22 @@ ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 tauri-plugin-single-instance = "2.0.0"
 base64 = "0.22.1"
 
+# ADR-0041 §11.4 (SEC-013 Phase 2): OS secret storage for the post-provisioning
+# App-Key source. Target-specific features keep the dependency surface minimal:
+# Linux = Secret Service over DBus with pure-Rust transport encryption
+# (gnome-keyring / KWallet); Windows/macOS = native stores. No default features
+# (keyring v3 requires explicit store selection; unsupported targets fall back
+# to the crate's mock store, which never persists — the resolver treats a mock
+# store as an absent source).
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
 [dev-dependencies]
 
 

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { saveFile, openFile, getAppWindow, createLogicalSize } from '../lib/tauri';
+  import { saveFile, openFile, showAsk, getAppWindow, createLogicalSize } from '../lib/tauri';
   import {
     getSecurityStatus,
     initializeAppKey,
     importAppKey,
     unlockAppKey,
+    forgetRememberedAppKey,
     type AppKeyStatusDto,
   } from '../lib/contracts';
   import { showSuccess } from '../lib/notifications';
@@ -47,6 +48,14 @@
   let importSuccess = false;
   // @category TransientState
   let importError = '';
+  // ADR-0041 §11.4 (SEC-013 Phase 2): remember-on-device — persists the
+  // validated App Key to the OS keyring. Explicit opt-in, default false.
+  // @category UiState
+  let remember = false;
+  // @category TransientState
+  let forgetResult = '';
+  // @category TransientState
+  let forgetting = false;
 
   // @category UiState
   $: unlocked = status?.requires_action === false;
@@ -54,6 +63,27 @@
   $: setupMode = status !== null && !status.provisioned;
   // @category UiState
   $: displayError = $error || localError;
+
+  async function handleForget() {
+    const confirmed = await showAsk(
+      'سيتم نسيان مفتاح التطبيق المحفوظ على هذا الجهاز. ستظل ملفات التشفير كما هي — لن تحتاج إلا لإدخال كلمة المرور عند التشغيل القادم.',
+      { kind: 'warning', title: 'نسيان المفتاح المحفوظ' },
+    );
+    if (!confirmed) return;
+    forgetting = true;
+    forgetResult = '';
+    try {
+      const removed = await forgetRememberedAppKey();
+      forgetResult = removed
+        ? 'تم نسيان المفتاح المحفوظ — سيُطلب إدخال كلمة المرور في التشغيل القادم.'
+        : 'لا يوجد مفتاح محفوظ على هذا الجهاز.';
+    } catch (e) {
+      forgetResult = 'تعذر نسيان المفتاح: ' + formatErrorMessage(e);
+    } finally {
+      forgetting = false;
+      status = await getSecurityStatus().catch(() => status);
+    }
+  }
 
   onMount(async () => {
     try {
@@ -76,8 +106,11 @@
     }
     checking = false;
 
-    // Backend projection: no action needed → normal login flow.
-    if (status && !status.requires_action) {
+    // Backend projection: no action needed → normal login flow. Exception: a
+    // remembered key (keyring source) keeps the operator on this page so the
+    // "auto-unlock enabled / forget" management UI stays reachable — the key
+    // itself is never displayed.
+    if (status && !status.requires_action && status.source !== 'keyring') {
       push('/login');
     }
   });
@@ -89,7 +122,7 @@
     }
     localError = '';
     await op.run(async () => {
-      await unlockAppKey(passphrase);
+      await unlockAppKey(passphrase, remember);
       passphrase = '';
       showSuccess('تم فتح التطبيق بنجاح. يمكنك الآن تسجيل الدخول.');
       push('/login');
@@ -116,7 +149,7 @@
         if (!selected) return;
         backupPath = selected as string;
       }
-      await initializeAppKey(passphrase, backupPath);
+      await initializeAppKey(passphrase, backupPath, remember);
       passphrase = '';
       confirmPassphrase = '';
       showSuccess('تم إعداد مفتاح التطبيق بنجاح. احتفظ بنسخة المفتاح في مكان آمن.');
@@ -151,7 +184,7 @@
     importSuccess = false;
     try {
       await op.run(async () => {
-        await importAppKey(importPassphrase, importArtifactPath);
+        await importAppKey(importPassphrase, importArtifactPath, remember);
         importPassphrase = '';
         importArtifactPath = '';
         importSuccess = true;
@@ -193,12 +226,38 @@
           <p class="text-sm font-semibold">مفتاح التطبيق مفتوح — لا إجراء مطلوب.</p>
           {#if status?.source === 'env'}
             <p class="text-xs mt-1">مفتاح الأسطول متوفر عبر GRPC_APP_KEY (لا يُعرض السر هنا).</p>
-          {:else if status?.source === 'store'}
+          {:else if status?.source === 'keyring'}
+            <p class="text-xs mt-1">الفتح التلقائي مفعّل — المفتاح محفوظ على هذا الجهاز (لا يُعرض السر هنا).</p>
+          {:else if status?.source === 'cache'}
             <p class="text-xs mt-1">المصدر: المخزن المحلي appkey.age.</p>
           {:else if status?.source === 'dev'}
             <p class="text-xs mt-1">المصدر: مفتاح تطوير مضمّن — ليس للإنتاج.</p>
           {/if}
         </AppAlert>
+        {#if status?.source === 'keyring'}
+          <div class="mt-4">
+            <AppAlert intent="info">
+              <p class="text-sm leading-relaxed">
+                تذكير: فتح مفتاح التطبيق تلقائياً لا يعني تسجيل الدخول — ستظل هناك
+                حاجة لإدخال اسم المستخدم وكلمة المرور.
+              </p>
+            </AppAlert>
+            <div class="mt-3">
+              <AppButton
+                variant="secondary"
+                size="sm"
+                fullWidth
+                disabled={forgetting}
+                on:click={handleForget}
+              >
+                نسيان المفتاح المحفوظ على هذا الجهاز
+              </AppButton>
+              {#if forgetResult}
+                <p class="text-xs mt-2 text-gray-600 dark:text-gray-300">{forgetResult}</p>
+              {/if}
+            </div>
+          </div>
+        {/if}
         <div class="mt-6">
           <AppButton variant="primary" size="lg" fullWidth on:click={() => push('/login')}>
             الانتقال إلى تسجيل الدخول
@@ -234,7 +293,7 @@
               </p>
             </AppAlert>
           </div>
-        {:else if status?.source === 'store'}
+        {:else if status?.source === 'cache'}
           <div class="mb-4">
             <AppAlert intent="info">
               <p class="text-sm font-semibold">مخزن المفتاح المحلي متوفر</p>
@@ -327,6 +386,16 @@
                     autocomplete="new-password"
                     disabled={$loading}
                   />
+                  <label class="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      bind:checked={remember}
+                      class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+                    />
+                    <span class="text-sm text-gray-700 dark:text-gray-300">
+                      تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+                    </span>
+                  </label>
                   <AppButton type="submit" variant="primary" size="sm" fullWidth loading={$loading}>
                     استيراد المفتاح وفتح التطبيق
                   </AppButton>
@@ -391,6 +460,20 @@
               </span>
             </label>
 
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                bind:checked={remember}
+                class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+              />
+              <span class="text-sm text-gray-700 dark:text-gray-300">
+                تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+              </span>
+            </label>
+            <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+              لا يُخزَّن أي شيء متعلق بحساب المستخدم — يبقى تسجيل الدخول بكلمة المرور إلزامياً.
+            </p>
+
             <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
               إنشاء المفتاح وفتح التطبيق
             </AppButton>
@@ -414,6 +497,20 @@
               required
               disabled={$loading}
             />
+
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                bind:checked={remember}
+                class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+              />
+              <span class="text-sm text-gray-700 dark:text-gray-300">
+                تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+              </span>
+            </label>
+            <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+              لا يُخزَّن أي شيء متعلق بحساب المستخدم — يبقى تسجيل الدخول بكلمة المرور إلزامياً.
+            </p>
 
             <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
               فتح التطبيق

@@ -117,9 +117,9 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
     ]);
   });
 
-  it('initialize_app_key -> passphrase + exportBackup', async () => {
+  it('initialize_app_key -> passphrase + exportBackup + remember', async () => {
     await initializeAppKey('secret', '/tmp/backup.json');
-    expectExactKeys('initialize_app_key', ['passphrase', 'exportBackup']);
+    expectExactKeys('initialize_app_key', ['passphrase', 'exportBackup', 'remember']);
   });
 
   it('identity file-path commands all use camelCase keys', async () => {

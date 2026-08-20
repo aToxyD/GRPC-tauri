@@ -11,6 +11,14 @@ future amendment — NOT yet approved**; implementation requires a separate
 approved architecture decision. All certified sections (§1–§10) remain
 unchanged.
 
+**Amended 2026-08-20 (§11.4 — OS secret storage / keyring, SEC-013 Phase 2):**
+the OS secret-storage / keyring App-Key source is **implemented and approved**
+per the constraints ratified in §11.4 below (provider abstraction, resolution
+rank, operator consent, deletion, failure semantics, unlock ≠ authentication,
+no `appkey.age` format change, no new `age::scrypt` site, env precedence
+preserved). All other certified sections (§1–§10, §11.1–11.3, §11.5) remain
+unchanged.
+
 # Date
 2026-08-08
 
@@ -401,44 +409,71 @@ I9. No App-Key material is transported between WILAYA and UNIT as part of
     authentication/session state.
 I10. Session portability remains forbidden.
 
-### 11.4 OS secret storage / keyring — PROPOSED (not approved)
+### 11.4 OS secret storage / keyring — IMPLEMENTED / APPROVED (2026-08-20, SEC-013 Phase 2)
 
 The repository's certified architecture (§1 resolution order: env → unlocked
-store cache → dev fallback → fail-closed) does **not** currently include an OS
-keyring source. §10.6 already anticipates "secrets only via environment /
-protected secret storage" for the store's custody class, but **no OS keyring
-mechanism is approved in this amendment**.
+store cache → dev fallback → fail-closed) is **extended** by an OS keyring
+source at rank 2. §10.6 ("secrets only via environment / protected secret
+storage") is satisfied: the OS keyring is a protected secret-storage backend,
+and the store's custody class is unchanged.
 
-The intended future resolution source is therefore documented here as a
-**proposed amendment**:
+Approved resolution order (normative, fixed):
 
 ```
 environment override (GRPC_APP_KEY — rank 1, unchanged, terminal when present)
     ↓
-OS secret storage / keyring (PROPOSED rank)
+OS secret storage / keyring (rank 2 — implemented)
     ↓
-in-memory unlocked state (existing cache, unchanged)
+in-memory unlocked state (existing cache, rank 3, unchanged)
     ↓
-development fallback (debug only, unchanged)
+development fallback (debug only, rank 4, unchanged)
     ↓
-fail closed (unchanged)
+fail closed (rank 5, unchanged)
 ```
 
-Constraints that any future approval MUST satisfy:
+Implementation contract (normative):
 
-- The keyring MUST NEVER create a user session.
-- The keyring MUST NEVER identify the user as Admin.
-- The keyring MUST NEVER bypass Login.
-- The keyring MUST NEVER authorize commands.
-- The keyring MUST NEVER replace username + password authentication.
-- Keyring unavailability/corruption/deletion MUST fall back to the existing
-  interactive unlock / fail-closed behavior — never to plaintext.
-- The environment override semantics (§1 rank 1, terminal when present) are
-  preserved exactly.
-
-**Implementation of the keyring source requires a separate approved
-architecture decision** (follow-up amendment or ADR) at the implementation
-phase; this amendment ratifies only the startup model of §11.1–11.3.
+- **Provider abstraction** — `domain/ports/secret_storage.rs` defines
+  `SecretStoragePort` (`get_secret` / `set_secret` / `delete_secret`).
+  `infrastructure/security/keyring_secret_storage.rs` supplies the concrete
+  OS provider (`keyring` crate, target-specific features: Linux = Secret
+  Service over DBus with pure-Rust transport encryption, Windows/macOS =
+  native stores; no default features). The domain port remains
+  infrastructure-agnostic; the application layer consumes the port.
+- **Namespace** — service `dz-grpc`, account `app-key`. The stored value is
+  the validated decrypted App Key only; no username, password, session,
+  database content, node credential, or authentication state is ever stored.
+- **Consent (opt-in)** — remember-on-device defaults to `false` on
+  `initialize_app_key` / `import_app_key` / `unlock_app_key`. Persistence
+  occurs only after the App Key is validated (full `age::x25519` parse) and
+  the operation succeeds; it is best-effort and never rolls back an unlock.
+- **Deletion** — `forget_remembered_app_key` removes only the `dz-grpc`
+  `app-key` entry. `appkey.age`, the database, identities, users, sessions,
+  and provisioning state are untouched.
+- **Failure semantics** — absent entry → next rank; store unavailable →
+  rank skipped (interactive unlock / fail-closed path unchanged); malformed
+  or unusable stored value → rejected, never accepted, no plaintext fallback.
+- **Unlock ≠ authentication** — the keyring NEVER creates a user session,
+  NEVER identifies the user as Admin, NEVER bypasses Login, NEVER authorizes
+  commands, and NEVER replaces username + password authentication. Startup
+  always lands on the Login screen; the keyring source merely removes the
+  manual App-Key unlock step.
+- **No format change** — `appkey.age` on-disk format, at-rest encryption,
+  and the passphrase unlock path are unchanged. No new `age::scrypt` site is
+  introduced (ADR-0039 two-tier protection unchanged).
+- **Env precedence preserved** — an explicitly supplied but invalid
+  `GRPC_APP_KEY` remains terminal (rank 1 fail-closed; the keyring is never
+  consulted when the environment variable is present).
+- **Deterministic testing** — the resolver and remember/forget cores are
+  port-parameterized; a TEST-ONLY provider override
+  (`install_test_keyring_port`, default = real provider, never used by
+  application code) lets integration tests drive rank-2 resolution through an
+  in-memory fake. Tests never depend on — and never write to — the machine's
+  ambient desktop keyring.
+- **E2E limitation** — headless CI cannot exercise a live desktop keyring;
+  E2E coverage of the keyring source is therefore documented as environment-
+  dependent and excluded from the deterministic gate; the resolver precedence
+  is fully covered by the deterministic unit/integration layer above.
 
 ### 11.5 Relationship to ADR-0050
 

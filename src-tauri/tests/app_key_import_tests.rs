@@ -7,12 +7,20 @@
 //! closed. The global app-key cache is shared, so these tests serialize on a
 //! static lock and always clear the cache around their own section.
 //!
+//! SEC-013 Phase 2 (ADR-0041 §11.4) hermeticity: these tests assert
+//! CACHE-rank resolution, so the rank-2 OS keyring source is explicitly made
+//! ABSENT through the test-only provider override (`KeyringSeamGuard::absent`)
+//! rather than relying on the machine's ambient keyring. Production
+//! precedence (env → keyring → cache → dev → fail-closed) is unchanged;
+//! precedence-specific tests live in `app_key_keyring_tests.rs`.
+//!
 //! Reuses the B8 anchor-flow fixtures (RFC 8032 §7.1 TEST 1 secret matches the
 //! debug-mode Root fallback, same vector as `b8_first_import_tests.rs`).
 
 use std::sync::Mutex;
 use tempfile::TempDir;
 
+use common::KeyringSeamGuard;
 use grpc_lib::application::services::{
     FinalizeWilayaProvisionResult, IdentityProvisioningService, IdentitySignedExportService,
 };
@@ -31,6 +39,8 @@ use grpc_lib::infrastructure::security::{
 use grpc_lib::infrastructure::sync::read_unit_node_package_from_file;
 use grpc_lib::models::{Unit, UnitNodePackage, UserExport};
 use uuid::Uuid;
+
+mod common;
 
 /// RFC 8032 §7.1 TEST 1 secret — matches the debug-mode Root fallback.
 const IMPORT_TEST_ROOT_SECRET: [u8; 32] = [
@@ -115,6 +125,7 @@ fn export_unit_package(
 #[test]
 fn fresh_unit_import_flow_decrypts_unit_with_imported_key() {
     let _guard = APP_KEY_CACHE_LOCK.lock().unwrap();
+    let _keyring_seam = KeyringSeamGuard::absent();
     clear_app_key_cache();
 
     let artifact_dir = TempDir::new().unwrap();
@@ -162,6 +173,7 @@ fn fresh_unit_import_flow_decrypts_unit_with_imported_key() {
 #[test]
 fn fresh_unit_import_wrong_key_fails_closed() {
     let _guard = APP_KEY_CACHE_LOCK.lock().unwrap();
+    let _keyring_seam = KeyringSeamGuard::absent();
     clear_app_key_cache();
 
     let artifact_dir = TempDir::new().unwrap();

@@ -21,6 +21,8 @@ use crate::infrastructure::security::appkey_store::{
 };
 use crate::infrastructure::security::{
     app_key_status, cache_app_key, cached_app_key, clear_app_key_cache,
+    forget_remembered_app_key as remove_remembered_app_key_from_keyring,
+    remember_app_key_best_effort,
 };
 use crate::models::{AppKeyImportResult, AppKeyInitializeResult, AppKeyStatus, AppKeyUnlockResult};
 use tauri::State;
@@ -147,12 +149,26 @@ pub fn get_security_status() -> Result<AppKeyStatus, String> {
 /// `appkey.age` atomically, cache the key, and run the deferred DB bootstrap.
 ///
 /// `export_backup` optionally writes the raw identity once to the operator's
-/// chosen destination (explicit warning shown by the UI).
+/// chosen destination (explicit warning shown by the UI). `remember` (default
+/// `false` — opt-in) persists the VALIDATED App Key to the OS keyring so
+/// post-provisioning startup resolves it non-interactively (ADR-0041 §11.4).
 #[tauri::command]
 pub fn initialize_app_key(
     state: State<AppState>,
     passphrase: String,
     export_backup: Option<String>,
+    remember: Option<bool>,
+) -> Result<AppKeyInitializeResult, String> {
+    initialize_app_key_impl(&state, &passphrase, export_backup.as_deref(), remember)
+}
+
+/// Core of `initialize_app_key` (public test seam — same pattern as
+/// `import_app_key_into_store`).
+pub fn initialize_app_key_impl(
+    state: &AppState,
+    passphrase: &str,
+    export_backup: Option<&str>,
+    remember: Option<bool>,
 ) -> Result<AppKeyInitializeResult, String> {
     let passphrase = passphrase.trim();
     if passphrase.len() < MIN_APP_KEY_PASSPHRASE_LEN {
@@ -193,7 +209,6 @@ pub fn initialize_app_key(
 
     let mut exported_backup = false;
     if let Some(path) = export_backup
-        .as_deref()
         .map(str::trim)
         .filter(|p| !p.is_empty())
     {
@@ -205,13 +220,16 @@ pub fn initialize_app_key(
 
     log::info!(target: "grpc::security", "app key generated and store written (ADR-0041)");
 
-    match finish_unlock(&state) {
-        Ok(()) => Ok(AppKeyInitializeResult {
-            provisioned: true,
-            unlocked: true,
-            store_path: store.file_path().display().to_string(),
-            exported_backup,
-        }),
+    match finish_unlock(state) {
+        Ok(()) => {
+            remember_app_key_best_effort(remember == Some(true), &raw_identity);
+            Ok(AppKeyInitializeResult {
+                provisioned: true,
+                unlocked: true,
+                store_path: store.file_path().display().to_string(),
+                exported_backup,
+            })
+        }
         Err(e) => {
             clear_app_key_cache();
             Err(e)
@@ -231,6 +249,18 @@ pub fn import_app_key(
     state: State<AppState>,
     passphrase: String,
     artifact_path: String,
+    remember: Option<bool>,
+) -> Result<AppKeyImportResult, String> {
+    import_app_key_impl(&state, &passphrase, &artifact_path, remember)
+}
+
+/// Core of `import_app_key` (public test seam — same pattern as
+/// `import_app_key_into_store`).
+pub fn import_app_key_impl(
+    state: &AppState,
+    passphrase: &str,
+    artifact_path: &str,
+    remember: Option<bool>,
 ) -> Result<AppKeyImportResult, String> {
     let passphrase = passphrase.trim();
     if passphrase.len() < MIN_APP_KEY_PASSPHRASE_LEN {
@@ -251,15 +281,16 @@ pub fn import_app_key(
 
     cache_app_key(&identity).map_err(into_command_error)?;
 
-    match finish_unlock(&state) {
+    match finish_unlock(state) {
         Ok(()) => {
             log::info!(target: "grpc::security", "fleet app key imported into local store (APPKEY-003)");
-            record_app_key_import_telemetry(&state, true);
+            remember_app_key_best_effort(remember == Some(true), &identity);
+            record_app_key_import_telemetry(state, true);
             Ok(result)
         }
         Err(e) => {
             clear_app_key_cache();
-            record_app_key_import_telemetry(&state, false);
+            record_app_key_import_telemetry(state, false);
             Err(e)
         }
     }
@@ -268,10 +299,27 @@ pub fn import_app_key(
 /// Unlock the passphrase-protected `appkey.age` store (ADR-0041 §4 `Unlocked`):
 /// decrypt with the passphrase, cache the key, and run the deferred DB
 /// bootstrap. Wrong passphrase / corrupt store stays locked (fail-closed).
+///
+/// `remember` (default `false` — opt-in) persists the VALIDATED decrypted App
+/// Key to the OS keyring so post-provisioning startup resolves it
+/// non-interactively (ADR-0041 §11.4). Persistence is best-effort AFTER
+/// successful unlock: a keyring failure never rolls back the unlock and never
+/// blocks the application for this process.
 #[tauri::command]
 pub fn unlock_app_key(
     state: State<AppState>,
     passphrase: String,
+    remember: Option<bool>,
+) -> Result<AppKeyUnlockResult, String> {
+    unlock_app_key_impl(&state, &passphrase, remember)
+}
+
+/// Core of `unlock_app_key` (public test seam — same pattern as
+/// `import_app_key_into_store`).
+pub fn unlock_app_key_impl(
+    state: &AppState,
+    passphrase: &str,
+    remember: Option<bool>,
 ) -> Result<AppKeyUnlockResult, String> {
     let store = appkey_store();
     if !store.exists() {
@@ -282,7 +330,14 @@ pub fn unlock_app_key(
     let store_path = store.file_path().display().to_string();
 
     // Idempotent: already unlocked and the DB is open → no-op success.
-    if cached_app_key().is_some() && db_is_open(&state) {
+    if cached_app_key().is_some() && db_is_open(state) {
+        // Still honor an explicit opt-in: persist the cached key so the
+        // operator can enable remember-on-device on an already-open session.
+        if remember == Some(true) {
+            if let Some(key) = cached_app_key() {
+                remember_app_key_best_effort(true, &key);
+            }
+        }
         return Ok(AppKeyUnlockResult {
             provisioned: true,
             unlocked: true,
@@ -299,9 +354,10 @@ pub fn unlock_app_key(
         })?;
     cache_app_key(&raw_identity).map_err(into_command_error)?;
 
-    match finish_unlock(&state) {
+    match finish_unlock(state) {
         Ok(()) => {
             log::info!(target: "grpc::security", "app key unlocked — DB bootstrap complete (ADR-0041)");
+            remember_app_key_best_effort(remember == Some(true), &raw_identity);
             Ok(AppKeyUnlockResult {
                 provisioned: true,
                 unlocked: true,
@@ -313,6 +369,16 @@ pub fn unlock_app_key(
             Err(e)
         }
     }
+}
+
+/// Remove the remembered App Key from the OS keyring (ADR-0041 §11.4).
+/// Device-local preference only: `appkey.age`, the database, identities,
+/// users, sessions, and provisioning state are untouched. No session is
+/// created or destroyed. Returns `true` if a remembered entry was removed,
+/// `false` if none existed.
+#[tauri::command]
+pub fn forget_remembered_app_key() -> Result<bool, String> {
+    remove_remembered_app_key_from_keyring().map_err(into_command_error)
 }
 
 /// Guarded re-export of the raw application identity (ADR-0041 §7). Requires

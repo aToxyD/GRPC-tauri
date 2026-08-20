@@ -64,7 +64,7 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0038 | `0038-node-identity-and-trust.md` | Node Identity & Trust Architecture | Accepted | 2026-08-04 | Architecture / Security |
 | 0039 | `0039-adminkey-portable-scrypt.md` | Two-Tier Secret Protection (x25519 node / scrypt `.adminkey`) | Accepted | 2026-08-04 | Architecture / Security |
 | 0040 | `0040-identity-access-sync.md` | Identity & Access Synchronization — Two Static Accounts per UNIT | Accepted | 2026-08-07 | Architecture / Security |
-| 0041 | `0041-production-app-key-provisioning.md` | Production Application-Key Provisioning — GRPC_APP_KEY via Passphrase-Protected Store | Accepted | 2026-08-08 | Architecture / Security |
+| 0041 | `0041-production-app-key-provisioning.md` | Production Application-Key Provisioning — GRPC_APP_KEY via Passphrase-Protected Store (amended 2026-08-19 §11 post-provisioning startup model; amended 2026-08-20 §11.4 OS keyring source IMPLEMENTED — SEC-013 Phase 2) | Accepted | 2026-08-08 | Architecture / Security |
 | 0042 | `0042-licensing-consumer-integration.md` | Licensing Consumer Integration — Signed Licensing Artifact Consumption in GRPC | Accepted | 2026-08-08 | Architecture / Licensing Integration |
 | 0043 | `0043-backup-async-exception.md` | Backup Command Async Exception (Permanent) — narrow carve-out to the no-async freeze for `spawn_blocking` in `commands/backup.rs` | Accepted | 2026-08-09 | Architecture |
 | 0044 | `0044-unit-trust-first-v2-bootstrap.md` | `.unit` Bootstrap Migration — Trust-First V2 (Ed25519) / HMAC-V1 Retirement (amends RFC 2026-08-04-node-identity-trust §3.10/§3.12, supersedes ADR-0008) | Accepted | 2026-08-14 | Architecture / Security |

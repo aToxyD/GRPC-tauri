@@ -4,7 +4,7 @@
  * تغطي:
  * - حالة `source === 'none'` (عقدة جديدة): إرشاد مسار الأسطول + تحذير فشل `.unit`
  * - حالة `source === 'env'`: إظهار حالة مفتاح الأسطول دون كشف السر
- * - حالة `source === 'store'`: بقاء سلوك فتح المخزن المحلي
+ * - حالة `source === 'cache'`: بقاء سلوك فتح المخزن المحلي
  * - بقاء التوليد المحلي متاحاً كخيار صريح للعقد المستقلة / WILAYA
  * - عدم عرض أي قيمة سرية (AGE-SECRET-KEY) في DOM
  */
@@ -100,9 +100,9 @@ describe('AppSecurityPage — APPKEY-001 fleet provisioning UX', () => {
     expect(container.textContent).not.toContain('AGE-SECRET-KEY');
   });
 
-  it('source=store: يحافظ على سلوك فتح المخزن المحلي', async () => {
+  it('source=cache: يحافظ على سلوك فتح المخزن المحلي', async () => {
     mockGetSecurityStatus.mockResolvedValue(
-      status({ source: 'store', provisioned: true, unlocked: false, requires_action: true }),
+      status({ source: 'cache', provisioned: true, unlocked: false, requires_action: true }),
     );
 
     const { container } = render(AppSecurityPage);
@@ -246,6 +246,7 @@ describe('AppSecurityPage — APPKEY-003 fleet artifact import', () => {
     expect(mockImportAppKey).toHaveBeenCalledWith(
       'operator-passphrase-2026',
       '/home/op/Downloads/grpc-app-key.age',
+      false,
     );
     expect(mockPush).toHaveBeenCalledWith('/login');
   });
@@ -317,9 +318,9 @@ describe('AppSecurityPage — APPKEY-003 fleet artifact import', () => {
     expect(screen.queryByRole('button', { name: /استيراد المفتاح وفتح التطبيق/ })).not.toBeInTheDocument();
   });
 
-  it('source=store: لا يعرض CTA الاستيراد', async () => {
+  it('source=cache: لا يعرض CTA الاستيراد', async () => {
     mockGetSecurityStatus.mockResolvedValue(
-      status({ source: 'store', provisioned: true, unlocked: false, requires_action: true }),
+      status({ source: 'cache', provisioned: true, unlocked: false, requires_action: true }),
     );
 
     const { container } = render(AppSecurityPage);
