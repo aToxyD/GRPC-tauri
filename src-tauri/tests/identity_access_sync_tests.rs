@@ -35,6 +35,7 @@ use uuid::Uuid;
 
 use grpc_lib::application::authz::Action;
 use grpc_lib::application::services::{
+    identity_authentication_policy::IdentityAuthenticationPolicy,
     FinalizeWilayaProvisionResult, IdentityProvisioningService, IdentitySignedExportService,
     SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
 };
@@ -54,7 +55,7 @@ use grpc_lib::domain::identity::{
 use grpc_lib::domain::security::PasswordHashPort;
 use grpc_lib::errors::{AppError, BusinessLogicError, ValidationError};
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
-use grpc_lib::infrastructure::identity::NodeKeyStore;
+use grpc_lib::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::security::{Argon2PasswordHashProvider, Ed25519SigningProvider};
 use grpc_lib::infrastructure::sync::packages::canonical_json::{
@@ -76,6 +77,9 @@ const OTHER_SECRET: [u8; 32] = [7u8; 32];
 
 const FLEET_PASSWORD: &str = "FleetPass123";
 const UNIT_PASSWORD: &str = "UnitPass123";
+/// Operator passphrase protecting the portable `.adminkey` (never the fleet
+/// password — SEC-013 Phase 3 invariant I1).
+const ADMIN_PASSPHRASE: &str = "correct horse battery staple";
 
 /// RFC 8032 §7.1 TEST 1 secret — the matching public key IS the debug-mode
 /// development Root fallback (root_public_key.rs). Never a production key.
@@ -1044,5 +1048,187 @@ fn authz_import_is_unit_only() {
     match err {
         AppError::Authentication(grpc_lib::errors::AuthenticationError::SessionNotFound) => {}
         e => panic!("expected SessionNotFound, got {e:?}"),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section D — SEC-013 Phase 3: post-provisioning Admin credential + B8
+// lifecycle (end-to-end, no test-only shortcuts).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Remove the test-factory seeded admin so the node behaves like a real
+/// production node (the production `ConnectionFactory::new()` never seeds).
+fn remove_seeded_admin(db: &Database) {
+    let admin = db
+        .executor()
+        .users()
+        .get_user_by_username_raw("admin")
+        .expect("seed query")
+        .expect("seeded admin present");
+    db.executor()
+        .users()
+        .delete_user(&admin.id)
+        .expect("seeded admin removed");
+}
+
+/// SEC-013 Phase 3 (§16): the full post-provisioning Admin credential + B8
+/// lifecycle — fresh WILAYA → first Admin Key ceremony (identity-only admin,
+/// empty hash) → B8 export fails closed → fleet admin password initialized
+/// via `set_fleet_admin_password` → normal password path opens (ADR-0050) →
+/// B8 export succeeds → fresh UNIT B8 import (real WILAYA anchor) → canonical
+/// Admin + User rows (fleet hash verbatim) → UNIT admin password login path →
+/// UNIT Admin authorization boundary (AdminOnly allowed / WilayaNode denied).
+#[test]
+fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
+    let mut wilaya = fresh_node();
+    let wilaya_cert = bootstrap_wilaya(&mut wilaya);
+    remove_seeded_admin(&wilaya.db);
+
+    let dir = TempDir::new().expect("temp dir");
+    let adminkey_provider = AdminKeyProvider::new(dir.path().join("adminkey"));
+    let port = Argon2PasswordHashProvider;
+
+    // First Admin Key ceremony — the production provisioning path. The admin
+    // row is created identity-only: password_hash = "" (never the passphrase).
+    IdentityProvisioningService::new(&mut wilaya.db)
+        .issue_first_admin_key(
+            "admin",
+            ADMIN_PASSPHRASE,
+            &wilaya.node_key_store,
+            &adminkey_provider,
+            FIXED_NOW,
+        )
+        .expect("first admin key issued");
+
+    let admin = wilaya
+        .db
+        .executor()
+        .users()
+        .get_user_by_username_raw("admin")
+        .expect("query")
+        .expect("admin row");
+    assert_eq!(admin.role, UserRole::Admin);
+    assert!(
+        admin.password_hash.is_empty(),
+        "identity-only admin must have an empty password hash"
+    );
+
+    create_unit(&wilaya.db, "UNIT-9", "unit9user");
+
+    // B8 export fails closed before the fleet password exists (ADR-0040).
+    let err = UserAccountSyncService::new(wilaya.db.executor(), &port)
+        .export("UNIT-9")
+        .expect_err("export must fail closed before password initialization");
+    assert!(matches!(
+        err,
+        AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+    ));
+
+    // Post-provisioning: the WILAYA Admin (Admin Key session) initializes the
+    // fleet admin password — the ONLY initializer (ADR-0040). The Admin Key
+    // passphrase itself is never written into `password_hash` (I1/I2).
+    UserAccountSyncService::new(wilaya.db.executor(), &port)
+        .set_fleet_admin_password(FLEET_PASSWORD)
+        .expect("fleet admin password set");
+
+    let admin = wilaya
+        .db
+        .executor()
+        .users()
+        .get_user_by_username_raw("admin")
+        .expect("query")
+        .expect("admin row");
+    assert!(!admin.password_hash.is_empty());
+    assert!(
+        port
+            .verify_admin(FLEET_PASSWORD, &admin.password_hash)
+            .expect("verify admin"),
+        "fleet hash verifies in the global admin domain"
+    );
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed(&wilaya.db, "admin")
+            .expect("policy"),
+        "a usable fleet password opens the normal WILAYA password login path (ADR-0050)"
+    );
+
+    // B8 export now succeeds: signed + encrypted V2 identity_access package.
+    let exported = UserAccountSyncService::new(wilaya.db.executor(), &port)
+        .export("UNIT-9")
+        .expect("export payload");
+    let crypto = AgeFileEncryptionProvider::new();
+    let path = dir.path().join("identity_access.sync");
+    let sequence = IdentitySignedExportService::new(&wilaya.db, &wilaya.node_key_store)
+        .export_v2_package(
+            exported.clone(),
+            "wilaya-test-node",
+            IDENTITY_ACCESS_PACKAGE_KIND,
+            &path,
+            SubjectType::Wilaya,
+            &crypto,
+        )
+        .expect("signed V2 export");
+    assert_eq!(sequence, 1);
+
+    // Fresh UNIT: anchor-first trust material = the REAL WILAYA certificate
+    // (the same certificate that authenticates the package signature).
+    let mut unit_db = ConnectionFactory::new_for_test().expect("db");
+    remove_seeded_admin(&unit_db);
+    let mut anchor = wilaya_cert.clone();
+    anchor.package_sequence = Some(1);
+    IdentityStorePort::upsert(
+        &make_executor(&unit_db).identity_store(),
+        &anchor,
+        FIXED_NOW,
+    )
+    .expect("wilaya anchor seeded");
+
+    // B8 import applies the canonical Admin + User rows (fleet hash verbatim).
+    let pkg = read_identity_access_package_from_file(&path, &crypto)
+        .expect("read exported package");
+    let outcome =
+        run_identity_access_pipeline(&mut unit_db, "admin", pkg).expect("import succeeds");
+    assert!(outcome.admin_updated);
+    assert!(outcome.user_updated);
+
+    let admin = unit_db
+        .executor()
+        .users()
+        .get_user_by_username_raw("admin")
+        .expect("query")
+        .expect("canonical admin present");
+    assert_eq!(admin.role, UserRole::Admin);
+    assert_eq!(admin.node_id, "UNIT-9");
+    assert_eq!(
+        admin.password_hash, exported.admin_password_hash,
+        "the imported hash is the exported fleet hash verbatim"
+    );
+    assert!(
+        port
+            .verify_admin(FLEET_PASSWORD, &admin.password_hash)
+            .expect("verify admin")
+    );
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed(&unit_db, "admin").expect("policy"),
+        "UNIT admin password login path is open after B8"
+    );
+
+    // UNIT Admin authorization boundary (I7 / I14): AdminOnly actions allowed,
+    // WilayaNode actions denied — the local UNIT Admin session never receives
+    // Wilaya authority.
+    let state = unit_configured_state();
+    set_session(&state, "Admin");
+    let (session, _settings) =
+        authorize_command(&state, Action::ImportIdentityAccessPackage, None)
+            .expect("UNIT Admin: AdminOnly action allowed");
+    assert_eq!(session.username, "bob");
+    for action in [Action::ManageAccountSync, Action::ExportIdentityAccessPackage] {
+        let err = authorize_command(&state, action, None)
+            .expect_err("UNIT Admin: WilayaNode action denied");
+        assert!(matches!(
+            err,
+            AppError::Authorization(
+                grpc_lib::errors::AuthorizationError::InsufficientPermissions
+            )
+        ));
     }
 }

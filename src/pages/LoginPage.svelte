@@ -3,6 +3,7 @@
   import { openFile, saveFile, getAppWindow, createLogicalSize } from '../lib/tauri';
   import {
     importUnitNodePackage,
+    importIdentityAccessPackage,
     login,
     getSettings,
     isConfigured,
@@ -79,6 +80,15 @@
   let bootstrapUsername = 'admin';
   // @category TransientState
   let bootstrapPassphrase = '';
+
+  // B8 (ADR-0040/0045): UNIT-side identity_access import — the fleet admin
+  // credential + canonical unit account. Distinct from the `.unit` package:
+  // the backend predicates (anchor-first, unit binding, replay protection)
+  // remain authoritative; no session is created by the import.
+  // @category TransientState
+  let b8ImportSuccess = '';
+  // @category TransientState
+  let b8ImportError = '';
 
   const bootstrapOp = createOperationGuard({ scope });
   const bootstrapLoading = bootstrapOp.loading;
@@ -205,6 +215,30 @@
         }
       } catch (e) {
         localError = 'خطأ في استيراد الحزمة: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  // B8 (ADR-0040/0045): UNIT first identity_access import. The operator must
+  // have completed the `.unit` + trust-anchor bootstrap; the backend first-
+  // import predicates and SEC-010 signature verification are the authority.
+  // Success refreshes the local account state — it never auto-logs-in.
+  async function handleImportIdentityAccess() {
+    await importOp.guard(async () => {
+      try {
+        b8ImportError = '';
+        b8ImportSuccess = '';
+        localError = '';
+        const selected = await openFile({
+          multiple: false,
+          filters: [{ name: 'حزمة الحسابات (B8)', extensions: ['sync'] }],
+        });
+        if (!selected) return;
+        await importIdentityAccessPackage(selected as string);
+        b8ImportSuccess =
+          'تم استيراد حزمة الحسابات (B8) — حساب المسؤول العام متاح محلياً. يمكنك الآن تسجيل الدخول.';
+      } catch (e) {
+        b8ImportError = 'خطأ في استيراد حزمة الحسابات: ' + formatErrorMessage(e);
       }
     });
   }
@@ -547,6 +581,11 @@
         on:keydown={handleKeydown}
       />
 
+      <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 leading-relaxed">
+        ملاحظة: حساب <code class="font-mono">admin</code> يستخدم <b>كلمة مرور المسؤول العام</b>
+        (يضبطها مدير WILAYA وتُصدَّر للوحدات عبر حزمة الحسابات B8) — وليست كلمة مرور المفتاح الإداري.
+      </p>
+
       <AppButton
         type="submit"
         variant="primary"
@@ -573,6 +612,11 @@
         required
         disabled={$loginLoading || isRateLimited || !adminkeyAvailable}
       />
+
+      <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 leading-relaxed">
+        كلمة مرور المفتاح الإداري هي التي أنشأتها عند إصدار المفتاح على عقدة WILAYA — وهي
+        <b>مختلفة</b> عن كلمة مرور الحساب (المسؤول العام).
+      </p>
 
       <AppButton
         type="submit"
@@ -757,6 +801,37 @@
             <p class="text-sm font-semibold">هوية الوحدة مفعلة — يمكنك تسجيل الدخول.</p>
           </AppAlert>
         {/if}
+      </div>
+    {/if}
+
+    <!-- B8 (ADR-0040/0045): UNIT identity_access import — after the `.unit`
+         bootstrap and the WILAYA trust anchor. Distinct from `.unit`, trust,
+         and daily/monthly/stock packages; the backend predicates remain
+         authoritative and no session is created by the import. -->
+    {#if isUnitNode && isAppConfigured && identityState === 'UNIT_ACTIVE'}
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">استيراد حساب المسؤول العام (B8)</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+          تختلف حزمة الحسابات عن حزمة <code class="font-mono">.unit</code>: تصدّرها عقدة WILAYA
+          بعد تعيين كلمة مرور المسؤول العام، وتحمل بيانات اعتماد حساب
+          <code class="font-mono">admin</code> (كلمة مرور أسطولية) وحساب الوحدة — دون أي مادة
+          هوية أو مفاتيح خاصة. لا يُنشأ أي جلسة أو شهادة محلية بغير ذلك.
+        </p>
+        {#if b8ImportSuccess}
+          <AppAlert intent="success" dismissible on:dismiss={() => b8ImportSuccess = ''}>{b8ImportSuccess}</AppAlert>
+        {/if}
+        {#if b8ImportError}
+          <AppAlert intent="danger" dismissible on:dismiss={() => b8ImportError = ''}>{b8ImportError}</AppAlert>
+        {/if}
+        <AppButton
+          variant="secondary"
+          size="lg"
+          fullWidth
+          loading={$importLoading}
+          on:click={handleImportIdentityAccess}
+        >
+          استيراد حزمة الحسابات (B8)
+        </AppButton>
       </div>
     {/if}
   </AppCard>

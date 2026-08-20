@@ -29,6 +29,7 @@ vi.mock('../../lib/contracts', () => ({
     isConfigured: (...args: any[]) => mockIsConfigured(...args),
     getSettings: (...args: any[]) => mockGetSettings(...args),
     importUnitNodePackage: (...args: any[]) => mockImportUnitNodePackage(...args),
+    importIdentityAccessPackage: vi.fn(),
     getIdentityStatus: (...args: any[]) => mockGetIdentityStatus(...args),
     getSecurityStatus: (...args: any[]) => mockGetSecurityStatus(...args),
     beginWilayaProvision: (...args: any[]) => mockBeginWilayaProvision(...args),
