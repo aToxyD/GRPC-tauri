@@ -21,6 +21,7 @@
   import UnitReportsPage from './pages/UnitReportsPage.svelte';
   import StockPage from './pages/StockPage.svelte';
   import BackupPage from './pages/BackupPage.svelte';
+  import SettingsPage from './pages/SettingsPage.svelte';
   import WilayaStatisticsPage from './pages/WilayaStatisticsPage.svelte';
   import UnitStatisticsPage from './pages/UnitStatisticsPage.svelte';
   import UnitInventoryPage from './pages/UnitInventoryPage.svelte';
@@ -77,6 +78,7 @@
     '/wilaya/unit-inventory': UnitInventoryPage,
     '/unit/statistics': UnitStatisticsPage,
     '/backup': BackupPage,
+    '/settings': SettingsPage,
     '/audit-log': AuditLogPage,
     '/admin/audit-integrity': AuditIntegrityPage,
     '/admin/system-health': SystemHealthPage,

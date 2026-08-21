@@ -1382,11 +1382,11 @@ pub fn import_identity_access_package_impl(
     state: &AppState,
     file_path: String,
 ) -> Result<IdentityAccessPackageImportResult, String> {
-    // B8 (ADR-0045, RFC 2026-08-04 §3.12): on a fresh UNIT node no Admin
-    // session exists yet — the command-authorization layer is anonymous for
-    // the FIRST identity_access import. A User session is admitted ONLY
-    // through the fail-closed first-import predicates (re-evaluated inside
-    // the import transaction); every other caller keeps the AdminOnly policy.
+    // B8 (ADR-0045, RFC 2026-08-04 §3.12): the command-authorization layer
+    // requires an authenticated session (`AuthenticatedOnly`); on a fresh
+    // UNIT node that session is a User session — admitted ONLY through the
+    // fail-closed first-import predicates (re-evaluated inside the import
+    // transaction). Every other caller keeps the AdminOnly policy.
     // `AuthenticatedOnly` establishes the session; the Admin-vs-User routing
     // is an authorization decision resolved in the authz layer.
     let (session, settings) = authorize_command(state, Action::AuthenticatedOnly, None)
@@ -1517,11 +1517,12 @@ where
 
 /// B8 first-import variant of the import pipeline (ADR-0045).
 ///
-/// The command-authorization layer is anonymous: a User session is admitted
-/// when the fail-closed first-import predicates (enforced inside the import
-/// transaction, on the same snapshot) hold. No other caller reaches this
-/// path — Admin sessions always use `run_import_pipeline` with the AdminOnly
-/// policy. Once the first import succeeds a canonical Admin exists and the
+/// The caller is an authenticated User session on a fresh UNIT node: it is
+/// admitted when the fail-closed first-import predicates (enforced inside
+/// the import transaction, on the same snapshot) hold. No other caller
+/// reaches this path — Admin sessions always use `run_import_pipeline` with
+/// the AdminOnly policy. Once the first import succeeds a canonical Admin
+/// exists and the
 /// exemption is self-terminating.
 #[allow(clippy::too_many_arguments)]
 fn run_import_pipeline_bootstrap<T, R, L, I>(

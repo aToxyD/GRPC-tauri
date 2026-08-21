@@ -134,13 +134,21 @@ describe('Login Page Integration Flow', () => {
         });
     });
 
-    it('should hide the password tab and default to admin-key when the node has an ACTIVE ADMIN identity', async () => {
+    it('keeps the password tab as the default path when the node has an ACTIVE ADMIN identity (ADR-0050)', async () => {
+        // ADR-0050: the presence of an ACTIVE ADMIN identity and `.adminkey`
+        // MUST NOT disable the normal password login path. Challenge–Response
+        // remains available as the recovery / high-assurance tab.
         mockGetIdentityStatus.mockResolvedValue('READY');
 
         render(LoginPage);
 
         await waitFor(() => {
-            expect(screen.queryByText('كلمة المرور')).not.toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'كلمة المرور' })).toBeInTheDocument();
+            expect(screen.getByPlaceholderText(/أدخل كلمة المرور/i)).toBeInTheDocument();
+        });
+
+        await fireEvent.click(screen.getByRole('tab', { name: 'المفتاح الإداري' }));
+        await waitFor(() => {
             expect(screen.getByPlaceholderText(/أدخل كلمة مرور المفتاح/i)).toBeInTheDocument();
         });
     });

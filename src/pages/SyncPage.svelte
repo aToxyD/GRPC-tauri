@@ -4,11 +4,10 @@
     importDailyReportPackage,
     importMonthlySummaryPackage,
     importStockMovementsPackage,
-    setFleetAdminPassword,
-    exportIdentityAccessPackage,
+    listUnits,
+    getSettings,
   } from '../lib/contracts';
-  import { openFile, saveFile } from '../lib/tauri';
-  import { listUnits, getSettings } from '../lib/contracts';
+  import { openFile } from '../lib/tauri';
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -20,7 +19,6 @@
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
-  import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
 
@@ -45,25 +43,6 @@
   let importProgress = '';
   // @category UiState
   let selectedUnit: string = '';
-
-  // B8 (ADR-0040): fleet admin credential — the WILAYA Admin-only normal
-  // account credential, propagated to UNITs through the identity_access
-  // package. It is a DIFFERENT secret from the Admin Key passphrase; it is
-  // never logged, never persisted in frontend storage, and cleared from the
-  // fields after submission.
-  // @category TransientState
-  let fleetPassword = '';
-  // @category TransientState
-  let fleetConfirmPassword = '';
-  // @category TransientState
-  let fleetError = '';
-  // @category TransientState
-  let fleetSuccess = '';
-  // @category TransientState
-  let b8ExportProgress = '';
-
-  // @category ProjectionState
-  $: selectedUnitCode = units.find((u) => u.id === selectedUnit)?.code ?? '';
 
   onMount(async () => {
     await initialOp.run(async () => {
@@ -169,66 +148,6 @@
       } catch (e) {
         error = formatErrorMessage(e);
         importProgress = '';
-      }
-    });
-  }
-
-  // B8 (ADR-0040): WILAYA Admin initializes the fleet admin password. The
-  // backend command is the sole authority (ManageAccountSync → Wilaya +
-  // AdminOnly); this form only relays the new password — validation rules are
-  // relayed for UX, the backend enforces its own. Passwords are cleared after
-  // submission and never rendered back.
-  async function handleSetFleetPassword() {
-    if (fleetPassword.length < 8) {
-      fleetError = 'كلمة المرور قصيرة جداً — يجب أن تكون 8 أحرف على الأقل';
-      return;
-    }
-    if (fleetPassword !== fleetConfirmPassword) {
-      fleetError = 'كلمتا المرور غير متطابقتين';
-      return;
-    }
-    await guard(async () => {
-      try {
-        fleetError = '';
-        fleetSuccess = '';
-        await setFleetAdminPassword(fleetPassword);
-        fleetPassword = '';
-        fleetConfirmPassword = '';
-        fleetSuccess =
-          'تم تعيين كلمة مرور المسؤول العام. يمكن الآن تسجيل الدخول بكلمة المرور وتصدير حزم الحسابات (B8).';
-      } catch (e) {
-        fleetError = formatErrorMessage(e);
-      }
-    });
-  }
-
-  // B8 (ADR-0040): WILAYA-only signed/encrypted identity_access export. The
-  // backend builds, signs, and encrypts the package (fail-closed while the
-  // fleet password is unset); the UI only selects the target unit and the
-  // destination file — package contents never enter the frontend.
-  async function handleExportIdentityAccess() {
-    const code = selectedUnitCode;
-    if (!code) {
-      error = 'الرجاء اختيار وحدة أولاً';
-      return;
-    }
-    await guard(async () => {
-      try {
-        const selected = await saveFile({
-          defaultPath: `grpc-identity-access-${code}.sync`,
-          filters: [{ name: 'حزمة الحسابات (B8)', extensions: ['sync'] }],
-        });
-        if (!selected) return;
-        b8ExportProgress = `تصدير حزمة الحسابات (B8) للوحدة ${code}...`;
-        error = '';
-        success = '';
-        const result = await exportIdentityAccessPackage(code, selected as string);
-        success =
-          `تم تصدير حزمة الحسابات (B8) للوحدة ${code} (${result.record_count} سجلات) — تحمل بيانات اعتماد المسؤول العام وحساب الوحدة.`;
-        b8ExportProgress = '';
-      } catch (e) {
-        error = formatErrorMessage(e);
-        b8ExportProgress = '';
       }
     });
   }
@@ -377,98 +296,6 @@
               ariaLabel="استيراد الحزمة المشفرة والموقعة رقمياً للمزامنة الآمنة"
             >
               استيراد حزمة حركات (.sync)
-            </AppButton>
-          </div>
-        </AppCard>
-      </div>
-
-      <div class="mt-8">
-        <AppCard>
-          <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
-            <div class="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-lg flex items-center justify-center">
-              <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-              </svg>
-            </div>
-            <div>
-              <h3 class="font-semibold text-gray-800 dark:text-gray-100">حسابات العقد (B8)</h3>
-              <p class="text-sm text-gray-500 dark:text-gray-400">كلمة مرور المسؤول العام + حزمة الحسابات (identity_access)</p>
-            </div>
-          </div>
-          <AppAlert intent="info">
-            <p class="text-sm leading-relaxed">
-              كلمة مرور المسؤول العام (<b>Fleet Admin Password</b>) هي كلمة مرور تسجيل الدخول
-              العادي لحساب <code class="font-mono">admin</code> — وهي <b>مختلفة تماماً</b> عن
-              <b>كلمة مرور المفتاح الإداري</b> (تُستخدم في تبويب «المفتاح الإداري» للتعافي
-              والتحقق عالي الضمان). تُصدَّر كلمة مرور المسؤول العام إلى الوحدات عبر حزمة الحسابات (B8).
-            </p>
-          </AppAlert>
-
-          <form class="mt-4 space-y-3" on:submit|preventDefault={handleSetFleetPassword} novalidate>
-            <AppInput
-              id="fleet-password"
-              label="كلمة مرور المسؤول العام"
-              type="password"
-              bind:value={fleetPassword}
-              placeholder="8 أحرف على الأقل"
-              autocomplete="new-password"
-              required
-              disabled={$operationLoading}
-            />
-            <AppInput
-              id="fleet-confirm-password"
-              label="تأكيد كلمة مرور المسؤول العام"
-              type="password"
-              bind:value={fleetConfirmPassword}
-              placeholder="أعد إدخال كلمة المرور"
-              autocomplete="new-password"
-              required
-              disabled={$operationLoading}
-            />
-            {#if fleetError}
-              <AppAlert intent="danger" dismissible on:dismiss={() => fleetError = ''}>{fleetError}</AppAlert>
-            {/if}
-            {#if fleetSuccess}
-              <AppAlert intent="success" dismissible on:dismiss={() => fleetSuccess = ''}>{fleetSuccess}</AppAlert>
-            {/if}
-            <AppButton
-              type="submit"
-              variant="primary"
-              fullWidth
-              loading={$operationLoading}
-            >
-              تعيين كلمة مرور المسؤول العام
-            </AppButton>
-          </form>
-
-          <div class="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-100 mb-3">
-              تصدير حزمة الحسابات (B8) لوحدة
-            </h4>
-            <AppSelect id="b8-export-unit-select" label="" bind:value={selectedUnit}>
-              {#each units as unit}
-                <option value={unit.id}>{unit.code} - {unit.name}</option>
-              {/each}
-            </AppSelect>
-            {#if b8ExportProgress}
-              <div class="mt-2">
-                <AppAlert intent="info">{b8ExportProgress}</AppAlert>
-              </div>
-            {/if}
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-3 leading-relaxed">
-              الحزمة موقّعة ومشفّرة بالكامل من الخلفية وتحمل بيانات اعتماد المسؤول العام وحساب
-              الوحدة — لا تُعرض محتوياتها هنا. إذا لم تُضبط كلمة مرور المسؤول العام بعد، يرفض
-              الخادم التصدير (Fail-Closed).
-            </p>
-            <AppButton
-              variant="secondary"
-              fullWidth
-              class="mt-3"
-              disabled={!selectedUnit || !!b8ExportProgress || $operationLoading}
-              loading={!!b8ExportProgress}
-              on:click={handleExportIdentityAccess}
-            >
-              تصدير حزمة الحسابات (B8) الموقّعة والمشفّرة
             </AppButton>
           </div>
         </AppCard>
