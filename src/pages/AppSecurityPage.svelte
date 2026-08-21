@@ -8,6 +8,7 @@
     importAppKey,
     unlockAppKey,
     forgetRememberedAppKey,
+    exportAppKeyBackupToPath,
     type AppKeyStatusDto,
   } from '../lib/contracts';
   import { showSuccess } from '../lib/notifications';
@@ -56,6 +57,12 @@
   let forgetResult = '';
   // @category TransientState
   let forgetting = false;
+  // SEC-017: secure backup re-export — the renderer sends only the destination
+  // path; the backend writes the raw identity directly (never crosses IPC/DOM).
+  // @category TransientState
+  let exportBackupResult = '';
+  // @category UiState
+  let exportingBackup = false;
 
   // @category UiState
   $: unlocked = status?.requires_action === false;
@@ -82,6 +89,30 @@
     } finally {
       forgetting = false;
       status = await getSecurityStatus().catch(() => status);
+    }
+  }
+
+  // SEC-017: guarded backup re-export (ADR-0041 §11.3-I7 recovery path).
+  // Native save dialog → destination path only; the backend validates the
+  // path and writes the raw identity itself. Success/failure messaging only —
+  // no key material is ever received, rendered, or logged. Authorization is
+  // backend-authoritative (`AdminOnly`): a forged invocation still fails.
+  async function handleExportBackup() {
+    const selected = await saveFile({
+      defaultPath: 'grpc-app-key.age',
+      filters: [{ name: 'نسخة احتياطية للمفتاح (age)', extensions: ['age'] }],
+    });
+    if (!selected) return;
+    exportingBackup = true;
+    exportBackupResult = '';
+    try {
+      await exportAppKeyBackupToPath(selected as string);
+      exportBackupResult = 'تم تصدير نسخة المفتاح الاحتياطية بنجاح.';
+      showSuccess('تم تصدير نسخة احتياطية من مفتاح التطبيق.');
+    } catch (e) {
+      exportBackupResult = 'تعذر التصدير: ' + formatErrorMessage(e);
+    } finally {
+      exportingBackup = false;
     }
   }
 
@@ -254,6 +285,24 @@
               </AppButton>
               {#if forgetResult}
                 <p class="text-xs mt-2 text-gray-600 dark:text-gray-300">{forgetResult}</p>
+              {/if}
+            </div>
+            <div class="mt-4 border-t border-gray-200 dark:border-gray-700 pt-3">
+              <p class="text-xs text-gray-600 dark:text-gray-300 mb-2 leading-relaxed">
+                تصدير نسخة احتياطية من المفتاح (يتطلب تسجيل الدخول بحساب المسؤول).
+                تُكتب النسخة مباشرة من التطبيق إلى الموقع المحدد — لا تُعرض قيمة المفتاح.
+              </p>
+              <AppButton
+                variant="secondary"
+                size="sm"
+                fullWidth
+                disabled={exportingBackup}
+                on:click={handleExportBackup}
+              >
+                تصدير نسخة احتياطية من المفتاح…
+              </AppButton>
+              {#if exportBackupResult}
+                <p class="text-xs mt-2 text-gray-600 dark:text-gray-300">{exportBackupResult}</p>
               {/if}
             </div>
           </div>

@@ -297,6 +297,24 @@ describe('SettingsPage — UNIT (SEC-014 Phase 4)', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  it('explains the post-B8 credential transformation (SEC-017 Issue A)', async () => {
+    const { container } = render(SettingsPage);
+
+    // The guidance is static and always visible in the UNIT B8 section.
+    await waitFor(() => {
+      expect(screen.getByText('مزامنة الحسابات (B8)')).toBeInTheDocument();
+    });
+
+    // Canonical username after import.
+    expect(container.textContent).toContain('باسم المستخدم القياسي');
+    // Password becomes the WILAYA-issued unit-user password; obtain it there.
+    expect(container.textContent).toContain('كلمة مروره هي كلمة مرور مستخدم');
+    expect(container.textContent).toContain('الوحدة الصادرة عن عقدة WILAYA');
+    expect(container.textContent).toContain('الحصول عليها من عقدة WILAYA');
+    // Previous credentials are no longer valid on this node.
+    expect(container.textContent).toContain('لم يعودا صالحين لتسجيل الدخول');
+  });
+
   it('warns that the unit account password may become the WILAYA-issued one', async () => {
     mockOpenFile.mockResolvedValue('/tmp/grpc-identity-access-U1.sync');
     mockImportIdentityAccessPackage.mockResolvedValue({
@@ -312,7 +330,7 @@ describe('SettingsPage — UNIT (SEC-014 Phase 4)', () => {
     await fireEvent.click(await screen.findByRole('button', { name: /استيراد حزمة الحسابات \(B8\)/ }));
 
     await waitFor(() => {
-      expect(screen.getByText(/كلمة مرور مستخدم الوحدة هي كلمة المرور الصادرة عن/)).toBeInTheDocument();
+      expect(screen.getByText(/كلمة مروره هي كلمة مرور مستخدم الوحدة الصادرة عن/)).toBeInTheDocument();
     });
   });
 

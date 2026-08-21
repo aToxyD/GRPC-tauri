@@ -16,6 +16,7 @@ const mockGetSecurityStatus = vi.fn();
 const mockInitializeAppKey = vi.fn();
 const mockUnlockAppKey = vi.fn();
 const mockImportAppKey = vi.fn();
+const mockExportAppKeyBackupToPath = vi.fn();
 const mockPush = vi.fn();
 
 vi.mock('../../../lib/tauri', () => ({
@@ -38,6 +39,8 @@ vi.mock('../../../lib/contracts', () => ({
   initializeAppKey: (...args: any[]) => mockInitializeAppKey(...args),
   unlockAppKey: (...args: any[]) => mockUnlockAppKey(...args),
   importAppKey: (...args: any[]) => mockImportAppKey(...args),
+  forgetRememberedAppKey: vi.fn().mockResolvedValue(true),
+  exportAppKeyBackupToPath: (...args: any[]) => mockExportAppKeyBackupToPath(...args),
 }));
 
 vi.mock('svelte-spa-router', () => ({
@@ -374,5 +377,191 @@ describe('AppSecurityPage — APPKEY-003 fleet artifact import', () => {
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     }
+  });
+});
+describe('AppSecurityPage — SEC-017 secure backup re-export', () => {
+  const keyringStatus = {
+    provisioned: true,
+    unlocked: true,
+    store_path: '/tmp/grpc/appkey.age',
+    source: 'keyring',
+    requires_action: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSecurityStatus.mockResolvedValue(keyringStatus);
+  });
+
+  it('B1: يعرض زر تصدير النسخة الاحتياطية في بطاقة إدارة المفتاح (keyring)', async () => {
+    const { container } = render(AppSecurityPage);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ })).toBeInTheDocument();
+    });
+    expect(container.textContent).toContain('يتطلب تسجيل الدخول بحساب المسؤول');
+    expect(container.textContent).toContain('لا تُعرض قيمة المفتاح');
+  });
+
+  it('B2: يفتح حوار الحفظ الأصلي ثم يستدعي exportAppKeyBackupToPath بالمسار فقط', async () => {
+    const { saveFile } = await import('../../../lib/tauri');
+    (saveFile as any).mockResolvedValue('/home/op/Downloads/grpc-app-key.age');
+    mockExportAppKeyBackupToPath.mockResolvedValue(undefined);
+
+    render(AppSecurityPage);
+    await fireEvent.click(await screen.findByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ }));
+
+    await waitFor(() => {
+      expect(mockExportAppKeyBackupToPath).toHaveBeenCalledTimes(1);
+    });
+    expect(mockExportAppKeyBackupToPath).toHaveBeenCalledWith('/home/op/Downloads/grpc-app-key.age');
+    expect((saveFile as any).mock.calls[0][0]).toMatchObject({
+      defaultPath: 'grpc-app-key.age',
+      filters: [{ extensions: ['age'] }],
+    });
+  });
+
+  it('B3: لا يستقبل أو يعرض أي مادة سرية للمفتاح', async () => {
+    const { container } = render(AppSecurityPage);
+    const { saveFile } = await import('../../../lib/tauri');
+    (saveFile as any).mockResolvedValue('/home/op/Downloads/grpc-app-key.age');
+    mockExportAppKeyBackupToPath.mockResolvedValue(undefined);
+
+    await fireEvent.click(await screen.findByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ }));
+    await waitFor(() => {
+      expect(mockExportAppKeyBackupToPath).toHaveBeenCalled();
+    });
+
+    expect(container.textContent).not.toContain('AGE-SECRET-KEY');
+    expect(mockExportAppKeyBackupToPath.mock.results.every((r) => typeof r.value !== 'string')).toBe(true);
+  });
+
+  it('B4: يعرض رسالة نجاح غير حاملة لأي سر', async () => {
+    const { container } = render(AppSecurityPage);
+    const { saveFile } = await import('../../../lib/tauri');
+    (saveFile as any).mockResolvedValue('/home/op/Downloads/grpc-app-key.age');
+    mockExportAppKeyBackupToPath.mockResolvedValue(undefined);
+
+    await fireEvent.click(await screen.findByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ }));
+    await waitFor(() => {
+      expect(container.textContent).toContain('تم تصدير نسخة المفتاح الاحتياطية بنجاح');
+    });
+    expect(container.textContent).not.toContain('AGE-SECRET-KEY');
+  });
+
+  it('B5: يعرض فشل الخادم بأمان دون كشف أي سر', async () => {
+    const { container } = render(AppSecurityPage);
+    const { saveFile } = await import('../../../lib/tauri');
+    (saveFile as any).mockResolvedValue('/home/op/Downloads/grpc-app-key.age');
+    mockExportAppKeyBackupToPath.mockRejectedValue(new Error('app key is locked'));
+
+    await fireEvent.click(await screen.findByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ }));
+    await waitFor(() => {
+      expect(container.textContent).toContain('تعذر التصدير');
+    });
+    expect(container.textContent).not.toContain('AGE-SECRET-KEY');
+  });
+
+  it('B6: لا يحدث أي تنقل تلقائي أو تغيير جلسة عند التصدير', async () => {
+    render(AppSecurityPage);
+    const { saveFile } = await import('../../../lib/tauri');
+    (saveFile as any).mockResolvedValue(null);
+    mockExportAppKeyBackupToPath.mockResolvedValue(undefined);
+
+    await fireEvent.click(await screen.findByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ }));
+
+    // Dialog cancelled → no IPC call, no navigation.
+    expect(mockExportAppKeyBackupToPath).not.toHaveBeenCalled();
+
+    const { saveFile: saveFile2 } = await import('../../../lib/tauri');
+    (saveFile2 as any).mockResolvedValue('/home/op/Downloads/grpc-app-key.age');
+    await fireEvent.click(screen.getByRole('button', { name: /تصدير نسخة احتياطية من المفتاح/ }));
+    await waitFor(() => {
+      expect(mockExportAppKeyBackupToPath).toHaveBeenCalledTimes(1);
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+});
+
+describe('AppSecurityPage — SEC-017 Issue C: UNIT import ceremony reachability', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('يعرض بطاقة استيراد grpc-app-key.age في أول تشغيل ل عقدة UNIT (source=none)', async () => {
+    mockGetSecurityStatus.mockResolvedValue({
+      provisioned: false,
+      unlocked: false,
+      store_path: '/tmp/grpc/appkey.age',
+      source: 'none',
+      requires_action: true,
+    });
+
+    const { container } = render(AppSecurityPage);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('مسار الأسطول');
+    });
+    // The certified fleet-artifact import form is reachable.
+    expect(screen.getByRole('button', { name: /اختيار الملف/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /استيراد المفتاح وفتح التطبيق/ })).toBeInTheDocument();
+    expect(container.textContent).toContain('grpc-app-key.age');
+    expect(container.textContent).toContain('كلمة مرور التخزين المحلي');
+  });
+
+  it('لا يظهر الاستيراد كمسار عام بعد التهيئة (مخزن موجود مقفل → فتح فقط)', async () => {
+    mockGetSecurityStatus.mockResolvedValue({
+      provisioned: true,
+      unlocked: false,
+      store_path: '/tmp/grpc/appkey.age',
+      source: 'none',
+      requires_action: true,
+    });
+
+    const { container } = render(AppSecurityPage);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /فتح التطبيق/ })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /استيراد المفتاح وفتح التطبيق/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /اختيار الملف/ })).toBeNull();
+    expect(container.textContent).not.toContain('مسار الأسطول');
+  });
+
+  it('يصل اختيار أداة WILAYA إلى أمر الاستيراد الخلفي المعتمد دون عرض المفتاح', async () => {
+    mockGetSecurityStatus.mockResolvedValue({
+      provisioned: false,
+      unlocked: false,
+      store_path: '/tmp/grpc/appkey.age',
+      source: 'none',
+      requires_action: true,
+    });
+    const { openFile } = await import('../../../lib/tauri');
+    (openFile as any).mockResolvedValue('/home/op/Downloads/grpc-app-key.age');
+    mockImportAppKey.mockResolvedValue({
+      provisioned: true,
+      unlocked: true,
+      store_path: '/tmp/grpc/appkey.age',
+    });
+
+    const { container } = render(AppSecurityPage);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /اختيار الملف/ })).toBeInTheDocument();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /اختيار الملف/ }));
+    await fireEvent.input(container.querySelector('#security-import-passphrase')!, {
+      target: { value: 'operator-passphrase-2026' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /استيراد المفتاح وفتح التطبيق/ }));
+
+    await waitFor(() => {
+      expect(mockImportAppKey).toHaveBeenCalledWith(
+        'operator-passphrase-2026',
+        '/home/op/Downloads/grpc-app-key.age',
+        false
+      );
+    });
+    expect(container.textContent).not.toContain('AGE-SECRET-KEY');
   });
 });

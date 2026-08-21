@@ -76,6 +76,17 @@ export async function exportAppKeyBackup(): Promise<string> {
 }
 
 /**
+ * Secure, path-parameterized App-Key backup re-export (SEC-017). Requires an
+ * authenticated Admin session plus an unlocked store. The renderer sends ONLY
+ * the destination path (from the native save dialog); the backend validates it
+ * and writes the raw identity bytes directly to disk. The raw App-Key never
+ * crosses IPC, the DOM, or logs — the promise resolves with no value.
+ */
+export async function exportAppKeyBackupToPath(filePath: string): Promise<void> {
+  return await safeInvoke('export_app_key_backup_to_path', { filePath });
+}
+
+/**
  * Import the WILAYA-sourced portable artifact `grpc-app-key.age` into the
  * encrypted local store (APPKEY-003, ADR-0041 §10.4 amendment). The renderer
  * sends only the artifact path; the backend reads, validates, and encrypts it.

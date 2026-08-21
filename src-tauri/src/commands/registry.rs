@@ -10,6 +10,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::unlock_app_key,
         commands::forget_remembered_app_key,
         commands::export_app_key_backup,
+        commands::export_app_key_backup_to_path,
         // Authentication
         commands::login,
         commands::get_current_user,

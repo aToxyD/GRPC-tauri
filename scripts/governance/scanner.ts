@@ -125,7 +125,7 @@ export const DOMAIN_REGISTRY: Record<string, {
   security: {
     contract: "security.contract.ts",
     pages: ["AppSecurityPage"],
-    functions: ["getSecurityStatus", "initializeAppKey", "unlockAppKey", "exportAppKeyBackup"],
+    functions: ["getSecurityStatus", "initializeAppKey", "unlockAppKey", "exportAppKeyBackup", "exportAppKeyBackupToPath"],
     crossDomainExceptions: ["login"],
   },
 };

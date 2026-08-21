@@ -9,6 +9,9 @@
 //! - `import_app_key(passphrase, artifact_path)` → fleet artifact import (APPKEY-003)
 //! - `unlock_app_key(passphrase)` → store unlock + deferred DB bootstrap
 //! - `export_app_key_backup()` → guarded re-export (requires unlocked store)
+//! - `export_app_key_backup_to_path(file_path)` → secure re-export: backend
+//!   writes the raw identity directly to the validated destination; the key
+//!   never crosses IPC (SEC-017)
 
 use crate::application::authz::Action;
 use crate::application::services::{TelemetryEventType, TelemetryOutcome, TelemetryService};
@@ -415,6 +418,57 @@ pub fn export_app_key_backup(state: State<AppState>) -> Result<String, String> {
     }
 
     Ok(identity)
+}
+
+/// Secure, path-parameterized App-Key backup re-export (SEC-017). Same guard
+/// set as [`export_app_key_backup`] — authenticated Admin session plus
+/// unlocked state — but the raw identity NEVER crosses IPC: the backend
+/// receives only the destination path, validates it, and writes the exact raw
+/// identity bytes used by the certified initialization backup
+/// (`initialize_app_key(..., export_backup = Some(path))`). The artifact
+/// format is unchanged (raw key line, no wrapping/metadata/newline).
+///
+/// Returns success/failure only — no secret material is ever returned.
+#[tauri::command]
+pub fn export_app_key_backup_to_path(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<(), String> {
+    export_app_key_backup_to_path_impl(&state, &file_path).map_err(into_command_error)
+}
+
+/// Core of `export_app_key_backup_to_path` (public test seam — same pattern as
+/// `initialize_app_key_impl` / `import_app_key_into_store`).
+pub fn export_app_key_backup_to_path_impl(state: &AppState, file_path: &str) -> AppResult<()> {
+    let (session, _settings) = authorize_command(state, Action::AdminOnly, None)?;
+    state.touch_session();
+
+    let identity = cached_app_key().ok_or_else(|| {
+        AppError::Configuration(
+            "app key is locked — unlock the store before exporting a backup".into(),
+        )
+    })?;
+
+    // Validate the destination BEFORE writing (fail-closed; no partial file).
+    crate::domain::validation::validate_file_path(file_path, BACKUP_EXPORT_EXTENSIONS)?;
+
+    std::fs::write(file_path, &identity)?;
+
+    // Best-effort telemetry (mirrors `export_app_key_backup`); never logs the
+    // key material or the destination contents.
+    if let Ok(guard) = state.get_db() {
+        if let Some(db) = guard.as_ref() {
+            let _ = TelemetryService::new(db.executor()).record_event(
+                TelemetryEventType::Backup,
+                TelemetryOutcome::Success,
+                None,
+                Some(serde_json::json!({ "export": "app_key_backup_to_path" })),
+                Some(&session.user_id),
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Run the deferred DB bootstrap (ADR-0041 §5) and publish the database + the
