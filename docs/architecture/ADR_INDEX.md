@@ -74,6 +74,7 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0048 | `0048-fiscal-closure-ed25519-migration.md` | Fiscal Closure Ed25519 Migration — Identity-Bound Signing (SEC-008; closes exception #29 `[arch:allow-hmac-fiscal]` of ADR-0047; removes `GRPC_PACKAGE_SIGNING_KEY` / `GRPC_ACTIVE_SIGNING_KEY_ID`) | Accepted | 2026-08-18 | Architecture / Security |
 | 0049 | `0049-trust-package-verification.md` | Trust Package Verification Hardening — WILAYA-Pinned, Root-Verified, Anchor-Immutable (SEC-010; eliminates SEC-009-01 payload-forgery path; closes trust-package UNIT/ADMIN distribution and cross-issuer revocation) | Accepted | 2026-08-19 | Architecture / Security |
 | 0050 | `0050-wilaya-admin-normal-authentication-model.md` | WILAYA Admin Normal Authentication Model — B6-B Reversal for Normal Login; `.adminkey` Retained as Recovery/High-Assurance Mechanism (SEC-013 Phase 0; supersedes the B6-B normal-login clause of ADR-0038) | Accepted | 2026-08-19 | Architecture / Security |
+| 0051 | `0051-admin-access-package.md` | Admin-Only B8 Account Synchronization — `admin_access` Security-Critical Package Kind; Fleet-Wide Admin Sync Without UNIT Target; UNIT-Operator Account Preservation Invariant; Legacy `identity_access` Cutover (D1) (SEC-019/SEC-020 owner ratification; partially supersedes the UNIT-user synchronization semantics of ADR-0040) | Accepted | 2026-08-22 | Architecture / Security |
 
 ---
 
