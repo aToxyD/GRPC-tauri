@@ -1,6 +1,6 @@
 {
   "generated": "2026-08-18T00:00:00.000Z",
-  "totalTypes": 103,
+  "totalTypes": 104,
   "types": [
     {
       "name": "LoginRequest",
@@ -1264,6 +1264,28 @@
         },
         {
           "name": "user_renamed",
+          "type": "boolean"
+        },
+        {
+          "name": "package_id",
+          "type": "string"
+        },
+        {
+          "name": "imported_by",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "AdminAccessImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "admin_updated",
           "type": "boolean"
         },
         {

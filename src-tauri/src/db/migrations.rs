@@ -49,6 +49,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "identity_access per-target producer sequence stream (RFC 2026-08-04 §3.4.1 amendment, ADR-0045 §26.9 F-1 Option A)",
             include_str!("migrations/009_identity_access_export_sequence.sql"),
         ),
+        (
+            10,
+            "admin_access issuer-only producer sequence stream (ADR-0051 — Admin-Only B8 Account Synchronization)",
+            include_str!("migrations/010_admin_access_export_sequence.sql"),
+        ),
     ]
 }
 

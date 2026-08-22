@@ -111,6 +111,9 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::set_account_status,
         commands::export_identity_access_package,
         commands::import_identity_access_package,
+        // Admin-Only Account Synchronization (`admin_access`, ADR-0051 / D1)
+        commands::export_admin_access_package,
+        commands::import_admin_access_package,
         commands::export_stock_movements_package,
         commands::get_import_audit_events,
         commands::record_consumption,

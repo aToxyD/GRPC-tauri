@@ -5,6 +5,7 @@ pub use packages::{
     integrity::{PackageHasher, Sha256PackageHasher},
     // ── Preferred file-path readers (ADR-0016) ──────────────────────────
     read_daily_report_package_from_file,
+    read_admin_access_package_from_file,
     read_identity_access_package_from_file,
     read_monthly_summary_package_from_file,
     read_products_package_from_file,

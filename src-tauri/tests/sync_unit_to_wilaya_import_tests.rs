@@ -1035,11 +1035,10 @@ fn unit_issuer_rejected_for_products_kind() {
 
 #[test]
 fn unit_issuer_rejected_for_identity_access_kind() {
-    // identity_access imports are UNIT-side only (SEC-003-06-b) — the authz
-    // layer denies them on a WILAYA node before the verifier is reached. The
-    // kind-scoped UNIT rejection for `identity_access` is therefore exercised
-    // at the verifier level (`unit_issuer_rejected_for_non_data_kind` covers
-    // every non-data kind, identity_access included).
+    // ADR-0051 §9 / Decision D1: at cutover, legacy `identity_access` imports
+    // are fail-closed REJECTED at the package-kind boundary — before authz
+    // role evaluation and before any mutation. The historical UNIT-side-only
+    // authz denial is superseded by the unconditional D1 wall.
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
@@ -1054,11 +1053,9 @@ fn unit_issuer_rejected_for_identity_access_kind() {
     );
     write_encrypted(&package, UNIT_SECRET, &path);
 
-    // The authz boundary (UNIT-only) rejects the WILAYA call outright; the
-    // verifier kind policy is a second, unreachable-by-design defense line.
     let err = import_identity_access_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect_err("identity_access on WILAYA is denied by authz");
-    assert!(err.contains("غير مصرح"), "got: {err}");
+        .expect_err("identity_access is rejected under the D1 cutover");
+    assert!(err.contains("مرفوض مغلقًا"), "got: {err}");
     assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 

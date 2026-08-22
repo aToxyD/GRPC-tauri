@@ -278,6 +278,19 @@ pub struct IdentityAccessPackageImportResult {
     pub timestamp: String,
 }
 
+/// Result of an `admin_access` package import (ADR-0051).
+///
+/// Contains no credential material — only synchronization status metadata.
+/// The UNIT operator account is never part of this result: the kind cannot
+/// touch it by construction.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct AdminAccessPackageImportResult {
+    pub admin_updated: bool,
+    pub package_id: String,
+    pub imported_by: String,
+    pub timestamp: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

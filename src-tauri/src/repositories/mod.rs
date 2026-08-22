@@ -5,6 +5,7 @@
 //! Connection and Transaction contexts.
 
 pub mod anomaly;
+pub mod admin_access_export_sequence_state;
 pub mod audit;
 pub mod domain_events;
 pub mod executor;
@@ -36,6 +37,9 @@ pub mod timeline;
 pub mod units;
 pub mod users;
 
+pub use admin_access_export_sequence_state::{
+    AdminAccessExportSequenceStateRepository, PendingAdminAccessSequence,
+};
 pub use anomaly::AnomalyRepository;
 pub use audit::AuditRepository;
 pub use domain_events::{DomainEventRepository, EventSequenceGap};
@@ -70,6 +74,7 @@ pub use timeline::TimelineRepository;
 pub use units::UnitRepository;
 pub use users::UserRepository;
 
+impl crate::architecture::Repository for AdminAccessExportSequenceStateRepository<'_> {}
 impl crate::architecture::Repository for AnomalyRepository<'_> {}
 impl crate::architecture::Repository for DomainEventRepository<'_> {}
 impl crate::architecture::Repository for UserRepository<'_> {}
@@ -118,6 +123,7 @@ pub trait RepositoryProvider<'a> {
     fn units(&self) -> UnitRepository<'a>;
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a>;
     fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a>;
+    fn admin_access_export_sequence_state(&self) -> AdminAccessExportSequenceStateRepository<'a>;
     fn identity_access_export_sequence_state(
         &self,
     ) -> IdentityAccessExportSequenceStateRepository<'a>;
@@ -185,6 +191,9 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a> {
         SyncIssuerSequenceStateRepository::new(*self)
+    }
+    fn admin_access_export_sequence_state(&self) -> AdminAccessExportSequenceStateRepository<'a> {
+        AdminAccessExportSequenceStateRepository::new(*self)
     }
     fn identity_access_export_sequence_state(
         &self,

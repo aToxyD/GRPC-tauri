@@ -3,13 +3,16 @@
 //! Handles file imports (packages) and exports
 //! Strictly follows Clean Architecture: Commands -> Services -> Repositories -> DB
 
-use crate::application::authz::policies::{resolve_identity_access_import_path, IdentityAccessImportPath};
+use crate::application::authz::policies::{
+    resolve_admin_access_import_path, IdentityAccessImportPath,
+};
 use crate::application::authz::Action;
 use crate::application::services::{
-    record_export_with_reproducibility, AuditService, AuditTxService, B8FirstImportPredicatesService,
-    DailyReportService, ExportReproducibilityContext, IdentityProvisioningService,
-    IdentitySignedExportService, NodePackageService, PayloadUnitIdExtractor, ProductService,
-    SettingsService, StockMovementService, SyncPackageIdentityVerificationService, UnitService,
+    record_export_with_reproducibility, AdminAccessFirstImportPredicatesService, AuditService,
+    AuditTxService, B8FirstImportPredicatesService, DailyReportService,
+    ExportReproducibilityContext, IdentityProvisioningService, IdentitySignedExportService,
+    NodePackageService, PayloadUnitIdExtractor, ProductService, SettingsService,
+    StockMovementService, SyncPackageIdentityVerificationService, UnitService,
     UserAccountSyncService, UserService, V2ImportPolicy,
 };
 use crate::application::services::{
@@ -27,14 +30,15 @@ use crate::application::usecases::exports::types::{
     DailyReportExportInput, ExportProductsInput, MonthlySummaryExportInput,
     StockMovementsExportDataset,
 };
+use crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCESS_PACKAGE_KIND;
+use crate::application::usecases::sync::import_admin_access_package::{
+    execute as apply_admin_access_package, ImportAdminAccessPackageInput,
+};
 use crate::application::usecases::sync::import_daily_report_package::DAILY_REPORT_PACKAGE_KIND;
 use crate::application::usecases::sync::import_daily_report_package::{
     execute as apply_daily_report_package, ImportDailyReportPackageInput,
 };
 use crate::application::usecases::sync::import_identity_access_package::IDENTITY_ACCESS_PACKAGE_KIND;
-use crate::application::usecases::sync::import_identity_access_package::{
-    execute as apply_identity_access_package, ImportIdentityAccessPackageInput,
-};
 use crate::application::usecases::sync::import_monthly_summary_package::MONTHLY_SUMMARY_PACKAGE_KIND;
 use crate::application::usecases::sync::import_monthly_summary_package::{
     execute as apply_monthly_summary_package, ImportMonthlySummaryPackageInput,
@@ -74,14 +78,15 @@ use crate::infrastructure::db::sync_import::{
     SqliteImportAuditLogger, SqliteImportedPackageRegistry,
 };
 use crate::infrastructure::sync::{
-    read_daily_report_package_from_file, read_identity_access_package_from_file,
+    read_admin_access_package_from_file, read_daily_report_package_from_file,
     read_monthly_summary_package_from_file, read_products_package_from_file,
     read_registry_package_from_file, read_stock_movements_package_from_file,
-    read_trust_package_from_file, read_unit_node_package_from_file, resolve_export_source_node_id,
+    read_trust_package_from_file, read_unit_node_package_from_file,
+    resolve_export_source_node_id,
 };
 
 use crate::models::{
-    DailyReportImportResult, IdentityAccessPackageImportResult, IdentityAccessPayload,
+    AdminAccessPackageImportResult, DailyReportImportResult, IdentityAccessPackageImportResult,
     PackageExportResult, RegistryPackageImportResult, Settings, TrustPackageImportResult,
     XlsxExportResult,
 };
@@ -115,6 +120,7 @@ const SIGNATURE_VERSION_V2: u16 = 2;
 /// downgrade/forgery window and is rejected at the import boundary.
 const SECURITY_CRITICAL_KINDS: &[&str] = &[
     IDENTITY_ACCESS_PACKAGE_KIND,
+    ADMIN_ACCESS_PACKAGE_KIND,
     TRUST_PACKAGE_KIND,
     REGISTRY_PACKAGE_KIND,
 ];
@@ -1279,19 +1285,87 @@ pub fn export_identity_access_package(
 /// Implementation of `export_identity_access_package` (testable without a
 /// Tauri runtime).
 ///
-/// F-1 Option A (ADR-0045 §26.9): the producer allocates the transport
-/// sequence from the per-`(issuer, target_unit_code)` stream
-/// (`IdentitySignedExportService::export_v2_identity_access_package`). The
-/// target unit is the authoritative server-side one: `UserAccountSyncService`
-/// resolves `unit_code` against the local `units` table and builds the payload
-/// from that row (fails closed when the unit does not exist) — the renderer
-/// value can only select an existing unit, never choose a sequence stream.
+/// **D1 CUTOVER (ADR-0051 §9 — ratified 2026-08-22):** legacy
+/// `identity_access` ISSUANCE is disabled. The dual-purpose package renames
+/// and re-hashes UNIT operator accounts on import — behavior rejected by the
+/// owner. This path fails closed BEFORE any payload build, signing, or
+/// sequence allocation (zero writes, zero ledger movement). `admin_access`
+/// (`export_admin_access_package`) is the authoritative fleet-Admin
+/// synchronization mechanism from cutover onward.
 pub fn export_identity_access_package_impl(
-    state: &AppState,
+    _state: &AppState,
     unit_code: String,
+    _file_path: String,
+) -> Result<PackageExportResult, String> {
+    let _ = unit_code;
+    Err(into_command_error(AppError::BusinessLogic(
+        BusinessLogicError::OperationNotPermitted {
+            message: "تصدير حزم identity_access مُعطَّل نهائيًا (ADR-0051 قرار D1) — استخدم حزمة admin_access لمزامنة حساب المسؤول العام".into(),
+        },
+    )))
+}
+
+/// UNIT: import an Identity & Access package (encrypted `.sync`).
+///
+/// **D1 CUTOVER (ADR-0051 §9 — ratified 2026-08-22):** legacy
+/// `identity_access` IMPORT is fail-closed REJECTED at the package-kind
+/// boundary BEFORE any account mutation. The rejection is atomic — zero
+/// writes on every path. The legacy kind is never silently reinterpreted as
+/// `admin_access`: no partial application, no "accept and ignore its User
+/// portion", no aliasing. It remains a historical/legacy kind only.
+#[tauri::command]
+pub fn import_identity_access_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<IdentityAccessPackageImportResult, String> {
+    import_identity_access_package_impl(&state, file_path)
+}
+
+/// Implementation of `import_identity_access_package` — kept as the explicit
+/// D1 cutover boundary (ADR-0051 §9): the rejection is deterministic and
+/// unconditional, happens BEFORE any account mutation, and never reinterprets
+/// a legacy package as `admin_access`. Zero writes on every path.
+pub fn import_identity_access_package_impl(
+    _state: &AppState,
+    _file_path: String,
+) -> Result<IdentityAccessPackageImportResult, String> {
+    Err(into_command_error(AppError::BusinessLogic(
+        BusinessLogicError::OperationNotPermitted {
+            message: "استيراد حزم identity_access مرفوض مغلقًا (ADR-0051 قرار D1) — استخدم حزمة admin_access لمزامنة حساب المسؤول العام؛ حساب مشغّل الوحدة يبقى كما وُفِّد".into(),
+        },
+    )))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin-Only B8 Account Synchronization (`admin_access`, ADR-0051 — Accepted
+// 2026-08-22). Fleet-wide WILAYA → all UNIT nodes; payload is exactly
+// `{admin_password_hash, admin_enabled}`; the UNIT operator account is
+// structurally unreachable from this kind.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Wilaya: export the fleet-wide Admin synchronization package (encrypted
+/// `.sync`, ADR-0051).
+///
+/// There is deliberately NO unit selector parameter: the package is
+/// fleet-wide by construction. Fails closed when the fleet `admin` password
+/// is unset or the account is disabled. Wilaya-only (authz
+/// `Action::ExportAdminAccessPackage` → Wilaya + AdminOnly).
+#[tauri::command]
+pub fn export_admin_access_package(
+    state: State<AppState>,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
-    let (session, settings) = authorize_command(state, Action::ExportIdentityAccessPackage, None)
+    export_admin_access_package_impl(&state, file_path)
+}
+
+/// Implementation of `export_admin_access_package` (testable without a Tauri
+/// runtime). The producer allocates the transport sequence from the dedicated
+/// issuer-only stream (`export_v2_admin_access_package`, migration 010).
+pub fn export_admin_access_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    let (session, settings) = authorize_command(state, Action::ExportAdminAccessPackage, None)
         .map_err(into_command_error)?;
     validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
@@ -1302,14 +1376,14 @@ pub fn export_identity_access_package_impl(
 
     let password_port = state.password_port.as_ref();
     let payload = UserAccountSyncService::new(db.executor(), password_port)
-        .export(&unit_code)
+        .export_admin_access()
         .map_err(into_command_error)?;
 
     let source_node_id =
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
     let _sequence = IdentitySignedExportService::new(db, &node_key_store())
-        .export_v2_identity_access_package(
+        .export_v2_admin_access_package(
             payload,
             &source_node_id,
             std::path::Path::new(&file_path),
@@ -1320,9 +1394,8 @@ pub fn export_identity_access_package_impl(
 
     log::info!(
         target: "grpc::import_export",
-        "export_identity_access_package: success path={} unit_code={}",
-        file_path,
-        unit_code
+        "export_admin_access_package: success path={}",
+        file_path
     );
 
     let export_hash = Uuid::new_v4().to_string();
@@ -1341,7 +1414,7 @@ pub fn export_identity_access_package_impl(
                 movement_count: 0,
                 report_count: 0,
                 inventory_total_value: 0.0,
-                export_reason: "identity_access_sync_package".to_string(),
+                export_reason: "admin_access_sync_package".to_string(),
             },
         )
     });
@@ -1353,8 +1426,7 @@ pub fn export_identity_access_package_impl(
         Some(duration),
         Some(serde_json::json!({
             "path": file_path,
-            "kind": IDENTITY_ACCESS_PACKAGE_KIND,
-            "unit_code": unit_code,
+            "kind": ADMIN_ACCESS_PACKAGE_KIND,
         })),
         Some(&session.user_id),
     );
@@ -1362,36 +1434,33 @@ pub fn export_identity_access_package_impl(
     Ok(result)
 }
 
-/// UNIT: import an Identity & Access package (encrypted `.sync`).
+/// UNIT: import an Admin synchronization package (encrypted `.sync`,
+/// ADR-0051).
 ///
-/// B8 (ADR-0040): kind = `identity_access` — canonical account reconciliation on
-/// the UNIT node (rename + canonical upserts). Replay protection is owned by
-/// `run_import_pipeline` (Transport Guard + `ImportedPackageRegistry`).
-/// Unit-only (authz `Action::ImportIdentityAccessPackage` → Unit + authenticated).
+/// Routing mirrors the certified B8 shape (ADR-0045): a User session on a
+/// fresh UNIT reaches ONLY the fail-closed first-import pipeline whose
+/// predicates are re-evaluated inside the import transaction; every other
+/// caller keeps the AdminOnly policy. The UNIT operator account is
+/// structurally unreachable from the apply path.
 #[tauri::command]
-pub fn import_identity_access_package(
+pub fn import_admin_access_package(
     state: State<AppState>,
     file_path: String,
-) -> Result<IdentityAccessPackageImportResult, String> {
-    import_identity_access_package_impl(&state, file_path)
+) -> Result<AdminAccessPackageImportResult, String> {
+    import_admin_access_package_impl(&state, file_path)
 }
 
-/// Implementation of `import_identity_access_package` (testable without a
-/// Tauri runtime).
-pub fn import_identity_access_package_impl(
+/// Implementation of `import_admin_access_package` (testable without a Tauri
+/// runtime).
+pub fn import_admin_access_package_impl(
     state: &AppState,
     file_path: String,
-) -> Result<IdentityAccessPackageImportResult, String> {
-    // B8 (ADR-0045, RFC 2026-08-04 §3.12): the command-authorization layer
-    // requires an authenticated session (`AuthenticatedOnly`); on a fresh
-    // UNIT node that session is a User session — admitted ONLY through the
-    // fail-closed first-import predicates (re-evaluated inside the import
-    // transaction). Every other caller keeps the AdminOnly policy.
-    // `AuthenticatedOnly` establishes the session; the Admin-vs-User routing
-    // is an authorization decision resolved in the authz layer.
+) -> Result<AdminAccessPackageImportResult, String> {
+    // Session establishment only — the Admin-vs-User routing is an
+    // authorization decision resolved in the authz layer (parallel to ADR-0045).
     let (session, settings) = authorize_command(state, Action::AuthenticatedOnly, None)
         .map_err(into_command_error)?;
-    match resolve_identity_access_import_path(&session.user_snapshot.role, settings.node_type)
+    match resolve_admin_access_import_path(&session.user_snapshot.role, settings.node_type)
         .map_err(|e| into_command_error(AppError::Authorization(e)))?
     {
         IdentityAccessImportPath::FirstImportBootstrap => {
@@ -1401,33 +1470,46 @@ pub fn import_identity_access_package_impl(
             run_import_pipeline_bootstrap(
                 state,
                 file_path,
-                IDENTITY_ACCESS_PACKAGE_KIND,
-                read_identity_access_package_from_file,
-                |executor, registry, package, session, _importer_wilaya: &str| {
-                    let verdict = B8FirstImportPredicatesService::evaluate(
+                ADMIN_ACCESS_PACKAGE_KIND,
+                read_admin_access_package_from_file,
+                |executor, _registry, package, session, _importer_wilaya: &str| {
+                    // ADR-0051 §8: {anchor_installed, anchor_is_issuer,
+                    // no_active_admin} — NO unit_code_matches predicate exists
+                    // because the package has no target binding to check;
+                    // issuer pinning over the V2 signature chain carries its
+                    // protective role instead.
+                    let verdict = AdminAccessFirstImportPredicatesService::evaluate(
                         &executor,
-                        &package.payload.unit_code,
                         package
                             .metadata
                             .issuer_identity_id
                             .as_ref()
                             .map(|u| u.to_string())
                             .as_deref(),
-                        local_unit_code.as_deref(),
                     )?;
                     if !verdict.all_hold() {
                         return Err(AppError::BusinessLogic(
                             BusinessLogicError::OperationNotPermitted {
-                                message: B8FirstImportPredicatesService::rejection_message(
-                                    &verdict,
-                                )
-                                .to_string(),
+                                message:
+                                    AdminAccessFirstImportPredicatesService::rejection_message(
+                                        &verdict,
+                                    )
+                                    .to_string(),
                             },
                         ));
                     }
-                    apply_identity_access_package_import(
-                        state, executor, registry, package, session,
-                    )
+                    AdminAccessFirstImportPredicatesService::verify_first_package_sequence(
+                        &executor,
+                        package
+                            .metadata
+                            .issuer_identity_id
+                            .as_ref()
+                            .map(|u| u.to_string())
+                            .as_deref()
+                            .unwrap_or_default(),
+                        package.metadata.package_sequence,
+                    )?;
+                    apply_admin_access_package_import(executor, package, session, local_unit_code.as_deref())
                 },
                 None,
                 None,
@@ -1435,13 +1517,17 @@ pub fn import_identity_access_package_impl(
         }
         IdentityAccessImportPath::AdminOnly => run_import_pipeline(
             state,
-            Action::ImportIdentityAccessPackage,
+            Action::ImportAdminAccessPackage,
             file_path,
-            IDENTITY_ACCESS_PACKAGE_KIND,
+            ADMIN_ACCESS_PACKAGE_KIND,
             AuditAction::IdentityAccessPackageImported,
-            read_identity_access_package_from_file,
-            |executor, registry, package, session, _importer_wilaya: &str| {
-                apply_identity_access_package_import(state, executor, registry, package, session)
+            read_admin_access_package_from_file,
+            |executor, _registry, package, session, _importer_wilaya: &str| {
+                // Post-bootstrap re-imports carry the trusted local unit code
+                // through the transaction-time settings snapshot below.
+                let tx_settings = SettingsService::new(executor).get_settings()?;
+                let local_unit_code = tx_settings.unit_code.unwrap_or_default();
+                apply_admin_access_package_import(executor, package, session, Some(&local_unit_code))
             },
             None,
             None,
@@ -1449,23 +1535,19 @@ pub fn import_identity_access_package_impl(
     }
 }
 
-fn apply_identity_access_package_import(
-    state: &AppState,
+fn apply_admin_access_package_import(
     executor: crate::repositories::executor::DbExecutor<'_>,
-    registry: &SqliteImportedPackageRegistry<'_>,
-    package: SyncPackage<IdentityAccessPayload>,
+    package: SyncPackage<crate::models::AdminAccessPayload>,
     session: &CurrentSession,
-) -> Result<IdentityAccessPackageImportResult, AppError> {
-    let password_port = state.password_port.as_ref();
-    let input = ImportIdentityAccessPackageInput {
+    local_unit_code: Option<&str>,
+) -> Result<AdminAccessPackageImportResult, AppError> {
+    let input = ImportAdminAccessPackageInput {
         package,
-        imported_by: session.username.clone(),
+        local_unit_code: local_unit_code.unwrap_or_default().to_string(),
     };
-    let outcome = apply_identity_access_package(executor, registry, password_port, input)?;
-    Ok(IdentityAccessPackageImportResult {
+    let outcome = apply_admin_access_package(executor, input)?;
+    Ok(AdminAccessPackageImportResult {
         admin_updated: outcome.admin_updated,
-        user_updated: outcome.user_updated,
-        user_renamed: outcome.user_renamed,
         package_id: outcome.package_id,
         imported_by: session.username.clone(),
         timestamp: chrono::Utc::now().to_rfc3339(),

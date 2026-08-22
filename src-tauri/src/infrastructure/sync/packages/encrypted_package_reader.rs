@@ -175,4 +175,14 @@ pub fn read_identity_access_package_from_file(
     SerdeJsonSyncPackageDeserializer::identity_access_from_reader(std::io::BufReader::new(file))
 }
 
+pub fn read_admin_access_package_from_file(
+    path: &Path,
+    crypto_port: &AgeFileEncryptionProvider,
+) -> AppResult<SyncPackage<crate::models::AdminAccessPayload>> {
+    let temp_plaintext = decrypt_encrypted_file_to_temp(path, crypto_port)?;
+    let file = std::fs::File::open(temp_plaintext.path())
+        .map_err(|e| AppError::Internal(format!("Failed to re-open decrypt temp: {}", e)))?;
+    SerdeJsonSyncPackageDeserializer::admin_access_from_reader(std::io::BufReader::new(file))
+}
+
 // Note: Byte-slice entry points were removed to enforce the streaming model.

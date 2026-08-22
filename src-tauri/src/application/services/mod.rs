@@ -1,6 +1,7 @@
 pub mod audit_observability_service;
 pub mod audit_service;
 pub mod audit_tx_service;
+pub mod admin_access_first_import_predicates_service;
 pub mod b8_first_import_predicates_service;
 pub mod daily_report_service;
 pub mod fifo_preview_service;
@@ -44,6 +45,7 @@ pub mod user_service;
 pub use audit_observability_service::AuditObservabilityService;
 pub use audit_service::AuditService;
 pub use audit_tx_service::AuditTxService;
+pub use admin_access_first_import_predicates_service::AdminAccessFirstImportPredicatesService;
 pub use b8_first_import_predicates_service::B8FirstImportPredicatesService;
 pub use daily_report_service::DailyReportService;
 pub use fifo_preview_service::FifoPreviewService;

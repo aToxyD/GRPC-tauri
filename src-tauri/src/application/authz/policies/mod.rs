@@ -33,6 +33,27 @@ pub fn resolve_identity_access_import_path(
     }
 }
 
+/// Admin-Access import pipeline selection for `admin_access` imports
+/// (ADR-0051 §8 — Accepted 2026-08-22).
+///
+/// Parallel to [`resolve_identity_access_import_path`]: only UNIT-node
+/// sessions resolve to a path. Admin keeps the AdminOnly pipeline; User is
+/// admitted ONLY through the fail-closed first-import pipeline whose
+/// predicates (`anchor_installed`, `anchor_is_issuer`, `no_active_admin`) are
+/// enforced inside the import transaction. There is deliberately NO target
+/// binding predicate — the package is fleet-wide and carries no target.
+/// WILAYA nodes and any other session are denied outright.
+pub fn resolve_admin_access_import_path(
+    role: &UserRole,
+    node_type: NodeType,
+) -> Result<IdentityAccessImportPath, AuthorizationError> {
+    match (node_type, role) {
+        (NodeType::Unit, UserRole::Admin) => Ok(IdentityAccessImportPath::AdminOnly),
+        (NodeType::Unit, UserRole::User) => Ok(IdentityAccessImportPath::FirstImportBootstrap),
+        _ => Err(AuthorizationError::InsufficientPermissions),
+    }
+}
+
 /// Top-level authorization dispatcher.
 /// Every Action variant MUST appear in exactly one arm — the compiler enforces exhaustiveness.
 pub fn authorize(
@@ -161,6 +182,30 @@ pub fn authorize(
                 Err(AuthorizationError::InsufficientPermissions)
             }
         }
+
+        // ── Admin-Only B8 Account Synchronization (ADR-0051) ────────────────
+        // Export is a WILAYA-side Admin-only authority: the fleet `admin`
+        // credential state is WILAYA-owned. There is NO unit selector in the
+        // export path — the package is fleet-wide by construction.
+        Action::ExportAdminAccessPackage => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::RequiresWilayaNode)
+            }
+        }
+        // Import post-bootstrap is a UNIT-side Admin-only apply: the payload
+        // carries credential-overwrite authority for the canonical `admin`
+        // account only. The first-import bootstrap exemption is resolved
+        // separately through [`resolve_admin_access_import_path`] and remains
+        // fail-closed inside the import transaction.
+        Action::ImportAdminAccessPackage => {
+            if let ResourceContext::UnitNode { .. } = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::RequiresUnitNode)
+            }
+        }
     }
 }
 
@@ -208,10 +253,7 @@ mod tests {
             },
         );
         assert!(
-            matches!(
-                denied_unit,
-                Err(AuthorizationError::RequiresWilayaNode)
-            ),
+            matches!(denied_unit, Err(AuthorizationError::RequiresWilayaNode)),
             "UNIT nodes must never import trust packages, got: {denied_unit:?}"
         );
 
@@ -295,8 +337,89 @@ mod tests {
             resolve_identity_access_import_path(&UserRole::User, NodeType::Unit),
             Ok(IdentityAccessImportPath::FirstImportBootstrap)
         ));
-        assert!(resolve_identity_access_import_path(&UserRole::Admin, NodeType::Wilaya)
-            .is_err());
+        assert!(resolve_identity_access_import_path(&UserRole::Admin, NodeType::Wilaya).is_err());
         assert!(resolve_identity_access_import_path(&UserRole::User, NodeType::Wilaya).is_err());
+    }
+
+    #[test]
+    fn export_admin_access_package_is_wilaya_admin_only() {
+        // ADR-0051 §8: export is a WILAYA-side Admin-only authority with NO
+        // unit selector anywhere in the path.
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ExportAdminAccessPackage,
+            &ResourceContext::WilayaNode,
+        )
+        .is_ok());
+
+        let denied_user = authorize(
+            &principal(UserRole::User),
+            Action::ExportAdminAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(
+            matches!(denied_user, Err(AuthorizationError::RequiresAdmin)),
+            "WILAYA non-admin must be denied admin_access export, got: {denied_user:?}"
+        );
+
+        let denied_unit = authorize(
+            &principal(UserRole::Admin),
+            Action::ExportAdminAccessPackage,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(denied_unit, Err(AuthorizationError::RequiresWilayaNode)),
+            "UNIT nodes must never export admin_access, got: {denied_unit:?}"
+        );
+    }
+
+    #[test]
+    fn import_admin_access_package_requires_unit_admin_post_bootstrap() {
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ImportAdminAccessPackage,
+            &unit_node,
+        )
+        .is_ok());
+
+        let denied = authorize(
+            &principal(UserRole::User),
+            Action::ImportAdminAccessPackage,
+            &unit_node,
+        );
+        assert!(
+            matches!(denied, Err(AuthorizationError::RequiresAdmin)),
+            "UNIT User must be denied admin_access import post-bootstrap, got: {denied:?}"
+        );
+
+        let denied_wilaya = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportAdminAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(denied_wilaya.is_err());
+    }
+
+    #[test]
+    fn resolve_admin_access_import_path_unit_routes_by_role() {
+        // ADR-0051 §8: same routing shape as identity_access — Admin keeps the
+        // AdminOnly pipeline; User reaches ONLY the fail-closed first-import
+        // pipeline; WILAYA sessions are denied outright.
+        assert!(matches!(
+            resolve_admin_access_import_path(&UserRole::Admin, NodeType::Unit),
+            Ok(IdentityAccessImportPath::AdminOnly)
+        ));
+        assert!(matches!(
+            resolve_admin_access_import_path(&UserRole::User, NodeType::Unit),
+            Ok(IdentityAccessImportPath::FirstImportBootstrap)
+        ));
+        assert!(resolve_admin_access_import_path(&UserRole::Admin, NodeType::Wilaya).is_err());
+        assert!(resolve_admin_access_import_path(&UserRole::User, NodeType::Wilaya).is_err());
     }
 }

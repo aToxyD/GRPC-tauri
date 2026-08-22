@@ -191,4 +191,13 @@ impl SerdeJsonSyncPackageDeserializer {
         Self::verify_signature(&package)?;
         Ok(package)
     }
+
+    pub fn admin_access_from_reader<R: std::io::Read>(
+        reader: R,
+    ) -> AppResult<SyncPackage<crate::models::AdminAccessPayload>> {
+        let package = Self::parse_json_from_reader(reader)?;
+        Self::verify_integrity(&package)?;
+        Self::verify_signature(&package)?;
+        Ok(package)
+    }
 }

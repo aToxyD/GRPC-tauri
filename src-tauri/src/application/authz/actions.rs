@@ -62,4 +62,8 @@ pub enum Action {
     ManageAccountSync,
     ExportIdentityAccessPackage,
     ImportIdentityAccessPackage,
+
+    // Admin-Only B8 Account Synchronization (ADR-0051 — Accepted 2026-08-22)
+    ExportAdminAccessPackage,
+    ImportAdminAccessPackage,
 }

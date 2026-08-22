@@ -37,7 +37,7 @@ use grpc_lib::application::services::{
     SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
 };
 use grpc_lib::application::usecases::sync::import_products_package::PRODUCTS_PACKAGE_KIND;
-use grpc_lib::commands::{import_identity_access_package_impl, AppState};
+use grpc_lib::commands::{import_admin_access_package_impl, AppState};
 use grpc_lib::db::{run_migrations, ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
     CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySigner,
@@ -53,9 +53,11 @@ use grpc_lib::infrastructure::sync::packages::canonical_json::{
 use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256PackageHasher};
 use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};
 use grpc_lib::infrastructure::sync::{
-    read_identity_access_package_from_file, PackageBuilder, SerdeJsonSyncPackageSerializer,
+    read_admin_access_package_from_file, PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
-use grpc_lib::models::{CreateUnitRequest, IdentityAccessPayload, UnitNodePackage, Unit, UserExport};
+use grpc_lib::models::{
+    AdminAccessPayload, CreateUnitRequest, IdentityAccessPayload, UnitNodePackage, Unit, UserExport,
+};
 use grpc_lib::repositories::executor::DbExecutor;
 use grpc_lib::repositories::RepositoryProvider;
 
@@ -169,6 +171,15 @@ fn export_payload(db: &Database, unit_code: &str) -> IdentityAccessPayload {
         .expect("export payload")
 }
 
+/// Fleet-wide Admin-Only payload (ADR-0051): exactly
+/// `{admin_password_hash, admin_enabled}` — no UNIT dimension exists.
+fn admin_payload(db: &Database) -> AdminAccessPayload {
+    let port = Argon2PasswordHashProvider;
+    UserAccountSyncService::new(make_executor(db), &port)
+        .export_admin_access()
+        .expect("admin payload")
+}
+
 /// A fresh UNIT node: no users, UNIT settings, local `units` row carrying the
 /// authoritative unit code (mirrors `unit_state` in b8_first_import_tests).
 fn unit_state(unit_code: &str) -> AppState {
@@ -220,27 +231,24 @@ fn set_session(state: &AppState, role: &str) {
 
 /// Hand-crafted signed package for CONSUMER-side continuity tests only (the
 /// F-1 remediation is producer-side; the producer portion of the E2E tests
-/// never hand-crafts sequences).
-fn crafted_payload(unit_code: &str) -> IdentityAccessPayload {
+/// never hand-crafts sequences). Vehicle: `admin_access` — the active
+/// security-critical account kind after the D1 cutover (ADR-0051 §9).
+fn crafted_admin_payload() -> AdminAccessPayload {
     let port = Argon2PasswordHashProvider;
-    IdentityAccessPayload {
-        unit_code: unit_code.to_string(),
+    AdminAccessPayload {
         admin_enabled: true,
         admin_password_hash: port
             .hash_admin(FLEET_PASSWORD)
             .expect("admin hash"),
-        user_enabled: true,
-        user_password_hash: port.hash_node(UNIT_PASSWORD, unit_code).expect("user hash"),
     }
 }
 
-fn crafted_package(
+fn crafted_admin_package(
     package_id: &str,
     issuer_id: Uuid,
     secret: [u8; 32],
     sequence: u64,
-    unit_code: &str,
-) -> grpc_lib::application::sync::SyncPackage<IdentityAccessPayload> {
+) -> grpc_lib::application::sync::SyncPackage<AdminAccessPayload> {
     let package = grpc_lib::application::sync::SyncPackage {
         metadata: grpc_lib::application::sync::SyncPackageMetadata {
             schema_version: grpc_lib::application::sync::SchemaVersion::V2,
@@ -254,7 +262,7 @@ fn crafted_package(
             integrity_hash: None,
             signature: None,
         },
-        payload: crafted_payload(unit_code),
+        payload: crafted_admin_payload(),
     };
     let signer = Ed25519PackageSigner::new(secret);
     let value = serde_json::to_value(&package).expect("value");
@@ -272,8 +280,8 @@ fn crafted_package(
     signed
 }
 
-fn write_encrypted(
-    package: &grpc_lib::application::sync::SyncPackage<IdentityAccessPayload>,
+fn write_encrypted_admin(
+    package: &grpc_lib::application::sync::SyncPackage<AdminAccessPayload>,
     secret: [u8; 32],
     path: &Path,
 ) {
@@ -302,7 +310,7 @@ fn migration_009_applies_on_fresh_database() {
         .get_connection()
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
-    assert_eq!(version, 9, "schema must be at version 9");
+    assert_eq!(version, 10, "schema must be at version 10 (010 admin_access stream)");
 
     // Composite PK (issuer, target) — the F-1 stream key.
     let mut stmt = db
@@ -384,7 +392,7 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
-    assert_eq!(version, 9, "upgrade must land on version 9");
+    assert_eq!(version, 10, "upgrade must land on version 10 (010 admin_access stream)");
 
     let legacy: i64 = conn
         .query_row(
@@ -583,7 +591,12 @@ fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
+fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
+    // ADR-0051 fleet-wide semantics (post-D1 vehicle): ONE `admin_access`
+    // package per sequence, issued on the dedicated issuer-only stream,
+    // independently importable by EVERY authorized UNIT. Replay state is
+    // strictly local per UNIT.
+
     // WILAYA fleet: UNIT-A and UNIT-B provisioned on the WILAYA.
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
@@ -596,22 +609,29 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
     let issuer = wilaya_cert.identity_id;
 
-    // ── Phase A — fresh UNIT-A bootstrap ────────────────────────────────────
+    // ── Phase A — one fleet package (seq 1) bootstraps every UNIT ──────────
     let a1 = dir.path().join("a1.sync");
     let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-A"),
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
             "wilaya-test-node",
             &a1,
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export A1");
-    assert_eq!(seq, 1, "UNIT-A first identity_access = seq 1");
+        .expect("real producer export seq 1");
+    assert_eq!(seq, 1, "first admin_access export = seq 1");
 
-    let pkg = read_identity_access_package_from_file(&a1, &crypto).expect("read A1");
+    let pkg = read_admin_access_package_from_file(&a1, &crypto).expect("read seq-1 artifact");
     assert_eq!(pkg.metadata.package_sequence, Some(1));
     assert_eq!(pkg.metadata.issuer_identity_id, Some(issuer));
+    // Fleet-wide by construction: the payload carries NO unit dimension.
+    let serialized =
+        serde_json::to_value(&pkg.payload).expect("payload value");
+    assert!(
+        serialized.get("unit_code").is_none() && serialized.get("user_password_hash").is_none(),
+        "admin_access payload must carry no UNIT/operator material"
+    );
 
     let state_a = unit_state("UNIT-A");
     seed_anchor_from_cert(
@@ -620,8 +640,8 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
     );
     set_session(&state_a, "User");
 
-    import_identity_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
-        .expect("UNIT-A bootstrap succeeds");
+    import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
+        .expect("UNIT-A bootstrap succeeds from the fleet package");
     {
         let guard = state_a.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
@@ -633,19 +653,7 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
         );
     }
 
-    // ── Phase B — fresh UNIT-B bootstrap (same WILAYA issuer) ──────────────
-    let b1 = dir.path().join("b1.sync");
-    let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-B"),
-            "wilaya-test-node",
-            &b1,
-            SubjectType::Wilaya,
-            &crypto,
-        )
-        .expect("real producer export B1");
-    assert_eq!(seq, 1, "UNIT-B first identity_access = seq 1 (own stream)");
-
+    // ── Phase B — the SAME package bootstraps UNIT-B independently ─────────
     let state_b = unit_state("UNIT-B");
     seed_anchor_from_cert(
         state_b.get_db().expect("lock").as_ref().expect("db"),
@@ -653,8 +661,8 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
     );
     set_session(&state_b, "User");
 
-    import_identity_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
-        .expect("UNIT-B bootstrap succeeds");
+    import_admin_access_package_impl(&state_b, a1.to_string_lossy().into_owned())
+        .expect("UNIT-B bootstrap succeeds from the SAME fleet package");
     {
         let guard = state_b.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
@@ -662,87 +670,47 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
         assert_eq!(
             last_applied(db, &issuer.to_string()),
             Some(1),
-            "UNIT-B ledger = 1"
+            "UNIT-B ledger = 1 (independent local replay state)"
         );
     }
 
-    // ── Continuation — UNIT-A seq 2 and 3 via the post-bootstrap AdminOnly ──
+    // ── Continuation — one seq-2 package applied on both units ─────────────
     set_session(&state_a, "Admin");
     let a2 = dir.path().join("a2.sync");
     let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-A"),
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
             "wilaya-test-node",
             &a2,
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export A2");
-    assert_eq!(seq, 2, "UNIT-A second = seq 2");
-    import_identity_access_package_impl(&state_a, a2.to_string_lossy().into_owned())
+        .expect("real producer export seq 2");
+    assert_eq!(seq, 2, "second admin_access export = seq 2");
+
+    import_admin_access_package_impl(&state_a, a2.to_string_lossy().into_owned())
         .expect("UNIT-A seq 2 import succeeds (AdminOnly)");
-
-    let a3 = dir.path().join("a3.sync");
-    let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-A"),
-            "wilaya-test-node",
-            &a3,
-            SubjectType::Wilaya,
-            &crypto,
-        )
-        .expect("real producer export A3");
-    assert_eq!(seq, 3, "UNIT-A third = seq 3");
-    import_identity_access_package_impl(&state_a, a3.to_string_lossy().into_owned())
-        .expect("UNIT-A seq 3 import succeeds (AdminOnly)");
-
-    // ── Continuation — UNIT-B seq 2 and 3 independently ────────────────────
     set_session(&state_b, "Admin");
-    let b2 = dir.path().join("b2.sync");
-    let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-B"),
-            "wilaya-test-node",
-            &b2,
-            SubjectType::Wilaya,
-            &crypto,
-        )
-        .expect("real producer export B2");
-    assert_eq!(seq, 2, "UNIT-B second = seq 2");
-    import_identity_access_package_impl(&state_b, b2.to_string_lossy().into_owned())
-        .expect("UNIT-B seq 2 import succeeds (AdminOnly)");
-
-    let b3 = dir.path().join("b3.sync");
-    let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-B"),
-            "wilaya-test-node",
-            &b3,
-            SubjectType::Wilaya,
-            &crypto,
-        )
-        .expect("real producer export B3");
-    assert_eq!(seq, 3, "UNIT-B third = seq 3");
-    import_identity_access_package_impl(&state_b, b3.to_string_lossy().into_owned())
-        .expect("UNIT-B seq 3 import succeeds (AdminOnly)");
+    import_admin_access_package_impl(&state_b, a2.to_string_lossy().into_owned())
+        .expect("UNIT-B applies the SAME seq-2 package independently (AdminOnly)");
 
     {
         let guard_a = state_a.get_db().expect("lock");
         let db_a = guard_a.as_ref().expect("db");
         let guard_b = state_b.get_db().expect("lock");
         let db_b = guard_b.as_ref().expect("db");
-        assert_eq!(last_applied(db_a, &issuer.to_string()), Some(3));
-        assert_eq!(last_applied(db_b, &issuer.to_string()), Some(3));
+        assert_eq!(last_applied(db_a, &issuer.to_string()), Some(2));
+        assert_eq!(last_applied(db_b, &issuer.to_string()), Some(2));
         assert_eq!(count_canonical_admins(db_a), 1);
         assert_eq!(count_canonical_admins(db_b), 1);
     }
 
     // ── Replay — exact bootstrap package re-import is rejected, state intact ──
     set_session(&state_a, "Admin");
-    let err = import_identity_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
         .expect_err("replay of the bootstrap package must be rejected");
     assert!(!err.is_empty());
-    let err = import_identity_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state_b, a1.to_string_lossy().into_owned())
         .expect_err("replay of the bootstrap package must be rejected");
     assert!(!err.is_empty());
     {
@@ -752,27 +720,31 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
         let db_b = guard_b.as_ref().expect("db");
         assert_eq!(count_canonical_admins(db_a), 1, "Admin count stays one after replay");
         assert_eq!(count_canonical_admins(db_b), 1, "Admin count stays one after replay");
-        assert_eq!(last_applied(db_a, &issuer.to_string()), Some(3), "ledger unchanged");
-        assert_eq!(last_applied(db_b, &issuer.to_string()), Some(3), "ledger unchanged");
+        assert_eq!(last_applied(db_a, &issuer.to_string()), Some(2), "ledger unchanged");
+        assert_eq!(last_applied(db_b, &issuer.to_string()), Some(2), "ledger unchanged");
     }
 
-    // ── Cross-target at bootstrap — UNIT-A's package must not bootstrap B ──
-    // A brand-new UNIT-B2 (fresh, empty ledger) importing UNIT-A's REAL
-    // seq-1 package: the B8 predicates reject on the unit_code binding.
-    let state_b2 = unit_state("UNIT-B2");
+    // ── Local replay state — a fresh UNIT-C bootstraps from the SAME seq-1 ──
+    // Replay protection is LOCAL: C's empty ledger accepts sequence 1 even
+    // though A and B already advanced to 2.
+    create_unit(&node.db, "UNIT-C", "userc");
+    let state_c = unit_state("UNIT-C");
     seed_anchor_from_cert(
-        state_b2.get_db().expect("lock").as_ref().expect("db"),
+        state_c.get_db().expect("lock").as_ref().expect("db"),
         &wilaya_cert,
     );
-    set_session(&state_b2, "User");
-    let err = import_identity_access_package_impl(&state_b2, a1.to_string_lossy().into_owned())
-        .expect_err("cross-target package must not bootstrap another unit");
-    assert!(!err.is_empty());
+    set_session(&state_c, "User");
+    import_admin_access_package_impl(&state_c, a1.to_string_lossy().into_owned())
+        .expect("UNIT-C bootstrap from the same seq-1 artifact succeeds");
     {
-        let guard = state_b2.get_db().expect("lock");
-        let db = guard.as_ref().expect("db");
-        assert_eq!(count_canonical_admins(db), 0, "no admin may be created");
-        assert_eq!(last_applied(db, &issuer.to_string()), None, "no ledger advance");
+        let guard_c = state_c.get_db().expect("lock");
+        let db_c = guard_c.as_ref().expect("db");
+        assert_eq!(count_canonical_admins(db_c), 1, "canonical Admin created on C");
+        assert_eq!(
+            last_applied(db_c, &issuer.to_string()),
+            Some(1),
+            "C's ledger is independent of A/B"
+        );
     }
 }
 
@@ -787,13 +759,13 @@ fn real_producer_multi_unit_bootstrap_continuation_replay_and_cross_target() {
 #[test]
 fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
     // seq 2 as first import on an empty ledger → OutOfOrder expected=1.
+    // Vehicle: `admin_access` (the active account kind after D1); the
+    // Transport Guard rule is kind-agnostic and unchanged.
     let state = unit_state("UNIT-9");
     let issuer_id = Uuid::new_v4();
     {
         let guard = state.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
-        let mut anchor = crafted_payload("UNIT-9");
-        anchor.unit_code = "UNIT-9".to_string();
         let cert = IdentityCertificate {
             identity_id: issuer_id,
             subject_type: SubjectType::Wilaya,
@@ -810,7 +782,6 @@ fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
         };
         IdentityStorePort::upsert(&make_executor(db).identity_store(), &cert, &chrono::Utc::now().to_rfc3339())
             .expect("seed anchor");
-        drop(anchor);
     }
     set_session(&state, "User");
 
@@ -818,34 +789,34 @@ fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
 
     // seq 2 as first → rejected (empty-ledger baseline is 1).
     let seq2_first = dir.path().join("seq2.sync");
-    write_encrypted(
-        &crafted_package("f1-seq2", issuer_id, [42u8; 32], 2, "UNIT-9"),
+    write_encrypted_admin(
+        &crafted_admin_package("f1-seq2", issuer_id, [42u8; 32], 2),
         [42u8; 32],
         &seq2_first,
     );
-    let err = import_identity_access_package_impl(&state, seq2_first.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state, seq2_first.to_string_lossy().into_owned())
         .expect_err("seq 2 as first import must be OutOfOrder");
     assert!(err.contains("ترتيب") || !err.is_empty());
 
     // seq 0 as first → rejected.
     let seq0_first = dir.path().join("seq0.sync");
-    write_encrypted(
-        &crafted_package("f1-seq0", issuer_id, [42u8; 32], 0, "UNIT-9"),
+    write_encrypted_admin(
+        &crafted_admin_package("f1-seq0", issuer_id, [42u8; 32], 0),
         [42u8; 32],
         &seq0_first,
     );
-    let err = import_identity_access_package_impl(&state, seq0_first.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state, seq0_first.to_string_lossy().into_owned())
         .expect_err("seq 0 as first import must be rejected");
     assert!(!err.is_empty());
 
     // A valid seq 1 bootstrap succeeds.
     let first = dir.path().join("first.sync");
-    write_encrypted(
-        &crafted_package("f1-first", issuer_id, [42u8; 32], 1, "UNIT-9"),
+    write_encrypted_admin(
+        &crafted_admin_package("f1-first", issuer_id, [42u8; 32], 1),
         [42u8; 32],
         &first,
     );
-    import_identity_access_package_impl(&state, first.to_string_lossy().into_owned())
+    import_admin_access_package_impl(&state, first.to_string_lossy().into_owned())
         .expect("valid seq 1 bootstrap succeeds");
     {
         let guard = state.get_db().expect("lock");
@@ -857,33 +828,33 @@ fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
     // Post-bootstrap: stale seq 1 → Replay; gap (seq 4) → OutOfOrder.
     set_session(&state, "Admin");
     let stale = dir.path().join("stale.sync");
-    write_encrypted(
-        &crafted_package("f1-stale", issuer_id, [42u8; 32], 1, "UNIT-9"),
+    write_encrypted_admin(
+        &crafted_admin_package("f1-stale", issuer_id, [42u8; 32], 1),
         [42u8; 32],
         &stale,
     );
-    let err = import_identity_access_package_impl(&state, stale.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state, stale.to_string_lossy().into_owned())
         .expect_err("stale seq 1 must be Replay");
     assert!(!err.is_empty());
 
     let gap = dir.path().join("gap.sync");
-    write_encrypted(
-        &crafted_package("f1-gap", issuer_id, [42u8; 32], 4, "UNIT-9"),
+    write_encrypted_admin(
+        &crafted_admin_package("f1-gap", issuer_id, [42u8; 32], 4),
         [42u8; 32],
         &gap,
     );
-    let err = import_identity_access_package_impl(&state, gap.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state, gap.to_string_lossy().into_owned())
         .expect_err("gap to seq 4 must be OutOfOrder (expected 2)");
     assert!(!err.is_empty());
 
     // The valid next sequence still imports.
     let second = dir.path().join("second.sync");
-    write_encrypted(
-        &crafted_package("f1-second", issuer_id, [42u8; 32], 2, "UNIT-9"),
+    write_encrypted_admin(
+        &crafted_admin_package("f1-second", issuer_id, [42u8; 32], 2),
         [42u8; 32],
         &second,
     );
-    import_identity_access_package_impl(&state, second.to_string_lossy().into_owned())
+    import_admin_access_package_impl(&state, second.to_string_lossy().into_owned())
         .expect("valid contiguous seq 2 succeeds after failed probes");
     {
         let guard = state.get_db().expect("lock");

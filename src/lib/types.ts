@@ -434,6 +434,16 @@ export interface IdentityAccessImportResult {
   timestamp: string;
 }
 
+// Admin-Only account synchronization result (admin_access, ADR-0051).
+// Carries synchronization status ONLY — never credential material; the UNIT
+// operator account is structurally out of scope for this kind.
+export interface AdminAccessImportResult {
+  admin_updated: boolean;
+  package_id: string;
+  imported_by: string;
+  timestamp: string;
+}
+
 // Progress Types
 export interface ProgressInfo {
   id: string;

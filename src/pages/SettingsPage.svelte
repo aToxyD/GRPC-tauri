@@ -1,25 +1,28 @@
 <script lang="ts">
-  // الإعدادات — SEC-014 Phase 4: the production home for the post-provisioning
-  // Admin credential + B8 account lifecycle (ADR-0040/0045).
+  // الإعدادات — SEC-014 Phase 4 + SEC-021: the production home for the
+  // post-provisioning Admin credential and Admin-Only account synchronization
+  // (ADR-0045 / ADR-0051, Decision D1).
   //
   // Authenticated page only: every action here requires a CurrentSession and
   // the backend remains the sole authorization authority:
-  //   - setFleetAdminPassword        → ManageAccountSync (WILAYA + AdminOnly)
-  //   - exportIdentityAccessPackage  → ExportIdentityAccessPackage (WILAYA + AdminOnly)
-  //   - importIdentityAccessPackage  → AuthenticatedOnly + FirstImportBootstrap
-  //                                     (UNIT User) / AdminOnly re-import (UNIT Admin)
-  // This page never hashes, stores, or renders secrets, never creates a
-  // session, and never performs automatic navigation after an import.
+  //   - setFleetAdminPassword     → ManageAccountSync (WILAYA + AdminOnly)
+  //   - exportAdminAccessPackage  → ExportAdminAccessPackage (WILAYA + AdminOnly)
+  //                                 — fleet-wide, NO unit selector exists
+  //   - importAdminAccessPackage  → AuthenticatedOnly + FirstImportBootstrap
+  //                                 (UNIT User) / AdminOnly re-import (UNIT Admin)
+  // The admin_access package synchronizes ONLY the canonical `admin` account;
+  // the UNIT operator account provisioned by `.unit` is never touched. This
+  // page never hashes, stores, or renders secrets, never creates a session,
+  // and never performs automatic navigation after an import.
   import { onMount, onDestroy } from 'svelte';
   import {
     getSettings,
-    listUnits,
     setFleetAdminPassword,
-    exportIdentityAccessPackage,
-    importIdentityAccessPackage,
+    exportAdminAccessPackage,
+    importAdminAccessPackage,
   } from '../lib/contracts';
   import { openFile, saveFile } from '../lib/tauri';
-  import type { Unit, Settings } from '../lib/types';
+  import type { Settings } from '../lib/types';
   import { push } from 'svelte-spa-router';
   import { currentUser as userStore } from '../lib/session';
   import Layout from '../components/Layout.svelte';
@@ -31,7 +34,6 @@
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
-  import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
 
@@ -54,8 +56,6 @@
 
   // @category ProjectionState
   let settings: Settings | null = null;
-  // @category ProjectionState
-  let units: Unit[] = [];
   // @category UiState
   let nodeType: 'WILAYA' | 'UNIT' | null = null;
   // @category UiState — true while redirecting an unauthorized visitor away
@@ -74,11 +74,9 @@
   // @category TransientState
   let fleetSuccess = '';
 
-  // ── WILAYA: B8 export (مزامنة الحسابات) ───────────────────────────────────
-  // @category UiState
-  let selectedUnit: string = '';
-  // @category ProjectionState
-  $: selectedUnitCode = units.find((u) => u.id === selectedUnit)?.code ?? '';
+  // ── WILAYA: admin_access export (مزامنة حساب المدير العام) ────────────────
+  // Fleet-wide by construction: there is deliberately NO unit selector — the
+  // backend command accepts no target parameter either.
   // @category TransientState
   let b8ExportProgress = '';
 
@@ -102,12 +100,6 @@
         accessDenied = true;
         push('/wilaya');
         return;
-      }
-      if (nodeType === 'WILAYA' && settings?.wilaya_code) {
-        units = await listUnits(settings.wilaya_code);
-        if (units.length > 0) {
-          selectedUnit = units[0].id;
-        }
       }
     });
   });
@@ -140,29 +132,24 @@
     });
   }
 
-  // WILAYA-only signed/encrypted identity_access export. The backend builds,
-  // signs, and encrypts the package (fail-closed while the fleet password is
-  // unset); the UI only selects the target unit and the destination file —
-  // package contents never enter the frontend.
-  async function handleExportIdentityAccess() {
-    const code = selectedUnitCode;
-    if (!code) {
-      fleetError = 'الرجاء اختيار وحدة أولاً';
-      return;
-    }
+  // WILAYA-only signed/encrypted admin_access export (ADR-0051). The backend
+  // builds, signs, and encrypts the fleet-wide package (fail-closed while the
+  // fleet password is unset); there is NO unit selector — the package applies
+  // to every authorized UNIT node. Package contents never enter the frontend.
+  async function handleExportAdminAccess() {
     await accountOp.guard(async () => {
       try {
         const selected = await saveFile({
-          defaultPath: `grpc-identity-access-${code}.sync`,
-          filters: [{ name: 'حزمة الحسابات (B8)', extensions: ['sync'] }],
+          defaultPath: `grpc-admin-access.sync`,
+          filters: [{ name: 'حزمة حساب المدير العام', extensions: ['sync'] }],
         });
         if (!selected) return;
-        b8ExportProgress = `تصدير حزمة الحسابات (B8) للوحدة ${code}...`;
+        b8ExportProgress = 'تصدير حزمة حساب المدير العام (admin)...';
         fleetError = '';
         fleetSuccess = '';
-        const result = await exportIdentityAccessPackage(code, selected as string);
+        const result = await exportAdminAccessPackage(selected as string);
         fleetSuccess =
-          `تم تصدير حزمة الحسابات (B8) للوحدة ${code} (${result.record_count} سجلات) — تحمل بيانات اعتماد المسؤول العام وحساب الوحدة.`;
+          `تم تصدير حزمة حساب المدير العام (${result.record_count} سجلات) — صالحة للاستيراد على جميع عقد الوحدات، ولا تُعدّل حساب مشغّل الوحدة إطلاقًا.`;
         b8ExportProgress = '';
       } catch (e) {
         fleetError = formatErrorMessage(e);
@@ -171,26 +158,28 @@
     });
   }
 
-  // UNIT-side identity_access import (first import via FirstImportBootstrap
-  // for a User session; authorized re-import via the AdminOnly path for an
-  // Admin session — the backend decides). Success refreshes local account
-  // state only: no session is created, no automatic navigation occurs, and
-  // the current session stays untouched.
-  async function handleImportIdentityAccess() {
+  // UNIT-side admin_access import (first import via FirstImportBootstrap for
+  // a User session; authorized re-import via the AdminOnly path for an Admin
+  // session — the backend decides). The package synchronizes ONLY the
+  // canonical `admin` account: the local operator account provisioned by
+  // `.unit` keeps its username and password exactly as provisioned. Success
+  // refreshes local account state only: no session is created, no automatic
+  // navigation occurs, and the current session stays untouched.
+  async function handleImportAdminAccess() {
     await b8ImportOp.guard(async () => {
       try {
         b8ImportError = '';
         b8ImportSuccess = '';
         const selected = await openFile({
           multiple: false,
-          filters: [{ name: 'حزمة الحسابات (B8)', extensions: ['sync'] }],
+          filters: [{ name: 'حزمة حساب المدير العام', extensions: ['sync'] }],
         });
         if (!selected) return;
-        await importIdentityAccessPackage(selected as string);
+        await importAdminAccessPackage(selected as string);
         b8ImportSuccess =
-          'تم استيراد حزمة الحسابات بنجاح. يمكنك الآن تسجيل الخروج ثم تسجيل الدخول باسم admin باستخدام كلمة مرور المسؤول العام التي تم تعيينها على عقدة WILAYA.';
+          'تمت مزامنة حساب المدير العام بنجاح. يمكنك الآن تسجيل الخروج ثم تسجيل الدخول باسم admin باستخدام كلمة مرور المسؤول العام المعينة على عقدة WILAYA. حساب مشغّل الوحدة الخاص بك لم يُمَسّ — استمر باستخدام اسم المستخدم وكلمة المرور المُوفرَّين عبر ملف .unit.';
       } catch (e) {
-        b8ImportError = 'خطأ في استيراد حزمة الحسابات: ' + formatErrorMessage(e);
+        b8ImportError = 'خطأ في استيراد حزمة حساب المدير العام: ' + formatErrorMessage(e);
       }
     });
   }
@@ -266,7 +255,7 @@
           </AppCard>
         </div>
 
-        <!-- مزامنة الحسابات (B8): تصدير حزمة الحسابات -->
+        <!-- مزامنة حساب المدير العام (admin_access): تصدير أسطولي -->
         <div class="mt-8">
           <AppCard>
             <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
@@ -276,40 +265,41 @@
                 </svg>
               </div>
               <div>
-                <h3 class="font-semibold text-gray-800 dark:text-gray-100">مزامنة الحسابات (B8)</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400">تصدير حزمة الحسابات (identity_access) لوحدة</p>
+                <h3 class="font-semibold text-gray-800 dark:text-gray-100">مزامنة حساب المدير العام (admin)</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">تصدير حزمة admin_access لجميع الوحدات</p>
               </div>
             </div>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">اختر الوحدة المستهدفة ثم صدّر الحزمة</p>
-            <AppSelect id="b8-export-unit-select" label="" bind:value={selectedUnit}>
-              {#each units as unit}
-                <option value={unit.id}>{unit.code} - {unit.name}</option>
-              {/each}
-            </AppSelect>
+            <AppAlert intent="info">
+              <p class="text-sm leading-relaxed">
+                الحزمة أسطولية بطبيعتها: تُصدَّر مرة واحدة وتصلح للاستيراد على
+                <strong>جميع عقد الوحدات</strong> — لا يوجد اختيار وحدة مستهدفة.
+                تحمل حساب <code class="font-mono">admin</code> فقط، ولا تُعدّل حساب مشغّل الوحدة:
+                اسم المستخدم وكلمة المرور المُوفرَّان عبر ملف <code class="font-mono">.unit</code> يبقيان كما هما.
+              </p>
+            </AppAlert>
             {#if b8ExportProgress}
               <div class="mt-2">
                 <AppAlert intent="info">{b8ExportProgress}</AppAlert>
               </div>
             {/if}
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-3 leading-relaxed">
-              الحزمة موقّعة ومشفّرة بالكامل من الخلفية وتحمل بيانات اعتماد المسؤول العام وحساب
-              الوحدة — لا تُعرض محتوياتها هنا. إذا لم تُضبط كلمة مرور المسؤول العام بعد، يرفض
-              الخادم التصدير (Fail-Closed).
+              الحزمة موقّعة ومشفّرة بالكامل من الخلفية ولا تعرض محتوياتها هنا.
+              إذا لم تُضبط كلمة مرور المسؤول العام بعد، يرفض الخادم التصدير (Fail-Closed).
             </p>
             <AppButton
               variant="secondary"
               fullWidth
               class="mt-3"
-              disabled={!selectedUnit || !!b8ExportProgress || $operationLoading}
+              disabled={!!b8ExportProgress || $operationLoading}
               loading={!!b8ExportProgress}
-              on:click={handleExportIdentityAccess}
+              on:click={handleExportAdminAccess}
             >
-              تصدير حزمة الحسابات (B8) الموقّعة والمشفّرة
+              تصدير حزمة حساب المدير العام الموقّعة والمشفّرة
             </AppButton>
           </AppCard>
         </div>
       {:else if nodeType === 'UNIT'}
-        <!-- مزامنة الحسابات (B8): استيراد حزمة الحسابات -->
+        <!-- مزامنة حساب المدير العام (admin_access): استيراد أسطولي -->
         <div class="mt-8">
           <AppCard>
             <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
@@ -319,16 +309,18 @@
                 </svg>
               </div>
               <div>
-                <h3 class="font-semibold text-gray-800 dark:text-gray-100">مزامنة الحسابات (B8)</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400">استيراد حساب المسؤول العام وحساب الوحدة</p>
+                <h3 class="font-semibold text-gray-800 dark:text-gray-100">مزامنة حساب المدير العام (admin)</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">استيراد حساب المسؤول العام من عقدة WILAYA</p>
               </div>
             </div>
             <AppAlert intent="info">
               <p class="text-sm leading-relaxed">
-                تختلف حزمة الحسابات عن حزمة <code class="font-mono">.unit</code>: تصدّرها عقدة WILAYA
-                بعد تعيين كلمة مرور المسؤول العام، وتحمل بيانات اعتماد حساب
-                <code class="font-mono">admin</code> (كلمة مرور أسطولية) وحساب الوحدة — دون أي مادة
-                هوية أو مفاتيح خاصة. لا يُنشأ أي جلسة أو شهادة محلية بغير ذلك.
+                تزامن هذه الحزمة حساب <code class="font-mono">admin</code> فقط
+                (كلمة المرور الأسطولية المعينة على عقدة WILAYA).
+                <strong>لا تُعدّل حساب مشغّل الوحدة المحلي إطلاقًا:</strong> استمر
+                باستخدام اسم المستخدم وكلمة المرور المُوفرَّين عبر ملف
+                <code class="font-mono">.unit</code>. لا تحمل الحزمة أي مادة هوية
+                أو مفاتيخ خاصة، ولا يُنشأ أي جلسة أو شهادة محلية بغير ذلك.
               </p>
             </AppAlert>
             {#if isAdmin}
@@ -347,23 +339,15 @@
                 <AppAlert intent="danger" dismissible on:dismiss={() => b8ImportError = ''}>{b8ImportError}</AppAlert>
               </div>
             {/if}
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-4 leading-relaxed">
-              ملاحظة: بعد الاستيراد يصبح حساب الوحدة باسم المستخدم القياسي
-              <code class="font-mono">user</code>، وتصبح كلمة مروره هي كلمة مرور مستخدم
-              الوحدة الصادرة عن عقدة WILAYA (المحددة عند إنشاء الوحدة أو المُحدَّثة لاحقًا
-              على عقدة WILAYA) — فاحرص على الحصول عليها من عقدة WILAYA. اسم المستخدم
-              وكلمة المرور السابقان لم يعودا صالحين لتسجيل الدخول على هذه العقدة، لأن
-              حزمة الحسابات تزامن بيانات اعتماد الحسابين معًا.
-            </p>
             <AppButton
               variant="secondary"
               size="lg"
               fullWidth
               class="mt-3"
               loading={$b8ImportLoading}
-              on:click={handleImportIdentityAccess}
+              on:click={handleImportAdminAccess}
             >
-              استيراد حزمة الحسابات (B8)
+              استيراد حزمة حساب المدير العام
             </AppButton>
           </AppCard>
         </div>

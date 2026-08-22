@@ -151,6 +151,38 @@ impl<'a> UserAccountSyncService<'a> {
         })
     }
 
+    /// Wilaya: build the [`AdminAccessPayload`] for the fleet-wide Admin
+    /// synchronization package (`kind = "admin_access"`, ADR-0051 — Accepted
+    /// 2026-08-22).
+    ///
+    /// The payload carries ONLY the fleet `admin` credential state — there is
+    /// NO unit selector, NO target unit, and NO operator-account material
+    /// (structural exclusion, ADR-0051 §4). Fails closed exactly like
+    /// [`Self::export`] when the fleet `admin` password is not set or the
+    /// account is disabled.
+    pub fn export_admin_access(&self) -> Result<crate::models::AdminAccessPayload, AppError> {
+        let admin = self
+            .executor
+            .users()
+            .get_user_by_username_raw("admin")?
+            .ok_or_else(|| Self::not_found("user", "admin"))?;
+        if admin.password_hash.is_empty() {
+            return Err(Self::not_permitted(
+                "كلمة مرور المسؤول العام لم تُضبط بعد؛ حدّثها أولاً",
+            ));
+        }
+        if admin.deleted {
+            return Err(Self::not_permitted(
+                "حساب المسؤول العام معطّل؛ لا يمكن تصدير حزمة حساب المدير",
+            ));
+        }
+
+        Ok(crate::models::AdminAccessPayload {
+            admin_password_hash: admin.password_hash,
+            admin_enabled: true,
+        })
+    }
+
     /// UNIT: apply an [`IdentityAccessPayload`] canonically.
     ///
     /// 1. Rename the local unit-bound user to `user` (only when no `user`

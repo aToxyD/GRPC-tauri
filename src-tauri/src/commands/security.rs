@@ -80,7 +80,7 @@ fn normalize_imported_artifact(content: &[u8]) -> AppResult<String> {
 ///
 /// Public as a test seam so the integration suite (`src-tauri/tests/`) can
 /// exercise the real import path against an isolated store dir (same pattern
-/// as `import_identity_access_package_impl`).
+/// as `import_admin_access_package_impl`).
 pub fn import_app_key_into_store(
     store: &AppKeyStore,
     passphrase: &str,

@@ -197,6 +197,75 @@ impl<'a> IdentitySignedExportService<'a> {
         Ok(sequence)
     }
 
+    /// Export the fleet-wide Admin synchronization package (ADR-0051 —
+    /// Accepted 2026-08-22, kind `admin_access`) as an Ed25519-signed V2 sync
+    /// package to `target_path`.
+    ///
+    /// ADR-0051 §7: the transport sequence is allocated from the dedicated
+    /// ISSUER-ONLY producer stream (`admin_access_export_sequence`,
+    /// migration 010) — no target dimension exists because the package is
+    /// fleet-wide WILAYA → all UNIT nodes. The same signed artifact is
+    /// independently importable by every authorized UNIT against its own
+    /// strictly-local consumer ledger.
+    ///
+    /// The payload carries ONLY `{admin_password_hash, admin_enabled}`
+    /// (structural isolation from any operator-account material). There is
+    /// deliberately NO unit selector anywhere in this path.
+    ///
+    /// Advance-on-success and fail-closed resolver behavior are identical to
+    /// [`Self::export_v2_identity_access_package`].
+    pub fn export_v2_admin_access_package(
+        &self,
+        dataset: crate::models::AdminAccessPayload,
+        source_node_id: &str,
+        target_path: &Path,
+        node_type: SubjectType,
+        crypto_port: &AgeFileEncryptionProvider,
+    ) -> AppResult<u64> {
+        let resolved = NodeIdentityResolver::resolve_local_signer(self.db, self.node_key_store, node_type)?
+            .ok_or_else(|| {
+                AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "لا يمكن تصدير حزمة V2: العقدة المحلية غير مزوّدة كهوية {node_type} (مفتاح عقدة أو شهادة نشطة ناقصة)"
+                    ),
+                })
+            })?;
+
+        let identity_id = resolved.certificate.identity_id;
+        let pending = self
+            .db
+            .executor()
+            .admin_access_export_sequence_state()
+            .begin_export(&identity_id.to_string())?;
+
+        let sequence = pending.value();
+        let signer = Ed25519PackageSigner::from_provider(resolved.signer);
+        self.build_and_write(
+            dataset,
+            source_node_id,
+            crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCESS_PACKAGE_KIND,
+            sequence,
+            identity_id,
+            signer,
+            target_path,
+            crypto_port,
+        )?;
+
+        // Advance-on-success, scoped to the issuer-only stream.
+        pending.commit()?;
+
+        log::info!(
+            target: "grpc::sync",
+            "admin access export success: kind={} issuer={} sequence={} path={}",
+            crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCESS_PACKAGE_KIND,
+            identity_id,
+            sequence,
+            target_path.display()
+        );
+
+        Ok(sequence)
+    }
+
     /// Build + sign + write the encrypted V2 package file for an allocated
     /// sequence (shared by the global-ledger and per-target-ledger export
     /// paths). Produces NO ledger effect — allocation commit is the caller's
