@@ -108,7 +108,8 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       // no seeded admin (B6-A: fleets bootstrap via the offline Root flow), so
       // `admin/admin` is rejected gracefully — proving the full auth IPC path
       // round-trips on the unlocked DB.
-      await driver.client.fill('#username', 'admin');
+      // ADR-0052: `#username` is read-only and pre-pinned to `admin` — only
+      // the wrong credential needs entering.
       await driver.client.fill('#password', 'admin');
       await driver.client.execute(
         `document.querySelector('#username').closest('form').querySelector('button[type=submit]').click()`,

@@ -164,7 +164,13 @@ impl<'a> NodePackageService<'a> {
         // picks up the correct node_id during login on this UNIT node.
         let node_id = &package.unit.code;
 
-        let user_id = Uuid::new_v4().to_string();
+        // ADR-0052: the operator row identity is immutable. Reuse the
+        // existing `(username, node_id)` row id when present so the
+        // unit→user link never dangles across re-imports.
+        let user_id = user_repo
+            .get_user_by_username_raw(&package.user.username, node_id)?
+            .map(|u| u.id)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         user_repo.upsert_raw_user(
             &user_id,
             &package.user.username,
@@ -229,7 +235,13 @@ impl<'a> NodePackageService<'a> {
             &now,
         )?;
 
-        unit_repo.update_unit_user(unit_id, user_id)?;
+        // ADR-0052: link by the EFFECTIVE row id — on conflict the existing
+        // row keeps its own id (never rewritten).
+        let effective_user_id = user_repo
+            .get_user_by_username_raw(username, node_id)?
+            .map(|u| u.id)
+            .unwrap_or_else(|| user_id.to_string());
+        unit_repo.update_unit_user(unit_id, &effective_user_id)?;
 
         settings_repo.update_unit_node_settings(unit_name, wilaya_code)?;
 

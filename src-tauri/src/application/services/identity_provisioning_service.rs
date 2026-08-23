@@ -711,8 +711,14 @@ impl<'a> IdentityProvisioningService<'a> {
         // additively (legacy password hash preserved); missing row → created
         // identity-only INSIDE the same transaction that persists the cert.
         let (subject_id, is_new_user) = {
+            use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+            let node_scope = crate::infrastructure::security::SettingsNodeIdentityProvider::new(
+                self.db.executor(),
+            )
+            .current_node_id()
+            .unwrap_or_else(|_| "WILAYA".to_string());
             let users = self.db.executor().users();
-            match users.get_user_by_username(username)? {
+            match users.get_user_by_username(username, &node_scope)? {
                 Some(existing) => {
                     let parsed = Uuid::parse_str(&existing.id).map_err(|e| {
                         AppError::Internal(format!(

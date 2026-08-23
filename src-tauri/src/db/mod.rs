@@ -201,14 +201,16 @@ pub fn seed_default_admin(db: &Database) -> crate::errors::AppResult<()> {
     use crate::models::UserRole;
     use crate::repositories::RepositoryProvider;
 
-    let existing = db.executor().users().get_user_by_username("admin")?;
+    let node_id = SettingsNodeIdentityProvider::new(db.executor())
+        .current_node_id()
+        .unwrap_or_else(|_| "WILAYA".to_string());
+
+    // ADR-0052: existence is scoped to this node's identity.
+    let existing = db.executor().users().get_user_by_username("admin", &node_id)?;
     if existing.is_some() {
         return Ok(());
     }
 
-    let node_id = SettingsNodeIdentityProvider::new(db.executor())
-        .current_node_id()
-        .unwrap_or_else(|_| "WILAYA".to_string());
     let password_port = crate::infrastructure::security::Argon2PasswordHashProvider;
     let password_hash = password_port
         .hash_admin("admin")

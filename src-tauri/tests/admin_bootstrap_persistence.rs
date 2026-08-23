@@ -26,7 +26,7 @@ fn seed(path: &std::path::Path) -> Database {
 fn admin_user(db: &Database) -> User {
     let port = Argon2PasswordHashProvider;
     UserService::new(db.executor(), &port)
-        .get_user_by_username("admin")
+        .get_user_by_username("admin", "WILAYA")
         .expect("query admin")
         .expect("admin user must be seeded")
 }

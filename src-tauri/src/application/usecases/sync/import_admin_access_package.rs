@@ -7,7 +7,8 @@
 //! `admin` account. This usecase is the structural enforcement of that
 //! boundary — its apply path reaches ONLY [`crate::repositories::UsersRepository::upsert_synced_admin`]
 //! and deliberately contains NO dependency on UNIT-user synchronization code
-//! (`upsert_synced_user`, `update_username`, unit-user password mutation).
+//! (`upsert_synced_user`, username mutation of any kind, unit-user password
+//! mutation) — ADR-0052: operator usernames are structurally immutable.
 //! The operator row is therefore byte-for-byte unreachable from this kind,
 //! on both acceptance and rejection branches.
 //!

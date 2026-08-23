@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/tauriApp';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
+import { ensureLoginIdentity } from '../helpers/login';
 
 test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
   test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
@@ -7,13 +8,13 @@ test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
   test('rate limiter blocks access after 5 consecutive invalid login attempts', async ({ tauriApp }) => {
     const { page } = tauriApp;
 
-    const usernameInput = page.locator('input[placeholder*="اسم المستخدم"]');
+    await ensureLoginIdentity(page, 'admin');
     const passwordInput = page.locator('input[placeholder*="كلمة المرور"]');
     const submitBtn = page.locator('button:has-text("تسجيل الدخول")');
 
-    // Fill in incorrect details 5 times
+    // Fill in incorrect details 5 times — the identity is fixed (ADR-0052),
+    // only the wrong credential rotates per attempt.
     for (let i = 0; i < 5; i++) {
-      await usernameInput.fill('admin');
       await passwordInput.fill(`wrong_password_${i}`);
       await submitBtn.click();
 
@@ -32,8 +33,8 @@ test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
   test('successful authentication, session bootstrap, and node redirection', async ({ tauriApp }) => {
     const { page } = tauriApp;
 
-    // Login as default admin
-    await page.locator('input[placeholder*="اسم المستخدم"]').fill('admin');
+    // Login as default admin (identity pinned/selected — ADR-0052)
+    await ensureLoginIdentity(page, 'admin');
     await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
     await page.locator('button:has-text("تسجيل الدخول")').click();
 

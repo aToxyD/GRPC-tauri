@@ -13,9 +13,6 @@ static SPACE_REGEX: LazyLock<Regex> =
 static CODE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9]+$").expect("Invalid code regex pattern"));
 
-static USERNAME_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_]+$").expect("Invalid username regex pattern"));
-
 /// Sanitize a string input by trimming and removing dangerous patterns
 pub fn sanitize_string(input: &str) -> String {
     let mut result = input.trim().to_string();
@@ -482,24 +479,8 @@ pub fn validate_create_unit_request(req: &CreateUnitRequest) -> ValidationResult
         }));
     }
 
-    // Validate username (3-50 alphanumeric characters)
-    let username = sanitize_string(&req.username);
-    if username.is_empty() {
-        return Err(AppError::Validation(ValidationError::Required {
-            field: "username".to_string(),
-        }));
-    }
-    if username.len() < 3 || username.len() > 50 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "username".to_string(),
-            value: format!("الطول: {}", username.len()),
-        }));
-    }
-    if !USERNAME_REGEX.is_match(&username) {
-        return Err(AppError::Validation(ValidationError::InvalidUsername {
-            reason: "اسم المستخدم يجب أن يحتوي على حروف وأرقام فقط".to_string(),
-        }));
-    }
+    // ADR-0052: there is no caller-supplied username to validate — the
+    // operator username is derived server-side as the canonical `user`.
 
     // Validate password (8+ characters, must contain uppercase, lowercase, and digit)
     if req.password.len() < 8 {
@@ -881,7 +862,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة الاختبار".to_string(),
-            username: "testuser".to_string(),
             password: "Test1234".to_string(),
         };
         assert!(validate_create_unit_request(&req).is_ok());
@@ -892,7 +872,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "U1".to_string(),
             name: "وحدة".to_string(),
-            username: "testuser".to_string(),
             password: "Test1234".to_string(),
         };
         let result = validate_create_unit_request(&req);
@@ -904,7 +883,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة".to_string(),
-            username: "testuser".to_string(),
             password: "weak".to_string(),
         };
         let result = validate_create_unit_request(&req);
@@ -916,7 +894,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة".to_string(),
-            username: "testuser".to_string(),
             password: "test1234".to_string(),
         };
         let result = validate_create_unit_request(&req);

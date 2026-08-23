@@ -1061,6 +1061,7 @@ fn test_confirm_order_sets_unit_id() {
             "test_admin",
             "Password123",
             "Admin",
+            "WILAYA",
             &Utc::now().to_rfc3339(),
         )
         .expect("Failed to create user");

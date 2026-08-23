@@ -18,15 +18,19 @@ CREATE TABLE IF NOT EXISTS settings (
     configured BOOLEAN NOT NULL DEFAULT 0
 );
 
+-- Canonical account identity (ADR-0052): username is unique per node scope,
+-- not globally. UNIT operators are all named 'user' (one per unit code);
+-- the fleet admin is a single ('admin', <local scope>) row per database.
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
+    username TEXT NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'User',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    node_id TEXT,
-    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1))
+    node_id TEXT NOT NULL DEFAULT 'WILAYA',
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    UNIQUE(username, node_id)
 );
 
 CREATE TABLE IF NOT EXISTS units (

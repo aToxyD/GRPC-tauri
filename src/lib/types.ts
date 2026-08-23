@@ -77,7 +77,6 @@ export interface Unit {
 export interface CreateUnitRequest {
   code: string;
   name: string;
-  username: string;
   password: string;
 }
 
@@ -428,7 +427,6 @@ export interface StockMovementsImportResult {
 export interface IdentityAccessImportResult {
   admin_updated: boolean;
   user_updated: boolean;
-  user_renamed: boolean;
   package_id: string;
   imported_by: string;
   timestamp: string;

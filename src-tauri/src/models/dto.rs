@@ -272,7 +272,6 @@ pub struct RegistryPackageImportResult {
 pub struct IdentityAccessPackageImportResult {
     pub admin_updated: bool,
     pub user_updated: bool,
-    pub user_renamed: bool,
     pub package_id: String,
     pub imported_by: String,
     pub timestamp: String,

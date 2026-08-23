@@ -31,12 +31,14 @@ impl Unit {
     }
 }
 
-/// Request to create a new unit
+/// Request to create a new unit.
+///
+/// ADR-0052: the operator username is NOT caller-supplied — the backend
+/// derives the canonical `user` server-side (node-scoped to the unit code).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUnitRequest {
     pub code: String,
     pub name: String,
-    pub username: String,
     pub password: String,
 }
 

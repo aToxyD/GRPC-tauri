@@ -75,6 +75,7 @@ These ADRs were originally created as ADR-001 through ADR-007 and are cross-refe
 | 0049 | `0049-trust-package-verification.md` | Trust Package Verification Hardening — WILAYA-Pinned, Root-Verified, Anchor-Immutable (SEC-010; eliminates SEC-009-01 payload-forgery path; closes trust-package UNIT/ADMIN distribution and cross-issuer revocation) | Accepted | 2026-08-19 | Architecture / Security |
 | 0050 | `0050-wilaya-admin-normal-authentication-model.md` | WILAYA Admin Normal Authentication Model — B6-B Reversal for Normal Login; `.adminkey` Retained as Recovery/High-Assurance Mechanism (SEC-013 Phase 0; supersedes the B6-B normal-login clause of ADR-0038) | Accepted | 2026-08-19 | Architecture / Security |
 | 0051 | `0051-admin-access-package.md` | Admin-Only B8 Account Synchronization — `admin_access` Security-Critical Package Kind; Fleet-Wide Admin Sync Without UNIT Target; UNIT-Operator Account Preservation Invariant; Legacy `identity_access` Cutover (D1) (SEC-019/SEC-020 owner ratification; partially supersedes the UNIT-user synchronization semantics of ADR-0040) | Accepted | 2026-08-22 | Architecture / Security |
+| 0052 | `0052-canonical-unit-operator.md` | Canonical UNIT Operator Identity & Node-Scoped Account Uniqueness — server-derived `user` operator, `UNIQUE(username, node_id)` baseline correction (no migration), rename-capability removal, role-aware login identity selection (SEC-023/024/025 → SEC-026; completes the ADR-0051 UNIT-operator preservation invariant) | Accepted | 2026-08-23 | Architecture / Security |
 
 ---
 

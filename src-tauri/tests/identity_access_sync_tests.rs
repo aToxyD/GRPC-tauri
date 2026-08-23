@@ -298,14 +298,13 @@ fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
 // Section A — Producer export (service-level)
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn create_unit(db: &Database, code: &str, username: &str) {
+fn create_unit(db: &Database, code: &str) {
     let port = Argon2PasswordHashProvider;
     UnitService::new(make_executor(db), &port)
         .create_unit(
             &CreateUnitRequest {
                 code: code.to_string(),
                 name: format!("Unit {}", code),
-                username: username.to_string(),
                 password: UNIT_PASSWORD.to_string(),
             },
             "WILAYA-1",
@@ -368,7 +367,7 @@ fn bootstrap_wilaya(node: &mut Node) -> IdentityCertificate {
 fn export_identity_access_round_trips_as_signed_v2_package() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
-    create_unit(&node.db, "UNIT-9", "unit9user");
+    create_unit(&node.db, "UNIT-9");
     set_fleet_password(&node.db);
 
     let crypto = AgeFileEncryptionProvider::new();
@@ -426,14 +425,14 @@ fn export_identity_access_round_trips_as_signed_v2_package() {
 #[test]
 fn export_fails_closed_when_fleet_admin_password_unset() {
     let db = ConnectionFactory::new_for_test().expect("db");
-    create_unit(&db, "UNIT-9", "unit9user");
+    create_unit(&db, "UNIT-9");
 
     db.executor()
         .users()
         .change_password(
             &db.executor()
                 .users()
-                .get_user_by_username_raw("admin")
+                .get_user_by_username_raw("admin", "WILAYA")
                 .unwrap()
                 .unwrap()
                 .id,
@@ -455,7 +454,7 @@ fn export_fails_closed_when_fleet_admin_password_unset() {
 #[test]
 fn export_fails_closed_when_fleet_admin_disabled() {
     let db = ConnectionFactory::new_for_test().expect("db");
-    create_unit(&db, "UNIT-9", "unit9user");
+    create_unit(&db, "UNIT-9");
     set_fleet_password(&db);
 
     let port = Argon2PasswordHashProvider;
@@ -475,8 +474,8 @@ fn export_fails_closed_when_fleet_admin_disabled() {
 #[test]
 fn export_carries_fleet_identical_admin_and_node_bound_user_hashes() {
     let db = ConnectionFactory::new_for_test().expect("db");
-    create_unit(&db, "UNIT-A", "usera");
-    create_unit(&db, "UNIT-B", "userb");
+    create_unit(&db, "UNIT-A");
+    create_unit(&db, "UNIT-B");
     set_fleet_password(&db);
 
     let port = Argon2PasswordHashProvider;
@@ -528,14 +527,13 @@ fn import_happy_path_applies_canonical_accounts_and_advances_ledger() {
         .expect("identity access import succeeds");
     assert!(outcome.admin_updated);
     assert!(outcome.user_updated);
-    assert!(!outcome.user_renamed);
     assert_eq!(outcome.package_id, "ia-pkg-1");
 
     let port = Argon2PasswordHashProvider;
     let admin = db
         .executor()
         .users()
-        .get_user_by_username("admin")
+        .get_user_by_username("admin", "UNIT-9")
         .expect("read admin")
         .expect("admin present");
     assert_eq!(admin.role, UserRole::Admin);
@@ -547,7 +545,7 @@ fn import_happy_path_applies_canonical_accounts_and_advances_ledger() {
     let user = db
         .executor()
         .users()
-        .get_user_by_username("user")
+        .get_user_by_username("user", "UNIT-9")
         .expect("read user")
         .expect("canonical user present");
     assert_eq!(user.role, UserRole::User);
@@ -656,7 +654,7 @@ fn import_wrong_issuer_is_rejected_before_importer() {
     let admin = db
         .executor()
         .users()
-        .get_user_by_username("admin")
+        .get_user_by_username("admin", "WILAYA")
         .expect("read")
         .expect("seeded admin present");
     assert_eq!(admin.node_id, "WILAYA", "importer must not have run");
@@ -702,26 +700,14 @@ fn import_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
 }
 
 #[test]
-fn import_renames_legacy_admin_named_unit_user_preserving_row_identity() {
+fn import_preserves_canonical_operator_row_without_rename() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     let issuer_id = Uuid::new_v4();
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
 
-    // Pre-sync UNIT node whose local unit-bound user is named "admin"
-    // (legacy `.unit` import) — it shadows the seeded admin row.
-    let port = Argon2PasswordHashProvider;
-    let user_hash = port.hash_node(UNIT_PASSWORD, "UNIT-9").expect("user hash");
-    db.executor()
-        .users()
-        .upsert_user(
-            "legacy-admin-id",
-            "admin",
-            &user_hash,
-            UserRole::User,
-            "UNIT-9",
-            "2024-01-01T00:00:00Z",
-        )
-        .expect("legacy admin-named user upserted");
+    // ADR-0052: the operator row is canonically named `user` from creation;
+    // import must upsert it in place — no rename path exists.
+    create_unit(&db, "UNIT-9");
     let pre_apply_id = db
         .executor()
         .users()
@@ -732,7 +718,7 @@ fn import_renames_legacy_admin_named_unit_user_preserving_row_identity() {
 
     let package = sign_v2_package(
         identity_access_package(
-            "ia-pkg-rename",
+            "ia-pkg-canonical",
             issuer_id,
             ISSUER_SECRET,
             1,
@@ -740,16 +726,15 @@ fn import_renames_legacy_admin_named_unit_user_preserving_row_identity() {
         ),
         ISSUER_SECRET,
     );
-    let outcome = run_identity_access_pipeline(&mut db, "admin", package).expect("import succeeds");
-    assert!(
-        outcome.user_renamed,
-        "legacy admin-named user must be renamed"
-    );
+    let outcome =
+        run_identity_access_pipeline(&mut db, "admin", package).expect("import succeeds");
+    assert!(outcome.admin_updated);
+    assert!(outcome.user_updated);
 
     let admin = db
         .executor()
         .users()
-        .get_user_by_username("admin")
+        .get_user_by_username("admin", "UNIT-9")
         .expect("read")
         .expect("canonical admin present");
     assert_eq!(admin.role, UserRole::Admin);
@@ -758,12 +743,15 @@ fn import_renames_legacy_admin_named_unit_user_preserving_row_identity() {
     let user = db
         .executor()
         .users()
-        .get_user_by_username("user")
+        .get_user_by_username("user", "UNIT-9")
         .expect("read")
         .expect("canonical user present");
     assert_eq!(user.role, UserRole::User);
     assert_eq!(user.node_id, "UNIT-9");
-    assert_eq!(user.id, pre_apply_id, "rename must keep the row identity");
+    assert_eq!(
+        user.id, pre_apply_id,
+        "operator row identity must be preserved without any rename"
+    );
 }
 
 #[test]
@@ -787,7 +775,7 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
     assert!(
         db.executor()
             .users()
-            .get_user_by_username("user")
+            .get_user_by_username("user", "UNIT-9")
             .expect("read")
             .is_none(),
         "disabled unit user must be rejected at the login source"
@@ -808,7 +796,7 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
     assert!(
         db.executor()
             .users()
-            .get_user_by_username("user")
+            .get_user_by_username("user", "UNIT-9")
             .expect("read")
             .is_some(),
         "re-enabled unit user must authenticate at source"
@@ -820,7 +808,7 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
 fn fleet_admin_disabled_after_export_old_snapshot_still_applies() {
     // WILAYA producer: unit exists, fleet password set, payload exported.
     let producer = ConnectionFactory::new_for_test().expect("db");
-    create_unit(&producer, "UNIT-9", "unit9user");
+    create_unit(&producer, "UNIT-9");
     set_fleet_password(&producer);
     let port = Argon2PasswordHashProvider;
     let exported = UserAccountSyncService::new(make_executor(&producer), &port)
@@ -850,7 +838,7 @@ fn fleet_admin_disabled_after_export_old_snapshot_still_applies() {
     let admin = consumer
         .executor()
         .users()
-        .get_user_by_username("admin")
+        .get_user_by_username("admin", "UNIT-9")
         .expect("read")
         .expect("admin present from snapshot");
     assert_eq!(admin.node_id, "UNIT-9");
@@ -1062,7 +1050,7 @@ fn remove_seeded_admin(db: &Database) {
     let admin = db
         .executor()
         .users()
-        .get_user_by_username_raw("admin")
+        .get_user_by_username_raw("admin", "WILAYA")
         .expect("seed query")
         .expect("seeded admin present");
     db.executor()
@@ -1104,7 +1092,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         .db
         .executor()
         .users()
-        .get_user_by_username_raw("admin")
+        .get_user_by_username_raw("admin", "WILAYA")
         .expect("query")
         .expect("admin row");
     assert_eq!(admin.role, UserRole::Admin);
@@ -1113,7 +1101,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         "identity-only admin must have an empty password hash"
     );
 
-    create_unit(&wilaya.db, "UNIT-9", "unit9user");
+    create_unit(&wilaya.db, "UNIT-9");
 
     // B8 export fails closed before the fleet password exists (ADR-0040).
     let err = UserAccountSyncService::new(wilaya.db.executor(), &port)
@@ -1135,7 +1123,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         .db
         .executor()
         .users()
-        .get_user_by_username_raw("admin")
+        .get_user_by_username_raw("admin", "WILAYA")
         .expect("query")
         .expect("admin row");
     assert!(!admin.password_hash.is_empty());
@@ -1146,7 +1134,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         "fleet hash verifies in the global admin domain"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&wilaya.db, "admin")
+        IdentityAuthenticationPolicy::password_login_allowed(&wilaya.db, "admin", "WILAYA")
             .expect("policy"),
         "a usable fleet password opens the normal WILAYA password login path (ADR-0050)"
     );
@@ -1193,7 +1181,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
     let admin = unit_db
         .executor()
         .users()
-        .get_user_by_username_raw("admin")
+        .get_user_by_username_raw("admin", "UNIT-9")
         .expect("query")
         .expect("canonical admin present");
     assert_eq!(admin.role, UserRole::Admin);
@@ -1208,7 +1196,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
             .expect("verify admin")
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&unit_db, "admin").expect("policy"),
+        IdentityAuthenticationPolicy::password_login_allowed(&unit_db, "admin", "UNIT-9").expect("policy"),
         "UNIT admin password login path is open after B8"
     );
 

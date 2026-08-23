@@ -142,14 +142,13 @@ fn bootstrap_wilaya(node: &mut Node) -> IdentityCertificate {
     }
 }
 
-fn create_unit(db: &Database, code: &str, username: &str) {
+fn create_unit(db: &Database, code: &str) {
     let port = Argon2PasswordHashProvider;
     UnitService::new(make_executor(db), &port)
         .create_unit(
             &CreateUnitRequest {
                 code: code.to_string(),
                 name: format!("Unit {}", code),
-                username: username.to_string(),
                 password: UNIT_PASSWORD.to_string(),
             },
             "WILAYA-1",
@@ -427,8 +426,8 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
 fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
-    create_unit(&node.db, "UNIT-A", "usera");
-    create_unit(&node.db, "UNIT-B", "userb");
+    create_unit(&node.db, "UNIT-A");
+    create_unit(&node.db, "UNIT-B");
     set_fleet_password(&node.db);
 
     let crypto = AgeFileEncryptionProvider::new();
@@ -521,7 +520,7 @@ fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
 fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
-    create_unit(&node.db, "UNIT-A", "usera");
+    create_unit(&node.db, "UNIT-A");
     set_fleet_password(&node.db);
 
     let crypto = AgeFileEncryptionProvider::new();
@@ -600,8 +599,8 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     // WILAYA fleet: UNIT-A and UNIT-B provisioned on the WILAYA.
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
-    create_unit(&node.db, "UNIT-A", "usera");
-    create_unit(&node.db, "UNIT-B", "userb");
+    create_unit(&node.db, "UNIT-A");
+    create_unit(&node.db, "UNIT-B");
     set_fleet_password(&node.db);
 
     let crypto = AgeFileEncryptionProvider::new();
@@ -727,7 +726,7 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     // ── Local replay state — a fresh UNIT-C bootstraps from the SAME seq-1 ──
     // Replay protection is LOCAL: C's empty ledger accepts sequence 1 even
     // though A and B already advanced to 2.
-    create_unit(&node.db, "UNIT-C", "userc");
+    create_unit(&node.db, "UNIT-C");
     let state_c = unit_state("UNIT-C");
     seed_anchor_from_cert(
         state_c.get_db().expect("lock").as_ref().expect("db"),

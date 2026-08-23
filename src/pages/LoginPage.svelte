@@ -28,6 +28,7 @@
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
 
   const scope = createRuntimeScope();
@@ -40,8 +41,9 @@
   const importOp = createOperationGuard({ scope });
   const importLoading = importOp.loading;
 
-  // @category TransientState
-  let username = '';
+  // @category TransientState — ADR-0052: the operator identity is chosen from
+  // a fixed set (UNIT) or pinned (WILAYA); free-text entry is gone.
+  let username = 'user';
   // @category TransientState
   let password = '';
   // @category TransientState
@@ -50,6 +52,10 @@
   let isAppConfigured = true;
   // @category ProjectionState
   let isUnitNode = false;
+
+  // ADR-0052: WILAYA nodes authenticate exclusively as `admin`; the identity
+  // field state mirrors the rendered (readonly) field at all times.
+  $: if (!isUnitNode) username = 'admin';
 
   // @category ProjectionState
   let loginAttempts = 0;
@@ -142,6 +148,9 @@
     } catch {
       isUnitNode = false;
     }
+    // ADR-0052: seed the identity field per node class — the canonical UNIT
+    // operator by default, or the pinned fleet admin on WILAYA.
+    username = isUnitNode ? 'user' : 'admin';
   }
 
   async function refreshIdentityStatus() {
@@ -523,17 +532,22 @@
     <!-- نموذج الدخول بكلمة المرور -->
     {#if authTab === 'password'}
     <form class="space-y-4" on:submit|preventDefault={handleLogin} novalidate>
-      <AppInput
-        id="username"
-        label="اسم المستخدم"
-        type="text"
-        bind:value={username}
-        placeholder="أدخل اسم المستخدم"
-        autocomplete="username"
-        required
-        disabled={$loginLoading || isRateLimited}
-        on:keydown={handleKeydown}
-      />
+      {#if isUnitNode}
+        <AppSelect id="username" label="المستخدم" bind:value={username} disabled={$loginLoading || isRateLimited}>
+          <option value="user">مشغّل الوحدة (user)</option>
+          <option value="admin">المسؤول العام (admin)</option>
+        </AppSelect>
+      {:else}
+        <AppInput
+          id="username"
+          label="المسؤول العام (admin)"
+          type="text"
+          value="admin"
+          readonly
+          autocomplete="username"
+          on:keydown={handleKeydown}
+        />
+      {/if}
 
       <AppInput
         id="password"
@@ -549,7 +563,8 @@
 
       <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 leading-relaxed">
         ملاحظة: حساب <code class="font-mono">admin</code> يستخدم <b>كلمة مرور المسؤول العام</b>
-        — وليست كلمة مرور المفتاح الإداري. يتم تعيين كلمة مرور المسؤول العام من صفحة الإعدادات.
+        — وليست كلمة مرور المفتاح الإداري. يتم تعيين كلمة مرور المسؤول العام من صفحة الإعدادات،
+        ومستخدم الوحدة ثابت باسم <code class="font-mono" dir="ltr">user</code>.
       </p>
 
       <AppButton

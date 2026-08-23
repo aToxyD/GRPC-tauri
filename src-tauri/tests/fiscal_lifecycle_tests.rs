@@ -31,7 +31,7 @@ fn test_fiscal_lifecycle_sim() {
     let next_year = current_year + 1;
     let admin_user = executor
         .users()
-        .get_user_by_username("admin")
+        .get_user_by_username("admin", "WILAYA")
         .unwrap()
         .expect("Default admin should exist");
     let user_id = admin_user.id;

@@ -213,10 +213,6 @@
           "type": "string"
         },
         {
-          "name": "username",
-          "type": "string"
-        },
-        {
           "name": "password",
           "type": "string"
         }
@@ -1260,10 +1256,6 @@
         },
         {
           "name": "user_updated",
-          "type": "boolean"
-        },
-        {
-          "name": "user_renamed",
           "type": "boolean"
         },
         {

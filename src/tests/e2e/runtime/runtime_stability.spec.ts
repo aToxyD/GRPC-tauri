@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/tauriApp';
+import { ensureLoginIdentity } from '../helpers/login';
 
 test.describe('Runtime stability', () => {
   test('login page survives rapid submit clicks without runtime errors', async ({ tauriApp }) => {
@@ -8,10 +9,9 @@ test.describe('Runtime stability', () => {
 
     await page.waitForSelector('button:has-text("تسجيل الدخول")');
     const submitBtn = page.locator('button:has-text("تسجيل الدخول")');
-    const usernameInput = page.locator('input[placeholder*="اسم المستخدم"]');
     const passwordInput = page.locator('input[placeholder*="كلمة المرور"]');
 
-    await usernameInput.fill('admin');
+    await ensureLoginIdentity(page, 'admin');
     await passwordInput.fill('wrong');
     for (let i = 0; i < 5; i++) {
       await submitBtn.click({ clickCount: 2, delay: 20 }).catch(() => {});

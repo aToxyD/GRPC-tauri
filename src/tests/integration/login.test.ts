@@ -94,16 +94,15 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
+        // ADR-0052: identity is pinned per node class — no free-text field.
         const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
         const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
 
-        await fireEvent.input(usernameInput, { target: { value: 'civil_admin' } });
         await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
         await fireEvent.click(submitBtn);
 
         await waitFor(() => {
-            expect(mockLogin).toHaveBeenCalledWith({ username: 'civil_admin', password: 'supersecret' });
+            expect(mockLogin).toHaveBeenCalledWith({ username: 'admin', password: 'supersecret' });
             expect(get(currentUser)).toEqual(user);
             expect(mockPush).toHaveBeenCalledWith('/wilaya');
         });
@@ -120,11 +119,10 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
+        // ADR-0052: only the credential varies — the identity stays pinned.
         const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
         const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
 
-        await fireEvent.input(usernameInput, { target: { value: 'invalid_user' } });
         await fireEvent.input(passwordInput, { target: { value: 'wrongpass' } });
         await fireEvent.click(submitBtn);
 
@@ -164,11 +162,9 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
         const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
         const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
 
-        await fireEvent.input(usernameInput, { target: { value: 'civil_admin' } });
         await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
         await fireEvent.click(submitBtn);
 

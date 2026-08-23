@@ -6,11 +6,15 @@
 //!
 //! The Wilaya mutates its own `users` table and exports one
 //! [`IdentityAccessPayload`] per unit. UNIT nodes apply payloads canonically
-//! (rename the local unit-bound user to `user`, upsert the canonical
-//! `admin`/`user` rows). There is no reverse path.
+//! (upsert the canonical `admin`/`user` rows). There is no reverse path.
+//!
+//! ADR-0052: usernames are unique per node scope, so every username lookup in
+//! this service is scoped to the local node identity (`"WILAYA"` on a WILAYA
+//! node, the local unit code on a UNIT node).
 
 use crate::domain::security::PasswordHashPort;
 use crate::errors::{AppError, BusinessLogicError};
+use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
 use crate::models::{IdentityAccessPayload, Unit};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::Utc;
@@ -27,7 +31,6 @@ pub struct UserAccountSyncService<'a> {
 pub struct ApplyIdentityAccessOutcome {
     pub admin_updated: bool,
     pub user_updated: bool,
-    pub user_renamed: bool,
 }
 
 impl<'a> UserAccountSyncService<'a> {
@@ -51,6 +54,14 @@ impl<'a> UserAccountSyncService<'a> {
         })
     }
 
+    /// Local node scope for username lookups (ADR-0052): `"WILAYA"` on a
+    /// WILAYA node, the local unit code on a UNIT node.
+    fn node_scope(&self) -> String {
+        crate::infrastructure::security::SettingsNodeIdentityProvider::new(self.executor)
+            .current_node_id()
+            .unwrap_or_else(|_| "WILAYA".to_string())
+    }
+
     /// Wilaya: set the fleet-wide `admin` password.
     ///
     /// The hash is derived in the admin domain (identical on every node).
@@ -62,7 +73,7 @@ impl<'a> UserAccountSyncService<'a> {
         let admin = self
             .executor
             .users()
-            .get_user_by_username_raw("admin")?
+            .get_user_by_username_raw("admin", &self.node_scope())?
             .ok_or_else(|| Self::not_found("user", "admin"))?;
         let password_hash = self
             .password_port
@@ -104,7 +115,7 @@ impl<'a> UserAccountSyncService<'a> {
         let user = self
             .executor
             .users()
-            .get_user_by_username_raw(username)?
+            .get_user_by_username_raw(username, &self.node_scope())?
             .ok_or_else(|| Self::not_found("user", username))?;
         let now = Utc::now().to_rfc3339();
         self.executor
@@ -128,7 +139,7 @@ impl<'a> UserAccountSyncService<'a> {
         let admin = self
             .executor
             .users()
-            .get_user_by_username_raw("admin")?
+            .get_user_by_username_raw("admin", &self.node_scope())?
             .ok_or_else(|| Self::not_found("user", "admin"))?;
         if admin.password_hash.is_empty() {
             return Err(Self::not_permitted(
@@ -164,7 +175,7 @@ impl<'a> UserAccountSyncService<'a> {
         let admin = self
             .executor
             .users()
-            .get_user_by_username_raw("admin")?
+            .get_user_by_username_raw("admin", &self.node_scope())?
             .ok_or_else(|| Self::not_found("user", "admin"))?;
         if admin.password_hash.is_empty() {
             return Err(Self::not_permitted(
@@ -185,10 +196,8 @@ impl<'a> UserAccountSyncService<'a> {
 
     /// UNIT: apply an [`IdentityAccessPayload`] canonically.
     ///
-    /// 1. Rename the local unit-bound user to `user` (only when no `user`
-    ///    row exists yet) — resolves the legacy `admin` name collision.
-    /// 2. Upsert the canonical `admin` row (fleet-wide hash).
-    /// 3. Upsert the canonical `user` row (unit-bound hash).
+    /// 1. Upsert the canonical `admin` row (fleet-wide hash).
+    /// 2. Upsert the canonical `user` row (unit-bound hash).
     ///
     /// Account ownership stays with the unit: `node_id` is the unit code.
     pub fn apply(
@@ -203,13 +212,9 @@ impl<'a> UserAccountSyncService<'a> {
         let now = Utc::now().to_rfc3339();
         let mut outcome = ApplyIdentityAccessOutcome::default();
 
+        // ADR-0052: no rename step — operator usernames are canonical by
+        // construction (`user`, node-scoped). The legacy rename hack is gone.
         let local = users.get_user_by_node_id(&payload.unit_code)?;
-        if let Some(unit_user) = &local {
-            if unit_user.username != "user" && users.get_user_by_username_raw("user")?.is_none() {
-                users.update_username(&unit_user.id, "user", &now)?;
-                outcome.user_renamed = true;
-            }
-        }
 
         users.upsert_synced_admin(
             &Uuid::new_v4().to_string(),
@@ -265,14 +270,13 @@ mod tests {
         db.executor()
     }
 
-    fn create_unit(db: &Database, code: &str, username: &str) {
+    fn create_unit(db: &Database, code: &str) {
         let port = Argon2PasswordHashProvider;
         crate::application::services::UnitService::new(make_executor(db), &port)
             .create_unit(
                 &CreateUnitRequest {
                     code: code.to_string(),
                     name: format!("Unit {}", code),
-                    username: username.to_string(),
                     password: UNIT_PASSWORD.to_string(),
                 },
                 "WILAYA-1",
@@ -291,7 +295,7 @@ mod tests {
     fn export_carries_fleet_admin_and_unit_user_hashes() {
         let db = ConnectionFactory::new_for_test().unwrap();
         set_fleet_password(&db);
-        create_unit(&db, "UNIT-9", "unit9user");
+        create_unit(&db, "UNIT-9");
 
         let port = Argon2PasswordHashProvider;
         let payload = UserAccountSyncService::new(make_executor(&db), &port)
@@ -312,14 +316,14 @@ mod tests {
     #[test]
     fn export_fails_closed_when_fleet_admin_password_unset() {
         let db = ConnectionFactory::new_for_test().unwrap();
-        create_unit(&db, "UNIT-9", "unit9user");
+        create_unit(&db, "UNIT-9");
 
         db.executor()
             .users()
             .change_password(
                 &db.executor()
                     .users()
-                    .get_user_by_username_raw("admin")
+                    .get_user_by_username_raw("admin", "WILAYA")
                     .unwrap()
                     .unwrap()
                     .id,
@@ -342,13 +346,33 @@ mod tests {
     fn export_reflects_disabled_unit_user() {
         let db = ConnectionFactory::new_for_test().unwrap();
         set_fleet_password(&db);
-        create_unit(&db, "UNIT-9", "unit9user");
+        create_unit(&db, "UNIT-9");
 
         let port = Argon2PasswordHashProvider;
-        UserAccountSyncService::new(make_executor(&db), &port)
-            .set_account_status("unit9user", false)
-            .expect("disable unit user");
+        // ADR-0052: shadow operators are node-scoped (`user`, unit code);
+        // disabling goes through the row id, exactly like the authorized
+        // account-status mutation path.
+        let operator_id = db
+            .executor()
+            .users()
+            .get_user_by_node_id("UNIT-9")
+            .unwrap()
+            .expect("operator present")
+            .id;
+        db.executor()
+            .users()
+            .set_deleted(&operator_id, false, "2024-01-01T00:00:00Z")
+            .unwrap();
 
+        let payload = UserAccountSyncService::new(make_executor(&db), &port)
+            .export("UNIT-9")
+            .expect("export");
+        assert!(payload.user_enabled);
+
+        db.executor()
+            .users()
+            .set_deleted(&operator_id, true, "2024-01-02T00:00:00Z")
+            .unwrap();
         let payload = UserAccountSyncService::new(make_executor(&db), &port)
             .export("UNIT-9")
             .expect("export");
@@ -356,16 +380,34 @@ mod tests {
         assert!(db
             .executor()
             .users()
-            .get_user_by_username("unit9user")
+            .get_user_by_username("user", "UNIT-9")
             .unwrap()
             .is_none());
+    }
+
+    /// ADR-0052: foreign-scope usernames are indistinguishable from unknown
+    /// ones — the WILAYA scope cannot address a UNIT operator row.
+    #[test]
+    fn set_account_status_is_scope_bounded() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        set_fleet_password(&db);
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .set_account_status("user", false)
+            .expect_err("foreign-scope operator must not be addressable");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound { .. })
+        ));
     }
 
     #[test]
     fn disabled_admin_blocks_export() {
         let db = ConnectionFactory::new_for_test().unwrap();
         set_fleet_password(&db);
-        create_unit(&db, "UNIT-9", "unit9user");
+        create_unit(&db, "UNIT-9");
 
         let port = Argon2PasswordHashProvider;
         UserAccountSyncService::new(make_executor(&db), &port)
@@ -384,7 +426,7 @@ mod tests {
     #[test]
     fn apply_creates_canonical_admin_and_user_on_unit() {
         let db = ConnectionFactory::new_for_test().unwrap();
-        create_unit(&db, "UNIT-9", "unit9user");
+        create_unit(&db, "UNIT-9");
         set_fleet_password(&db);
 
         let port = Argon2PasswordHashProvider;
@@ -401,7 +443,7 @@ mod tests {
         let admin = db
             .executor()
             .users()
-            .get_user_by_username("admin")
+            .get_user_by_username("admin", "UNIT-9")
             .unwrap()
             .expect("admin present");
         assert_eq!(admin.role, UserRole::Admin);
@@ -413,7 +455,7 @@ mod tests {
         let user = db
             .executor()
             .users()
-            .get_user_by_username("user")
+            .get_user_by_username("user", "UNIT-9")
             .unwrap()
             .expect("canonical user present");
         assert_eq!(user.role, UserRole::User);
@@ -423,74 +465,60 @@ mod tests {
             .expect("verify user"));
     }
 
+    /// ADR-0052: apply() preserves the existing canonical operator row —
+    /// no rename step exists anywhere in the pipeline.
     #[test]
-    fn apply_renames_legacy_admin_named_unit_user() {
+    fn apply_preserves_canonical_operator_row_identity() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        create_unit(&db, "UNIT-9");
 
-        // Simulate a pre-sync UNIT node whose local unit-bound user is named
-        // "admin" (legacy `.unit` import) — it shadows the seeded admin row
-        // (role User, node_id = unit code).
         let port = Argon2PasswordHashProvider;
-        let user_hash = port.hash_node(UNIT_PASSWORD, "UNIT-9").expect("user hash");
-        db.executor()
-            .users()
-            .upsert_user(
-                "legacy-admin-id",
-                "admin",
-                &user_hash,
-                UserRole::User,
-                "UNIT-9",
-                "2024-01-01T00:00:00Z",
-            )
-            .expect("legacy admin-named user upserted");
-        let pre_apply_id = db
+        let original_id = db
             .executor()
             .users()
-            .get_user_by_node_id("UNIT-9")
+            .get_user_by_username("user", "UNIT-9")
             .unwrap()
-            .expect("unit-bound user present")
+            .expect("canonical operator present")
             .id;
 
         let payload = IdentityAccessPayload {
             unit_code: "UNIT-9".to_string(),
             admin_password_hash: port.hash_admin(FLEET_PASSWORD).expect("admin hash"),
             admin_enabled: true,
-            user_password_hash: user_hash,
+            user_password_hash: port
+                .hash_node(UNIT_PASSWORD, "UNIT-9")
+                .expect("user hash"),
             user_enabled: true,
         };
 
         let outcome = UserAccountSyncService::new(make_executor(&db), &port)
             .apply(&payload)
             .expect("apply");
-        assert!(
-            outcome.user_renamed,
-            "legacy admin-named unit user must be renamed"
-        );
-
-        let admin = db
-            .executor()
-            .users()
-            .get_user_by_username("admin")
-            .unwrap()
-            .expect("canonical admin present");
-        assert_eq!(admin.role, UserRole::Admin);
-        assert_eq!(admin.node_id, "UNIT-9");
+        assert!(outcome.admin_updated);
+        assert!(outcome.user_updated);
 
         let user = db
             .executor()
             .users()
-            .get_user_by_username("user")
+            .get_user_by_username("user", "UNIT-9")
             .unwrap()
             .expect("canonical user present");
-        assert_eq!(user.role, UserRole::User);
-        assert_eq!(user.node_id, "UNIT-9");
-        assert_eq!(user.id, pre_apply_id, "rename must keep the row identity");
+        assert_eq!(user.id, original_id, "operator row identity is preserved");
+        assert_eq!(
+            db.executor()
+                .users()
+                .get_user_by_username_raw("user", "UNIT-9")
+                .unwrap()
+                .expect("raw row present")
+                .username,
+            "user"
+        );
     }
 
     #[test]
     fn apply_disabled_accounts_reject_login_and_reapply_reenables() {
         let db = ConnectionFactory::new_for_test().unwrap();
-        create_unit(&db, "UNIT-9", "unit9user");
+        create_unit(&db, "UNIT-9");
 
         let port = Argon2PasswordHashProvider;
         let payload = UserAccountSyncService::new(make_executor(&db), &port)
@@ -505,7 +533,7 @@ mod tests {
         assert!(
             db.executor()
                 .users()
-                .get_user_by_username("user")
+                .get_user_by_username("user", "UNIT-9")
                 .unwrap()
                 .is_none(),
             "disabled unit user must be rejected"
@@ -517,7 +545,7 @@ mod tests {
         assert!(
             db.executor()
                 .users()
-                .get_user_by_username("user")
+                .get_user_by_username("user", "UNIT-9")
                 .unwrap()
                 .is_some(),
             "re-enabled unit user must authenticate at source"

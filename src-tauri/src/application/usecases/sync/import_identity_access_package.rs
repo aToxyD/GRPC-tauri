@@ -29,7 +29,6 @@ pub struct ImportIdentityAccessPackageInput {
 pub struct ImportIdentityAccessPackageOutcome {
     pub admin_updated: bool,
     pub user_updated: bool,
-    pub user_renamed: bool,
     pub package_id: String,
 }
 
@@ -53,7 +52,6 @@ pub fn execute(
     Ok(ImportIdentityAccessPackageOutcome {
         admin_updated: outcome.admin_updated,
         user_updated: outcome.user_updated,
-        user_renamed: outcome.user_renamed,
         package_id: package_id.0.clone(),
     })
 }

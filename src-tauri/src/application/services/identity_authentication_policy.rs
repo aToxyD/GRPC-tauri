@@ -116,8 +116,18 @@ impl IdentityAuthenticationPolicy {
     /// command falls through to the generic invalid-credentials response — the
     /// gate must never reveal which usernames exist (no enumeration) nor turn
     /// account absence into a distinguishable `challenge_required` signal.
-    pub fn password_login_allowed(db: &Database, username: &str) -> AppResult<bool> {
-        let user = db.executor().users().get_user_by_username_raw(username)?;
+    /// ADR-0052: lookups are scoped to the local node identity, so a foreign
+    /// scope's accounts (e.g. another unit's shadow operator) behave exactly
+    /// like unknown accounts.
+    pub fn password_login_allowed(
+        db: &Database,
+        username: &str,
+        node_scope: &str,
+    ) -> AppResult<bool> {
+        let user = db
+            .executor()
+            .users()
+            .get_user_by_username_raw(username, node_scope)?;
         Ok(match user {
             Some(u) => !u.deleted && !u.password_hash.is_empty(),
             None => true,

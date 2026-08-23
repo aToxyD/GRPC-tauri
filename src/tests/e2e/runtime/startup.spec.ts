@@ -17,10 +17,11 @@ test.describe('Tauri Application Startup Integrity & Lifecycle', () => {
       const dbPath = driver.getDbPath();
       expect(fs.existsSync(dbPath)).toBe(true);
 
-      // Verify default login form is visible
-      const usernameInput = page.locator('input[placeholder*="اسم المستخدم"]');
+      // Verify default login form is visible (identity field is pinned or a
+      // fixed selector since SEC-026 / ADR-0052 — never free-text).
+      const usernameField = page.locator('#username');
       const passwordInput = page.locator('input[placeholder*="كلمة المرور"]');
-      await expect(usernameInput).toBeVisible();
+      await expect(usernameField).toBeVisible();
       await expect(passwordInput).toBeVisible();
 
       // Verify that isConfigured() initially evaluates to false in fresh sandbox

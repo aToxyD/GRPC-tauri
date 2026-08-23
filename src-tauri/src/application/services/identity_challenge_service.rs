@@ -322,8 +322,13 @@ impl IdentityChallengeService {
             self.verify_issuer_and_challenge(challenge, &presented, &store, challenge_signature)?;
         }
 
+        use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+        let node_scope =
+            crate::infrastructure::security::SettingsNodeIdentityProvider::new(db.executor())
+                .current_node_id()
+                .unwrap_or_else(|_| "WILAYA".to_string());
         let user = UserService::new(db.executor(), self.password_port.as_ref())
-            .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME)?
+            .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME, &node_scope)?
             .ok_or_else(|| AppError::Internal("Local admin user is not provisioned".into()))?;
 
         SessionEstablishmentService::establish(

@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/tauriApp';
+import { ensureLoginIdentity } from '../helpers/login';
 import path from 'path';
 import fs from 'fs';
 
@@ -9,7 +10,7 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
     const { page, driver } = tauriApp;
 
     // Login and setup node
-    await page.locator('input[placeholder*="اسم المستخدم"]').fill('admin');
+    await ensureLoginIdentity(page, 'admin');
     await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
     await page.locator('button:has-text("تسجيل الدخول")').click();
 
@@ -39,7 +40,7 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
     const { page, driver } = tauriApp;
 
     // Login and setup node
-    await page.locator('input[placeholder*="اسم المستخدم"]').fill('admin');
+    await ensureLoginIdentity(page, 'admin');
     await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
     await page.locator('button:has-text("تسجيل الدخول")').click();
 
@@ -77,7 +78,7 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
     const { page } = tauriApp;
 
     // Login and setup node
-    await page.locator('input[placeholder*="اسم المستخدم"]').fill('admin');
+    await ensureLoginIdentity(page, 'admin');
     await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
     await page.locator('button:has-text("تسجيل الدخول")').click();
 

@@ -105,3 +105,39 @@ describe('LoginPage — B8 import relocated to Settings (SEC-014 Phase 4)', () =
     });
   });
 });
+
+describe('LoginPage — ADR-0052 role-aware identity selection (SEC-026)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentUser.set(null);
+    mockIsConfigured.mockResolvedValue(true);
+    mockGetSecurityStatus.mockResolvedValue({ requires_action: false });
+    mockGetSettings.mockResolvedValue({ configured: true, node_type: 'UNIT', unit_code: 'U1' });
+    mockGetIdentityStatus.mockResolvedValue('UNIT_ACTIVE');
+  });
+
+  it('UNIT nodes choose between the canonical operator and the local admin', async () => {
+    render(LoginPage);
+
+    const select = (await screen.findByLabelText('المستخدم')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('user'));
+    const options = Array.from(select.options).map((o) => o.value);
+    expect(options).toEqual(['user', 'admin']);
+    // Free-text username entry is gone — the identity set is fixed.
+    expect(screen.queryByPlaceholderText('أدخل اسم المستخدم')).toBeNull();
+  });
+
+  it('WILAYA pins the identity to the fleet admin, read-only', async () => {
+    mockGetSettings.mockResolvedValue({
+      configured: true,
+      node_type: 'WILAYA',
+      wilaya_code: '16',
+    });
+    render(LoginPage);
+
+    const input = await screen.findByLabelText('المسؤول العام (admin)');
+    expect((input as HTMLInputElement).value).toBe('admin');
+    expect(input as HTMLInputElement).toHaveAttribute('readonly');
+    expect(screen.queryByRole('combobox', { name: 'المستخدم' })).toBeNull();
+  });
+});

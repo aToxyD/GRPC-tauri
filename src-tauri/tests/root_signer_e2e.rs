@@ -88,7 +88,7 @@ fn remove_seeded_admin(node: &mut Node) {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("seed query")
         .expect("seeded admin present");
     node.db

@@ -87,8 +87,19 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
     // (no account enumeration). The decision comes exclusively from
     // `IdentityAuthenticationPolicy` (a security fact) — never from the
     // derived bootstrap state.
+    // ADR-0052: username lookups are scoped to the local node identity —
+    // `"WILAYA"` on a WILAYA node, the local unit code on a UNIT node. A
+    // foreign-scope username (e.g. another unit's shadow operator) is
+    // indistinguishable from an unknown account.
+    use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+    let node_scope = crate::infrastructure::security::SettingsNodeIdentityProvider::new(
+        db.executor(),
+    )
+    .current_node_id()
+    .unwrap_or_else(|_| "WILAYA".to_string());
+
     let password_allowed =
-        IdentityAuthenticationPolicy::password_login_allowed(db, &request.username)
+        IdentityAuthenticationPolicy::password_login_allowed(db, &request.username, &node_scope)
             .map_err(into_command_error)?;
     if !password_allowed {
         log::warn!(
@@ -107,7 +118,7 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
 
     let password_port = state.password_port.as_ref();
     let user = UserService::new(db.executor(), password_port)
-        .get_user_by_username(&request.username)
+        .get_user_by_username(&request.username, &node_scope)
         .map_err(into_command_error)?;
 
     if let Some(user) = user {

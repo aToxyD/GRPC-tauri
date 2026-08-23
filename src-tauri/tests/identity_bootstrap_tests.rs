@@ -126,7 +126,7 @@ fn remove_seeded_admin_using(db: &mut Database) {
     let admin = db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("seed query")
         .expect("seeded admin present");
     db.executor()
@@ -241,7 +241,7 @@ fn additive_window_keeps_legacy_password_until_hash_cleared() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin present");
     assert!(!admin.password_hash.is_empty());
@@ -616,7 +616,7 @@ fn identity_only_admin_has_empty_hash_and_no_password_path() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin present");
     assert!(
@@ -640,7 +640,7 @@ fn password_login_gate_is_sole_security_fact() {
     // usable password hash).
     let node = fresh_node();
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "unprovisioned node must keep the password path"
     );
@@ -666,7 +666,7 @@ fn password_login_gate_is_sole_security_fact() {
         "ACTIVE ADMIN cert + `.adminkey` must be detected"
     );
     assert!(
-        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "an identity-only admin (empty hash) has no password credential and must route to Challenge–Response"
     );
@@ -685,7 +685,7 @@ fn password_login_gate_is_sole_security_fact() {
         "missing `.adminkey` must disable the identity fact"
     );
     assert!(
-        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "an identity-only account has no password credential regardless of `.adminkey` state"
     );
@@ -711,7 +711,7 @@ fn adr0050_wilaya_admin_password_login_allowed_with_usable_identity() {
         "ACTIVE ADMIN cert + `.adminkey` present"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "a usable password credential must keep the password path open even with a usable ADMIN identity (ADR-0050)"
     );
@@ -719,7 +719,7 @@ fn adr0050_wilaya_admin_password_login_allowed_with_usable_identity() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin row");
     assert!(
@@ -738,7 +738,7 @@ fn adr0050_unknown_and_deleted_accounts_fall_through_to_generic_failure() {
     // invalid-credentials response.
     let node = fresh_node();
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, "no-such-user")
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, "no-such-user", "WILAYA")
             .expect("policy"),
         "unknown accounts must fall through to the generic failure"
     );
@@ -748,7 +748,7 @@ fn adr0050_unknown_and_deleted_accounts_fall_through_to_generic_failure() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     node.db
@@ -757,7 +757,7 @@ fn adr0050_unknown_and_deleted_accounts_fall_through_to_generic_failure() {
         .delete_user(&admin.id)
         .expect("seeded admin deleted");
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "soft-deleted accounts must fall through to the generic failure"
     );
@@ -917,7 +917,7 @@ fn sec002_05_database_level_single_active_admin_invariant() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -999,7 +999,7 @@ fn sec002_09_legacy_cert_without_adminkey_is_recoverable() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1045,7 +1045,7 @@ fn sec002_09_mismatched_adminkey_is_recoverable() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1202,7 +1202,7 @@ fn sec002r_01_policy_mismatched_adminkey_opens_password_path() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1231,7 +1231,7 @@ fn sec002r_01_policy_mismatched_adminkey_opens_password_path() {
     )
     .expect("fact"));
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "the ADR-0050 account-credential gate must not deadlock on a mismatched `.adminkey`"
     );
@@ -1249,7 +1249,7 @@ fn sec002r_02_policy_corrupt_adminkey_fails_identity_classifier_closed() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1274,7 +1274,7 @@ fn sec002r_02_policy_corrupt_adminkey_fails_identity_classifier_closed() {
         "corrupt `.adminkey` must fail the identity fact closed"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "the ADR-0050 password gate is account-credential based and must ignore `.adminkey` corruption"
     );
@@ -1301,7 +1301,7 @@ fn sec002r_03_policy_matching_adminkey_is_usable() {
     )
     .expect("fact"));
     assert!(
-        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "an identity-only admin (empty hash) has no password credential and routes to Challenge–Response (ADR-0050)"
     );
@@ -1337,7 +1337,7 @@ fn sec002r_04_password_path_usable_when_adminkey_missing() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin row");
     assert!(
@@ -1347,7 +1347,7 @@ fn sec002r_04_password_path_usable_when_adminkey_missing() {
         "fleet-set admin password must verify when the `.adminkey` is missing"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME)
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
         "a hash-bearing account keeps the password path open regardless of `.adminkey` state"
     );
@@ -1451,7 +1451,7 @@ impl CommandHarness {
         let admin = db
             .executor()
             .users()
-            .get_user_by_username(BOOTSTRAP_USERNAME)
+            .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
             .expect("query")
             .expect("admin user row");
         let snapshot = UserSnapshot {
