@@ -291,9 +291,24 @@ mod tests {
             .expect("fleet password set");
     }
 
+    /// SEC-029: producer-side tests must mirror the production lifecycle —
+    /// the `create_unit` IPC command requires `settings.wilaya_code`, which
+    /// only `configure_wilaya` sets. Without it the node stays UNCONFIGURED
+    /// and the canonical UNIT scope would resolve to the unit code instead
+    /// of "WILAYA".
+    fn configure_producer_as_wilaya(db: &Database) {
+        crate::application::services::SettingsService::new(make_executor(db))
+            .configure_wilaya(&crate::models::WilayaNodeConfiguration::new(
+                "16".into(),
+                "TestWilaya".into(),
+            ))
+            .expect("producer configured as WILAYA");
+    }
+
     #[test]
     fn export_carries_fleet_admin_and_unit_user_hashes() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         set_fleet_password(&db);
         create_unit(&db, "UNIT-9");
 
@@ -316,6 +331,7 @@ mod tests {
     #[test]
     fn export_fails_closed_when_fleet_admin_password_unset() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         create_unit(&db, "UNIT-9");
 
         db.executor()
@@ -345,6 +361,7 @@ mod tests {
     #[test]
     fn export_reflects_disabled_unit_user() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         set_fleet_password(&db);
         create_unit(&db, "UNIT-9");
 
@@ -390,6 +407,7 @@ mod tests {
     #[test]
     fn set_account_status_is_scope_bounded() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         set_fleet_password(&db);
         create_unit(&db, "UNIT-9");
 
@@ -406,6 +424,7 @@ mod tests {
     #[test]
     fn disabled_admin_blocks_export() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         set_fleet_password(&db);
         create_unit(&db, "UNIT-9");
 
@@ -426,6 +445,7 @@ mod tests {
     #[test]
     fn apply_creates_canonical_admin_and_user_on_unit() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         create_unit(&db, "UNIT-9");
         set_fleet_password(&db);
 
@@ -485,9 +505,7 @@ mod tests {
             unit_code: "UNIT-9".to_string(),
             admin_password_hash: port.hash_admin(FLEET_PASSWORD).expect("admin hash"),
             admin_enabled: true,
-            user_password_hash: port
-                .hash_node(UNIT_PASSWORD, "UNIT-9")
-                .expect("user hash"),
+            user_password_hash: port.hash_node(UNIT_PASSWORD, "UNIT-9").expect("user hash"),
             user_enabled: true,
         };
 
@@ -518,6 +536,7 @@ mod tests {
     #[test]
     fn apply_disabled_accounts_reject_login_and_reapply_reenables() {
         let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
         create_unit(&db, "UNIT-9");
 
         let port = Argon2PasswordHashProvider;

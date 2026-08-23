@@ -35,8 +35,8 @@ use uuid::Uuid;
 
 use grpc_lib::application::authz::Action;
 use grpc_lib::application::services::{
-    identity_authentication_policy::IdentityAuthenticationPolicy,
-    FinalizeWilayaProvisionResult, IdentityProvisioningService, IdentitySignedExportService,
+    identity_authentication_policy::IdentityAuthenticationPolicy, FinalizeWilayaProvisionResult,
+    IdentityProvisioningService, IdentitySignedExportService, SettingsService,
     SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
 };
 use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
@@ -57,6 +57,8 @@ use grpc_lib::errors::{AppError, BusinessLogicError, ValidationError};
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
 use grpc_lib::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
+use grpc_lib::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+use grpc_lib::infrastructure::security::SettingsNodeIdentityProvider;
 use grpc_lib::infrastructure::security::{Argon2PasswordHashProvider, Ed25519SigningProvider};
 use grpc_lib::infrastructure::sync::packages::canonical_json::{
     canonical_bytes_for_integrity, canonical_bytes_for_signature,
@@ -66,7 +68,9 @@ use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, Pa
 use grpc_lib::infrastructure::sync::{
     read_identity_access_package_from_file, PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
-use grpc_lib::models::{CreateUnitRequest, IdentityAccessPayload, UserRole};
+use grpc_lib::models::{
+    CreateUnitRequest, IdentityAccessPayload, UserRole, WilayaNodeConfiguration,
+};
 use grpc_lib::repositories::executor::DbExecutor;
 use grpc_lib::repositories::RepositoryProvider;
 
@@ -312,6 +316,20 @@ fn create_unit(db: &Database, code: &str) {
         .expect("unit created");
 }
 
+/// SEC-029: producer-side tests must mirror the production lifecycle — the
+/// `create_unit` IPC command requires `settings.wilaya_code`, which only
+/// `configure_wilaya` sets. Service-level tests bypassing the command layer
+/// must perform the same real configuration step instead of relying on the
+/// UNCONFIGURED parse fallback that previously masked node scope.
+fn configure_producer_as_wilaya(db: &Database) {
+    SettingsService::new(make_executor(db))
+        .configure_wilaya(&WilayaNodeConfiguration::new(
+            "16".into(),
+            "TestWilaya".into(),
+        ))
+        .expect("producer configured as WILAYA");
+}
+
 fn set_fleet_password(db: &Database) {
     let port = Argon2PasswordHashProvider;
     UserAccountSyncService::new(make_executor(db), &port)
@@ -367,6 +385,7 @@ fn bootstrap_wilaya(node: &mut Node) -> IdentityCertificate {
 fn export_identity_access_round_trips_as_signed_v2_package() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
+    configure_producer_as_wilaya(&node.db);
     create_unit(&node.db, "UNIT-9");
     set_fleet_password(&node.db);
 
@@ -425,6 +444,7 @@ fn export_identity_access_round_trips_as_signed_v2_package() {
 #[test]
 fn export_fails_closed_when_fleet_admin_password_unset() {
     let db = ConnectionFactory::new_for_test().expect("db");
+    configure_producer_as_wilaya(&db);
     create_unit(&db, "UNIT-9");
 
     db.executor()
@@ -454,6 +474,7 @@ fn export_fails_closed_when_fleet_admin_password_unset() {
 #[test]
 fn export_fails_closed_when_fleet_admin_disabled() {
     let db = ConnectionFactory::new_for_test().expect("db");
+    configure_producer_as_wilaya(&db);
     create_unit(&db, "UNIT-9");
     set_fleet_password(&db);
 
@@ -474,6 +495,7 @@ fn export_fails_closed_when_fleet_admin_disabled() {
 #[test]
 fn export_carries_fleet_identical_admin_and_node_bound_user_hashes() {
     let db = ConnectionFactory::new_for_test().expect("db");
+    configure_producer_as_wilaya(&db);
     create_unit(&db, "UNIT-A");
     create_unit(&db, "UNIT-B");
     set_fleet_password(&db);
@@ -726,8 +748,7 @@ fn import_preserves_canonical_operator_row_without_rename() {
         ),
         ISSUER_SECRET,
     );
-    let outcome =
-        run_identity_access_pipeline(&mut db, "admin", package).expect("import succeeds");
+    let outcome = run_identity_access_pipeline(&mut db, "admin", package).expect("import succeeds");
     assert!(outcome.admin_updated);
     assert!(outcome.user_updated);
 
@@ -751,6 +772,122 @@ fn import_preserves_canonical_operator_row_without_rename() {
     assert_eq!(
         user.id, pre_apply_id,
         "operator row identity must be preserved without any rename"
+    );
+}
+
+/// SEC-029 regression: the canonical UNIT security scope is the unit CODE.
+///
+/// SEC-028 proved the defect empirically: accounts bind to
+/// `users.node_id = unit.code` while `Settings::get_unit_id()` returned
+/// `unit_name`, so the production login scope missed every UNIT account
+/// before `verify_node` could run. This test pins the full invariant chain:
+/// `unit.code == users.node_id == Settings.unit_code ==
+/// NodeIdentityProvider::current_node_id()`.
+#[test]
+fn sec029_unit_security_scope_is_unit_code_not_display_name() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    let issuer_id = Uuid::new_v4();
+    seed_issuer(&db, issuer_id, ISSUER_SECRET);
+
+    // .unit provisioning on the UNIT node: canonical operator row plus the
+    // settings display-name write performed by NodePackageService during
+    // import (`update_unit_node_settings` sets node_type='UNIT').
+    create_unit(&db, "UNIT-S29");
+    SettingsService::new(make_executor(&db))
+        .update_unit_node_settings("وحدة العرض", "UNIT-S29")
+        .expect("display-name settings write mirrors .unit import");
+
+    // admin_access applies the canonical admin + user rows (real hashes).
+    let package = sign_v2_package(
+        identity_access_package(
+            "ia-pkg-s29",
+            issuer_id,
+            ISSUER_SECRET,
+            1,
+            payload("UNIT-S29", true, true),
+        ),
+        ISSUER_SECRET,
+    );
+    run_identity_access_pipeline(&mut db, "admin", package).expect("admin_access applies");
+
+    // A — provider scope == unit.code, never the display name.
+    let port = Argon2PasswordHashProvider;
+    let scope = SettingsNodeIdentityProvider::new(make_executor(&db))
+        .current_node_id()
+        .expect("node scope resolves");
+    assert_eq!(
+        scope, "UNIT-S29",
+        "UNIT security scope must be the unit code"
+    );
+    assert_ne!(scope, "وحدة العرض", "unit_name is display metadata only");
+
+    let policy_ok =
+        IdentityAuthenticationPolicy::password_login_allowed(&db, "user", &scope).expect("policy");
+    assert!(policy_ok, "operator password-login gate must be open");
+
+    // B/C — production authentication sequence of `commands/auth.rs` under
+    // the RESOLVED scope: scoped lookup then verify_node/verify_admin.
+    let user = db
+        .executor()
+        .users()
+        .get_user_by_username("user", &scope)
+        .expect("read")
+        .expect("operator account found under canonical scope");
+    assert_eq!(user.node_id, "UNIT-S29");
+    assert!(
+        port.verify_node(UNIT_PASSWORD, &user.node_id, &user.password_hash)
+            .expect("verify operator"),
+        "B: UNIT operator login must succeed under the canonical scope"
+    );
+
+    let admin = db
+        .executor()
+        .users()
+        .get_user_by_username("admin", &scope)
+        .expect("read")
+        .expect("canonical admin found under canonical scope");
+    assert!(
+        port.verify_admin(FLEET_PASSWORD, &admin.password_hash)
+            .expect("verify admin"),
+        "C: UNIT admin login must succeed under the canonical scope"
+    );
+
+    // D — credential domains stay separate.
+    assert!(
+        !port
+            .verify_node(FLEET_PASSWORD, &user.node_id, &user.password_hash)
+            .expect("cross verify"),
+        "D: user + fleet password must be rejected"
+    );
+    assert!(
+        !port
+            .verify_admin(UNIT_PASSWORD, &admin.password_hash)
+            .expect("cross verify"),
+        "D: admin + operator password must be rejected"
+    );
+    assert!(
+        !port
+            .verify_node("WrongPass999!", &user.node_id, &user.password_hash)
+            .expect("wrong-pwd verify"),
+        "D: wrong operator password must be rejected"
+    );
+    assert!(
+        db.executor()
+            .users()
+            .get_user_by_username("ghost", &scope)
+            .expect("read")
+            .is_none(),
+        "D: unknown username must not resolve"
+    );
+
+    // E — WILAYA isolation: no UNIT-authenticated `user` identity at WILAYA.
+    assert!(
+        db.executor()
+            .users()
+            .get_user_by_username("user", "WILAYA")
+            .expect("read")
+            .is_none(),
+        "E: UNIT operator must not be a WILAYA-scoped identity"
     );
 }
 
@@ -808,6 +945,7 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
 fn fleet_admin_disabled_after_export_old_snapshot_still_applies() {
     // WILAYA producer: unit exists, fleet password set, payload exported.
     let producer = ConnectionFactory::new_for_test().expect("db");
+    configure_producer_as_wilaya(&producer);
     create_unit(&producer, "UNIT-9");
     set_fleet_password(&producer);
     let port = Argon2PasswordHashProvider;
@@ -1008,8 +1146,7 @@ fn authz_import_is_unit_only() {
     // UNIT + Admin → allowed (one-way Wilaya→UNIT apply, SEC-003-06-b).
     let state = unit_configured_state();
     set_session(&state, "Admin");
-    let (session, _settings) =
-        authorize_command(&state, action, None).expect("unit admin allowed");
+    let (session, _settings) = authorize_command(&state, action, None).expect("unit admin allowed");
     assert_eq!(session.username, "bob");
 
     // UNIT + User → RequiresAdmin (credential-overwrite authority is Admin-only).
@@ -1071,6 +1208,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
     let mut wilaya = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut wilaya);
     remove_seeded_admin(&wilaya.db);
+    configure_producer_as_wilaya(&wilaya.db);
 
     let dir = TempDir::new().expect("temp dir");
     let adminkey_provider = AdminKeyProvider::new(dir.path().join("adminkey"));
@@ -1128,8 +1266,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         .expect("admin row");
     assert!(!admin.password_hash.is_empty());
     assert!(
-        port
-            .verify_admin(FLEET_PASSWORD, &admin.password_hash)
+        port.verify_admin(FLEET_PASSWORD, &admin.password_hash)
             .expect("verify admin"),
         "fleet hash verifies in the global admin domain"
     );
@@ -1171,8 +1308,8 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
     .expect("wilaya anchor seeded");
 
     // B8 import applies the canonical Admin + User rows (fleet hash verbatim).
-    let pkg = read_identity_access_package_from_file(&path, &crypto)
-        .expect("read exported package");
+    let pkg =
+        read_identity_access_package_from_file(&path, &crypto).expect("read exported package");
     let outcome =
         run_identity_access_pipeline(&mut unit_db, "admin", pkg).expect("import succeeds");
     assert!(outcome.admin_updated);
@@ -1190,13 +1327,12 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         admin.password_hash, exported.admin_password_hash,
         "the imported hash is the exported fleet hash verbatim"
     );
+    assert!(port
+        .verify_admin(FLEET_PASSWORD, &admin.password_hash)
+        .expect("verify admin"));
     assert!(
-        port
-            .verify_admin(FLEET_PASSWORD, &admin.password_hash)
-            .expect("verify admin")
-    );
-    assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&unit_db, "admin", "UNIT-9").expect("policy"),
+        IdentityAuthenticationPolicy::password_login_allowed(&unit_db, "admin", "UNIT-9")
+            .expect("policy"),
         "UNIT admin password login path is open after B8"
     );
 
@@ -1205,18 +1341,18 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
     // Wilaya authority.
     let state = unit_configured_state();
     set_session(&state, "Admin");
-    let (session, _settings) =
-        authorize_command(&state, Action::ImportIdentityAccessPackage, None)
-            .expect("UNIT Admin: AdminOnly action allowed");
+    let (session, _settings) = authorize_command(&state, Action::ImportIdentityAccessPackage, None)
+        .expect("UNIT Admin: AdminOnly action allowed");
     assert_eq!(session.username, "bob");
-    for action in [Action::ManageAccountSync, Action::ExportIdentityAccessPackage] {
+    for action in [
+        Action::ManageAccountSync,
+        Action::ExportIdentityAccessPackage,
+    ] {
         let err = authorize_command(&state, action, None)
             .expect_err("UNIT Admin: WilayaNode action denied");
         assert!(matches!(
             err,
-            AppError::Authorization(
-                grpc_lib::errors::AuthorizationError::InsufficientPermissions
-            )
+            AppError::Authorization(grpc_lib::errors::AuthorizationError::InsufficientPermissions)
         ));
     }
 }

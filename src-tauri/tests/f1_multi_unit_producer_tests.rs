@@ -34,7 +34,7 @@ use uuid::Uuid;
 
 use grpc_lib::application::services::{
     FinalizeWilayaProvisionResult, IdentityProvisioningService, IdentitySignedExportService,
-    SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
+    SettingsService, SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
 };
 use grpc_lib::application::usecases::sync::import_products_package::PRODUCTS_PACKAGE_KIND;
 use grpc_lib::commands::{import_admin_access_package_impl, AppState};
@@ -56,7 +56,8 @@ use grpc_lib::infrastructure::sync::{
     read_admin_access_package_from_file, PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
 use grpc_lib::models::{
-    AdminAccessPayload, CreateUnitRequest, IdentityAccessPayload, UnitNodePackage, Unit, UserExport,
+    AdminAccessPayload, CreateUnitRequest, IdentityAccessPayload, Unit, UnitNodePackage,
+    UserExport, WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::executor::DbExecutor;
 use grpc_lib::repositories::RepositoryProvider;
@@ -67,9 +68,8 @@ const UNIT_PASSWORD: &str = "UnitPass123";
 
 /// RFC 8032 §7.1 TEST 1 secret — matches the debug-mode Root fallback.
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,6 +163,18 @@ fn set_fleet_password(db: &Database) {
         .expect("fleet password set");
 }
 
+/// SEC-029: producer-side tests mirror the production lifecycle — the
+/// `create_unit` IPC command requires `settings.wilaya_code`, which only
+/// `configure_wilaya` sets.
+fn configure_producer_as_wilaya(db: &Database) {
+    SettingsService::new(make_executor(db))
+        .configure_wilaya(&WilayaNodeConfiguration::new(
+            "16".into(),
+            "TestWilaya".into(),
+        ))
+        .expect("producer configured as WILAYA");
+}
+
 fn export_payload(db: &Database, unit_code: &str) -> IdentityAccessPayload {
     let port = Argon2PasswordHashProvider;
     UserAccountSyncService::new(make_executor(db), &port)
@@ -236,9 +248,7 @@ fn crafted_admin_payload() -> AdminAccessPayload {
     let port = Argon2PasswordHashProvider;
     AdminAccessPayload {
         admin_enabled: true,
-        admin_password_hash: port
-            .hash_admin(FLEET_PASSWORD)
-            .expect("admin hash"),
+        admin_password_hash: port.hash_admin(FLEET_PASSWORD).expect("admin hash"),
     }
 }
 
@@ -309,7 +319,10 @@ fn migration_009_applies_on_fresh_database() {
         .get_connection()
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
-    assert_eq!(version, 10, "schema must be at version 10 (010 admin_access stream)");
+    assert_eq!(
+        version, 10,
+        "schema must be at version 10 (010 admin_access stream)"
+    );
 
     // Composite PK (issuer, target) — the F-1 stream key.
     let mut stmt = db
@@ -334,14 +347,21 @@ fn migration_009_applies_on_fresh_database() {
         .map(|(_, pk)| *pk)
         .expect("target column");
     assert_eq!(issuer_pk, 1, "issuer_identity_id must be part of the PK");
-    assert_eq!(target_pk, 2, "target_unit_code must be part of the composite PK");
+    assert_eq!(
+        target_pk, 2,
+        "target_unit_code must be part of the composite PK"
+    );
     assert!(cols.iter().any(|(n, _)| n == "last_issued_sequence"));
     assert!(cols.iter().any(|(n, _)| n == "updated_at"));
 
     // The stream table starts empty; the global producer ledger is untouched.
     let count: i64 = db
         .get_connection()
-        .query_row("SELECT COUNT(*) FROM identity_access_export_sequence", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM identity_access_export_sequence",
+            [],
+            |r| r.get(0),
+        )
         .expect("count");
     assert_eq!(count, 0);
 }
@@ -364,12 +384,30 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
     .expect("schema_version");
     for (version, sql) in [
         (1, include_str!("../src/db/migrations/001_initial.sql")),
-        (2, include_str!("../src/db/migrations/002_identity_store.sql")),
-        (3, include_str!("../src/db/migrations/003_certificate_signature.sql")),
-        (4, include_str!("../src/db/migrations/004_sync_issuer_sequence.sql")),
-        (5, include_str!("../src/db/migrations/005_registry_snapshots.sql")),
-        (6, include_str!("../src/db/migrations/006_issuer_sequence_state.sql")),
-        (8, include_str!("../src/db/migrations/008_single_active_admin.sql")),
+        (
+            2,
+            include_str!("../src/db/migrations/002_identity_store.sql"),
+        ),
+        (
+            3,
+            include_str!("../src/db/migrations/003_certificate_signature.sql"),
+        ),
+        (
+            4,
+            include_str!("../src/db/migrations/004_sync_issuer_sequence.sql"),
+        ),
+        (
+            5,
+            include_str!("../src/db/migrations/005_registry_snapshots.sql"),
+        ),
+        (
+            6,
+            include_str!("../src/db/migrations/006_issuer_sequence_state.sql"),
+        ),
+        (
+            8,
+            include_str!("../src/db/migrations/008_single_active_admin.sql"),
+        ),
     ] {
         conn.execute_batch(sql).expect("apply simulated migration");
         conn.execute(
@@ -391,7 +429,10 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
-    assert_eq!(version, 10, "upgrade must land on version 10 (010 admin_access stream)");
+    assert_eq!(
+        version, 10,
+        "upgrade must land on version 10 (010 admin_access stream)"
+    );
 
     let legacy: i64 = conn
         .query_row(
@@ -404,7 +445,11 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
 
     // The new stream table exists and is empty; the global ledger still works.
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM identity_access_export_sequence", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM identity_access_export_sequence",
+            [],
+            |r| r.get(0),
+        )
         .expect("count");
     assert_eq!(count, 0);
 
@@ -426,6 +471,8 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
 fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
+    configure_producer_as_wilaya(&node.db);
+    configure_producer_as_wilaya(&node.db);
     create_unit(&node.db, "UNIT-A");
     create_unit(&node.db, "UNIT-B");
     set_fleet_password(&node.db);
@@ -454,7 +501,10 @@ fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
         .sync_issuer_sequence_state()
         .next_issued_sequence(&issuer)
         .expect("read global ledger");
-    assert_eq!(global, None, "identity_access must not advance the global ledger");
+    assert_eq!(
+        global, None,
+        "identity_access must not advance the global ledger"
+    );
 
     // A products export uses the GLOBAL ledger → 1 (its own fresh stream).
     let seq = service
@@ -513,13 +563,18 @@ fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
         .identity_access_export_sequence_state()
         .next_issued_sequence(&issuer, "UNIT-B")
         .expect("read UNIT-B stream");
-    assert_eq!(stream_b, Some(1), "UNIT-B stream must be untouched by UNIT-A exports");
+    assert_eq!(
+        stream_b,
+        Some(1),
+        "UNIT-B stream must be untouched by UNIT-A exports"
+    );
 }
 
 #[test]
 fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
+    configure_producer_as_wilaya(&node.db);
     create_unit(&node.db, "UNIT-A");
     set_fleet_password(&node.db);
 
@@ -570,7 +625,10 @@ fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
         .identity_access_export_sequence_state()
         .next_issued_sequence(&issuer, "UNIT-A")
         .expect("read stream");
-    assert_eq!(stream, None, ".unit must not consume the identity_access stream");
+    assert_eq!(
+        stream, None,
+        ".unit must not consume the identity_access stream"
+    );
 
     // First identity_access export after `.unit` still receives sequence 1.
     let seq = service
@@ -582,7 +640,10 @@ fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
             &crypto,
         )
         .expect("export A1");
-    assert_eq!(seq, 1, "A45-06 holds: first identity_access after .unit is 1");
+    assert_eq!(
+        seq, 1,
+        "A45-06 holds: first identity_access after .unit is 1"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -599,6 +660,8 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     // WILAYA fleet: UNIT-A and UNIT-B provisioned on the WILAYA.
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
+    configure_producer_as_wilaya(&node.db);
+    configure_producer_as_wilaya(&node.db);
     create_unit(&node.db, "UNIT-A");
     create_unit(&node.db, "UNIT-B");
     set_fleet_password(&node.db);
@@ -625,8 +688,7 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     assert_eq!(pkg.metadata.package_sequence, Some(1));
     assert_eq!(pkg.metadata.issuer_identity_id, Some(issuer));
     // Fleet-wide by construction: the payload carries NO unit dimension.
-    let serialized =
-        serde_json::to_value(&pkg.payload).expect("payload value");
+    let serialized = serde_json::to_value(&pkg.payload).expect("payload value");
     assert!(
         serialized.get("unit_code").is_none() && serialized.get("user_password_hash").is_none(),
         "admin_access payload must carry no UNIT/operator material"
@@ -717,10 +779,26 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
         let db_a = guard_a.as_ref().expect("db");
         let guard_b = state_b.get_db().expect("lock");
         let db_b = guard_b.as_ref().expect("db");
-        assert_eq!(count_canonical_admins(db_a), 1, "Admin count stays one after replay");
-        assert_eq!(count_canonical_admins(db_b), 1, "Admin count stays one after replay");
-        assert_eq!(last_applied(db_a, &issuer.to_string()), Some(2), "ledger unchanged");
-        assert_eq!(last_applied(db_b, &issuer.to_string()), Some(2), "ledger unchanged");
+        assert_eq!(
+            count_canonical_admins(db_a),
+            1,
+            "Admin count stays one after replay"
+        );
+        assert_eq!(
+            count_canonical_admins(db_b),
+            1,
+            "Admin count stays one after replay"
+        );
+        assert_eq!(
+            last_applied(db_a, &issuer.to_string()),
+            Some(2),
+            "ledger unchanged"
+        );
+        assert_eq!(
+            last_applied(db_b, &issuer.to_string()),
+            Some(2),
+            "ledger unchanged"
+        );
     }
 
     // ── Local replay state — a fresh UNIT-C bootstraps from the SAME seq-1 ──
@@ -738,7 +816,11 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     {
         let guard_c = state_c.get_db().expect("lock");
         let db_c = guard_c.as_ref().expect("db");
-        assert_eq!(count_canonical_admins(db_c), 1, "canonical Admin created on C");
+        assert_eq!(
+            count_canonical_admins(db_c),
+            1,
+            "canonical Admin created on C"
+        );
         assert_eq!(
             last_applied(db_c, &issuer.to_string()),
             Some(1),
@@ -779,8 +861,12 @@ fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
             package_sequence: Some(1),
             signature: None,
         };
-        IdentityStorePort::upsert(&make_executor(db).identity_store(), &cert, &chrono::Utc::now().to_rfc3339())
-            .expect("seed anchor");
+        IdentityStorePort::upsert(
+            &make_executor(db).identity_store(),
+            &cert,
+            &chrono::Utc::now().to_rfc3339(),
+        )
+        .expect("seed anchor");
     }
     set_session(&state, "User");
 
@@ -858,7 +944,11 @@ fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
     {
         let guard = state.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
-        assert_eq!(count_canonical_admins(db), 1, "failed probes must not create admins");
+        assert_eq!(
+            count_canonical_admins(db),
+            1,
+            "failed probes must not create admins"
+        );
         assert_eq!(last_applied(db, &issuer_id.to_string()), Some(2));
     }
 }

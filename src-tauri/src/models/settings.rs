@@ -82,9 +82,16 @@ impl Settings {
     }
 
     /// Get the effective unit identifier
+    ///
+    /// SEC-029: returns `unit_code` — the canonical UNIT security identity
+    /// (`unit.code == users.node_id == Settings.unit_code ==
+    /// NodeIdentityProvider::current_node_id()`). `unit_name` is display
+    /// metadata only and must never be used as an authentication scope.
+    /// Missing `unit_code` stays fail-closed (None → "WILAYA" fallback at
+    /// the provider); there is deliberately no name fallback.
     pub fn get_unit_id(&self) -> Option<&str> {
         if self.is_unit() {
-            self.unit_name.as_deref()
+            self.unit_code.as_deref()
         } else {
             None
         }
