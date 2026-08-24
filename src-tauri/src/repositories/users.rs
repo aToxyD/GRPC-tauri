@@ -404,7 +404,10 @@ mod tests {
         assert_eq!(user.role, UserRole::Admin);
 
         // ADR-0052: a foreign scope must not observe the row.
-        assert!(repo.get_user_by_username("testuser", "UNIT-X").unwrap().is_none());
+        assert!(repo
+            .get_user_by_username("testuser", "UNIT-X")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -412,10 +415,24 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let repo = UserRepository::new(make_executor(&db));
 
-        repo.insert_raw_user("test-1", "user1", "hash", "Admin", "WILAYA", "2024-01-01T00:00:00Z")
-            .unwrap();
-        repo.insert_raw_user("test-2", "user2", "hash", "User", "WILAYA", "2024-01-01T00:00:01Z")
-            .unwrap();
+        repo.insert_raw_user(
+            "test-1",
+            "user1",
+            "hash",
+            "Admin",
+            "WILAYA",
+            "2024-01-01T00:00:00Z",
+        )
+        .unwrap();
+        repo.insert_raw_user(
+            "test-2",
+            "user2",
+            "hash",
+            "User",
+            "WILAYA",
+            "2024-01-01T00:00:01Z",
+        )
+        .unwrap();
 
         let users = repo.list_users().unwrap();
         assert!(users.len() >= 2);
@@ -426,20 +443,35 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let repo = UserRepository::new(make_executor(&db));
 
-        repo.insert_raw_user("test-1", "user1", "hash", "User", "WILAYA", "2024-01-01T00:00:00Z")
-            .unwrap();
-        assert!(repo.get_user_by_username("user1", "WILAYA").unwrap().is_some());
+        repo.insert_raw_user(
+            "test-1",
+            "user1",
+            "hash",
+            "User",
+            "WILAYA",
+            "2024-01-01T00:00:00Z",
+        )
+        .unwrap();
+        assert!(repo
+            .get_user_by_username("user1", "WILAYA")
+            .unwrap()
+            .is_some());
 
         repo.set_deleted("test-1", true, "2024-01-02T00:00:00Z")
             .unwrap();
         assert!(
-            repo.get_user_by_username("user1", "WILAYA").unwrap().is_none(),
+            repo.get_user_by_username("user1", "WILAYA")
+                .unwrap()
+                .is_none(),
             "disabled account must not be returned by the login lookup"
         );
 
         repo.set_deleted("test-1", false, "2024-01-03T00:00:00Z")
             .unwrap();
-        assert!(repo.get_user_by_username("user1", "WILAYA").unwrap().is_some());
+        assert!(repo
+            .get_user_by_username("user1", "WILAYA")
+            .unwrap()
+            .is_some());
     }
 
     /// ADR-0052 core invariant: multiple UNIT operators canonically named
@@ -453,7 +485,8 @@ mod tests {
             ("op-a", "UNIT-A", "2024-01-01T00:00:00Z"),
             ("op-b", "UNIT-B", "2024-01-01T00:00:01Z"),
         ] {
-            repo.upsert_synced_user(id, "hash", scope, false, ts).unwrap();
+            repo.upsert_synced_user(id, "hash", scope, false, ts)
+                .unwrap();
         }
 
         let a = repo
@@ -466,7 +499,10 @@ mod tests {
             .expect("UNIT-B operator present");
         assert_eq!((a.id.as_str(), b.id.as_str()), ("op-a", "op-b"));
         // The WILAYA scope observes neither shadow operator.
-        assert!(repo.get_user_by_username("user", "WILAYA").unwrap().is_none());
+        assert!(repo
+            .get_user_by_username("user", "WILAYA")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -488,7 +524,9 @@ mod tests {
         repo.upsert_synced_user("test-1", "hash-v2", "UNIT-1", true, "2024-01-02T00:00:00Z")
             .unwrap();
         assert!(
-            repo.get_user_by_username("user", "UNIT-1").unwrap().is_none(),
+            repo.get_user_by_username("user", "UNIT-1")
+                .unwrap()
+                .is_none(),
             "disabled canonical user is rejected"
         );
 
@@ -506,7 +544,10 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let repo = UserRepository::new(make_executor(&db));
 
-        assert!(repo.get_user_by_username("admin", "WILAYA").unwrap().is_some());
+        assert!(repo
+            .get_user_by_username("admin", "WILAYA")
+            .unwrap()
+            .is_some());
         repo.upsert_synced_admin(
             "other-id",
             "fleet-hash",

@@ -3,8 +3,8 @@
   import { formatErrorMessage } from '../lib/errors';
   import { saveFile, openFile, showAsk } from '../lib/tauri';
   import { exportProductsPackage, importProductsPackage } from '../lib/contracts';
-  import { listProducts, createProduct, updateProduct, deleteProduct, getSettings, exportProductsExcel } from '../lib/contracts';
-  import type { Product, Settings, CreateProductRequest, UpdateProductRequest } from '../lib/types';
+  import { listProducts, createProduct, updateProduct, deleteProduct, getSettings, exportProductsExcel, listUnits } from '../lib/contracts';
+  import type { Product, Settings, Unit, CreateProductRequest, UpdateProductRequest } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
   import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
@@ -27,6 +27,10 @@
   let products = $state<Product[]>([]);
   // @category ProjectionState
   let settings = $state<Settings | null>(null);
+  // @category ProjectionState — ADR-0053: authoritative per-target UNIT list
+  let units = $state<Unit[]>([]);
+  // @category UiState — selected transport target for .sync export
+  let selectedUnitCode = $state('');
   // @category UiState
   let showModal = $state(false);
   // @category UiState
@@ -60,6 +64,13 @@
     settings = nextSettings;
     if (nextSettings) {
       currentYear = nextSettings.current_year;
+      // ADR-0053: .sync export requires an authoritative UNIT target.
+      if (nextSettings.wilaya_code) {
+        units = await listUnits(nextSettings.wilaya_code);
+        if (!units.some((u) => u.code === selectedUnitCode)) {
+          selectedUnitCode = units[0]?.code ?? '';
+        }
+      }
     }
   }
 
@@ -162,10 +173,16 @@
 
     if (!filePath) return;
 
+    // ADR-0053: the transport target must be an authoritative UNIT code.
+    if (format === 'package' && !selectedUnitCode) {
+      productsOp.error.set('يجب اختيار الوحدة الهدف لتصدير الحزمة (لا يوجد هدف نقل).');
+      return;
+    }
+
     await productsOp.run(async () => {
       const result = format === 'excel'
           ? await exportProductsExcel(filePath)
-          : await exportProductsPackage(filePath);
+          : await exportProductsPackage(filePath, selectedUnitCode);
         
       if (result.success) {
         setSuccessWithTimeout(`تم التصدير بنجاح: ${result.record_count} منتجات (${filterName})`);
@@ -213,6 +230,21 @@
             استيراد
           </AppButton>
           
+          <select
+            bind:value={selectedUnitCode}
+            class="px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-700"
+            aria-label="الوحدة الهدف لتصدير حزمة المزامنة"
+            disabled={units.length === 0}
+          >
+            {#if units.length === 0}
+              <option value="">لا توجد وحدات</option>
+            {:else}
+              {#each units as unit (unit.id)}
+                <option value={unit.code}>{unit.code} — {unit.name}</option>
+              {/each}
+            {/if}
+          </select>
+
           <AppButton variant="secondary" on:click={() => handleExport('package')} ariaLabel="هذا هو مسار المزامنة الرسمي بين العقد">
             <svg class="w-4 h-4 mr-2 inline-block text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>

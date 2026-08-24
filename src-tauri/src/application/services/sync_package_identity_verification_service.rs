@@ -104,9 +104,10 @@ fn resolve_v2_issuer_certificate<T: Serialize>(
         })
     })?;
 
-    let issuer_id = package.metadata.issuer_identity_id.ok_or_else(|| {
-        reject("حزمة Ed25519 بلا هوية مُصدِر")
-    })?;
+    let issuer_id = package
+        .metadata
+        .issuer_identity_id
+        .ok_or_else(|| reject("حزمة Ed25519 بلا هوية مُصدِر"))?;
 
     let certificate = executor
         .identity_store()
@@ -226,87 +227,83 @@ impl SyncPackageIdentityVerificationService {
     /// an authorization/binding authority before the signature has been verified.
     /// SEC-007 (ADR-0047): non-V2 packages are rejected, never bypassed.
     pub fn verify_v2_package_for_import<T: Serialize>(
-    executor: DbExecutor<'_>,
-    package: &SyncPackage<T>,
-    policy: &V2ImportPolicy<'_, T>,
-) -> AppResult<()> {
-    if package.metadata.signature_version != Some(SIGNATURE_VERSION_ED25519) {
-        return Err(reject_non_v2());
-    }
+        executor: DbExecutor<'_>,
+        package: &SyncPackage<T>,
+        policy: &V2ImportPolicy<'_, T>,
+    ) -> AppResult<()> {
+        if package.metadata.signature_version != Some(SIGNATURE_VERSION_ED25519) {
+            return Err(reject_non_v2());
+        }
 
-    // Steps 1-2 (Ed25519 authentication, I4): resolve the certificate and
-    // authenticate the signature. The certificate is resolved here because the
-    // verifier needs it for authentication; its subject becomes
-    // security-authoritative ONLY after successful verification.
-    let certificate = resolve_v2_issuer_certificate(executor, package)?;
+        // Steps 1-2 (Ed25519 authentication, I4): resolve the certificate and
+        // authenticate the signature. The certificate is resolved here because the
+        // verifier needs it for authentication; its subject becomes
+        // security-authoritative ONLY after successful verification.
+        let certificate = resolve_v2_issuer_certificate(executor, package)?;
 
-    // Step 3: package-kind issuer policy (fail-closed; no authority granted
-    // by this stage — the coarse subject category only gates early rejection).
-    let unit_issuer = match certificate.subject_type {
-        SubjectType::Wilaya => false,
-        SubjectType::Unit => {
-            if !UNIT_ISSUER_ACCEPTED_KINDS.contains(&policy.package_kind) {
+        // Step 3: package-kind issuer policy (fail-closed; no authority granted
+        // by this stage — the coarse subject category only gates early rejection).
+        let unit_issuer = match certificate.subject_type {
+            SubjectType::Wilaya => false,
+            SubjectType::Unit => {
+                if !UNIT_ISSUER_ACCEPTED_KINDS.contains(&policy.package_kind) {
+                    return Err(reject(&format!(
+                        "المُصدِر وحدة (UNIT) غير مسموح له بصنف الحزمة «{}»",
+                        policy.package_kind
+                    )));
+                }
+                if !policy.importer_is_wilaya {
+                    return Err(reject("حزمة مُصدِرة من UNIT تُستورد فقط على عقدة WILAYA"));
+                }
+                true
+            }
+            other => {
+                return Err(reject(&format!("المُصدِر من نوع غير مسموح ({other})")));
+            }
+        };
+
+        // Step 4: certificate ACTIVE and not expired.
+        validate_issuer_status(&certificate)?;
+
+        // Step 5: UNIT post-signature membership and binding (I4 — after Ed25519
+        // authentication above).
+        if unit_issuer {
+            let subject_id = certificate.subject_id.to_string();
+
+            // 8a. Membership: subject must be a local unit of the importer's WILAYA.
+            verify_unit_issuer_membership(executor, &subject_id, policy.importer_wilaya_code)?;
+
+            // 8b. Import-target binding: the authenticated issuer decides the
+            //     target UNIT — the renderer value must match it exactly.
+            let import_unit_id = policy
+                .import_unit_id
+                .ok_or_else(|| reject("حزمة مُصدِرة من UNIT بدون وحدة استيراد مستهدفة"))?;
+            if import_unit_id.trim() != subject_id {
                 return Err(reject(&format!(
-                    "المُصدِر وحدة (UNIT) غير مسموح له بصنف الحزمة «{}»",
-                    policy.package_kind
+                    "الوحدة المستهدفة «{}» لا تطابق هوية المُصدِر الموثّقة «{}»",
+                    import_unit_id.trim(),
+                    subject_id
                 )));
             }
-            if !policy.importer_is_wilaya {
-                return Err(reject(
-                    "حزمة مُصدِرة من UNIT تُستورد فقط على عقدة WILAYA",
-                ));
-            }
-            true
-        }
-        other => {
-            return Err(reject(&format!(
-                "المُصدِر من نوع غير مسموح ({other})"
-            )));
-        }
-    };
 
-    // Step 4: certificate ACTIVE and not expired.
-    validate_issuer_status(&certificate)?;
-
-    // Step 5: UNIT post-signature membership and binding (I4 — after Ed25519
-    // authentication above).
-    if unit_issuer {
-        let subject_id = certificate.subject_id.to_string();
-
-        // 8a. Membership: subject must be a local unit of the importer's WILAYA.
-        verify_unit_issuer_membership(executor, &subject_id, policy.importer_wilaya_code)?;
-
-        // 8b. Import-target binding: the authenticated issuer decides the
-        //     target UNIT — the renderer value must match it exactly.
-        let import_unit_id = policy.import_unit_id.ok_or_else(|| {
-            reject("حزمة مُصدِرة من UNIT بدون وحدة استيراد مستهدفة")
-        })?;
-        if import_unit_id.trim() != subject_id {
-            return Err(reject(&format!(
-                "الوحدة المستهدفة «{}» لا تطابق هوية المُصدِر الموثّقة «{}»",
-                import_unit_id.trim(),
-                subject_id
-            )));
-        }
-
-        // 8c. Stock-movements payload binding: every signed movement unit_id,
-        //     when present and non-empty, must equal the authenticated subject.
-        //     Genuinely absent/empty values keep the mutation restamp, whose
-        //     authoritative source is now the authenticated subject (the
-        //     renderer target above is bound to it).
-        if let Some(extract) = policy.payload_unit_ids {
-            for payload_unit_id in extract(&package.payload) {
-                if payload_unit_id != subject_id {
-                    return Err(reject(&format!(
+            // 8c. Stock-movements payload binding: every signed movement unit_id,
+            //     when present and non-empty, must equal the authenticated subject.
+            //     Genuinely absent/empty values keep the mutation restamp, whose
+            //     authoritative source is now the authenticated subject (the
+            //     renderer target above is bound to it).
+            if let Some(extract) = policy.payload_unit_ids {
+                for payload_unit_id in extract(&package.payload) {
+                    if payload_unit_id != subject_id {
+                        return Err(reject(&format!(
                         "وحدة بيانات الحزمة «{payload_unit_id}» لا تطابق هوية المُصدِر الموثّقة «{subject_id}»"
                     )));
+                    }
                 }
             }
         }
-    }
 
-    Ok(())
-}
+        Ok(())
+    }
 
     /// Resolve the issuer's last applied transport sequence from the
     /// `sync_issuer_sequence` ledger. Thin wrapper so the import pipeline
@@ -359,7 +356,13 @@ mod tests {
     }
 
     fn seed_issuer(db: &Database, identity_id: Uuid) {
-        seed_certificate(db, identity_id, SubjectType::Wilaya, CredentialStatus::Active, None);
+        seed_certificate(
+            db,
+            identity_id,
+            SubjectType::Wilaya,
+            CredentialStatus::Active,
+            None,
+        );
     }
 
     fn seed_certificate(
@@ -566,7 +569,10 @@ mod tests {
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "signature_version=1 must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "signature_version=1 must be rejected: {result:?}"
+        );
     }
 
     // ── SEC-003-01: issuer validity (WILAYA + ACTIVE + not expired) ──────
@@ -575,39 +581,66 @@ mod tests {
     fn revoked_issuer_is_rejected() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
-        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Revoked, None);
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Wilaya,
+            CredentialStatus::Revoked,
+            None,
+        );
         let package = build_v2_package(issuer_id);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "revoked issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "revoked issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
     fn superseded_issuer_is_rejected() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
-        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Superseded, None);
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Wilaya,
+            CredentialStatus::Superseded,
+            None,
+        );
         let package = build_v2_package(issuer_id);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "superseded issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "superseded issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
     fn expired_status_issuer_is_rejected() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
-        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Expired, None);
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Wilaya,
+            CredentialStatus::Expired,
+            None,
+        );
         let package = build_v2_package(issuer_id);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "expired-status issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "expired-status issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -615,20 +648,35 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let past = chrono::DateTime::from_timestamp(1_500_000_000, 0).unwrap();
-        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Active, Some(past));
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Wilaya,
+            CredentialStatus::Active,
+            Some(past),
+        );
         let package = build_v2_package(issuer_id);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "past not_after must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "past not_after must be rejected: {result:?}"
+        );
     }
 
     #[test]
     fn unit_issuer_is_rejected() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
-        seed_certificate(&db, issuer_id, SubjectType::Unit, CredentialStatus::Active, None);
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Unit,
+            CredentialStatus::Active,
+            None,
+        );
         let package = build_v2_package(issuer_id);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
@@ -642,13 +690,22 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let future = chrono::Utc::now() + chrono::Duration::days(365);
-        seed_certificate(&db, issuer_id, SubjectType::Wilaya, CredentialStatus::Active, Some(future));
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Wilaya,
+            CredentialStatus::Active,
+            Some(future),
+        );
         let package = build_v2_package(issuer_id);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_ok(), "ACTIVE WILAYA with future not_after accepted: {result:?}");
+        assert!(
+            result.is_ok(),
+            "ACTIVE WILAYA with future not_after accepted: {result:?}"
+        );
     }
 
     #[test]
@@ -692,52 +749,88 @@ mod tests {
         let old_issuer = Uuid::new_v4();
         // OLD certificate remains ACTIVE while the rotation trust package is
         // being distributed (signed with the OLD key) — must be ACCEPTED.
-        seed_certificate(&db, old_issuer, SubjectType::Wilaya, CredentialStatus::Active, None);
+        seed_certificate(
+            &db,
+            old_issuer,
+            SubjectType::Wilaya,
+            CredentialStatus::Active,
+            None,
+        );
         let package = build_v2_package(old_issuer);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_ok(), "OLD ACTIVE issuer accepted during rotation: {result:?}");
+        assert!(
+            result.is_ok(),
+            "OLD ACTIVE issuer accepted during rotation: {result:?}"
+        );
     }
 
     #[test]
     fn rotation_old_key_rejected_after_old_certificate_superseded() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let old_issuer = Uuid::new_v4();
-        seed_certificate(&db, old_issuer, SubjectType::Wilaya, CredentialStatus::Superseded, None);
+        seed_certificate(
+            &db,
+            old_issuer,
+            SubjectType::Wilaya,
+            CredentialStatus::Superseded,
+            None,
+        );
         let package = build_v2_package(old_issuer);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "OLD SUPERSEDED issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "OLD SUPERSEDED issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
     fn rotation_old_key_rejected_after_old_certificate_revoked() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let old_issuer = Uuid::new_v4();
-        seed_certificate(&db, old_issuer, SubjectType::Wilaya, CredentialStatus::Revoked, None);
+        seed_certificate(
+            &db,
+            old_issuer,
+            SubjectType::Wilaya,
+            CredentialStatus::Revoked,
+            None,
+        );
         let package = build_v2_package(old_issuer);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_err(), "OLD REVOKED issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "OLD REVOKED issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
     fn rotation_new_key_accepted_with_new_active_certificate() {
         let db = ConnectionFactory::new_for_test().unwrap();
         let new_issuer = Uuid::new_v4();
-        seed_certificate(&db, new_issuer, SubjectType::Wilaya, CredentialStatus::Active, None);
+        seed_certificate(
+            &db,
+            new_issuer,
+            SubjectType::Wilaya,
+            CredentialStatus::Active,
+            None,
+        );
         let package = build_v2_package(new_issuer);
         let result = SyncPackageIdentityVerificationService::verify_v2_signature(
             make_executor(&db),
             &package,
         );
-        assert!(result.is_ok(), "NEW ACTIVE issuer accepted after rotation: {result:?}");
+        assert!(
+            result.is_ok(),
+            "NEW ACTIVE issuer accepted after rotation: {result:?}"
+        );
     }
 
     const WILAYA_CODE: &str = "16";
@@ -795,7 +888,10 @@ mod tests {
             .unwrap_or_default()
     }
 
-    fn build_stock_movements_package(issuer_id: Uuid, unit_id: Uuid) -> SyncPackage<serde_json::Value> {
+    fn build_stock_movements_package(
+        issuer_id: Uuid,
+        unit_id: Uuid,
+    ) -> SyncPackage<serde_json::Value> {
         let signer = Ed25519PackageSigner::new(ISSUER_SECRET);
         let mut package = SyncPackage {
             metadata: crate::application::sync::SyncPackageMetadata {
@@ -835,7 +931,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Active, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -851,7 +954,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_ok(), "ACTIVE UNIT issuer on WILAYA importer accepted: {result:?}");
+        assert!(
+            result.is_ok(),
+            "ACTIVE UNIT issuer on WILAYA importer accepted: {result:?}"
+        );
     }
 
     #[test]
@@ -859,7 +965,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Active, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -875,7 +988,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "UNIT↔UNIT import must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "UNIT↔UNIT import must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -883,7 +999,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, "10", CredentialStatus::Active, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            "10",
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -899,7 +1022,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "UNIT of another WILAYA must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "UNIT of another WILAYA must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -907,7 +1033,13 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_certificate(&db, issuer_id, SubjectType::Unit, CredentialStatus::Active, None);
+        seed_certificate(
+            &db,
+            issuer_id,
+            SubjectType::Unit,
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -923,7 +1055,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "UNIT without a local units row must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "UNIT without a local units row must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -931,7 +1066,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Active, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let policy = V2ImportPolicy::new(
@@ -946,7 +1088,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "UNIT package without import target must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "UNIT package without import target must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -954,7 +1099,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Active, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let foreign_unit = Uuid::new_v4().to_string();
@@ -970,7 +1122,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "Renderered unit_id different from authenticated subject must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "Renderered unit_id different from authenticated subject must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -978,7 +1133,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Active, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Active,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -1000,7 +1162,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "Signed movement of another unit must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "Signed movement of another unit must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -1008,7 +1173,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Revoked, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Revoked,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -1024,7 +1196,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "REVOKED UNIT issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "REVOKED UNIT issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -1032,7 +1207,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let issuer_id = Uuid::new_v4();
         let unit_id = Uuid::new_v4();
-        seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Superseded, None);
+        seed_unit_issuer(
+            &db,
+            issuer_id,
+            unit_id,
+            WILAYA_CODE,
+            CredentialStatus::Superseded,
+            None,
+        );
 
         let package = build_stock_movements_package(issuer_id, unit_id);
         let unit_id_str = unit_id.to_string();
@@ -1048,7 +1230,10 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "SUPERSEDED UNIT issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "SUPERSEDED UNIT issuer must be rejected: {result:?}"
+        );
     }
 
     #[test]
@@ -1079,10 +1264,13 @@ mod tests {
             &package,
             &policy,
         );
-        assert!(result.is_err(), "EXPIRED UNIT issuer must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "EXPIRED UNIT issuer must be rejected: {result:?}"
+        );
     }
 
-#[test]
+    #[test]
     fn unit_issuer_rejected_for_non_data_kind() {
         // Every kind OUTSIDE the accepted data kinds must reject a UNIT issuer —
         // including trust/registry/identity_access/products (ADR-0046 I2).
@@ -1097,7 +1285,14 @@ mod tests {
             let db = ConnectionFactory::new_for_test().unwrap();
             let issuer_id = Uuid::new_v4();
             let unit_id = Uuid::new_v4();
-            seed_unit_issuer(&db, issuer_id, unit_id, WILAYA_CODE, CredentialStatus::Active, None);
+            seed_unit_issuer(
+                &db,
+                issuer_id,
+                unit_id,
+                WILAYA_CODE,
+                CredentialStatus::Active,
+                None,
+            );
 
             let package = build_stock_movements_package(issuer_id, unit_id);
             let unit_id_str = unit_id.to_string();
@@ -1127,19 +1322,16 @@ mod tests {
         seed_issuer(&db, issuer_id);
 
         let package = build_v2_package(issuer_id);
-        let policy = V2ImportPolicy::new(
-            "products",
-            false,
-            WILAYA_CODE,
-            None,
-            None,
-        );
+        let policy = V2ImportPolicy::new("products", false, WILAYA_CODE, None, None);
         let result = SyncPackageIdentityVerificationService::verify_v2_package_for_import(
             make_executor(&db),
             &package,
             &policy,
         );
-        assert!(result.is_ok(), "WILAYA issuer path ignores UNIT context: {result:?}");
+        assert!(
+            result.is_ok(),
+            "WILAYA issuer path ignores UNIT context: {result:?}"
+        );
     }
 
     #[test]
@@ -1151,18 +1343,15 @@ mod tests {
         package.metadata.signature_version = None;
         package.metadata.signature = None;
 
-        let policy = V2ImportPolicy::new(
-            "products",
-            false,
-            WILAYA_CODE,
-            None,
-            None,
-        );
+        let policy = V2ImportPolicy::new("products", false, WILAYA_CODE, None, None);
         let result = SyncPackageIdentityVerificationService::verify_v2_package_for_import(
             make_executor(&db),
             &package,
             &policy,
         );
-        assert!(result.is_err(), "non-V2 package must be rejected: {result:?}");
+        assert!(
+            result.is_err(),
+            "non-V2 package must be rejected: {result:?}"
+        );
     }
 }

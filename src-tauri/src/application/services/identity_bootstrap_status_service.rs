@@ -50,11 +50,10 @@ impl IdentityBootstrapStatusService {
 
         if wilaya.is_some() && admin_cert.is_some() {
             use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
-            let node_scope = crate::infrastructure::security::SettingsNodeIdentityProvider::new(
-                db.executor(),
-            )
-            .current_node_id()
-            .unwrap_or_else(|_| "WILAYA".to_string());
+            let node_scope =
+                crate::infrastructure::security::SettingsNodeIdentityProvider::new(db.executor())
+                    .current_node_id()
+                    .unwrap_or_else(|_| "WILAYA".to_string());
             let admin_user = db
                 .executor()
                 .users()

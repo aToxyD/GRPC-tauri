@@ -54,6 +54,11 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
             "admin_access issuer-only producer sequence stream (ADR-0051 — Admin-Only B8 Account Synchronization)",
             include_str!("migrations/010_admin_access_export_sequence.sql"),
         ),
+        (
+            11,
+            "Unified per-target transport sequence (ADR-0053 — retires fragmented 006/009/010 producer streams; consumer 004 untouched)",
+            include_str!("migrations/011_transport_export_sequence.sql"),
+        ),
     ]
 }
 

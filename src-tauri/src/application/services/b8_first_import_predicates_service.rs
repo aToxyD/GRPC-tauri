@@ -124,7 +124,9 @@ impl B8FirstImportPredicatesService {
             })?;
 
         if anchor.identity_id.to_string() != issuer_identity_id {
-            return Err(rejection("مُصدِر حزمة العقدة ليس مرساة الثقة المحلية المثبتة"));
+            return Err(rejection(
+                "مُصدِر حزمة العقدة ليس مرساة الثقة المحلية المثبتة",
+            ));
         }
         if package_sequence != Some(1) {
             return Err(rejection(

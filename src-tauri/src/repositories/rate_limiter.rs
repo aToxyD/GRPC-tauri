@@ -149,11 +149,9 @@ mod tests {
 
         let open = || {
             RateLimiter::with_store(
-                Box::new(
-                    RateLimiterRepository::new(
-                        rusqlite::Connection::open(&db_path).expect("open rl conn"),
-                    ),
-                ),
+                Box::new(RateLimiterRepository::new(
+                    rusqlite::Connection::open(&db_path).expect("open rl conn"),
+                )),
                 300,
                 5,
             )

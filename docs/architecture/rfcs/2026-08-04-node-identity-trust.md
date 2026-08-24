@@ -290,6 +290,20 @@ IdentityState {
   تحت نفس قفل كاتب واحد `Mutex<Option<Connection>>`. حزم `.unit` (A44-08) لا
   تستهلك هذا التدفق ولا تقدم أي سجل.
 
+> **تعديل 2026-08-24 (ADR-0053 — Unified Per-Target Transport Sequence):**
+> النص أعلاه **سجل تاريخي** يوثّق نطاق التخصيص الأصلي كما وصفه هذا RFC
+> (تدفّق واحد لكل مُصدِر). النطاق المعياري الساري بعد ADR-0053 هو تدفّق مُنتِج
+> موحّد واحد لكل **`(issuer_identity_id, target_node_id)`** عبر جميع أنواع
+> الحزم المارّة بـ TransportGuard (products / daily_report / monthly_summary /
+> stock_movements / admin_access / trust)، بدل التدفقات المجزأة (السجل العام
+> للهجرة 006، تدفق `identity_access` لكل هدف من الهجرة 009، تدفق `admin_access`
+> المخصص من الهجرة 010). الحارس على جانب المستهلك `(issuer_identity_id,
+> package_sequence)` **لم يتغيّر إطلاقًا**: سجل كل عقدة مستقبلة يمثّل ضمنيًا
+> `target_node_id = self`، فالتوحيد يجعل نطاق المُنتِج مطابقًا بنيويًا لنطاق
+> المستهلك. دقة الهدف: `units.code` لمستقبِلات UNIT، و`settings.wilaya_code`
+> لمستقبِلات WILAYA؛ لا `unit_name` ولا معرّفات عرضية من الطبقة العرضية.
+> `.unit` يظل خارج النظام بتسلسل ثابت = 1. القاعدة المعيارية الكاملة: ADR-0053.
+
 #### 3.4.2 Credential Guard — `(credential_id, generation)`
 
 - **النطاق:** لكل شهادة.

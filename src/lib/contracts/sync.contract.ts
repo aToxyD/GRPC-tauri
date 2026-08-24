@@ -5,8 +5,8 @@ import type {
   IdentityAccessImportResult, AdminAccessImportResult,
 } from '../types';
 
-export async function exportProductsPackage(filePath: string): Promise<SyncExportResult> {
-  return await safeInvoke('export_products_package', { filePath });
+export async function exportProductsPackage(filePath: string, unitCode: string): Promise<SyncExportResult> {
+  return await safeInvoke('export_products_package', { filePath, unitCode });
 }
 
 export async function exportDailyReportPackage(reportId: string, filePath: string): Promise<SyncExportResult> {
@@ -66,12 +66,14 @@ export async function importIdentityAccessPackage(filePath: string): Promise<Ide
 }
 
 // ── Admin-Only account synchronization (admin_access, ADR-0051 / D1) ──────
-// Fleet-wide WILAYA → all UNIT nodes: NO unit selector exists on either
-// command. The package carries ONLY {admin_password_hash, admin_enabled};
-// the renderer never receives credential material — status metadata only.
+// ADR-0053: the WILAYA selects ONE authoritative UNIT target per package;
+// `unitCode` is validated server-side against `units.code` and keys the
+// per-(issuer, target) transport stream. The package carries ONLY
+// {admin_password_hash, admin_enabled}; the renderer never receives
+// credential material — status metadata only.
 
-export async function exportAdminAccessPackage(filePath: string): Promise<SyncExportResult> {
-  return await safeInvoke('export_admin_access_package', { filePath });
+export async function exportAdminAccessPackage(filePath: string, unitCode: string): Promise<SyncExportResult> {
+  return await safeInvoke('export_admin_access_package', { filePath, unitCode });
 }
 
 export async function importAdminAccessPackage(filePath: string): Promise<AdminAccessImportResult> {

@@ -116,6 +116,18 @@ Consumer side: existing per-node ledger and registry machinery unchanged — rep
 
 Broadcast property: WILAYA emits sequence N once; UNIT-A accepts N and UNIT-B independently accepts N against their own local ledgers, without cross-UNIT collision or invalidation. Rotation numbering for `admin_access` is deliberately decoupled from `products`, `trust`, `registry`, `data-report`, and legacy `identity_access` streams.
 
+> **Supersession (2026-08-24 — ADR-0053):** the dedicated issuer-only
+> `admin_access` producer stream above is **superseded** by ADR-0053:
+> `admin_access` joins the **unified per-target transport stream**
+> `(issuer_identity_id, target_node_id)` with `target_node_id = units.code`
+> (authoritative, validated), and the migration-010 producer table is retired.
+> The historical rationale recorded here (broadcast simplicity) is preserved;
+> SEC-030 empirically demonstrated that independent per-kind counters cannot
+> satisfy the frozen kind-blind consumer continuity once kinds interleave, so
+> the broadcast emission model becomes explicit per-target delivery. All other
+> clauses of this ADR (payload, ownership invariant, predicates, D1 cutover,
+> authz, V2 signing) remain unchanged and in force.
+
 ## 8. Authorization
 
 EXPORT (WILAYA):

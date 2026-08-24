@@ -615,6 +615,15 @@ Canonical completed owner-ratification record for ADR-0044 + ADR-0045. Source of
   blocked); F-2 (cross-WILAYA Admin-import binding) remains P3, pre-existing,
   unchanged; ADR-0044 requires no amendment (`.unit` semantics untouched);
   no production release authorized by this amendment.
+- **Supersession note (2026-08-24 — ADR-0053):** the per-target allocation
+  pattern ratified here (`(issuer_identity_id, target_unit_code)` for
+  `identity_access`, migration 009) was **correct in direction** and is hereby
+  **generalized** into the canonical unified per-target transport allocator
+  `(issuer_identity_id, target_node_id)` defined by **ADR-0053** across ALL
+  TransportGuard pipeline kinds; the migration-009 producer stream table is
+  retired. This note does NOT revive `identity_access`: the D1 fail-closed
+  export/import cutover (ADR-0051 §9) remains fully in force — only the
+  allocation *pattern* lives on, generalized.
 
 # 27. HARD STOP
 

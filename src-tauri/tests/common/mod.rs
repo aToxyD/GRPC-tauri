@@ -351,7 +351,12 @@ impl SecretStoragePort for InMemorySecretStorage {
                 "keyring delete failed (injected)".into(),
             ));
         }
-        Ok(self.entries.lock().expect("entries lock").remove(key).is_some())
+        Ok(self
+            .entries
+            .lock()
+            .expect("entries lock")
+            .remove(key)
+            .is_some())
     }
 }
 

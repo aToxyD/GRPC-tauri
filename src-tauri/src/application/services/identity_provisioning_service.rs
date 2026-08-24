@@ -683,28 +683,28 @@ impl<'a> IdentityProvisioningService<'a> {
                 })
             })?;
 
-        let existing_admin = match IdentityAuthenticationPolicy::admin_credential_state(
-            self.db,
-            adminkey_provider,
-        )? {
-            AdminCredentialState::NoActiveAdmin => None,
-            AdminCredentialState::Usable => {
-                let admin = store
-                    .get_active_by_subject_type(SubjectType::Admin)?
-                    .expect("Usable implies an ACTIVE ADMIN certificate");
-                return Err(AppError::BusinessLogic(
-                    BusinessLogicError::OperationNotPermitted {
-                        message: format!(
+        let existing_admin =
+            match IdentityAuthenticationPolicy::admin_credential_state(self.db, adminkey_provider)?
+            {
+                AdminCredentialState::NoActiveAdmin => None,
+                AdminCredentialState::Usable => {
+                    let admin = store
+                        .get_active_by_subject_type(SubjectType::Admin)?
+                        .expect("Usable implies an ACTIVE ADMIN certificate");
+                    return Err(AppError::BusinessLogic(
+                        BusinessLogicError::OperationNotPermitted {
+                            message: format!(
                             "An ACTIVE ADMIN identity already exists for this node (credential {})",
                             admin.credential_id
                         ),
-                    },
-                ));
-            }
-            AdminCredentialState::MissingAdminkey | AdminCredentialState::MismatchedAdminkey => {
-                store.get_active_by_subject_type(SubjectType::Admin)?
-            }
-        };
+                        },
+                    ));
+                }
+                AdminCredentialState::MissingAdminkey
+                | AdminCredentialState::MismatchedAdminkey => {
+                    store.get_active_by_subject_type(SubjectType::Admin)?
+                }
+            };
         let recovering = existing_admin.is_some();
 
         // Resolve the canonical admin's `users` row. Existing row → linked
@@ -952,16 +952,13 @@ impl<'a> IdentityProvisioningService<'a> {
         }
 
         let unit_id = signed_cert.subject_id.to_string();
-        let unit = executor
-            .units()
-            .get_unit(&unit_id)?
-            .ok_or_else(|| {
-                AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                    message: format!(
-                        "Certificate subject_id {unit_id} does not match a local unit row"
-                    ),
-                })
-            })?;
+        let unit = executor.units().get_unit(&unit_id)?.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                message: format!(
+                    "Certificate subject_id {unit_id} does not match a local unit row"
+                ),
+            })
+        })?;
         let _ = unit;
 
         if let Some(existing) =
@@ -1082,7 +1079,10 @@ impl<'a> IdentityProvisioningService<'a> {
         let secret_key: [u8; 32] = key.as_slice().try_into().map_err(|_| {
             AppError::Validation(ValidationError::InvalidFormat {
                 field: "unit_private_key".into(),
-                message: format!("packaged UNIT private key must be exactly 32 bytes (got {})", key.len()),
+                message: format!(
+                    "packaged UNIT private key must be exactly 32 bytes (got {})",
+                    key.len()
+                ),
             })
         })?;
 

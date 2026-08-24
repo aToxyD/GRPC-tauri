@@ -684,12 +684,12 @@ fn d1_unit_v2_export_is_fixed_sequence_one_and_ledger_untouched() {
     assert_eq!(pkg.payload.user.username, dataset.user.username);
     assert_eq!(pkg.payload.user.role, dataset.user.role);
 
-    // The bootstrap artifact never advances the per-issuer ledger: the next
-    // identity_access export still allocates sequence 1 (A45-06).
+    // The bootstrap artifact never advances any transport ledger (ADR-0053):
+    // the unified per-target stream for this issuer stays empty.
     let issued = db
         .executor()
-        .sync_issuer_sequence_state()
-        .next_issued_sequence(&wilaya_cert.identity_id.to_string())
+        .transport_export_sequence_state()
+        .next_issued_sequence(&wilaya_cert.identity_id.to_string(), "UNIT-A")
         .expect("read ledger");
     assert_eq!(issued, None, ".unit export must not burn ledger sequence");
 }

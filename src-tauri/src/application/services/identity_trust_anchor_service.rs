@@ -10,7 +10,6 @@
 //! and does not mutate `IdentityBootstrapState`. The same contract is reused
 //! for WILAYA certificate rotation (B7) via the Trust Package channel.
 
-use crate::repositories::DbExecutor;
 use crate::domain::identity::{
     CredentialStatus, IdentityCertificate, IdentitySignatureVerifier, IdentityStorePort,
     SubjectType,
@@ -18,6 +17,7 @@ use crate::domain::identity::{
 use crate::errors::{AppError, AppResult, BusinessLogicError};
 use crate::infrastructure::identity::resolve_root_public_key;
 use crate::infrastructure::security::Ed25519SignatureVerifier;
+use crate::repositories::DbExecutor;
 use crate::repositories::RepositoryProvider;
 
 /// Outcome of `install_wilaya_certificate` (B5 idempotency style).

@@ -24,8 +24,8 @@ use crate::db::Database;
 use crate::domain::audit::{AuditAction, EntityType};
 use crate::domain::identity::{
     AdminKeyFile, ChallengeMessage, CredentialStatus, IdentityCertificate, IdentityChallengeState,
-    IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, MAX_OUTSTANDING_CHALLENGES,
-    SubjectType,
+    IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, SubjectType,
+    MAX_OUTSTANDING_CHALLENGES,
 };
 use crate::domain::rate_limiter::RateLimiter;
 use crate::domain::security::PasswordHashPort;
@@ -160,9 +160,10 @@ impl IdentityChallengeService {
     /// blocked principals receive the same user-safe Arabic message and the
     /// pending challenge is NOT consumed by a blocked attempt.
     fn guard_rate_limit(&self) -> AppResult<()> {
-        let rate_limiter = self.rate_limiter.lock().map_err(|e| {
-            AppError::Internal(format!("Failed to lock rate limiter: {e}"))
-        })?;
+        let rate_limiter = self
+            .rate_limiter
+            .lock()
+            .map_err(|e| AppError::Internal(format!("Failed to lock rate limiter: {e}")))?;
         if rate_limiter.is_allowed(CHALLENGE_RATE_LIMIT_KEY) {
             return Ok(());
         }

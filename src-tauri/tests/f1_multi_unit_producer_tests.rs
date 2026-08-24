@@ -1,32 +1,35 @@
-//! F-1 Option A (ADR-0045 §26.9 — owner decision 2026-08-15) integration tests:
-//! per-`(issuer, target_unit_code)` producer stream for `identity_access`.
+//! ADR-0053 (Unified Per-Target Transport Sequence — Accepted 2026-08-24)
+//! integration tests — successor of the F-1 Option A suite (ADR-0045 §26.9).
 //!
-//! RFC 2026-08-04-node-identity-trust §3.4.1 (amended 2026-08-15) / B8.
+//! RFC 2026-08-04-node-identity-trust §3.4.1 (amended 2026-08-24) / ADR-0053.
 //!
 //! What is proven here:
-//! - migration 009 is additive and preserves the global producer ledger;
-//! - the `identity_access` producer stream is isolated from the global
-//!   per-issuer ledger (cross-kind, both directions);
-//! - `.unit` V2 keeps fixed sequence 1 and never consumes the stream;
-//! - REAL producer path: fresh UNIT-A and fresh UNIT-B both receive their own
-//!   sequence-1 `identity_access` package from the SAME WILAYA issuer, both
-//!   bootstrap through the real import command, continuation seq 2/3 works
-//!   per unit, replay is rejected, ledger untouched;
-//! - consumer Transport Guard rule "first import = 1 on an empty ledger"
-//!   (A45-06 / B8 control 11) is unchanged: seq 0 / seq 2 / stale / gap all
-//!   rejected;
-//! - cross-target misuse is blocked at bootstrap (unit_code binding).
+//! - migration 011 creates ONE canonical producer stream
+//!   `(issuer_identity_id, target_node_id)` and RETIRES the fragmented
+//!   006/009/010 producer tables (controlled pre-release reset — pre-ADR-0053
+//!   artifacts are void);
+//! - the frozen CONSUMER ledger (`sync_issuer_sequence`, migration 004)
+//!   survives the upgrade byte-identical;
+//! - all pipeline kinds share one contiguous per-target stream:
+//!   interleaved admin_access/products allocate 1,2,3,4 against the same
+//!   `(issuer, target)`; a second UNIT starts at its own 1;
+//! - `.unit` V2 keeps fixed sequence 1 and never consumes any stream;
+//! - REAL producer path: fresh UNIT-A and fresh UNIT-B each receive their own
+//!   sequence-1 packages from the SAME WILAYA issuer through their own
+//!   per-target streams, bootstrap through the real import command,
+//!   continuation works per target, replay is rejected, ledgers untouched;
+//! - consumer Transport Guard rules are unchanged: first import = 1 on an
+//!   empty ledger (A45-06 / B8 control 11), stale/gap rejected.
 //!
 //! Producer sequences are NEVER hand-crafted here — they come from the real
 //! migration-backed ledger through `IdentitySignedExportService`. Hand-crafted
 //! packages appear only in the consumer-side continuity tests where the
-//! producer is intentionally bypassed (allowed: the F-1 remediation is
-//! producer-side).
+//! producer is intentionally bypassed.
 
 #[allow(dead_code)]
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -56,8 +59,7 @@ use grpc_lib::infrastructure::sync::{
     read_admin_access_package_from_file, PackageBuilder, SerdeJsonSyncPackageSerializer,
 };
 use grpc_lib::models::{
-    AdminAccessPayload, CreateUnitRequest, IdentityAccessPayload, Unit, UnitNodePackage,
-    UserExport, WilayaNodeConfiguration,
+    AdminAccessPayload, CreateUnitRequest, UnitNodePackage, UserExport, WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::executor::DbExecutor;
 use grpc_lib::repositories::RepositoryProvider;
@@ -175,13 +177,6 @@ fn configure_producer_as_wilaya(db: &Database) {
         .expect("producer configured as WILAYA");
 }
 
-fn export_payload(db: &Database, unit_code: &str) -> IdentityAccessPayload {
-    let port = Argon2PasswordHashProvider;
-    UserAccountSyncService::new(make_executor(db), &port)
-        .export(unit_code)
-        .expect("export payload")
-}
-
 /// Fleet-wide Admin-Only payload (ADR-0051): exactly
 /// `{admin_password_hash, admin_enabled}` — no UNIT dimension exists.
 fn admin_payload(db: &Database) -> AdminAccessPayload {
@@ -240,10 +235,9 @@ fn set_session(state: &AppState, role: &str) {
     *state.current_session.lock().expect("session mutex") = Some(session);
 }
 
-/// Hand-crafted signed package for CONSUMER-side continuity tests only (the
-/// F-1 remediation is producer-side; the producer portion of the E2E tests
-/// never hand-crafts sequences). Vehicle: `admin_access` — the active
-/// security-critical account kind after the D1 cutover (ADR-0051 §9).
+/// Hand-crafted signed package for CONSUMER-side continuity tests only.
+/// Vehicle: `admin_access` — the active security-critical account kind after
+/// the D1 cutover (ADR-0051 §9).
 fn crafted_admin_payload() -> AdminAccessPayload {
     let port = Argon2PasswordHashProvider;
     AdminAccessPayload {
@@ -308,11 +302,11 @@ fn write_encrypted_admin(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Migration 009 audit
+// Migration 011 audit — unified stream created, fragmented streams retired
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn migration_009_applies_on_fresh_database() {
+fn migration_011_applies_on_fresh_database() {
     let db = ConnectionFactory::new_for_test().expect("db");
 
     let version: i64 = db
@@ -320,14 +314,14 @@ fn migration_009_applies_on_fresh_database() {
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
     assert_eq!(
-        version, 10,
-        "schema must be at version 10 (010 admin_access stream)"
+        version, 11,
+        "schema must be at version 11 (unified transport stream)"
     );
 
-    // Composite PK (issuer, target) — the F-1 stream key.
+    // Composite PK (issuer, target) — the ADR-0053 stream key.
     let mut stmt = db
         .get_connection()
-        .prepare("PRAGMA table_info(identity_access_export_sequence)")
+        .prepare("PRAGMA table_info(transport_export_sequence)")
         .expect("pragma");
     let cols: Vec<(String, i64)> = stmt
         .query_map([], |row| {
@@ -343,36 +337,62 @@ fn migration_009_applies_on_fresh_database() {
         .expect("issuer column");
     let target_pk = cols
         .iter()
-        .find(|(name, _)| name == "target_unit_code")
+        .find(|(name, _)| name == "target_node_id")
         .map(|(_, pk)| *pk)
         .expect("target column");
     assert_eq!(issuer_pk, 1, "issuer_identity_id must be part of the PK");
     assert_eq!(
         target_pk, 2,
-        "target_unit_code must be part of the composite PK"
+        "target_node_id must be part of the composite PK"
     );
     assert!(cols.iter().any(|(n, _)| n == "last_issued_sequence"));
     assert!(cols.iter().any(|(n, _)| n == "updated_at"));
-
-    // The stream table starts empty; the global producer ledger is untouched.
     let count: i64 = db
         .get_connection()
+        .query_row("SELECT COUNT(*) FROM transport_export_sequence", [], |r| {
+            r.get(0)
+        })
+        .expect("count");
+    assert_eq!(count, 0);
+
+    // The fragmented producer streams are retired…
+    let conn = db.get_connection();
+    for table in [
+        "sync_issuer_sequence_state",
+        "identity_access_export_sequence",
+        "admin_access_export_sequence",
+    ] {
+        let present: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                rusqlite::params![table],
+                |r| r.get(0),
+            )
+            .expect("table presence");
+        assert_eq!(present, 0, "{table} must be dropped by migration 011");
+    }
+
+    // …while the frozen CONSUMER ledger remains untouched (migration 004).
+    let consumer: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM identity_access_export_sequence",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'sync_issuer_sequence'",
             [],
             |r| r.get(0),
         )
-        .expect("count");
-    assert_eq!(count, 0);
+        .expect("consumer presence");
+    assert_eq!(
+        consumer, 1,
+        "sync_issuer_sequence must survive migration 011"
+    );
 }
 
 #[test]
-fn migration_009_upgrade_preserves_existing_producer_state() {
+fn migration_011_upgrade_resets_fragmented_producer_streams() {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("upgrade.db");
     let conn = Connection::open(&path).expect("open");
 
-    // Simulate the pre-009 schema: apply migrations 1..8 verbatim (the runner
+    // Simulate the pre-011 schema: apply migrations 1..10 verbatim (the runner
     // wraps each in its own transaction; here we only need the final shape).
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_version (
@@ -408,6 +428,14 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
             8,
             include_str!("../src/db/migrations/008_single_active_admin.sql"),
         ),
+        (
+            9,
+            include_str!("../src/db/migrations/009_identity_access_export_sequence.sql"),
+        ),
+        (
+            10,
+            include_str!("../src/db/migrations/010_admin_access_export_sequence.sql"),
+        ),
     ] {
         conn.execute_batch(sql).expect("apply simulated migration");
         conn.execute(
@@ -417,12 +445,28 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
         .expect("record simulated migration");
     }
 
-    // Pre-existing GLOBAL producer ledger data must survive the upgrade.
+    // Seed the three legacy producer streams with state (VOID per ADR-0053 §8).
     conn.execute(
         "INSERT INTO sync_issuer_sequence_state (issuer_identity_id, last_issued_sequence) VALUES ('wilaya-legacy', 7)",
         [],
     )
-    .expect("seed legacy ledger row");
+    .expect("seed global ledger row");
+    conn.execute(
+        "INSERT INTO identity_access_export_sequence (issuer_identity_id, target_unit_code, last_issued_sequence) VALUES ('wilaya-legacy', 'UNIT-A', 3)",
+        [],
+    )
+    .expect("seed identity_access row");
+    conn.execute(
+        "INSERT INTO admin_access_export_sequence (issuer_identity_id, last_issued_sequence) VALUES ('wilaya-legacy', 5)",
+        [],
+    )
+    .expect("seed admin_access row");
+    // Seed the CONSUMER ledger — this MUST survive the upgrade.
+    conn.execute(
+        "INSERT INTO sync_issuer_sequence (issuer_identity_id, last_applied_sequence) VALUES ('wilaya-legacy', 2)",
+        [],
+    )
+    .expect("seed consumer row");
 
     run_migrations(&conn).expect("upgrade must succeed");
 
@@ -430,45 +474,57 @@ fn migration_009_upgrade_preserves_existing_producer_state() {
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
     assert_eq!(
-        version, 10,
-        "upgrade must land on version 10 (010 admin_access stream)"
+        version, 11,
+        "upgrade must land on version 11 (unified transport stream)"
     );
 
-    let legacy: i64 = conn
+    // Legacy producer streams are retired together with their VOID state…
+    for table in [
+        "sync_issuer_sequence_state",
+        "identity_access_export_sequence",
+        "admin_access_export_sequence",
+    ] {
+        let present: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                rusqlite::params![table],
+                |r| r.get(0),
+            )
+            .expect("table presence");
+        assert_eq!(present, 0, "{table} must be dropped by the upgrade");
+    }
+
+    // …while the frozen CONSUMER ledger data survives byte-identical.
+    let applied: i64 = conn
         .query_row(
-            "SELECT last_issued_sequence FROM sync_issuer_sequence_state WHERE issuer_identity_id = 'wilaya-legacy'",
+            "SELECT last_applied_sequence FROM sync_issuer_sequence WHERE issuer_identity_id = 'wilaya-legacy'",
             [],
             |r| r.get(0),
         )
-        .expect("legacy row");
-    assert_eq!(legacy, 7, "global producer ledger data must be preserved");
+        .expect("consumer row");
+    assert_eq!(
+        applied, 2,
+        "consumer ledger data must survive migration 011"
+    );
 
-    // The new stream table exists and is empty; the global ledger still works.
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM identity_access_export_sequence",
-            [],
-            |r| r.get(0),
-        )
-        .expect("count");
-    assert_eq!(count, 0);
-
-    // Non-identity-access producer behavior unchanged: allocate + commit.
-    let db = ConnectionFactory::new_for_test().expect("db");
-    let pending = db
+    // Post-reset, every unified stream starts fresh at 1 (void-artifact policy).
+    let pending = ConnectionFactory::new_for_test().unwrap();
+    let _ = pending; // silence unused when feature sets differ
+    let repo_conn = ConnectionFactory::new_for_test().unwrap();
+    let first = repo_conn
         .executor()
-        .sync_issuer_sequence_state()
-        .begin_export("wilaya-legacy")
+        .transport_export_sequence_state()
+        .begin_export("wilaya-post-reset", "UNIT-A")
         .expect("begin");
-    assert_eq!(pending.value(), 1, "fresh global stream still starts at 1");
+    assert_eq!(first.value(), 1, "post-reset stream starts at 1");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Producer isolation: identity_access stream vs global per-issuer ledger
+// Unified stream: all kinds share one contiguous per-(issuer, target) chain
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
+fn all_kinds_share_one_contiguous_stream_per_target() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -480,98 +536,146 @@ fn identity_access_stream_isolated_from_global_ledger_and_other_kinds() {
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
 
-    // 1st identity_access to UNIT-A → 1 (per-target stream).
+    // Interleaving admin/products against the SAME target UNIT-A allocates
+    // one contiguous 1..n chain (the SEC-030 hazard is structurally gone):
+    //   admin #1 → products #2 → products #3 → admin #4
     let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-A"),
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
             "wilaya-test-node",
-            &dir.path().join("a1.sync"),
+            "UNIT-A",
+            &dir.path().join("adm1.sync"),
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("export A1");
-    assert_eq!(seq, 1);
-
-    // The GLOBAL per-issuer ledger must be untouched by identity_access.
-    let global = node
-        .db
-        .executor()
-        .sync_issuer_sequence_state()
-        .next_issued_sequence(&issuer)
-        .expect("read global ledger");
+        .expect("export admin 1");
     assert_eq!(
-        global, None,
-        "identity_access must not advance the global ledger"
+        seq, 1,
+        "first allocation on the (issuer, UNIT-A) stream = 1"
     );
 
-    // A products export uses the GLOBAL ledger → 1 (its own fresh stream).
     let seq = service
         .export_v2_package(
-            serde_json::json!({ "probe": "products-1" }),
+            serde_json::json!({ "probe": "products-for-a" }),
             "wilaya-test-node",
             PRODUCTS_PACKAGE_KIND,
-            &dir.path().join("p1.sync"),
-            SubjectType::Wilaya,
-            &crypto,
-        )
-        .expect("export products 1");
-    assert_eq!(seq, 1, "other V2 kinds keep the global per-issuer ledger");
-
-    // Fresh UNIT-B still receives sequence 1 — the F-1 resolution.
-    let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-B"),
-            "wilaya-test-node",
-            &dir.path().join("b1.sync"),
-            SubjectType::Wilaya,
-            &crypto,
-        )
-        .expect("export B1");
-    assert_eq!(seq, 1, "UNIT-B must receive its own sequence 1");
-
-    // Second products export → 2 on the global ledger: identity_access did not
-    // consume a global sequence.
-    let seq = service
-        .export_v2_package(
-            serde_json::json!({ "probe": "products-2" }),
-            "wilaya-test-node",
-            PRODUCTS_PACKAGE_KIND,
-            &dir.path().join("p2.sync"),
+            "UNIT-A",
+            &dir.path().join("prod2.sync"),
             SubjectType::Wilaya,
             &crypto,
         )
         .expect("export products 2");
-    assert_eq!(seq, 2, "global ledger advances only via other V2 kinds");
+    assert_eq!(seq, 2, "products continues the SAME stream (kind-blind)");
 
-    // Second identity_access to UNIT-A → 2 on ITS stream; UNIT-B stream at 1.
     let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-A"),
+        .export_v2_package(
+            serde_json::json!({ "probe": "products-for-a-2" }),
             "wilaya-test-node",
-            &dir.path().join("a2.sync"),
+            PRODUCTS_PACKAGE_KIND,
+            "UNIT-A",
+            &dir.path().join("prod3.sync"),
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("export A2");
-    assert_eq!(seq, 2, "UNIT-A stream advances per-target only");
+        .expect("export products 3");
+    assert_eq!(seq, 3);
 
-    let stream_b = node
-        .db
-        .executor()
-        .identity_access_export_sequence_state()
-        .next_issued_sequence(&issuer, "UNIT-B")
-        .expect("read UNIT-B stream");
+    let seq = service
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
+            "wilaya-test-node",
+            "UNIT-A",
+            &dir.path().join("adm4.sync"),
+            SubjectType::Wilaya,
+            &crypto,
+        )
+        .expect("export admin 4");
+    assert_eq!(seq, 4, "interleaved kinds stay contiguous per target");
+
+    // A second UNIT is an INDEPENDENT stream: its first package = 1.
+    let seq = service
+        .export_v2_package(
+            serde_json::json!({ "probe": "products-for-b" }),
+            "wilaya-test-node",
+            PRODUCTS_PACKAGE_KIND,
+            "UNIT-B",
+            &dir.path().join("prodb.sync"),
+            SubjectType::Wilaya,
+            &crypto,
+        )
+        .expect("export products to UNIT-B");
+    assert_eq!(seq, 1, "UNIT-B stream starts at its own 1");
+
+    // Producer ledger rows confirm the isolation.
+    let issuer = wilaya_cert.identity_id.to_string();
+    let repo = node.db.executor().transport_export_sequence_state();
     assert_eq!(
-        stream_b,
-        Some(1),
-        "UNIT-B stream must be untouched by UNIT-A exports"
+        repo.next_issued_sequence(&issuer, "UNIT-A").unwrap(),
+        Some(4)
+    );
+    assert_eq!(
+        repo.next_issued_sequence(&issuer, "UNIT-B").unwrap(),
+        Some(1)
     );
 }
 
 #[test]
-fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
+fn failed_export_does_not_burn_a_unified_sequence_and_retry_reuses_it() {
+    let mut node = fresh_node();
+    let wilaya_cert = bootstrap_wilaya(&mut node);
+    configure_producer_as_wilaya(&node.db);
+    set_fleet_password(&node.db);
+
+    let crypto = AgeFileEncryptionProvider::new();
+    let dir = TempDir::new().expect("temp dir");
+    let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
+    let issuer = wilaya_cert.identity_id.to_string();
+
+    // An unwritable path fails AFTER allocation but BEFORE commit → no
+    // sequence burned; the retry into a valid path reuses the same number.
+    let bad_path = dir.path().join("missing-dir").join("p1.sync");
+    assert!(
+        service
+            .export_v2_package(
+                serde_json::json!({ "probe": "products" }),
+                "wilaya-test-node",
+                PRODUCTS_PACKAGE_KIND,
+                "UNIT-A",
+                &bad_path,
+                SubjectType::Wilaya,
+                &crypto,
+            )
+            .is_err(),
+        "build into a missing directory must fail"
+    );
+    assert_eq!(
+        node.db
+            .executor()
+            .transport_export_sequence_state()
+            .next_issued_sequence(&issuer, "UNIT-A")
+            .expect("read stream"),
+        None,
+        "failed export must not advance the stream"
+    );
+
+    let good_path = dir.path().join("p1.sync");
+    let seq = service
+        .export_v2_package(
+            serde_json::json!({ "probe": "products" }),
+            "wilaya-test-node",
+            PRODUCTS_PACKAGE_KIND,
+            "UNIT-A",
+            &good_path,
+            SubjectType::Wilaya,
+            &crypto,
+        )
+        .expect("retry export");
+    assert_eq!(seq, 1, "retry after failure reuses the same sequence");
+}
+
+#[test]
+fn unit_bootstrap_package_does_not_consume_the_unified_stream() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -587,7 +691,7 @@ fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
     let seq = service
         .export_v2_bootstrap_package(
             UnitNodePackage {
-                unit: Unit {
+                unit: grpc_lib::models::Unit {
                     id: "unit-a".into(),
                     code: "UNIT-A".into(),
                     name: "Unit A".into(),
@@ -611,51 +715,38 @@ fn unit_bootstrap_package_does_not_consume_identity_access_stream() {
         .expect("bootstrap export");
     assert_eq!(seq, 1, "A44-08: fixed bootstrap sequence 1");
 
-    // Neither ledger may be advanced by the `.unit`.
-    let global = node
-        .db
-        .executor()
-        .sync_issuer_sequence_state()
-        .next_issued_sequence(&issuer)
-        .expect("read global ledger");
-    assert_eq!(global, None, ".unit must not burn a global sequence");
+    // The unified stream must NOT be advanced by the `.unit`.
     let stream = node
         .db
         .executor()
-        .identity_access_export_sequence_state()
+        .transport_export_sequence_state()
         .next_issued_sequence(&issuer, "UNIT-A")
         .expect("read stream");
-    assert_eq!(
-        stream, None,
-        ".unit must not consume the identity_access stream"
-    );
+    assert_eq!(stream, None, ".unit must not burn a transport sequence");
 
-    // First identity_access export after `.unit` still receives sequence 1.
+    // First admin_access export after `.unit` still receives sequence 1.
     let seq = service
-        .export_v2_identity_access_package(
-            export_payload(&node.db, "UNIT-A"),
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
             "wilaya-test-node",
+            "UNIT-A",
             &dir.path().join("a1.sync"),
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("export A1");
-    assert_eq!(
-        seq, 1,
-        "A45-06 holds: first identity_access after .unit is 1"
-    );
+        .expect("export admin 1");
+    assert_eq!(seq, 1, "A45-06 holds: first package after .unit is 1");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REAL producer multi-UNIT bootstrap — the F-1 closer
+// REAL producer per-target delivery E2E — the ADR-0053 closer
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
-    // ADR-0051 fleet-wide semantics (post-D1 vehicle): ONE `admin_access`
-    // package per sequence, issued on the dedicated issuer-only stream,
-    // independently importable by EVERY authorized UNIT. Replay state is
-    // strictly local per UNIT.
+fn real_producer_per_target_delivery_continuation_and_replay() {
+    // ADR-0053 semantics: each UNIT receives artifacts emitted on ITS OWN
+    // `(issuer, unit_code)` stream. Replay state is strictly local per UNIT;
+    // the frozen consumer guard never observes the producer's targets.
 
     // WILAYA fleet: UNIT-A and UNIT-B provisioned on the WILAYA.
     let mut node = fresh_node();
@@ -671,23 +762,37 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
     let issuer = wilaya_cert.identity_id;
 
-    // ── Phase A — one fleet package (seq 1) bootstraps every UNIT ──────────
-    let a1 = dir.path().join("a1.sync");
+    // ── Phase A — each UNIT gets its own sequence-1 bootstrap artifact ─────
+    let a1: PathBuf = dir.path().join("a1.sync");
     let seq = service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
+            "UNIT-A",
             &a1,
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export seq 1");
-    assert_eq!(seq, 1, "first admin_access export = seq 1");
+        .expect("real producer export UNIT-A seq 1");
+    assert_eq!(seq, 1, "first UNIT-A-targeted admin_access export = seq 1");
+
+    let b1: PathBuf = dir.path().join("b1.sync");
+    let seq = service
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
+            "wilaya-test-node",
+            "UNIT-B",
+            &b1,
+            SubjectType::Wilaya,
+            &crypto,
+        )
+        .expect("real producer export UNIT-B seq 1");
+    assert_eq!(seq, 1, "UNIT-B stream starts at its OWN sequence 1");
 
     let pkg = read_admin_access_package_from_file(&a1, &crypto).expect("read seq-1 artifact");
     assert_eq!(pkg.metadata.package_sequence, Some(1));
     assert_eq!(pkg.metadata.issuer_identity_id, Some(issuer));
-    // Fleet-wide by construction: the payload carries NO unit dimension.
+    // Fleet-wide account payload: carries NO unit dimension (ADR-0051 §4).
     let serialized = serde_json::to_value(&pkg.payload).expect("payload value");
     assert!(
         serialized.get("unit_code").is_none() && serialized.get("user_password_hash").is_none(),
@@ -702,7 +807,7 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     set_session(&state_a, "User");
 
     import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
-        .expect("UNIT-A bootstrap succeeds from the fleet package");
+        .expect("UNIT-A bootstrap succeeds from its own stream artifact");
     {
         let guard = state_a.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
@@ -714,7 +819,7 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
         );
     }
 
-    // ── Phase B — the SAME package bootstraps UNIT-B independently ─────────
+    // ── Phase B — UNIT-B bootstraps from ITS OWN seq-1 artifact ────────────
     let state_b = unit_state("UNIT-B");
     seed_anchor_from_cert(
         state_b.get_db().expect("lock").as_ref().expect("db"),
@@ -722,8 +827,8 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     );
     set_session(&state_b, "User");
 
-    import_admin_access_package_impl(&state_b, a1.to_string_lossy().into_owned())
-        .expect("UNIT-B bootstrap succeeds from the SAME fleet package");
+    import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
+        .expect("UNIT-B bootstrap succeeds from its own stream artifact");
     {
         let guard = state_b.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
@@ -735,25 +840,39 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
         );
     }
 
-    // ── Continuation — one seq-2 package applied on both units ─────────────
+    // ── Continuation — per-target seq-2 packages applied on both units ─────
     set_session(&state_a, "Admin");
-    let a2 = dir.path().join("a2.sync");
+    let a2: PathBuf = dir.path().join("a2.sync");
     let seq = service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
+            "UNIT-A",
             &a2,
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export seq 2");
-    assert_eq!(seq, 2, "second admin_access export = seq 2");
+        .expect("real producer export UNIT-A seq 2");
+    assert_eq!(seq, 2, "second UNIT-A-targeted export = seq 2");
+
+    let b2: PathBuf = dir.path().join("b2.sync");
+    let seq = service
+        .export_v2_admin_access_package(
+            admin_payload(&node.db),
+            "wilaya-test-node",
+            "UNIT-B",
+            &b2,
+            SubjectType::Wilaya,
+            &crypto,
+        )
+        .expect("real producer export UNIT-B seq 2");
+    assert_eq!(seq, 2, "second UNIT-B-targeted export = seq 2 (own stream)");
 
     import_admin_access_package_impl(&state_a, a2.to_string_lossy().into_owned())
         .expect("UNIT-A seq 2 import succeeds (AdminOnly)");
     set_session(&state_b, "Admin");
-    import_admin_access_package_impl(&state_b, a2.to_string_lossy().into_owned())
-        .expect("UNIT-B applies the SAME seq-2 package independently (AdminOnly)");
+    import_admin_access_package_impl(&state_b, b2.to_string_lossy().into_owned())
+        .expect("UNIT-B applies its own seq-2 package independently (AdminOnly)");
 
     {
         let guard_a = state_a.get_db().expect("lock");
@@ -771,7 +890,7 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
     let err = import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
         .expect_err("replay of the bootstrap package must be rejected");
     assert!(!err.is_empty());
-    let err = import_admin_access_package_impl(&state_b, a1.to_string_lossy().into_owned())
+    let err = import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
         .expect_err("replay of the bootstrap package must be rejected");
     assert!(!err.is_empty());
     {
@@ -800,33 +919,6 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
             "ledger unchanged"
         );
     }
-
-    // ── Local replay state — a fresh UNIT-C bootstraps from the SAME seq-1 ──
-    // Replay protection is LOCAL: C's empty ledger accepts sequence 1 even
-    // though A and B already advanced to 2.
-    create_unit(&node.db, "UNIT-C");
-    let state_c = unit_state("UNIT-C");
-    seed_anchor_from_cert(
-        state_c.get_db().expect("lock").as_ref().expect("db"),
-        &wilaya_cert,
-    );
-    set_session(&state_c, "User");
-    import_admin_access_package_impl(&state_c, a1.to_string_lossy().into_owned())
-        .expect("UNIT-C bootstrap from the same seq-1 artifact succeeds");
-    {
-        let guard_c = state_c.get_db().expect("lock");
-        let db_c = guard_c.as_ref().expect("db");
-        assert_eq!(
-            count_canonical_admins(db_c),
-            1,
-            "canonical Admin created on C"
-        );
-        assert_eq!(
-            last_applied(db_c, &issuer.to_string()),
-            Some(1),
-            "C's ledger is independent of A/B"
-        );
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -834,7 +926,7 @@ fn real_producer_multi_unit_fleetwide_bootstrap_continuation_and_replay() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The consumer must still reject every non-1 first sequence on an empty
-/// ledger (A45-06 / B8 control 11) — the F-1 remediation is producer-side.
+/// ledger (A45-06 / B8 control 11) — the ADR-0053 remediation is producer-side.
 /// These tests hand-craft packages intentionally: they probe the CONSUMER,
 /// which is unchanged.
 #[test]

@@ -304,8 +304,12 @@ fn b1_unauthenticated_export_fails() {
     let state = wilaya_state();
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect_err("unauthenticated export must fail");
+    let err = export_admin_access_package_impl(
+        &state,
+        "UNIT-9".into(),
+        path.to_string_lossy().into_owned(),
+    )
+    .expect_err("unauthenticated export must fail");
     assert!(!err.is_empty());
 }
 
@@ -315,8 +319,12 @@ fn b2_unit_node_cannot_export() {
     set_session(&state, "Admin");
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect_err("export is Wilaya-only");
+    let err = export_admin_access_package_impl(
+        &state,
+        "UNIT-9".into(),
+        path.to_string_lossy().into_owned(),
+    )
+    .expect_err("export is Wilaya-only");
     assert!(err.contains("غير مصرح"), "got: {err}");
 }
 
@@ -326,8 +334,12 @@ fn b3_non_admin_wilaya_session_cannot_export() {
     set_session(&state, "User");
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect_err("export requires an Admin session");
+    let err = export_admin_access_package_impl(
+        &state,
+        "UNIT-9".into(),
+        path.to_string_lossy().into_owned(),
+    )
+    .expect_err("export requires an Admin session");
     assert!(err.contains("غير مصرح"), "got: {err}");
 }
 
@@ -338,8 +350,12 @@ fn b4_locked_store_fails_closed() {
     *state.db.lock().expect("db mutex") = None;
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect_err("locked store must fail closed");
+    let err = export_admin_access_package_impl(
+        &state,
+        "UNIT-9".into(),
+        path.to_string_lossy().into_owned(),
+    )
+    .expect_err("locked store must fail closed");
     assert!(!err.is_empty());
 }
 

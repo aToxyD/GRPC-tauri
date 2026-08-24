@@ -172,28 +172,63 @@ impl<'a> IdentityRotationCoordinator<'a> {
         // rolled back (the node must never carry an R5-broken key/cert pair).
         let old_key = self.node_key_store.read()?;
 
-        // 1. Rotation Trust Package, signed by the OLD (still ACTIVE) key.
+        // 1. Rotation Trust Packages, signed by the OLD (still ACTIVE) key.
+        //
+        // ADR-0053 §3.3: trust packages are emitted PER TARGET — one package
+        // per authoritative local UNIT (`units.code`), each allocating its own
+        // `(wilaya_issuer_identity, unit_code)` stream entry. A UNIT with a
+        // blank code fails closed (no silent fallback to `unit_name`). With
+        // exactly one UNIT the requested path is used as-is (unchanged
+        // ceremony); with multiple UNITs each artifact gets a
+        // `-<unit_code>` suffix so offline distribution stays unambiguous.
         let source_node_id = resolve_export_source_node_id(self.db.executor(), settings)?;
         let payload = TrustPackagePayload {
             certificates: vec![signed_cert.clone()],
             revocations: vec![],
         };
-        IdentitySignedExportService::new(&*self.db, self.node_key_store)
-            .export_v2_package(
-                payload,
-                &source_node_id,
-                TRUST_PACKAGE_KIND,
+        let units = self.db.executor().units().list_all_units()?;
+        if units.is_empty() {
+            log::warn!(
+                target: "grpc::identity",
+                "WILAYA rotation: no authoritative UNIT targets registered — zero trust packages written"
+            );
+        }
+        let exporter = IdentitySignedExportService::new(&*self.db, self.node_key_store);
+        for unit in &units {
+            let target_node_id = unit.code.trim();
+            if target_node_id.is_empty()
+                || target_node_id.contains('/')
+                || target_node_id.contains('\\')
+                || target_node_id.contains("..")
+            {
+                return Err(Self::permitted(
+                    "Active target UNIT has no valid code — refusing to emit a trust package (fail closed)",
+                ));
+            }
+            let package_path = Self::rotation_package_path_for_target(
                 rotation_package_path,
-                SubjectType::Wilaya,
-                crypto_port,
-            )
-            .map_err(|e| {
-                log::warn!(
-                    target: "grpc::identity",
-                    "WILAYA rotation trust package write failed (zero-changed): {e}"
-                );
-                e
-            })?;
+                target_node_id,
+                units.len(),
+            );
+            exporter
+                .export_v2_package(
+                    payload.clone(),
+                    &source_node_id,
+                    TRUST_PACKAGE_KIND,
+                    target_node_id,
+                    &package_path,
+                    SubjectType::Wilaya,
+                    crypto_port,
+                )
+                .map_err(|e| {
+                    log::warn!(
+                        target: "grpc::identity",
+                        "WILAYA rotation trust package write failed for target {} (zero-changed): {e}",
+                        target_node_id
+                    );
+                    e
+                })?;
+        }
 
         // 2. Promote the staged secret.
         self.node_key_store.promote_pending()?;
@@ -437,6 +472,33 @@ impl<'a> IdentityRotationCoordinator<'a> {
         AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
             message: message.into(),
         })
+    }
+
+    /// Derive the trust-package output path for one UNIT target.
+    ///
+    /// Single-target ceremony keeps the operator-requested path unchanged;
+    /// multi-target emission suffixes each artifact with `-<unit_code>` so the
+    /// offline distribution set is self-describing.
+    fn rotation_package_path_for_target(
+        requested: &Path,
+        target_node_id: &str,
+        target_count: usize,
+    ) -> std::path::PathBuf {
+        if target_count <= 1 {
+            return requested.to_path_buf();
+        }
+        // Non-UTF8 or missing stem/extension are degenerate path shapes, not
+        // runtime errors — the deterministic defaults below keep the derived
+        // artifact name well-formed (explicit match, no silent Option skip).
+        let stem = match requested.file_stem().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => "rotation_trust".to_string(),
+        };
+        let ext = match requested.extension().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => "sync".to_string(),
+        };
+        requested.with_file_name(format!("{stem}-{target_node_id}.{ext}"))
     }
 }
 

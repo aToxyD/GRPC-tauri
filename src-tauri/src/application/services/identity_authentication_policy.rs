@@ -100,8 +100,7 @@ impl IdentityAuthenticationPolicy {
         db: &Database,
         adminkey_provider: &AdminKeyProvider,
     ) -> AppResult<bool> {
-        Ok(Self::admin_credential_state(db, adminkey_provider)?
-            == AdminCredentialState::Usable)
+        Ok(Self::admin_credential_state(db, adminkey_provider)? == AdminCredentialState::Usable)
     }
 
     /// Whether the password login path is permitted for the given local

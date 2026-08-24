@@ -163,12 +163,20 @@ mod tests {
     #[test]
     fn identical_state_is_equal() {
         let a = fp(vec![("c1", 2, 0)], Some(2), vec!["p1"], vec![("iss", 3)]);
-        assert_eq!(SecurityRegressionGuard::compare(&a, &a), RestoreRegressionStatus::Equal);
+        assert_eq!(
+            SecurityRegressionGuard::compare(&a, &a),
+            RestoreRegressionStatus::Equal
+        );
     }
 
     #[test]
     fn newer_state_is_newer() {
-        let candidate = fp(vec![("c1", 3, 0)], Some(3), vec!["p1", "p2"], vec![("iss", 4)]);
+        let candidate = fp(
+            vec![("c1", 3, 0)],
+            Some(3),
+            vec!["p1", "p2"],
+            vec![("iss", 4)],
+        );
         let live = fp(vec![("c1", 2, 0)], Some(2), vec!["p1"], vec![("iss", 3)]);
         assert_eq!(
             SecurityRegressionGuard::compare(&candidate, &live),

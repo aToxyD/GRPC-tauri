@@ -20,9 +20,10 @@
     setFleetAdminPassword,
     exportAdminAccessPackage,
     importAdminAccessPackage,
+    listUnits,
   } from '../lib/contracts';
   import { openFile, saveFile } from '../lib/tauri';
-  import type { Settings } from '../lib/types';
+  import type { Settings, Unit } from '../lib/types';
   import { push } from 'svelte-spa-router';
   import { currentUser as userStore } from '../lib/session';
   import Layout from '../components/Layout.svelte';
@@ -75,10 +76,15 @@
   let fleetSuccess = '';
 
   // ── WILAYA: admin_access export (مزامنة حساب المدير العام) ────────────────
-  // Fleet-wide by construction: there is deliberately NO unit selector — the
-  // backend command accepts no target parameter either.
+  // ADR-0053: each package targets ONE authoritative UNIT; the backend
+  // validates `unitCode` against `units.code` and keys the per-target
+  // transport stream with it.
   // @category TransientState
   let b8ExportProgress = '';
+  // @category ProjectionState — authoritative UNIT targets (ADR-0053)
+  let units: Unit[] = [];
+  // @category UiState — selected transport target for the admin_access package
+  let selectedUnitCode = '';
 
   // ── UNIT: B8 import (مزامنة الحسابات) ─────────────────────────────────────
   // @category TransientState
@@ -100,6 +106,13 @@
         accessDenied = true;
         push('/wilaya');
         return;
+      }
+      // ADR-0053: load authoritative UNIT targets for per-target exports.
+      if (nodeType === 'WILAYA' && settings?.wilaya_code) {
+        units = await listUnits(settings.wilaya_code);
+        if (!units.some((u) => u.code === selectedUnitCode)) {
+          selectedUnitCode = units[0]?.code ?? '';
+        }
       }
     });
   });
@@ -132,13 +145,18 @@
     });
   }
 
-  // WILAYA-only signed/encrypted admin_access export (ADR-0051). The backend
-  // builds, signs, and encrypts the fleet-wide package (fail-closed while the
-  // fleet password is unset); there is NO unit selector — the package applies
-  // to every authorized UNIT node. Package contents never enter the frontend.
+  // WILAYA-only signed/encrypted admin_access export (ADR-0051 + ADR-0053).
+  // The backend builds, signs, and encrypts the package for ONE authoritative
+  // UNIT target (fail-closed while the fleet password is unset); the selected
+  // `unitCode` is validated server-side against `units.code`. Package
+  // contents never enter the frontend.
   async function handleExportAdminAccess() {
     await accountOp.guard(async () => {
       try {
+        if (!selectedUnitCode) {
+          fleetError = 'يجب اختيار الوحدة الهدف — لا توجد وحدات مُسجَّلة.';
+          return;
+        }
         const selected = await saveFile({
           defaultPath: `grpc-admin-access.sync`,
           filters: [{ name: 'حزمة حساب المدير العام', extensions: ['sync'] }],
@@ -147,9 +165,10 @@
         b8ExportProgress = 'تصدير حزمة حساب المدير العام (admin)...';
         fleetError = '';
         fleetSuccess = '';
-        const result = await exportAdminAccessPackage(selected as string);
+        const result = await exportAdminAccessPackage(selected as string, selectedUnitCode);
+        const unitLabel = units.find((u) => u.code === selectedUnitCode)?.name ?? selectedUnitCode;
         fleetSuccess =
-          `تم تصدير حزمة حساب المدير العام (${result.record_count} سجلات) — صالحة للاستيراد على جميع عقد الوحدات، ولا تُعدّل حساب مشغّل الوحدة إطلاقًا.`;
+          `تم تصدير حزمة حساب المدير العام (${result.record_count} سجلات) للوحدة ${unitLabel} — لا تُعدّل حساب مشغّل الوحدة إطلاقًا.`;
         b8ExportProgress = '';
       } catch (e) {
         fleetError = formatErrorMessage(e);
@@ -266,17 +285,37 @@
               </div>
               <div>
                 <h3 class="font-semibold text-gray-800 dark:text-gray-100">مزامنة حساب المدير العام (admin)</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400">تصدير حزمة admin_access لجميع الوحدات</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">تصدير حزمة admin_access لوحدة مستهدفة</p>
               </div>
             </div>
             <AppAlert intent="info">
               <p class="text-sm leading-relaxed">
-                الحزمة أسطولية بطبيعتها: تُصدَّر مرة واحدة وتصلح للاستيراد على
-                <strong>جميع عقد الوحدات</strong> — لا يوجد اختيار وحدة مستهدفة.
-                تحمل حساب <code class="font-mono">admin</code> فقط، ولا تُعدّل حساب مشغّل الوحدة:
-                اسم المستخدم وكلمة المرور المُوفرَّان عبر ملف <code class="font-mono">.unit</code> يبقيان كما هما.
+                تُصدَّر الحزمة <strong>لوحدة واحدة مستهدفة</strong> في كل مرة
+                (ADR-0053): كل وحدة لها تسلسل نقل مستقل، ويُتحقّق من رمز الوحدة
+                لدى الخادم. تحمل الحزمة حساب <code class="font-mono">admin</code>
+                فقط، ولا تُعدّل حساب مشغّل الوحدة: اسم المستخدم وكلمة المرور
+                المُوفرَّان عبر ملف <code class="font-mono">.unit</code> يبقيان كما هما.
               </p>
             </AppAlert>
+            <div class="mt-3">
+              <label for="admin-access-target-unit" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                الوحدة الهدف
+              </label>
+              <select
+                id="admin-access-target-unit"
+                bind:value={selectedUnitCode}
+                disabled={!!b8ExportProgress || $operationLoading || units.length === 0}
+                class="px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-700"
+              >
+                {#if units.length === 0}
+                  <option value="">لا توجد وحدات مُسجَّلة</option>
+                {:else}
+                  {#each units as unit (unit.id)}
+                    <option value={unit.code}>{unit.code} — {unit.name}</option>
+                  {/each}
+                {/if}
+              </select>
+            </div>
             {#if b8ExportProgress}
               <div class="mt-2">
                 <AppAlert intent="info">{b8ExportProgress}</AppAlert>

@@ -5,7 +5,6 @@
 //! Connection and Transaction contexts.
 
 pub mod anomaly;
-pub mod admin_access_export_sequence_state;
 pub mod audit;
 pub mod domain_events;
 pub mod executor;
@@ -14,7 +13,6 @@ pub mod fiscal_package_registry;
 pub mod fiscal_snapshots;
 pub mod fiscal_transitions;
 pub mod fiscal_year_status;
-pub mod identity_access_export_sequence_state;
 pub mod identity_store;
 pub mod import_audit_events;
 pub mod integrity;
@@ -30,16 +28,13 @@ pub mod settings;
 pub mod stock_movements;
 pub mod sync_applied_packages;
 pub mod sync_conflicts;
-pub mod sync_issuer_sequence_state;
 pub mod system;
 pub mod telemetry;
 pub mod timeline;
+pub mod transport_export_sequence_state;
 pub mod units;
 pub mod users;
 
-pub use admin_access_export_sequence_state::{
-    AdminAccessExportSequenceStateRepository, PendingAdminAccessSequence,
-};
 pub use anomaly::AnomalyRepository;
 pub use audit::AuditRepository;
 pub use domain_events::{DomainEventRepository, EventSequenceGap};
@@ -49,9 +44,6 @@ pub use fiscal_package_registry::{FiscalPackageRegistryEntry, FiscalPackageRegis
 pub use fiscal_snapshots::FiscalSnapshotRepository;
 pub use fiscal_transitions::FiscalTransitionRepository;
 pub use fiscal_year_status::FiscalYearStatusRepository;
-pub use identity_access_export_sequence_state::{
-    IdentityAccessExportSequenceStateRepository, PendingIdentityAccessSequence,
-};
 pub use identity_store::IdentityStoreRepository;
 pub use import_audit_events::ImportAuditEventsRepository;
 pub use integrity::IntegrityRepository;
@@ -67,14 +59,15 @@ pub use settings::SettingsRepository;
 pub use stock_movements::StockMovementRepository;
 pub use sync_applied_packages::SyncAppliedPackagesRepository;
 pub use sync_conflicts::SyncConflictRepository;
-pub use sync_issuer_sequence_state::{PendingIssuedSequence, SyncIssuerSequenceStateRepository};
 pub use system::SystemRepository;
 pub use telemetry::TelemetryRepository;
 pub use timeline::TimelineRepository;
+pub use transport_export_sequence_state::{
+    PendingTransportSequence, TransportExportSequenceRepository,
+};
 pub use units::UnitRepository;
 pub use users::UserRepository;
 
-impl crate::architecture::Repository for AdminAccessExportSequenceStateRepository<'_> {}
 impl crate::architecture::Repository for AnomalyRepository<'_> {}
 impl crate::architecture::Repository for DomainEventRepository<'_> {}
 impl crate::architecture::Repository for UserRepository<'_> {}
@@ -86,13 +79,12 @@ impl crate::architecture::Repository for FiscalYearStatusRepository<'_> {}
 impl crate::architecture::Repository for FiscalSnapshotRepository<'_> {}
 impl crate::architecture::Repository for FiscalTransitionRepository<'_> {}
 impl crate::architecture::Repository for ImportAuditEventsRepository<'_> {}
-impl crate::architecture::Repository for IdentityAccessExportSequenceStateRepository<'_> {}
 impl crate::architecture::Repository for IdentityStoreRepository<'_> {}
 impl crate::architecture::Repository for UnitRepository<'_> {}
 impl crate::architecture::Repository for OrderRepository<'_> {}
 impl crate::architecture::Repository for ReportRepository<'_> {}
 impl crate::architecture::Repository for SyncAppliedPackagesRepository<'_> {}
-impl crate::architecture::Repository for SyncIssuerSequenceStateRepository<'_> {}
+impl crate::architecture::Repository for TransportExportSequenceRepository<'_> {}
 impl crate::architecture::Repository for AuditRepository<'_> {}
 impl crate::architecture::Repository for IntegrityRepository<'_> {}
 impl crate::architecture::Repository for SessionRepository<'_> {}
@@ -122,11 +114,7 @@ pub trait RepositoryProvider<'a> {
     fn stock_movements(&self) -> StockMovementRepository<'a>;
     fn units(&self) -> UnitRepository<'a>;
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a>;
-    fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a>;
-    fn admin_access_export_sequence_state(&self) -> AdminAccessExportSequenceStateRepository<'a>;
-    fn identity_access_export_sequence_state(
-        &self,
-    ) -> IdentityAccessExportSequenceStateRepository<'a>;
+    fn transport_export_sequence_state(&self) -> TransportExportSequenceRepository<'a>;
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a>;
     fn identity_store(&self) -> IdentityStoreRepository<'a>;
     fn system(&self) -> SystemRepository<'a>;
@@ -189,16 +177,8 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a> {
         SyncAppliedPackagesRepository::new(*self)
     }
-    fn sync_issuer_sequence_state(&self) -> SyncIssuerSequenceStateRepository<'a> {
-        SyncIssuerSequenceStateRepository::new(*self)
-    }
-    fn admin_access_export_sequence_state(&self) -> AdminAccessExportSequenceStateRepository<'a> {
-        AdminAccessExportSequenceStateRepository::new(*self)
-    }
-    fn identity_access_export_sequence_state(
-        &self,
-    ) -> IdentityAccessExportSequenceStateRepository<'a> {
-        IdentityAccessExportSequenceStateRepository::new(*self)
+    fn transport_export_sequence_state(&self) -> TransportExportSequenceRepository<'a> {
+        TransportExportSequenceRepository::new(*self)
     }
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a> {
         ImportAuditEventsRepository::new(*self)

@@ -1,7 +1,7 @@
+pub mod admin_access_first_import_predicates_service;
 pub mod audit_observability_service;
 pub mod audit_service;
 pub mod audit_tx_service;
-pub mod admin_access_first_import_predicates_service;
 pub mod b8_first_import_predicates_service;
 pub mod daily_report_service;
 pub mod fifo_preview_service;
@@ -38,14 +38,15 @@ pub mod sync_package_identity_verification_service;
 pub mod system_diagnostics_service;
 pub mod system_health_service;
 pub mod system_stats_service;
+pub mod transport_target;
 pub mod unit_service;
 pub mod user_account_sync_service;
 pub mod user_service;
 
+pub use admin_access_first_import_predicates_service::AdminAccessFirstImportPredicatesService;
 pub use audit_observability_service::AuditObservabilityService;
 pub use audit_service::AuditService;
 pub use audit_tx_service::AuditTxService;
-pub use admin_access_first_import_predicates_service::AdminAccessFirstImportPredicatesService;
 pub use b8_first_import_predicates_service::B8FirstImportPredicatesService;
 pub use daily_report_service::DailyReportService;
 pub use fifo_preview_service::FifoPreviewService;

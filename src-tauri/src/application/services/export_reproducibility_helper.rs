@@ -1,8 +1,7 @@
 //! Captures export-time operational context into fiscal_export_snapshots metadata columns.
 
 use crate::application::services::{
-    FiscalExportSnapshot, FiscalExportSnapshotService, NodeIdentityResolver,
-    SystemIntegrityState,
+    FiscalExportSnapshot, FiscalExportSnapshotService, NodeIdentityResolver, SystemIntegrityState,
 };
 use crate::db::Database;
 use crate::domain::identity::SubjectType;

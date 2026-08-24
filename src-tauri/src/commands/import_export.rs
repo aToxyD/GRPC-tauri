@@ -22,9 +22,7 @@ use crate::application::services::{
 use crate::application::sync::import::{
     ImportAuditEvent, ImportAuditEventType, ImportAuditLogger, ImportFailureReason,
 };
-use crate::application::sync::{
-    SyncPackage, SyncPackageMetadata,
-};
+use crate::application::sync::{SyncPackage, SyncPackageMetadata};
 use crate::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use crate::application::usecases::exports::types::{
     DailyReportExportInput, ExportProductsInput, MonthlySummaryExportInput,
@@ -81,8 +79,7 @@ use crate::infrastructure::sync::{
     read_admin_access_package_from_file, read_daily_report_package_from_file,
     read_monthly_summary_package_from_file, read_products_package_from_file,
     read_registry_package_from_file, read_stock_movements_package_from_file,
-    read_trust_package_from_file, read_unit_node_package_from_file,
-    resolve_export_source_node_id,
+    read_trust_package_from_file, read_unit_node_package_from_file, resolve_export_source_node_id,
 };
 
 use crate::models::{
@@ -149,7 +146,8 @@ fn validate_unit_package_v2_security_requirements(
     if metadata.signature_version != Some(SIGNATURE_VERSION_V2) {
         return Err(AppError::Validation(ValidationError::InvalidFormat {
             field: "signature_version".into(),
-            message: "حزمة العقدة يجب أن تكون V2 (توقيع هوية العقدة) — مرفوضة (متطلبات الأمان)".into(),
+            message: "حزمة العقدة يجب أن تكون V2 (توقيع هوية العقدة) — مرفوضة (متطلبات الأمان)"
+                .into(),
         }));
     }
     if metadata.signature.as_deref().is_none_or(str::is_empty) {
@@ -187,8 +185,7 @@ fn validate_import_security_requirements(
         })
     };
 
-    if SECURITY_CRITICAL_KINDS.contains(&package_kind)
-        || DATA_PACKAGE_KINDS.contains(&package_kind)
+    if SECURITY_CRITICAL_KINDS.contains(&package_kind) || DATA_PACKAGE_KINDS.contains(&package_kind)
     {
         if metadata.signature_version != Some(SIGNATURE_VERSION_V2) {
             return Err(reject("signature_version=V2"));
@@ -211,9 +208,14 @@ fn validate_import_security_requirements(
 }
 
 /// Export products catalog as an encrypted **sync package** (`.sync`) — intended for Wilaya → Units distribution.
+///
+/// ADR-0053: `unit_code` selects the authoritative target UNIT (`units.code`,
+/// backend-validated via `resolve_unit_transport_target`) and determines the
+/// per-`(issuer, target)` transport stream.
 #[tauri::command]
 pub fn export_products_package(
     state: State<AppState>,
+    unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
     let (session, settings) =
@@ -231,6 +233,14 @@ pub fn export_products_package(
     )
     .map_err(into_command_error)?;
 
+    // ADR-0053 §3.3: authoritative UNIT target — never a raw renderer string.
+    let target_node_id =
+        crate::application::services::transport_target::resolve_unit_transport_target(
+            db.executor(),
+            &unit_code,
+        )
+        .map_err(into_command_error)?;
+
     let source_node_id =
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
@@ -239,6 +249,7 @@ pub fn export_products_package(
             dataset.clone(),
             &source_node_id,
             "products",
+            &target_node_id,
             std::path::Path::new(&file_path),
             export_subject_type(settings.node_type),
             &state.crypto_port,
@@ -409,11 +420,20 @@ pub fn export_daily_report_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
+    // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
+    let target_node_id =
+        crate::application::services::transport_target::resolve_wilaya_transport_target(
+            executor,
+            &settings_row,
+        )
+        .map_err(into_command_error)?;
+
     let _sequence = IdentitySignedExportService::new(db, &node_key_store())
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
             "daily_report",
+            &target_node_id,
             std::path::Path::new(&file_path),
             export_subject_type(settings.node_type),
             &state.crypto_port,
@@ -830,11 +850,20 @@ pub fn export_monthly_summary_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
+    // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
+    let target_node_id =
+        crate::application::services::transport_target::resolve_wilaya_transport_target(
+            executor,
+            &settings_row,
+        )
+        .map_err(into_command_error)?;
+
     let _sequence = IdentitySignedExportService::new(db, &node_key_store())
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
             "monthly_summary",
+            &target_node_id,
             std::path::Path::new(&file_path),
             export_subject_type(settings_row.node_type),
             &state.crypto_port,
@@ -1001,11 +1030,20 @@ pub fn export_stock_movements_package(
     let source_node_id =
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
+    // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
+    let target_node_id =
+        crate::application::services::transport_target::resolve_wilaya_transport_target(
+            executor,
+            &settings_row,
+        )
+        .map_err(into_command_error)?;
+
     let _sequence = IdentitySignedExportService::new(db, &node_key_store())
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
             "stock_movements",
+            &target_node_id,
             std::path::Path::new(&file_path),
             export_subject_type(settings_row.node_type),
             &state.crypto_port,
@@ -1343,26 +1381,31 @@ pub fn import_identity_access_package_impl(
 // structurally unreachable from this kind.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Wilaya: export the fleet-wide Admin synchronization package (encrypted
+/// Wilaya: export the fleet Admin synchronization package (encrypted
 /// `.sync`, ADR-0051).
 ///
-/// There is deliberately NO unit selector parameter: the package is
-/// fleet-wide by construction. Fails closed when the fleet `admin` password
-/// is unset or the account is disabled. Wilaya-only (authz
+/// ADR-0053: `unit_code` selects the authoritative delivery target
+/// (`units.code`, backend-validated via `resolve_unit_transport_target`) and
+/// keys the unified per-target transport stream. Fails closed when the fleet
+/// `admin` password is unset or the account is disabled, or when the selected
+/// code does not resolve to an existing unit. Wilaya-only (authz
 /// `Action::ExportAdminAccessPackage` → Wilaya + AdminOnly).
 #[tauri::command]
 pub fn export_admin_access_package(
     state: State<AppState>,
+    unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
-    export_admin_access_package_impl(&state, file_path)
+    export_admin_access_package_impl(&state, unit_code, file_path)
 }
 
 /// Implementation of `export_admin_access_package` (testable without a Tauri
-/// runtime). The producer allocates the transport sequence from the dedicated
-/// issuer-only stream (`export_v2_admin_access_package`, migration 010).
+/// runtime). The producer allocates the transport sequence from the canonical
+/// unified per-target stream (`export_v2_admin_access_package`, ADR-0053 /
+/// migration 011).
 pub fn export_admin_access_package_impl(
     state: &AppState,
+    unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
     let (session, settings) = authorize_command(state, Action::ExportAdminAccessPackage, None)
@@ -1379,6 +1422,14 @@ pub fn export_admin_access_package_impl(
         .export_admin_access()
         .map_err(into_command_error)?;
 
+    // ADR-0053 §3.3: authoritative UNIT target — never a raw renderer string.
+    let target_node_id =
+        crate::application::services::transport_target::resolve_unit_transport_target(
+            db.executor(),
+            &unit_code,
+        )
+        .map_err(into_command_error)?;
+
     let source_node_id =
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
@@ -1386,6 +1437,7 @@ pub fn export_admin_access_package_impl(
         .export_v2_admin_access_package(
             payload,
             &source_node_id,
+            &target_node_id,
             std::path::Path::new(&file_path),
             export_subject_type(settings.node_type),
             &state.crypto_port,
@@ -1458,8 +1510,8 @@ pub fn import_admin_access_package_impl(
 ) -> Result<AdminAccessPackageImportResult, String> {
     // Session establishment only — the Admin-vs-User routing is an
     // authorization decision resolved in the authz layer (parallel to ADR-0045).
-    let (session, settings) = authorize_command(state, Action::AuthenticatedOnly, None)
-        .map_err(into_command_error)?;
+    let (session, settings) =
+        authorize_command(state, Action::AuthenticatedOnly, None).map_err(into_command_error)?;
     match resolve_admin_access_import_path(&session.user_snapshot.role, settings.node_type)
         .map_err(|e| into_command_error(AppError::Authorization(e)))?
     {
@@ -1509,7 +1561,12 @@ pub fn import_admin_access_package_impl(
                             .unwrap_or_default(),
                         package.metadata.package_sequence,
                     )?;
-                    apply_admin_access_package_import(executor, package, session, local_unit_code.as_deref())
+                    apply_admin_access_package_import(
+                        executor,
+                        package,
+                        session,
+                        local_unit_code.as_deref(),
+                    )
                 },
                 None,
                 None,
@@ -1527,7 +1584,12 @@ pub fn import_admin_access_package_impl(
                 // through the transaction-time settings snapshot below.
                 let tx_settings = SettingsService::new(executor).get_settings()?;
                 let local_unit_code = tx_settings.unit_code.unwrap_or_default();
-                apply_admin_access_package_import(executor, package, session, Some(&local_unit_code))
+                apply_admin_access_package_import(
+                    executor,
+                    package,
+                    session,
+                    Some(&local_unit_code),
+                )
             },
             None,
             None,
@@ -1986,10 +2048,10 @@ where
 #[cfg(test)]
 mod security_requirement_tests {
     use super::*;
-    use chrono::Utc;
     use crate::application::sync::{PackageId, SchemaVersion};
     use crate::application::usecases::exports::types::ProductsExportDataset;
     use crate::infrastructure::sync::packages::SerdeJsonSyncPackageDeserializer;
+    use chrono::Utc;
 
     fn metadata() -> SyncPackageMetadata {
         SyncPackageMetadata {
@@ -2146,9 +2208,9 @@ mod security_requirement_tests {
         // SEC-007 (ADR-0047): a V1-shaped package must fail closed at the
         // deserializer — missing integrity_hash/signature/signature_version.
         let plaintext = serde_json::to_vec(&package).expect("serialize");
-        let err = SerdeJsonSyncPackageDeserializer::products_from_reader(
-            std::io::BufReader::new(std::io::Cursor::new(plaintext)),
-        )
+        let err = SerdeJsonSyncPackageDeserializer::products_from_reader(std::io::BufReader::new(
+            std::io::Cursor::new(plaintext),
+        ))
         .expect_err("V1 legacy package must be rejected");
         assert!(matches!(err, AppError::Validation(_)));
     }

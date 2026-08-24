@@ -151,18 +151,15 @@ impl<'a> FiscalClosurePackageService<'a> {
         db: &crate::db::Database,
         node_key_store: &crate::infrastructure::identity::NodeKeyStore,
     ) -> Result<(FiscalClosurePackageSignerInfo, Ed25519PackageSigner), AppError> {
-        let resolved = NodeIdentityResolver::resolve_local_signer(
-            db,
-            node_key_store,
-            SubjectType::Wilaya,
-        )?
-        .ok_or_else(|| {
-            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message:
-                    "لا يمكن تصدير حزمة الإغلاق المالي — هوية الولاية غير مُزوّدة على هذه العقدة"
-                        .to_string(),
-            })
-        })?;
+        let resolved =
+            NodeIdentityResolver::resolve_local_signer(db, node_key_store, SubjectType::Wilaya)?
+                .ok_or_else(|| {
+                    AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                        message:
+                            "لا يمكن تصدير حزمة الإغلاق المالي — هوية الولاية غير مُزوّدة على هذه العقدة"
+                                .to_string(),
+                    })
+                })?;
         let signer = Ed25519PackageSigner::from_provider(resolved.signer);
         let signer_info = FiscalClosurePackageSignerInfo {
             issuer_identity_id: resolved.certificate.identity_id.to_string(),
@@ -531,7 +528,10 @@ impl<'a> FiscalClosurePackageService<'a> {
         let signature_ok = verifier
             .verify(&payload, &envelope.signature_hex)
             .map_err(|e| {
-                AppError::Internal(format!("fiscal closure signature verification error: {}", e))
+                AppError::Internal(format!(
+                    "fiscal closure signature verification error: {}",
+                    e
+                ))
             })?;
         if !signature_ok {
             return Err(reject(

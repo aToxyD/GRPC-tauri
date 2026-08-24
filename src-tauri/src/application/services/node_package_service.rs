@@ -148,7 +148,8 @@ impl<'a> NodePackageService<'a> {
         if role == crate::models::UserRole::Admin {
             return Err(AppError::Validation(ValidationError::InvalidFormat {
                 field: "role".into(),
-                message: "دور المسؤول غير صالح في حزمة العقدة (B8) — دور الحزمة يجب أن يكون User".into(),
+                message: "دور المسؤول غير صالح في حزمة العقدة (B8) — دور الحزمة يجب أن يكون User"
+                    .into(),
             }));
         }
 
@@ -219,8 +220,9 @@ impl<'a> NodePackageService<'a> {
             "Admin" => {
                 return Err(AppError::Validation(ValidationError::InvalidFormat {
                     field: "role".into(),
-                    message: "دور المسؤول غير صالح في حزمة العقدة (B8) — دور الحزمة يجب أن يكون User"
-                        .into(),
+                    message:
+                        "دور المسؤول غير صالح في حزمة العقدة (B8) — دور الحزمة يجب أن يكون User"
+                            .into(),
                 }));
             }
             _ => crate::models::UserRole::User,
@@ -285,7 +287,7 @@ mod tests {
 
     #[test]
     fn unknown_role_is_rejected() {
-        for role in ["SuperAdmin", "admin", "OPERATOR", "", "Admin " ] {
+        for role in ["SuperAdmin", "admin", "OPERATOR", "", "Admin "] {
             assert!(
                 validate_unit_node_role(role).is_err(),
                 "role {role:?} must be rejected"
@@ -302,7 +304,10 @@ mod tests {
         // valid bootstrap role (the first canonical Admin is established via
         // the B8 `identity_access` import).
         let user_result = svc.import_unit_node_package(&unit_package("User"));
-        assert!(user_result.is_ok(), "User package accepted: {user_result:?}");
+        assert!(
+            user_result.is_ok(),
+            "User package accepted: {user_result:?}"
+        );
 
         let admin_result = svc.import_unit_node_package(&unit_package("Admin"));
         assert!(

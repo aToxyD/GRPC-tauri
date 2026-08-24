@@ -15,14 +15,12 @@
 use crate::db::{ConnectionFactory, Database};
 use crate::domain::audit::{AuditAction, AuditFilters, EntityType};
 use crate::domain::ports::backup::{
-    BackupPort, RestoreLedgerSnapshot, RestoreMarker, RestoreMarkerCommit, restore_archive_dir,
-    restore_marker_history_path,
+    restore_archive_dir, restore_marker_history_path, BackupPort, RestoreLedgerSnapshot,
+    RestoreMarker, RestoreMarkerCommit,
 };
 use crate::domain::rate_limiter::RateLimiter;
 use crate::errors::{AppError, AppResult};
-use crate::infrastructure::backup::{
-    SqliteBackupAdapter, recover_interrupted_restore_and_orphans,
-};
+use crate::infrastructure::backup::{recover_interrupted_restore_and_orphans, SqliteBackupAdapter};
 use crate::infrastructure::rate_limiter::open_persisted_rate_limiter;
 use crate::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use crate::repositories::DbExecutor;
@@ -141,7 +139,10 @@ pub fn apply_pending_restore_ledger_overlays(
     let adapter = SqliteBackupAdapter::new(db_path, *crypto);
     for sidecar in &sidecars {
         let raw = std::fs::read(sidecar).map_err(|e| {
-            AppError::Internal(format!("قراءة أداة تراكب السجل فشلت ({}): {e}", sidecar.display()))
+            AppError::Internal(format!(
+                "قراءة أداة تراكب السجل فشلت ({}): {e}",
+                sidecar.display()
+            ))
         })?;
         let snapshot: RestoreLedgerSnapshot = serde_json::from_slice(&raw).map_err(|e| {
             AppError::Internal(format!(
@@ -149,9 +150,9 @@ pub fn apply_pending_restore_ledger_overlays(
                 sidecar.display()
             ))
         })?;
-        adapter.apply_ledger_snapshot(&snapshot).map_err(|e| {
-            AppError::Internal(format!("فشل تطبيق تراكب السجل بعد الاستعادة: {e}"))
-        })?;
+        adapter
+            .apply_ledger_snapshot(&snapshot)
+            .map_err(|e| AppError::Internal(format!("فشل تطبيق تراكب السجل بعد الاستعادة: {e}")))?;
         log::info!(
             target: "grpc::backup",
             "[RESTORE_OVERLAY_APPLIED] sidecar={}",
@@ -209,7 +210,9 @@ pub fn consume_restore_markers(
             commits.insert(commit.marker_id.clone(), commit);
             continue;
         }
-        return Err(AppError::Internal(format!("سطر سجل استعادة غير صالح: {line}")));
+        return Err(AppError::Internal(format!(
+            "سطر سجل استعادة غير صالح: {line}"
+        )));
     }
 
     let audit = AuditService::new(executor);
@@ -250,7 +253,9 @@ pub fn consume_restore_markers(
                     None,
                 )
                 .map_err(|e| {
-                    AppError::Internal(format!("فشل تسجيل استعادة النسخة الاحتياطية في السجل الأمني: {e}"))
+                    AppError::Internal(format!(
+                        "فشل تسجيل استعادة النسخة الاحتياطية في السجل الأمني: {e}"
+                    ))
                 })?;
             log::info!(
                 target: "grpc::backup",
@@ -266,9 +271,8 @@ pub fn consume_restore_markers(
             );
         }
 
-        std::fs::create_dir_all(&archive_dir).map_err(|e| {
-            AppError::Internal(format!("إنشاء مجلد أرشيف الاستعادة فشل: {e}"))
-        })?;
+        std::fs::create_dir_all(&archive_dir)
+            .map_err(|e| AppError::Internal(format!("إنشاء مجلد أرشيف الاستعادة فشل: {e}")))?;
         let archived = archive_dir.join(sidecar.file_name().ok_or_else(|| {
             AppError::Internal(format!("اسم أداة استعادة غير صالح: {}", sidecar.display()))
         })?);
@@ -289,10 +293,7 @@ pub fn consume_restore_markers(
 
 /// True when the audit chain of the restored DB already contains a
 /// `RestoreBackup` event for this marker_id (idempotency check).
-fn restore_audit_already_emitted(
-    audit: &AuditService<'_>,
-    marker_id: &str,
-) -> AppResult<bool> {
+fn restore_audit_already_emitted(audit: &AuditService<'_>, marker_id: &str) -> AppResult<bool> {
     let filters = AuditFilters {
         action: Some(AuditAction::RestoreBackup.as_str().to_string()),
         entity_type: Some(EntityType::Backup.as_str().to_string()),
@@ -310,9 +311,9 @@ fn restore_audit_already_emitted(
 /// Discover pending ledger sidecars for this database, sorted for
 /// deterministic processing order.
 fn discover_restore_sidecars(db_path: &Path) -> AppResult<Vec<PathBuf>> {
-    let parent = db_path.parent().ok_or_else(|| {
-        AppError::Internal("مسار قاعدة البيانات بدون مجلد أب".to_string())
-    })?;
+    let parent = db_path
+        .parent()
+        .ok_or_else(|| AppError::Internal("مسار قاعدة البيانات بدون مجلد أب".to_string()))?;
     let file_name = db_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -320,11 +321,10 @@ fn discover_restore_sidecars(db_path: &Path) -> AppResult<Vec<PathBuf>> {
     let prefix = format!("{file_name}.restore.ledger.");
 
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(parent).map_err(|e| {
-        AppError::Internal(format!("قراءة مجلد قاعدة البيانات فشلت: {e}"))
-    })? {
-        let entry = entry
-            .map_err(|e| AppError::Internal(format!("قراءة إدخال مجلد فشل: {e}")))?;
+    for entry in std::fs::read_dir(parent)
+        .map_err(|e| AppError::Internal(format!("قراءة مجلد قاعدة البيانات فشلت: {e}")))?
+    {
+        let entry = entry.map_err(|e| AppError::Internal(format!("قراءة إدخال مجلد فشل: {e}")))?;
         let path = entry.path();
         let name = match path.file_name().and_then(|n| n.to_str()) {
             Some(n) => n,
@@ -343,7 +343,9 @@ fn marker_id_from_sidecar(db_path: &Path, sidecar: &Path) -> Option<String> {
     let file_name = db_path.file_name().and_then(|n| n.to_str())?;
     let prefix = format!("{file_name}.restore.ledger.");
     let name = sidecar.file_name().and_then(|n| n.to_str())?;
-    name.strip_prefix(&prefix)?.strip_suffix(".json").map(String::from)
+    name.strip_prefix(&prefix)?
+        .strip_suffix(".json")
+        .map(String::from)
 }
 
 #[cfg(test)]
@@ -355,9 +357,14 @@ mod tests {
     fn marker_id_extraction_roundtrips() {
         let db_path = Path::new("/tmp/grpc/live.db");
         let sidecar = restore_ledger_sidecar_path(db_path, "abc-123");
-        assert_eq!(marker_id_from_sidecar(db_path, &sidecar).as_deref(), Some("abc-123"));
-        assert_eq!(sidecar.file_name().unwrap().to_str().unwrap(),
-            "live.db.restore.ledger.abc-123.json");
+        assert_eq!(
+            marker_id_from_sidecar(db_path, &sidecar).as_deref(),
+            Some("abc-123")
+        );
+        assert_eq!(
+            sidecar.file_name().unwrap().to_str().unwrap(),
+            "live.db.restore.ledger.abc-123.json"
+        );
         assert_eq!(
             restore_marker_history_path(db_path),
             Path::new("/tmp/grpc/live.db.restore.history")
