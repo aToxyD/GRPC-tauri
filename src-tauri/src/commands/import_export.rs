@@ -471,6 +471,7 @@ pub fn export_all_units_monthly_status_excel(
 ) -> Result<XlsxExportResult, String> {
     let (_session, _settings) = authorize_command(&state, Action::ExportMonthlySummary, None)
         .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(into_command_error)?;
     state.touch_session();
 
     let guard = state.get_db().map_err(into_command_error)?;

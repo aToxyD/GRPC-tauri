@@ -268,15 +268,6 @@ pub struct RegistryPackageImportResult {
     pub timestamp: String,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct IdentityAccessPackageImportResult {
-    pub admin_updated: bool,
-    pub user_updated: bool,
-    pub package_id: String,
-    pub imported_by: String,
-    pub timestamp: String,
-}
-
 /// Result of an `admin_access` package import (ADR-0051).
 ///
 /// Contains no credential material — only synchronization status metadata.

@@ -6,6 +6,7 @@ use crate::commands::common::{db_mut_or_app_error, db_mut_or_command_error};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::events::DomainEvent;
+use crate::domain::validation;
 use crate::errors::{into_command_error, AppError};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -182,6 +183,7 @@ pub fn export_fiscal_closure_package(
         None,
     )
     .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
 
     // Wilaya-only guard
@@ -264,6 +266,7 @@ pub fn preview_fiscal_closure_package(
         None,
     )
     .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
 
     // Unit-only guard
@@ -299,6 +302,7 @@ pub fn apply_fiscal_closure_package(
         None,
     )
     .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
 
     // Unit-only guard
