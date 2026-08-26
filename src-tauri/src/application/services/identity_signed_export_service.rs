@@ -136,9 +136,10 @@ impl<'a> IdentitySignedExportService<'a> {
     ///
     /// ADR-0053 supersedes the dedicated issuer-only stream of ADR-0051 §7:
     /// allocation joins the canonical per-target transport stream with
-    /// `target_node_id = target_unit_code` — an authoritative `units.code`
-    /// validated by the caller via
-    /// [`resolve_unit_transport_target`](super::transport_target) and
+    /// `target_node_id = target_unit_code` — an authoritative `units.code`.
+    /// Since SEC-033 the caller is the fleet-level exporter, which enumerates
+    /// every authoritative target via
+    /// [`resolve_fleet_unit_targets`](super::transport_target); the code is
     /// re-validated fail-closed here. Each target UNIT therefore receives its
     /// own contiguous stream from this issuer, consistent with its local
     /// kind-blind consumer ledger.

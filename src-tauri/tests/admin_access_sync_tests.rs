@@ -306,7 +306,6 @@ fn b1_unauthenticated_export_fails() {
     let path = dir.path().join("grpc-admin-access.sync");
     let err = export_admin_access_package_impl(
         &state,
-        "UNIT-9".into(),
         path.to_string_lossy().into_owned(),
     )
     .expect_err("unauthenticated export must fail");
@@ -321,7 +320,6 @@ fn b2_unit_node_cannot_export() {
     let path = dir.path().join("grpc-admin-access.sync");
     let err = export_admin_access_package_impl(
         &state,
-        "UNIT-9".into(),
         path.to_string_lossy().into_owned(),
     )
     .expect_err("export is Wilaya-only");
@@ -336,7 +334,6 @@ fn b3_non_admin_wilaya_session_cannot_export() {
     let path = dir.path().join("grpc-admin-access.sync");
     let err = export_admin_access_package_impl(
         &state,
-        "UNIT-9".into(),
         path.to_string_lossy().into_owned(),
     )
     .expect_err("export requires an Admin session");
@@ -352,7 +349,6 @@ fn b4_locked_store_fails_closed() {
     let path = dir.path().join("grpc-admin-access.sync");
     let err = export_admin_access_package_impl(
         &state,
-        "UNIT-9".into(),
         path.to_string_lossy().into_owned(),
     )
     .expect_err("locked store must fail closed");

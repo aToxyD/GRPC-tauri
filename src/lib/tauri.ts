@@ -250,8 +250,8 @@ export async function getMonthlySummary(year: number, month?: number): Promise<M
 }
 
 // Sync package export
-export async function exportProductsPackage(filePath: string, unitCode: string): Promise<SyncExportResult> {
-  return await safeInvoke('export_products_package', { filePath, unitCode });
+export async function exportProductsPackage(filePath: string): Promise<SyncExportResult> {
+  return await safeInvoke('export_products_package', { filePath });
 }
 
 export async function exportDailyReportPackage(reportId: string, filePath: string): Promise<SyncExportResult> {

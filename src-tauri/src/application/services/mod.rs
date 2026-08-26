@@ -11,6 +11,7 @@ pub mod fiscal_scope;
 pub mod fiscal_validation_service;
 pub mod identity_authentication_policy;
 pub mod identity_bootstrap_status_service;
+pub mod fleet_package_export;
 pub mod identity_challenge_service;
 pub mod identity_node_resolver;
 pub mod identity_provisioning_service;
@@ -59,6 +60,9 @@ pub use identity_challenge_service::IdentityChallengeService;
 pub use identity_node_resolver::NodeIdentityResolver;
 pub use identity_provisioning_service::{
     FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult, IdentityProvisioningService,
+};
+pub use fleet_package_export::{
+    export_admin_access_fleet, export_products_fleet, FleetExportOutcome,
 };
 pub use identity_rotation_coordinator::{
     IdentityRotationCoordinator, RotationFinalizeOutcome, SignedUnitRotation,

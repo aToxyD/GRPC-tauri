@@ -6,10 +6,11 @@
  * Verifies frontend behavior only — the backend remains the sole authority
  * for hashing, signing, encryption, and authorization. No secret is ever
  * logged, persisted, or rendered after submission; no import ever creates a
- * session or triggers automatic navigation. Per ADR-0053 the admin_access
- * surface on the WILAYA side targets ONE authoritative UNIT at a time
- * (unit selector present) and guarantees on the UNIT side that the
- * `.unit`-provisioned operator account stays untouched.
+ * session or triggers automatic navigation. Per SEC-033 the admin_access
+ * surface on the WILAYA side is fleet-level: there is NO UNIT selector —
+ * the backend enumerates the authoritative target set itself — and the
+ * UNIT side guarantees that the `.unit`-provisioned operator account stays
+ * untouched.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
@@ -21,7 +22,6 @@ const mockGetSettings = vi.fn();
 const mockSetFleetAdminPassword = vi.fn();
 const mockExportAdminAccessPackage = vi.fn();
 const mockImportAdminAccessPackage = vi.fn();
-const mockListUnits = vi.fn();
 const mockOpenFile = vi.fn();
 const mockSaveFile = vi.fn();
 const mockCurrentUserSubscribe = vi.fn((listener: (value: unknown) => void) => {
@@ -71,7 +71,6 @@ vi.mock('../../lib/contracts', () => ({
   setFleetAdminPassword: (...args: any[]) => mockSetFleetAdminPassword(...args),
   exportAdminAccessPackage: (...args: any[]) => mockExportAdminAccessPackage(...args),
   importAdminAccessPackage: (...args: any[]) => mockImportAdminAccessPackage(...args),
-  listUnits: (...args: any[]) => mockListUnits(...args),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -102,13 +101,9 @@ describe('SettingsPage — WILAYA Admin (SEC-014 Phase 4 / SEC-021)', () => {
       node_type: 'WILAYA',
       wilaya_code: '31',
     });
-    mockListUnits.mockResolvedValue([
-      { id: 'u1', code: 'U1', name: 'Unit 1', wilaya_code: '31', user_id: null, created_at: '2026-08-04T00:00:00Z' },
-      { id: 'u2', code: 'U2', name: 'Unit 2', wilaya_code: '31', user_id: null, created_at: '2026-08-04T00:00:00Z' },
-    ]);
   });
 
-  it('renders the account security section and the per-target admin sync section with a unit selector (ADR-0053)', async () => {
+  it('renders the account security section with NO UNIT target selector (SEC-033)', async () => {
     render(SettingsPage);
 
     await waitFor(() => {
@@ -119,15 +114,9 @@ describe('SettingsPage — WILAYA Admin (SEC-014 Phase 4 / SEC-021)', () => {
     expect(screen.getByLabelText(/تأكيد كلمة مرور المسؤول العام/)).toBeInTheDocument();
     // Credential-distinction notice (Admin Key passphrase ≠ fleet password).
     expect(screen.getByText('مختلفة تماماً')).toBeInTheDocument();
-    // ADR-0053: ONE authoritative UNIT target per package — selector present
-    // and preselected to the first registered unit.
-    const targetSelector = await screen.findByRole('combobox', { name: /الوحدة الهدف/ });
-    await waitFor(() => {
-      expect(targetSelector).toHaveValue('U1');
-    });
-    expect(screen.getByText('U1 — Unit 1')).toBeInTheDocument();
-    expect(screen.getByText('U2 — Unit 2')).toBeInTheDocument();
-    expect(mockListUnits).toHaveBeenCalledWith('31');
+    // SEC-033: fleet-level export — the renderer must not select (or
+    // default-select) a UNIT security target.
+    expect(screen.queryByRole('combobox', { name: /الوحدة الهدف/ })).toBeNull();
     // The WILAYA side never renders the UNIT import action.
     expect(screen.queryByRole('button', { name: /استيراد حزمة حساب المدير العام/ })).toBeNull();
   });
@@ -204,7 +193,7 @@ describe('SettingsPage — WILAYA Admin (SEC-014 Phase 4 / SEC-021)', () => {
     expect(mockSetFleetAdminPassword).toHaveBeenCalledWith('FleetPass123');
   });
 
-  it('exports the admin_access package to the selected authoritative UNIT target (ADR-0053)', async () => {
+  it('exports the admin_access package fleet-level with no target parameter (SEC-033)', async () => {
     mockExportAdminAccessPackage.mockResolvedValue({
       file_path: '/tmp/admin.sync',
       record_count: 1,
@@ -217,12 +206,6 @@ describe('SettingsPage — WILAYA Admin (SEC-014 Phase 4 / SEC-021)', () => {
 
     await screen.findByText('مزامنة حساب المدير العام (admin)');
 
-    // Default selection is the first authoritative unit.
-    const targetSelector = await screen.findByRole('combobox', { name: /الوحدة الهدف/ });
-    await waitFor(() => {
-      expect(targetSelector).toHaveValue('U1');
-    });
-
     await fireEvent.click(screen.getByRole('button', { name: /تصدير حزمة حساب المدير العام الموقّعة والمشفّرة/ }));
 
     await waitFor(() => {
@@ -230,35 +213,12 @@ describe('SettingsPage — WILAYA Admin (SEC-014 Phase 4 / SEC-021)', () => {
         expect.objectContaining({ defaultPath: 'grpc-admin-access.sync' })
       );
       expect(mockExportAdminAccessPackage).toHaveBeenCalledTimes(1);
-      expect(mockExportAdminAccessPackage).toHaveBeenCalledWith('/tmp/grpc-admin-access.sync', 'U1');
+      // SEC-033: exactly ONE argument — the renderer cannot choose a target.
+      expect(mockExportAdminAccessPackage).toHaveBeenCalledWith('/tmp/grpc-admin-access.sync');
     });
     // The UI only reports counts — never credential contents.
     expect(screen.getByText(/تم تصدير حزمة حساب المدير العام/)).toBeInTheDocument();
     expect(screen.queryByText(/argon2|password_hash|admin_password_hash/i)).toBeNull();
-  });
-
-  it('passes a switched UNIT target through to the export command (ADR-0053)', async () => {
-    mockExportAdminAccessPackage.mockResolvedValue({
-      file_path: '/tmp/admin.sync',
-      record_count: 1,
-      success: true,
-      message: 'ok',
-      file_hash: 'abc123',
-    });
-    mockSaveFile.mockResolvedValue('/tmp/grpc-admin-access.sync');
-    render(SettingsPage);
-
-    const targetSelector = await screen.findByRole('combobox', { name: /الوحدة الهدف/ });
-    await waitFor(() => {
-      expect(targetSelector).toHaveValue('U1');
-    });
-    await fireEvent.change(targetSelector, { target: { value: 'U2' } });
-
-    await fireEvent.click(screen.getByRole('button', { name: /تصدير حزمة حساب المدير العام الموقّعة والمشفّرة/ }));
-
-    await waitFor(() => {
-      expect(mockExportAdminAccessPackage).toHaveBeenCalledWith('/tmp/grpc-admin-access.sync', 'U2');
-    });
   });
 
   it('displays the fail-closed backend rejection for admin_access export', async () => {
@@ -277,7 +237,7 @@ describe('SettingsPage — WILAYA Admin (SEC-014 Phase 4 / SEC-021)', () => {
         screen.getByText(/كلمة مرور المسؤول العام لم تُضبط بعد/)
       ).toBeInTheDocument();
     });
-    expect(mockExportAdminAccessPackage).toHaveBeenCalled();
+    expect(mockExportAdminAccessPackage).toHaveBeenCalledWith('/tmp/grpc-admin-access.sync');
   });
 });
 

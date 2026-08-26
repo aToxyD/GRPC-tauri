@@ -25,8 +25,7 @@ use crate::application::sync::import::{
 use crate::application::sync::{SyncPackage, SyncPackageMetadata};
 use crate::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use crate::application::usecases::exports::types::{
-    DailyReportExportInput, ExportProductsInput, MonthlySummaryExportInput,
-    StockMovementsExportDataset,
+    DailyReportExportInput, MonthlySummaryExportInput, StockMovementsExportDataset,
 };
 use crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCESS_PACKAGE_KIND;
 use crate::application::usecases::sync::import_admin_access_package::{
@@ -207,15 +206,16 @@ fn validate_import_security_requirements(
     Ok(())
 }
 
-/// Export products catalog as an encrypted **sync package** (`.sync`) — intended for Wilaya → Units distribution.
+/// Export products catalog as encrypted **sync packages** (`.sync`) — intended for Wilaya → Units distribution.
 ///
-/// ADR-0053: `unit_code` selects the authoritative target UNIT (`units.code`,
-/// backend-validated via `resolve_unit_transport_target`) and determines the
-/// per-`(issuer, target)` transport stream.
+/// SEC-033: fleet-level export. The operator expresses fleet intent only;
+/// the backend enumerates the authoritative UNIT target set from local
+/// `units` rows and emits ONE signed artifact per target (single-target
+/// keeps the requested path; multi-target suffixes `-<unit_code>`).
+/// Fails closed when no UNIT is registered or a code is unsafe.
 #[tauri::command]
 pub fn export_products_package(
     state: State<AppState>,
-    unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
     let (session, settings) =
@@ -227,38 +227,26 @@ pub fn export_products_package(
     let db = db_mut_or_command_error(guard.as_mut())?;
     let start_time = std::time::Instant::now();
 
-    let dataset = crate::application::usecases::exports::export_products_dataset::execute(
-        db.executor(),
-        ExportProductsInput,
-    )
-    .map_err(into_command_error)?;
-
-    // ADR-0053 §3.3: authoritative UNIT target — never a raw renderer string.
-    let target_node_id =
-        crate::application::services::transport_target::resolve_unit_transport_target(
-            db.executor(),
-            &unit_code,
-        )
-        .map_err(into_command_error)?;
-
     let source_node_id =
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
-    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
-        .export_v2_package(
-            dataset.clone(),
-            &source_node_id,
-            "products",
-            &target_node_id,
-            std::path::Path::new(&file_path),
-            export_subject_type(settings.node_type),
-            &state.crypto_port,
-        )
-        .map_err(into_command_error)?;
+    // SEC-033: fleet orchestration lives in the application layer; targets
+    // are enumerated server-side (renderer cannot select — or default-select
+    // — a UNIT).
+    let outcome = crate::application::services::export_products_fleet(
+        db,
+        &node_key_store(),
+        &state.crypto_port,
+        &source_node_id,
+        export_subject_type(settings.node_type),
+        std::path::Path::new(&file_path),
+    )
+    .map_err(into_command_error)?;
 
     log::info!(
         target: "grpc::import_export",
-        "export_products_package: success path={}",
+        "export_products_package: success targets={} base_path={}",
+        outcome.targets.join(","),
         file_path
     );
 
@@ -267,7 +255,7 @@ pub fn export_products_package(
     let export_hash = Uuid::new_v4().to_string();
     let result = PackageExportResult::success(
         file_path.clone(),
-        dataset.product_rows.len(),
+        outcome.record_count,
         "encrypted".to_string(),
     );
 
@@ -294,7 +282,12 @@ pub fn export_products_package(
         crate::application::services::TelemetryEventType::SyncExport,
         crate::application::services::TelemetryOutcome::Success,
         Some(duration),
-        Some(serde_json::json!({ "path": file_path, "kind": "products" })),
+        Some(serde_json::json!({
+            "path": file_path,
+            "kind": "products",
+            "targets": outcome.targets,
+            "artifact_count": outcome.artifact_paths.len(),
+        })),
         Some(&session.user_id),
     );
 
@@ -1381,31 +1374,30 @@ pub fn import_identity_access_package_impl(
 // structurally unreachable from this kind.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Wilaya: export the fleet Admin synchronization package (encrypted
+/// Wilaya: export the fleet Admin synchronization packages (encrypted
 /// `.sync`, ADR-0051).
 ///
-/// ADR-0053: `unit_code` selects the authoritative delivery target
-/// (`units.code`, backend-validated via `resolve_unit_transport_target`) and
-/// keys the unified per-target transport stream. Fails closed when the fleet
-/// `admin` password is unset or the account is disabled, or when the selected
-/// code does not resolve to an existing unit. Wilaya-only (authz
-/// `Action::ExportAdminAccessPackage` → Wilaya + AdminOnly).
+/// SEC-033: fleet-level export. The operator expresses fleet intent only;
+/// the backend enumerates the authoritative UNIT target set from local
+/// `units` rows and emits ONE signed artifact per target (single-target
+/// keeps the requested path; multi-target suffixes `-<unit_code>`).
+/// Fails closed when the fleet `admin` password is unset or the account is
+/// disabled, when no UNIT is registered, or when a code is unsafe.
+/// Wilaya-only (authz `Action::ExportAdminAccessPackage` → Wilaya + AdminOnly).
 #[tauri::command]
 pub fn export_admin_access_package(
     state: State<AppState>,
-    unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
-    export_admin_access_package_impl(&state, unit_code, file_path)
+    export_admin_access_package_impl(&state, file_path)
 }
 
 /// Implementation of `export_admin_access_package` (testable without a Tauri
-/// runtime). The producer allocates the transport sequence from the canonical
+/// runtime). The producer allocates each transport sequence from the canonical
 /// unified per-target stream (`export_v2_admin_access_package`, ADR-0053 /
-/// migration 011).
+/// migration 011) — one stream per authoritative UNIT target.
 pub fn export_admin_access_package_impl(
     state: &AppState,
-    unit_code: String,
     file_path: String,
 ) -> Result<PackageExportResult, String> {
     let (session, settings) = authorize_command(state, Action::ExportAdminAccessPackage, None)
@@ -1417,41 +1409,32 @@ pub fn export_admin_access_package_impl(
     let db = db_mut_or_command_error(guard.as_mut())?;
     let start_time = std::time::Instant::now();
 
-    let password_port = state.password_port.as_ref();
-    let payload = UserAccountSyncService::new(db.executor(), password_port)
-        .export_admin_access()
-        .map_err(into_command_error)?;
-
-    // ADR-0053 §3.3: authoritative UNIT target — never a raw renderer string.
-    let target_node_id =
-        crate::application::services::transport_target::resolve_unit_transport_target(
-            db.executor(),
-            &unit_code,
-        )
-        .map_err(into_command_error)?;
-
     let source_node_id =
         resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
 
-    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
-        .export_v2_admin_access_package(
-            payload,
-            &source_node_id,
-            &target_node_id,
-            std::path::Path::new(&file_path),
-            export_subject_type(settings.node_type),
-            &state.crypto_port,
-        )
-        .map_err(into_command_error)?;
+    // SEC-033: fleet orchestration lives in the application layer; targets
+    // are enumerated server-side (renderer cannot select — or default-select
+    // — a UNIT security scope).
+    let outcome = crate::application::services::export_admin_access_fleet(
+        db,
+        &node_key_store(),
+        state.password_port.as_ref(),
+        &state.crypto_port,
+        &source_node_id,
+        export_subject_type(settings.node_type),
+        std::path::Path::new(&file_path),
+    )
+    .map_err(into_command_error)?;
 
     log::info!(
         target: "grpc::import_export",
-        "export_admin_access_package: success path={}",
+        "export_admin_access_package: success targets={} base_path={}",
+        outcome.targets.join(","),
         file_path
     );
 
     let export_hash = Uuid::new_v4().to_string();
-    let result = PackageExportResult::success(file_path.clone(), 1, "encrypted".to_string());
+    let result = PackageExportResult::success(file_path.clone(), outcome.record_count, "encrypted".to_string());
 
     let signing_key_id =
         crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
@@ -1479,6 +1462,8 @@ pub fn export_admin_access_package_impl(
         Some(serde_json::json!({
             "path": file_path,
             "kind": ADMIN_ACCESS_PACKAGE_KIND,
+            "targets": outcome.targets,
+            "artifact_count": outcome.artifact_paths.len(),
         })),
         Some(&session.user_id),
     );

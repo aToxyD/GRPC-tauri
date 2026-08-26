@@ -196,16 +196,10 @@ impl<'a> IdentityRotationCoordinator<'a> {
         let exporter = IdentitySignedExportService::new(&*self.db, self.node_key_store);
         for unit in &units {
             let target_node_id = unit.code.trim();
-            if target_node_id.is_empty()
-                || target_node_id.contains('/')
-                || target_node_id.contains('\\')
-                || target_node_id.contains("..")
-            {
-                return Err(Self::permitted(
-                    "Active target UNIT has no valid code — refusing to emit a trust package (fail closed)",
-                ));
-            }
-            let package_path = Self::rotation_package_path_for_target(
+            // SEC-033: canonical fail-closed validation + per-target naming
+            // live in `transport_target` (single source of truth).
+            super::transport_target::validate_unit_code_as_path_component(target_node_id)?;
+            let package_path = super::transport_target::derive_per_target_artifact_path(
                 rotation_package_path,
                 target_node_id,
                 units.len(),
@@ -472,33 +466,6 @@ impl<'a> IdentityRotationCoordinator<'a> {
         AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
             message: message.into(),
         })
-    }
-
-    /// Derive the trust-package output path for one UNIT target.
-    ///
-    /// Single-target ceremony keeps the operator-requested path unchanged;
-    /// multi-target emission suffixes each artifact with `-<unit_code>` so the
-    /// offline distribution set is self-describing.
-    fn rotation_package_path_for_target(
-        requested: &Path,
-        target_node_id: &str,
-        target_count: usize,
-    ) -> std::path::PathBuf {
-        if target_count <= 1 {
-            return requested.to_path_buf();
-        }
-        // Non-UTF8 or missing stem/extension are degenerate path shapes, not
-        // runtime errors — the deterministic defaults below keep the derived
-        // artifact name well-formed (explicit match, no silent Option skip).
-        let stem = match requested.file_stem().and_then(|s| s.to_str()) {
-            Some(s) => s.to_string(),
-            None => "rotation_trust".to_string(),
-        };
-        let ext = match requested.extension().and_then(|s| s.to_str()) {
-            Some(s) => s.to_string(),
-            None => "sync".to_string(),
-        };
-        requested.with_file_name(format!("{stem}-{target_node_id}.{ext}"))
     }
 }
 

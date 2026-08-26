@@ -183,6 +183,18 @@ DROP TABLE IF EXISTS admin_access_export_sequence;      -- migration 010 produce
 - Frontend export flows for products/admin gain authoritative UNIT selection consistent with existing UI conventions.
 - Test obligations: unified-stream regression suite (first-is-one, per-target isolation, interleaving across kinds, replay/gap negatives, no-burn-on-failure, `.unit` isolation, trust rotation per-UNIT, D1 deadness) plus all existing suites remaining green (SEC-021/022/026/029 included).
 
+> **Amendment (2026-08-26, SEC-033)** — the two bullets above describing
+> operator-side target selection are refined as follows: products and
+> admin_access exports are **fleet-level** at the command/UI boundary. The
+> renderer expresses fleet intent only (no `unit_code` parameter, no UNIT
+> selector); the backend enumerates the authoritative target set from local
+> `units` rows and emits one signed artifact per target (`-<unit_code>`
+> suffix for multi-target, requested path preserved for single-target;
+> zero registered UNITs fail closed). Every normative element of this ADR —
+> per-target `(issuer_identity_id, target_node_id)` allocation, validated
+> authoritative targets, frozen consumer guard — is unchanged. The historical
+> text above is preserved verbatim.
+
 ## 12. Freeze References
 
 - Amends (producer side only): RFC `2026-08-04-node-identity-trust` §3.4.1; ARCHITECTURE_FREEZE §2.7 (reference note); ADR-0045 §26.9; ADR-0051 §7.
