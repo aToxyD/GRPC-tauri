@@ -35,7 +35,7 @@ use grpc_lib::application::usecases::exports::types::{
     StockMovementsExportDataset,
 };
 use grpc_lib::commands::{
-    import_daily_report_package_impl, import_identity_access_package_impl,
+    import_daily_report_package_impl,
     import_monthly_summary_package_impl, import_products_package_impl, import_registry_package_impl,
     import_stock_movements_package_impl, import_trust_package_impl, AppState,
 };
@@ -52,7 +52,7 @@ use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256P
 use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};
 use grpc_lib::infrastructure::sync::{PackageBuilder, SerdeJsonSyncPackageSerializer};
 use grpc_lib::models::{
-    DailyConsumptionSyncLine, DailyReportSyncSnapshot, DailyDetailSyncSnapshot, IdentityAccessPayload,
+    DailyConsumptionSyncLine, DailyReportSyncSnapshot, DailyDetailSyncSnapshot,
     MealSectionSyncSnapshot, MealType, MonthlySummary, Product, ProductExportRow,
     StockMovement, StockMovementType,
 };
@@ -384,24 +384,6 @@ fn products_package(
                 node_id: unit_id.to_string(),
                 deleted: 0,
             }],
-        },
-    }
-}
-
-fn identity_access_package(
-    pkg_id: &str,
-    issuer_id: Uuid,
-    unit_id: Uuid,
-    sequence: u64,
-) -> SyncPackage<IdentityAccessPayload> {
-    SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
-        payload: IdentityAccessPayload {
-            unit_code: format!("U{unit_id}"),
-            admin_password_hash: "x".into(),
-            admin_enabled: true,
-            user_password_hash: "x".into(),
-            user_enabled: true,
         },
     }
 }
@@ -1030,32 +1012,6 @@ fn unit_issuer_rejected_for_products_kind() {
     let err = import_products_package_impl(&state, path.to_string_lossy().into_owned())
         .expect_err("UNIT-issued products package must be rejected");
     assert!(err.contains("غير مسموح له بصنف الحزمة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
-}
-
-#[test]
-fn unit_issuer_rejected_for_identity_access_kind() {
-    // ADR-0051 §9 / Decision D1: at cutover, legacy `identity_access` imports
-    // are fail-closed REJECTED at the package-kind boundary — before authz
-    // role evaluation and before any mutation. The historical UNIT-side-only
-    // authz denial is superseded by the unconditional D1 wall.
-    let (state, anchor_id) = build_wilaya_state();
-    let unit_identity = Uuid::new_v4();
-    let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
-    set_wilaya_admin_session(&state);
-
-    let dir = tempfile::tempdir().expect("temp dir");
-    let path = dir.path().join("idacc.sync");
-    let package = sign_v2_package(
-        identity_access_package("idacc-unit-1", unit_identity, unit_id, 1),
-        UNIT_SECRET,
-    );
-    write_encrypted(&package, UNIT_SECRET, &path);
-
-    let err = import_identity_access_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect_err("identity_access is rejected under the D1 cutover");
-    assert!(err.contains("مرفوض مغلقًا"), "got: {err}");
     assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 

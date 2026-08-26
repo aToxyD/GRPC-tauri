@@ -30,8 +30,6 @@ import { updateFiscalPackageRetentionStatus } from '../../../lib/contracts/fisca
 import { initializeAppKey } from '../../../lib/contracts/security.contract';
 import {
   setFleetAdminPassword,
-  exportIdentityAccessPackage,
-  importIdentityAccessPackage,
 } from '../../../lib/contracts/sync.contract';
 
 const SNAKE_CASE_KEY = /^[a-z]+_[a-z]/;
@@ -161,9 +159,5 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
   it('B8 sync commands use camelCase keys (SEC-013 Phase 3)', async () => {
     await setFleetAdminPassword('FleetPass123');
     expectExactKeys('set_fleet_admin_password', ['password']);
-    await exportIdentityAccessPackage('UNIT-9', '/tmp/grpc-identity-access-UNIT-9.sync');
-    expectExactKeys('export_identity_access_package', ['unitCode', 'filePath']);
-    await importIdentityAccessPackage('/tmp/grpc-identity-access-UNIT-9.sync');
-    expectExactKeys('import_identity_access_package', ['filePath']);
   });
 });

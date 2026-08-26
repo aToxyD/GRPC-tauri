@@ -58,8 +58,6 @@ vi.mock('../../lib/contracts', () => ({
   getSettings: (...args: any[]) => mockGetSettings(...args),
   listUnits: (...args: any[]) => mockListUnits(...args),
   setFleetAdminPassword: vi.fn(),
-  exportIdentityAccessPackage: vi.fn(),
-  importIdentityAccessPackage: vi.fn(),
   importDailyReportPackage: vi.fn(),
   importMonthlySummaryPackage: vi.fn(),
   importStockMovementsPackage: vi.fn(),

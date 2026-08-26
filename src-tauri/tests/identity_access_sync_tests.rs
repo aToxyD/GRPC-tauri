@@ -1098,78 +1098,38 @@ fn set_session(state: &AppState, role: &str) {
 }
 
 #[test]
-fn authz_manage_and_export_require_wilaya_admin() {
-    for action in [
-        Action::ManageAccountSync,
-        Action::ExportIdentityAccessPackage,
-    ] {
-        // WILAYA + Admin → allowed.
-        let state = wilaya_configured_state();
-        set_session(&state, "Admin");
-        let (session, _settings) =
-            authorize_command(&state, action, None).expect("wilaya admin allowed");
-        assert_eq!(session.username, "bob");
+fn authz_manage_account_sync_requires_wilaya_admin() {
+    let action = Action::ManageAccountSync;
 
-        // WILAYA + User → RequiresAdmin.
-        let state = wilaya_configured_state();
-        set_session(&state, "User");
-        let err = authorize_command(&state, action, None).expect_err("deny user");
-        match err {
-            AppError::Authorization(grpc_lib::errors::AuthorizationError::RequiresAdmin) => {}
-            e => panic!("expected RequiresAdmin, got {e:?}"),
-        }
-
-        // UNIT + Admin → InsufficientPermissions (account authority is Wilaya-only).
-        let state = unit_configured_state();
-        set_session(&state, "Admin");
-        let err = authorize_command(&state, action, None).expect_err("deny unit");
-        match err {
-            AppError::Authorization(
-                grpc_lib::errors::AuthorizationError::InsufficientPermissions,
-            ) => {}
-            e => panic!("expected InsufficientPermissions, got {e:?}"),
-        }
-
-        // No session → SessionNotFound.
-        let state = wilaya_configured_state();
-        let err = authorize_command(&state, action, None).expect_err("deny no session");
-        match err {
-            AppError::Authentication(grpc_lib::errors::AuthenticationError::SessionNotFound) => {}
-            e => panic!("expected SessionNotFound, got {e:?}"),
-        }
-    }
-}
-
-#[test]
-fn authz_import_is_unit_only() {
-    let action = Action::ImportIdentityAccessPackage;
-
-    // UNIT + Admin → allowed (one-way Wilaya→UNIT apply, SEC-003-06-b).
-    let state = unit_configured_state();
+    // WILAYA + Admin → allowed.
+    let state = wilaya_configured_state();
     set_session(&state, "Admin");
-    let (session, _settings) = authorize_command(&state, action, None).expect("unit admin allowed");
+    let (session, _settings) =
+        authorize_command(&state, action, None).expect("wilaya admin allowed");
     assert_eq!(session.username, "bob");
 
-    // UNIT + User → RequiresAdmin (credential-overwrite authority is Admin-only).
-    let state = unit_configured_state();
+    // WILAYA + User → RequiresAdmin.
+    let state = wilaya_configured_state();
     set_session(&state, "User");
-    let err = authorize_command(&state, action, None).expect_err("deny unit user");
+    let err = authorize_command(&state, action, None).expect_err("deny user");
     match err {
         AppError::Authorization(grpc_lib::errors::AuthorizationError::RequiresAdmin) => {}
         e => panic!("expected RequiresAdmin, got {e:?}"),
     }
 
-    // WILAYA + Admin → InsufficientPermissions (no reverse path).
-    let state = wilaya_configured_state();
+    // UNIT + Admin → InsufficientPermissions (account authority is Wilaya-only).
+    let state = unit_configured_state();
     set_session(&state, "Admin");
-    let err = authorize_command(&state, action, None).expect_err("deny wilaya");
+    let err = authorize_command(&state, action, None).expect_err("deny unit");
     match err {
-        AppError::Authorization(grpc_lib::errors::AuthorizationError::InsufficientPermissions) => {}
+        AppError::Authorization(
+            grpc_lib::errors::AuthorizationError::InsufficientPermissions,
+        ) => {}
         e => panic!("expected InsufficientPermissions, got {e:?}"),
     }
 
     // No session → SessionNotFound.
-    let state = unit_configured_state();
+    let state = wilaya_configured_state();
     let err = authorize_command(&state, action, None).expect_err("deny no session");
     match err {
         AppError::Authentication(grpc_lib::errors::AuthenticationError::SessionNotFound) => {}
@@ -1343,18 +1303,10 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
     // Wilaya authority.
     let state = unit_configured_state();
     set_session(&state, "Admin");
-    let (session, _settings) = authorize_command(&state, Action::ImportIdentityAccessPackage, None)
-        .expect("UNIT Admin: AdminOnly action allowed");
-    assert_eq!(session.username, "bob");
-    for action in [
-        Action::ManageAccountSync,
-        Action::ExportIdentityAccessPackage,
-    ] {
-        let err = authorize_command(&state, action, None)
-            .expect_err("UNIT Admin: WilayaNode action denied");
-        assert!(matches!(
-            err,
-            AppError::Authorization(grpc_lib::errors::AuthorizationError::InsufficientPermissions)
-        ));
-    }
+    let err = authorize_command(&state, Action::ManageAccountSync, None)
+        .expect_err("UNIT Admin: WilayaNode action denied");
+    assert!(matches!(
+        err,
+        AppError::Authorization(grpc_lib::errors::AuthorizationError::InsufficientPermissions)
+    ));
 }

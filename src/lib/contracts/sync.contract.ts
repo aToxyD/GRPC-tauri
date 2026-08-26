@@ -2,7 +2,7 @@ import { safeInvoke } from '../tauri';
 import type {
   SyncExportResult, SyncImportResult, DailyReportImportResult,
   UnitNodePackageImportResult, StockMovementsImportResult,
-  IdentityAccessImportResult, AdminAccessImportResult,
+  AdminAccessImportResult,
 } from '../types';
 
 // SEC-033: fleet-level export — the backend enumerates the authoritative
@@ -57,14 +57,6 @@ export async function setUnitUserPassword(unitCode: string, password: string): P
 
 export async function setAccountStatus(username: string, enabled: boolean): Promise<void> {
   return await safeInvoke('set_account_status', { username, enabled });
-}
-
-export async function exportIdentityAccessPackage(unitCode: string, filePath: string): Promise<SyncExportResult> {
-  return await safeInvoke('export_identity_access_package', { unitCode, filePath });
-}
-
-export async function importIdentityAccessPackage(filePath: string): Promise<IdentityAccessImportResult> {
-  return await safeInvoke('import_identity_access_package', { filePath });
 }
 
 // ── Admin-Only account synchronization (admin_access, ADR-0051 / D1) ──────

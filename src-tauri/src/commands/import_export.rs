@@ -82,8 +82,8 @@ use crate::infrastructure::sync::{
 };
 
 use crate::models::{
-    AdminAccessPackageImportResult, DailyReportImportResult, IdentityAccessPackageImportResult,
-    PackageExportResult, RegistryPackageImportResult, Settings, TrustPackageImportResult,
+    AdminAccessPackageImportResult, DailyReportImportResult, PackageExportResult,
+    RegistryPackageImportResult, Settings, TrustPackageImportResult,
     XlsxExportResult,
 };
 use chrono::Datelike;
@@ -1296,75 +1296,6 @@ pub fn set_account_status(
     .map_err(into_command_error)?;
 
     Ok(())
-}
-
-/// Wilaya: export one unit's Identity & Access package (encrypted `.sync`).
-///
-/// B8 (ADR-0040): kind = `identity_access`, one package per unit, signed V2 via
-/// `IdentitySignedExportService`. Fails closed when the fleet `admin` password
-/// is unset or the fleet `admin` is disabled. Wilaya-only (authz
-/// `Action::ExportIdentityAccessPackage` → Wilaya + AdminOnly).
-#[tauri::command]
-pub fn export_identity_access_package(
-    state: State<AppState>,
-    unit_code: String,
-    file_path: String,
-) -> Result<PackageExportResult, String> {
-    export_identity_access_package_impl(&state, unit_code, file_path)
-}
-
-/// Implementation of `export_identity_access_package` (testable without a
-/// Tauri runtime).
-///
-/// **D1 CUTOVER (ADR-0051 §9 — ratified 2026-08-22):** legacy
-/// `identity_access` ISSUANCE is disabled. The dual-purpose package renames
-/// and re-hashes UNIT operator accounts on import — behavior rejected by the
-/// owner. This path fails closed BEFORE any payload build, signing, or
-/// sequence allocation (zero writes, zero ledger movement). `admin_access`
-/// (`export_admin_access_package`) is the authoritative fleet-Admin
-/// synchronization mechanism from cutover onward.
-pub fn export_identity_access_package_impl(
-    _state: &AppState,
-    unit_code: String,
-    _file_path: String,
-) -> Result<PackageExportResult, String> {
-    let _ = unit_code;
-    Err(into_command_error(AppError::BusinessLogic(
-        BusinessLogicError::OperationNotPermitted {
-            message: "تصدير حزم identity_access مُعطَّل نهائيًا (ADR-0051 قرار D1) — استخدم حزمة admin_access لمزامنة حساب المسؤول العام".into(),
-        },
-    )))
-}
-
-/// UNIT: import an Identity & Access package (encrypted `.sync`).
-///
-/// **D1 CUTOVER (ADR-0051 §9 — ratified 2026-08-22):** legacy
-/// `identity_access` IMPORT is fail-closed REJECTED at the package-kind
-/// boundary BEFORE any account mutation. The rejection is atomic — zero
-/// writes on every path. The legacy kind is never silently reinterpreted as
-/// `admin_access`: no partial application, no "accept and ignore its User
-/// portion", no aliasing. It remains a historical/legacy kind only.
-#[tauri::command]
-pub fn import_identity_access_package(
-    state: State<AppState>,
-    file_path: String,
-) -> Result<IdentityAccessPackageImportResult, String> {
-    import_identity_access_package_impl(&state, file_path)
-}
-
-/// Implementation of `import_identity_access_package` — kept as the explicit
-/// D1 cutover boundary (ADR-0051 §9): the rejection is deterministic and
-/// unconditional, happens BEFORE any account mutation, and never reinterprets
-/// a legacy package as `admin_access`. Zero writes on every path.
-pub fn import_identity_access_package_impl(
-    _state: &AppState,
-    _file_path: String,
-) -> Result<IdentityAccessPackageImportResult, String> {
-    Err(into_command_error(AppError::BusinessLogic(
-        BusinessLogicError::OperationNotPermitted {
-            message: "استيراد حزم identity_access مرفوض مغلقًا (ADR-0051 قرار D1) — استخدم حزمة admin_access لمزامنة حساب المسؤول العام؛ حساب مشغّل الوحدة يبقى كما وُفِّد".into(),
-        },
-    )))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

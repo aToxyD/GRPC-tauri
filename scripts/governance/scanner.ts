@@ -77,7 +77,7 @@ export const DOMAIN_REGISTRY: Record<string, {
   sync: {
     contract: "sync.contract.ts",
     pages: ["SyncPage", "SettingsPage"],
-    functions: ["exportProductsPackage", "exportDailyReportPackage", "exportMonthlySummaryPackage", "exportUnitNodePackage", "exportStockMovementsPackage", "importProductsPackage", "importDailyReportPackage", "importUnitNodePackage", "importMonthlySummaryPackage", "importStockMovementsPackage", "setFleetAdminPassword", "exportIdentityAccessPackage", "importIdentityAccessPackage"],
+    functions: ["exportProductsPackage", "exportDailyReportPackage", "exportMonthlySummaryPackage", "exportUnitNodePackage", "exportStockMovementsPackage", "importProductsPackage", "importDailyReportPackage", "importUnitNodePackage", "importMonthlySummaryPackage", "importStockMovementsPackage", "setFleetAdminPassword"],
     crossDomainExceptions: ["listUnits", "getSettings", "login"],
   },
   backup: {
