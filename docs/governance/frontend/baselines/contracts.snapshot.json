@@ -626,9 +626,6 @@
         },
         {
           "name": "unlockAppKey"
-        },
-        {
-          "name": "exportAppKeyBackup"
         }
       ],
       "commands": [
@@ -640,14 +637,11 @@
         },
         {
           "command": "unlock_app_key"
-        },
-        {
-          "command": "export_app_key_backup"
         }
       ],
       "loc": 61,
-      "exportCount": 4,
-      "commandCount": 4
+      "exportCount": 3,
+      "commandCount": 3
     },
     {
       "name": "session",

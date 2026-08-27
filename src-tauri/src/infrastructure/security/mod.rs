@@ -68,11 +68,26 @@ pub fn uninstall_test_keyring_port() {
     }
 }
 
-/// Development-only embedded AGE identity. Reachable **only** in debug builds via
-/// `#[cfg(debug_assertions)]`; release builds must supply `GRPC_APP_KEY`, an
-/// unlocked `appkey.age` store, or reach the Security Setup UI (ADR-0041).
+/// Development-only embedded AGE identity. Reachable **only** in debug builds.
+/// Excluded from release binaries via `#[cfg(debug_assertions)]`; release
+/// builds must supply `GRPC_APP_KEY`, an unlocked `appkey.age` store, or reach
+/// the Security Setup UI (ADR-0041).
+#[cfg(debug_assertions)]
 const DEV_AGE_KEY: &str =
     "AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ";
+
+#[cfg(debug_assertions)]
+fn dev_age_key_fallback() -> AppResult<String> {
+    log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_APP_KEY missing — using embedded development AGE key. NOT FOR PRODUCTION.");
+    Ok(DEV_AGE_KEY.to_string())
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_age_key_fallback() -> AppResult<String> {
+    Err(AppError::Configuration(
+        "DEV_AGE_KEY fallback is unavailable in release builds".to_string(),
+    ))
+}
 
 /// Cache the resolved app encryption key in memory (ADR-0041 §4 `Unlocked`).
 pub fn cache_app_key(identity: &str) -> AppResult<()> {
@@ -297,10 +312,7 @@ pub fn resolve_app_encryption_key_impl(
             Some(key) => Ok(key),
             None => match cached {
                 Some(key) => Ok(key),
-                None if allow_dev_fallback => {
-                    log::warn!(target: "grpc::security", "[DEV_SECURITY_WARNING] GRPC_APP_KEY missing — using embedded development AGE key. NOT FOR PRODUCTION.");
-                    Ok(DEV_AGE_KEY.to_string())
-                }
+                None if allow_dev_fallback => dev_age_key_fallback(),
                 None => Err(AppError::Configuration(
                     "GRPC_APP_KEY is locked; unlock the app key store or set GRPC_APP_KEY"
                         .to_string(),

@@ -1,9 +1,9 @@
 import { safeInvoke } from '../tauri';
 
 // Application-key provisioning (ADR-0041).
-// Pre-auth lifecycle commands for Security Setup / Unlock. The passphrase never
-// leaves the backend; the raw identity only crosses the boundary on an explicit
-// opt-in backup export.
+// Pre-auth lifecycle commands for Security Setup / Unlock. The passphrase and
+// the raw identity never leave the backend; the encrypted artifact is written
+// directly to disk via the secure path-parameterized export (SEC-017).
 
 export interface AppKeyStatusDto {
   provisioned: boolean;
@@ -68,11 +68,6 @@ export async function unlockAppKey(
   remember?: boolean,
 ): Promise<AppKeyUnlockResultDto> {
   return await safeInvoke('unlock_app_key', { passphrase, remember: remember ?? false });
-}
-
-/** Guarded re-export of the raw application identity (requires unlocked store). */
-export async function exportAppKeyBackup(): Promise<string> {
-  return await safeInvoke('export_app_key_backup');
 }
 
 /**

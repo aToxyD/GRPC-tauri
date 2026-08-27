@@ -140,12 +140,6 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       expect(identityA.startsWith('AGE-SECRET-KEY-1')).toBe(true);
       const storeBefore = fs.readFileSync(driver.appKeyPath).toString('hex');
 
-      // SEC-003-03: the guarded re-export is denied without an authenticated
-      // Admin session; the setup-time export_backup path remains the pre-login
-      // backup ceremony.
-      const preAuthExport = await driver.tryInvoke('export_app_key_backup');
-      expect(preAuthExport.ok).toBe(false);
-
       // Phase 2: shutdown + relaunch on the SAME data dir → locked again.
       await driver.quitApp();
       await driver.launchApp();
@@ -167,11 +161,6 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
         `document.querySelector('#security-unlock-passphrase').closest('form').querySelector('button[type=submit]').click()`,
       );
       await driver.client.waitFor('#username', 25000);
-
-      // SEC-003-03: still denied after restart/unlock — a fresh node has no
-      // Admin session yet, so the guarded re-export must not be reachable.
-      const postUnlockExport = await driver.tryInvoke('export_app_key_backup');
-      expect(postUnlockExport.ok).toBe(false);
 
       // Same node identity: the encrypted store and the setup-time backup are
       // byte-identical across the restart.
@@ -297,7 +286,6 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       // Foreign passphrase is not available locally either — the material stays locked.
       expect((await driver.invoke<Record<string, unknown>>('get_security_status')).unlocked).toBe(false);
       expect((await driver.tryInvoke('is_configured')).ok).toBe(false);
-      expect((await driver.tryInvoke('export_app_key_backup')).ok).toBe(false);
     } finally {
       await driver.stop();
     }

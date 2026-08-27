@@ -8,7 +8,6 @@
 //! - `initialize_app_key(passphrase, export_backup?)` → first-run key generation
 //! - `import_app_key(passphrase, artifact_path)` → fleet artifact import (APPKEY-003)
 //! - `unlock_app_key(passphrase)` → store unlock + deferred DB bootstrap
-//! - `export_app_key_backup()` → guarded re-export (requires unlocked store)
 //! - `export_app_key_backup_to_path(file_path)` → secure re-export: backend
 //!   writes the raw identity directly to the validated destination; the key
 //!   never crosses IPC (SEC-017)
@@ -384,48 +383,11 @@ pub fn forget_remembered_app_key() -> Result<bool, String> {
     remove_remembered_app_key_from_keyring().map_err(into_command_error)
 }
 
-/// Guarded re-export of the raw application identity (ADR-0041 §7). Requires
-/// an authenticated Admin session plus unlocked state (store cache); used for
-/// offline backup after first setup.
-///
-/// SEC-003-03: the raw fleet AGE identity must not be reachable without an
-/// authenticated Admin. The setup-time backup remains available through
-/// `initialize_app_key(..., export_backup = Some(path))`, which is unchanged.
-#[tauri::command]
-pub fn export_app_key_backup(state: State<AppState>) -> Result<String, String> {
-    let (session, _settings) =
-        authorize_command(&state, Action::AdminOnly, None).map_err(into_command_error)?;
-    state.touch_session();
-
-    let identity = cached_app_key().ok_or_else(|| {
-        into_command_error(AppError::Configuration(
-            "app key is locked — unlock the store before exporting a backup".into(),
-        ))
-    })?;
-
-    // Best-effort telemetry (mirrors existing command patterns); DB may be
-    // unavailable in edge states — the export itself is unaffected.
-    if let Ok(guard) = state.get_db() {
-        if let Some(db) = guard.as_ref() {
-            let _ = TelemetryService::new(db.executor()).record_event(
-                TelemetryEventType::Backup,
-                TelemetryOutcome::Success,
-                None,
-                Some(serde_json::json!({ "export": "app_key_backup" })),
-                Some(&session.user_id),
-            );
-        }
-    }
-
-    Ok(identity)
-}
-
-/// Secure, path-parameterized App-Key backup re-export (SEC-017). Same guard
-/// set as [`export_app_key_backup`] — authenticated Admin session plus
-/// unlocked state — but the raw identity NEVER crosses IPC: the backend
-/// receives only the destination path, validates it, and writes the exact raw
-/// identity bytes used by the certified initialization backup
-/// (`initialize_app_key(..., export_backup = Some(path))`). The artifact
+/// Secure, path-parameterized App-Key backup re-export (SEC-017). Requires an
+/// authenticated Admin session plus unlocked state — but the raw identity NEVER
+/// crosses IPC: the backend receives only the destination path, validates it,
+/// and writes the exact raw identity bytes used by the certified initialization
+/// backup (`initialize_app_key(..., export_backup = Some(path))`). The artifact
 /// format is unchanged (raw key line, no wrapping/metadata/newline).
 ///
 /// Returns success/failure only — no secret material is ever returned.
@@ -454,8 +416,8 @@ pub fn export_app_key_backup_to_path_impl(state: &AppState, file_path: &str) -> 
 
     std::fs::write(file_path, &identity)?;
 
-    // Best-effort telemetry (mirrors `export_app_key_backup`); never logs the
-    // key material or the destination contents.
+    // Best-effort telemetry; never logs the key material or the destination
+    // contents.
     if let Ok(guard) = state.get_db() {
         if let Some(db) = guard.as_ref() {
             let _ = TelemetryService::new(db.executor()).record_event(
