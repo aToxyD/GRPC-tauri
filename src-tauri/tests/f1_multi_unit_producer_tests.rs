@@ -4,12 +4,12 @@
 //! RFC 2026-08-04-node-identity-trust §3.4.1 (amended 2026-08-24) / ADR-0053.
 //!
 //! What is proven here:
-//! - migration 011 creates ONE canonical producer stream
-//!   `(issuer_identity_id, target_node_id)` and RETIRES the fragmented
-//!   006/009/010 producer tables (controlled pre-release reset — pre-ADR-0053
-//!   artifacts are void);
-//! - the frozen CONSUMER ledger (`sync_issuer_sequence`, migration 004)
-//!   survives the upgrade byte-identical;
+//! - the consolidated baseline (migration 001, SEC-055) creates ONE canonical
+//!   producer stream `(issuer_identity_id, target_node_id)` and the fragmented
+//!   006/009/010 producer tables are absent from a fresh install (controlled
+//!   pre-release reset — pre-ADR-0053 artifacts are void);
+//! - the frozen CONSUMER ledger (`sync_issuer_sequence`, formerly migration
+//!   004) survives in the consolidated baseline byte-identical;
 //! - all pipeline kinds share one contiguous per-target stream:
 //!   interleaved admin_access/products allocate 1,2,3,4 against the same
 //!   `(issuer, target)`; a second UNIT starts at its own 1;
@@ -301,11 +301,11 @@ fn write_encrypted_admin(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Migration 011 audit — unified stream created, fragmented streams retired
+// Consolidated baseline audit — unified stream present, fragmented streams absent
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn migration_011_applies_on_fresh_database() {
+fn consolidated_baseline_contains_unified_stream() {
     let db = ConnectionFactory::new_for_test().expect("db");
 
     let version: i64 = db
@@ -313,8 +313,8 @@ fn migration_011_applies_on_fresh_database() {
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
     assert_eq!(
-        version, 11,
-        "schema must be at version 11 (unified transport stream)"
+        version, 1,
+        "schema must be at version 1 (consolidated fresh-install baseline)"
     );
 
     // Composite PK (issuer, target) — the ADR-0053 stream key.
@@ -368,10 +368,10 @@ fn migration_011_applies_on_fresh_database() {
                 |r| r.get(0),
             )
             .expect("table presence");
-        assert_eq!(present, 0, "{table} must be dropped by migration 011");
+        assert_eq!(present, 0, "{table} must be absent on a fresh install");
     }
 
-    // …while the frozen CONSUMER ledger remains untouched (migration 004).
+    // …while the frozen CONSUMER ledger survives in the consolidated baseline.
     let consumer: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'sync_issuer_sequence'",
@@ -381,23 +381,23 @@ fn migration_011_applies_on_fresh_database() {
         .expect("consumer presence");
     assert_eq!(
         consumer, 1,
-        "sync_issuer_sequence must survive migration 011"
+        "sync_issuer_sequence must exist in the consolidated baseline"
     );
 }
 
 #[test]
 fn consolidated_baseline_creates_complete_final_schema() {
-    // SEC-049: a fresh database initialized from the consolidated runner
-    // (001 + 004 + 011) must contain the complete required final schema, with
-    // the retired fragmented producer tables absent and all security/transport
-    // invariants present.
+    // SEC-049/SEC-055: a fresh database initialized from the consolidated
+    // runner (migration 001 only, 004/011 folded in) must contain the complete
+    // required final schema, with the retired fragmented producer tables absent
+    // and all security/transport invariants present.
     let db = ConnectionFactory::new_for_test().expect("db");
     let conn = db.get_connection();
 
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
-    assert_eq!(version, 11, "consolidated runner must land on version 11");
+    assert_eq!(version, 1, "consolidated runner must land on version 1");
 
     let mut stmt = conn
         .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -504,11 +504,11 @@ fn consolidated_baseline_creates_complete_final_schema() {
 #[test]
 fn migration_final_schema_retires_fragmented_producer_streams() {
     // SEC-049: migrations 006/009/010 are removed and 002/003/005/008 are
-    // consolidated into 001. The final fresh schema (001 + 004 + 011) must
-    // contain the unified producer stream and the frozen consumer ledger, while
-    // the retired fragmented producer tables never exist. This is an
-    // invariant-based proof for the consolidated pre-release baseline, replacing
-    // the obsolete pre-011 upgrade simulation.
+    // consolidated into 001. SEC-055 folds 004/011 in too, so the final fresh
+    // schema (migration 001 only) contains the unified producer stream and the
+    // frozen consumer ledger, while the retired fragmented producer tables
+    // never exist. This is an invariant-based proof for the consolidated
+    // pre-release baseline.
     let db = ConnectionFactory::new_for_test().expect("db");
     let conn = db.get_connection();
 
@@ -516,8 +516,8 @@ fn migration_final_schema_retires_fragmented_producer_streams() {
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
     assert_eq!(
-        version, 11,
-        "consolidated schema must land on version 11 (unified transport stream)"
+        version, 1,
+        "consolidated schema must land on version 1"
     );
 
     // The retired fragmented producer tables NEVER exist in the final schema.
@@ -536,7 +536,7 @@ fn migration_final_schema_retires_fragmented_producer_streams() {
         assert_eq!(present, 0, "{table} must be absent from the final schema");
     }
 
-    // The frozen CONSUMER ledger exists and is writable (migration 004).
+    // The frozen CONSUMER ledger exists and is writable (consolidated baseline).
     let consumer: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'sync_issuer_sequence'",
@@ -562,7 +562,7 @@ fn migration_final_schema_retires_fragmented_producer_streams() {
         .expect("consumer row");
     assert_eq!(applied, 2, "consumer ledger data must be persistable");
 
-    // The unified producer stream exists (migration 011).
+    // The unified producer stream exists (consolidated baseline).
     let unified: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'transport_export_sequence'",

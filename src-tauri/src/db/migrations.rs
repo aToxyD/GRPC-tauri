@@ -11,18 +11,8 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
     vec![
         (
             1,
-            "Initial schema creation (consolidated baseline: core schema, Identity Store incl. signature [002/003/008], registry snapshots [005])",
+            "Canonical fresh-install baseline (consolidated: core schema, Identity Store incl. signature [002/003/008], registry snapshots [005], B4 sync transport ledger [004], unified producer transport sequence [011])",
             include_str!("migrations/001_initial.sql"),
-        ),
-        (
-            4,
-            "Sync transport ordering ledger (RFC 2026-08-04 §3.4.1, ADR-0038, B4)",
-            include_str!("migrations/004_sync_issuer_sequence.sql"),
-        ),
-        (
-            11,
-            "Unified per-target transport sequence (ADR-0053 — retires fragmented 006/009/010 producer streams; consumer 004 untouched)",
-            include_str!("migrations/011_transport_export_sequence.sql"),
         ),
     ]
 }

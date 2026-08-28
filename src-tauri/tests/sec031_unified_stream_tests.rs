@@ -3,8 +3,9 @@
 //!
 //! This file is the mandated regression gate for the unified producer stream:
 //!
-//! - migration 011 creates ONE stream keyed by `(issuer_identity_id,
-//!   target_node_id)` and retires the fragmented 006/009/010 producer tables;
+//! - the consolidated baseline (migration 001, SEC-055) creates ONE producer
+//!   stream keyed by `(issuer_identity_id, target_node_id)` and the fragmented
+//!   006/009/010 producer tables are absent from a fresh install;
 //! - cross-kind continuation on a fresh target: `admin_access` #1 then
 //!   `products` #2, and the reverse order `products` #1 then `admin_access`
 //!   #2 (order independence);
@@ -200,11 +201,11 @@ fn write_encrypted_admin(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Migration 011
+// Consolidated final-schema baseline (SEC-055)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn migration_011_creates_unified_stream_and_retires_fragmented_tables() {
+fn consolidated_baseline_contains_complete_transport_schema() {
     let db = ConnectionFactory::new_for_test().expect("db");
     run_migrations(db.get_connection()).expect("migrations");
 
@@ -212,7 +213,10 @@ fn migration_011_creates_unified_stream_and_retires_fragmented_tables() {
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("schema version");
-    assert_eq!(version, 11);
+    assert_eq!(
+        version, 1,
+        "the consolidated baseline is migration 1 only (004/011 folded in)"
+    );
 
     // Unified stream table exists with the exact composite key.
     let pk_cols: Vec<String> = conn
@@ -226,6 +230,7 @@ fn migration_011_creates_unified_stream_and_retires_fragmented_tables() {
         .expect("rows");
     assert_eq!(pk_cols, vec!["issuer_identity_id", "target_node_id"]);
 
+    // The retired fragmented producer tables are absent on a fresh install.
     for retired in [
         "sync_issuer_sequence_state",
         "identity_access_export_sequence",
@@ -238,16 +243,39 @@ fn migration_011_creates_unified_stream_and_retires_fragmented_tables() {
                 |r| r.get(0),
             )
             .expect("retired table probe");
-        assert_eq!(n, 0, "{retired} must be retired by migration 011");
+        assert_eq!(n, 0, "{retired} must not exist on a fresh install");
     }
 
-    // The frozen CONSUMER tables survive untouched.
+    // The frozen CONSUMER tables survive in the consolidated baseline.
     let n: i64 = conn
         .query_row("SELECT COUNT(*) FROM sync_issuer_sequence", [], |r| {
             r.get(0)
         })
         .expect("consumer ledger probe");
     assert_eq!(n, 0, "empty but present");
+
+    // SEC-054 producer ledger is still present.
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='transport_export_sequence'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("producer ledger probe");
+    assert_eq!(n, 1, "transport_export_sequence present on fresh install");
+
+    // B4 transport metadata columns on the applied ledger.
+    let app_cols: Vec<String> = conn
+        .prepare(
+            "SELECT name FROM pragma_table_info('applied_sync_packages')",
+        )
+        .expect("pragma")
+        .query_map([], |r| r.get(0))
+        .expect("map")
+        .collect::<Result<_, _>>()
+        .expect("cols");
+    assert_eq!(app_cols.iter().filter(|c| *c == "package_sequence").count(), 1);
+    assert_eq!(app_cols.iter().filter(|c| *c == "issuer_identity_id").count(), 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

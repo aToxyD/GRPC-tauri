@@ -1327,7 +1327,8 @@ pub fn export_admin_access_package(
 /// Implementation of `export_admin_access_package` (testable without a Tauri
 /// runtime). The producer allocates each transport sequence from the canonical
 /// unified per-target stream (`export_v2_admin_access_package`, ADR-0053 /
-/// migration 011) — one stream per authoritative UNIT target.
+/// consolidated baseline migration 001) — one stream per authoritative UNIT
+/// target.
 pub fn export_admin_access_package_impl(
     state: &AppState,
     file_path: String,
