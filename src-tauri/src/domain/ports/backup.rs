@@ -14,9 +14,10 @@ pub struct BackupInfo {
 ///
 /// Captures only the monotonic security state that must never silently regress:
 /// credential generations + terminal-status watermark, the ACTIVE WILAYA trust
-/// anchor, the imported-package registry, and per-issuer replay maxima.
-/// Account fields (deleted/role/enabled) are intentionally excluded — they are
-/// mutable by design.
+/// anchor, the imported-package registry, per-issuer replay maxima, and the
+/// per-`(issuer, target)` producer transport maxima. Account fields
+/// (deleted/role/enabled) are intentionally excluded — they are mutable by
+/// design.
 ///
 /// XB-B: the node's authoritative ACTIVE ADMIN credential is captured
 /// explicitly so a restore can never silently resurrect a pre-ADMIN /
@@ -43,6 +44,14 @@ pub struct SecurityFingerprint {
     /// earlier versions deserializable.
     #[serde(default)]
     pub active_admin_credential: Option<(String, u64)>,
+    /// `(issuer_identity_id, target_node_id, last issued sequence)` for every
+    /// producer stream, sorted by `(issuer, target)` (SEC-054, F1). Added so a
+    /// restore can never silently rewind the producer transport stream, which
+    /// would otherwise allow a duplicate outbound sequence after restore.
+    /// `#[serde(default)]` keeps markers written by earlier versions
+    /// deserializable.
+    #[serde(default)]
+    pub transport_sequences: Vec<(String, String, u64)>,
 }
 
 impl SecurityFingerprint {
@@ -59,17 +68,30 @@ impl SecurityFingerprint {
             .find(|(iid, _)| iid == issuer_identity_id)
             .map(|(_, s)| *s)
     }
+
+    pub fn transport_sequence_for(&self, issuer: &str, target: &str) -> Option<u64> {
+        self.transport_sequences
+            .iter()
+            .find(|(i, t, _)| i == issuer && t == target)
+            .map(|(_, _, s)| *s)
+    }
 }
 
 /// Pre-restore replay/registry ledger state (SEC-005 BR-05).
 ///
 /// Captured from the live database before the swap and applied as a monotonic
-/// overlay after the restore so already-accepted packages stay accepted.
+/// overlay after the restore so already-accepted packages stay accepted and
+/// producer streams are never silently rewound (SEC-054, F1). `#[serde(default)]`
+/// keeps sidecars written by earlier versions deserializable.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RestoreLedgerSnapshot {
     pub applied_packages: Vec<LedgerPackageRow>,
     /// `(issuer_identity_id, last applied sequence)`.
     pub issuer_sequences: Vec<(String, u64)>,
+    /// `(issuer_identity_id, target_node_id, last issued sequence)` for every
+    /// producer transport stream, applied as a MAX overlay after restore.
+    #[serde(default)]
+    pub transport_sequences: Vec<(String, String, u64)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

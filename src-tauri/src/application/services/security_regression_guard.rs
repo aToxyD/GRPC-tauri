@@ -108,6 +108,23 @@ impl SecurityRegressionGuard {
             }
         }
 
+        // SEC-054 (F1): protect the producer transport stream. A backup whose
+        // `(issuer, target)` producer sequence trails the live stream, or that is
+        // missing it entirely, must be treated as a regression (never `Equal`),
+        // otherwise a matching-but-older backup could rewind the producer sequence
+        // and later re-issue a duplicate outbound sequence. The consumer receptions
+        // already reject such a duplicate as replay (availability impact), but
+        // restore-time prevention removes the fault at its source.
+        for (issuer, target, live_seq) in &live.transport_sequences {
+            let trailing = match candidate.transport_sequence_for(issuer, target) {
+                Some(cand_seq) => cand_seq < *live_seq,
+                None => true,
+            };
+            if trailing {
+                regressing = true;
+            }
+        }
+
         if regressing {
             RestoreRegressionStatus::Regressing
         } else if candidate == live {
@@ -141,6 +158,7 @@ mod tests {
                 .map(|(i, s)| (i.to_string(), s))
                 .collect(),
             active_admin_credential: None,
+            transport_sequences: vec![],
         }
     }
 
@@ -157,6 +175,7 @@ mod tests {
             registry_package_ids: vec![],
             issuer_sequences: vec![],
             active_admin_credential: admin.map(|(id, g)| (id.to_string(), g)),
+            transport_sequences: vec![],
         }
     }
 
@@ -324,6 +343,136 @@ mod tests {
         );
         // Candidate with an admin while live has none is merely "newer".
         let candidate = fp_admin(vec![("adm", 1, 0)], Some(("adm", 1)));
+        assert_eq!(
+            SecurityRegressionGuard::compare(&candidate, &live),
+            RestoreRegressionStatus::Newer
+        );
+    }
+
+    // ── SEC-054 (F1): producer transport sequence dimension ────────────────
+
+    fn fp_transport(
+        credentials: Vec<(&str, u64, u64)>,
+        anchor: Option<u64>,
+        registry: Vec<&str>,
+        sequences: Vec<(&str, u64)>,
+        transport: Vec<(&str, &str, u64)>,
+    ) -> SecurityFingerprint {
+        SecurityFingerprint {
+            credential_states: credentials
+                .into_iter()
+                .map(|(c, g, w)| (c.to_string(), g, w))
+                .collect(),
+            active_wilaya_anchor_generation: anchor,
+            registry_package_ids: registry.into_iter().map(String::from).collect(),
+            issuer_sequences: sequences
+                .into_iter()
+                .map(|(i, s)| (i.to_string(), s))
+                .collect(),
+            active_admin_credential: None,
+            transport_sequences: transport
+                .into_iter()
+                .map(|(i, t, s)| (i.to_string(), t.to_string(), s))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn lower_producer_sequence_is_regressing() {
+        // TEST 1 (Phase 4 / SEC-054): live producer sequence = 10, backup = 5,
+        // all other dimensions equal ⇒ MUST NOT be `Equal`.
+        let candidate = fp_transport(
+            vec![("c1", 1, 0)],
+            Some(1),
+            vec!["p1"],
+            vec![("iss", 3)],
+            vec![("iss", "TGT", 5)],
+        );
+        let live = fp_transport(
+            vec![("c1", 1, 0)],
+            Some(1),
+            vec!["p1"],
+            vec![("iss", 3)],
+            vec![("iss", "TGT", 10)],
+        );
+        assert_eq!(
+            SecurityRegressionGuard::compare(&candidate, &live),
+            RestoreRegressionStatus::Regressing
+        );
+    }
+
+    #[test]
+    fn missing_producer_stream_in_candidate_is_regressing() {
+        // A backup that predates (or lacks) a live producer stream must not be
+        // accepted silently — it would rewind that stream to zero.
+        let candidate =
+            fp_transport(vec![("c1", 1, 0)], Some(1), vec!["p1"], vec![("iss", 3)], vec![]);
+        let live = fp_transport(
+            vec![("c1", 1, 0)],
+            Some(1),
+            vec!["p1"],
+            vec![("iss", 3)],
+            vec![("iss", "TGT", 10)],
+        );
+        assert_eq!(
+            SecurityRegressionGuard::compare(&candidate, &live),
+            RestoreRegressionStatus::Regressing
+        );
+    }
+
+    #[test]
+    fn equal_producer_sequence_is_equal() {
+        // TEST 2 (Phase 4 / SEC-054): live = 10, backup = 10 ⇒ no false regression.
+        let a = fp_transport(
+            vec![("c1", 1, 0)],
+            Some(1),
+            vec!["p1"],
+            vec![("iss", 3)],
+            vec![("iss", "TGT", 10)],
+        );
+        assert_eq!(
+            SecurityRegressionGuard::compare(&a, &a),
+            RestoreRegressionStatus::Equal
+        );
+    }
+
+    #[test]
+    fn higher_producer_sequence_is_newer() {
+        // TEST 3 (Phase 4 / SEC-054): live = 10, backup = 15 ⇒ preserves the
+        // existing "forward state" semantics (Newer, no regression ceremony).
+        let candidate = fp_transport(
+            vec![("c1", 2, 0)],
+            Some(2),
+            vec!["p1", "p2"],
+            vec![("iss", 4)],
+            vec![("iss", "TGT", 15)],
+        );
+        let live = fp_transport(
+            vec![("c1", 1, 0)],
+            Some(1),
+            vec!["p1"],
+            vec![("iss", 3)],
+            vec![("iss", "TGT", 10)],
+        );
+        assert_eq!(
+            SecurityRegressionGuard::compare(&candidate, &live),
+            RestoreRegressionStatus::Newer
+        );
+    }
+
+    #[test]
+    fn producer_dimension_is_neutral_when_live_has_no_stream() {
+        // Unprovisioned producer state: nothing to protect — the dimension must
+        // never introduce a regression on its own.
+        let a = fp_transport(vec![], None, vec![], vec![], vec![]);
+        assert_eq!(
+            SecurityRegressionGuard::compare(&a, &a),
+            RestoreRegressionStatus::Equal
+        );
+        // Candidate carrying a producer stream while live has none is merely
+        // "newer" (never a regression).
+        let candidate = fp_transport(vec![], None, vec![], vec![], vec![("iss", "TGT", 3)]);
+        let live = fp_transport(vec![], None, vec![], vec![], vec![]);
         assert_eq!(
             SecurityRegressionGuard::compare(&candidate, &live),
             RestoreRegressionStatus::Newer

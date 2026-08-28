@@ -203,6 +203,34 @@ fn insert_credential(
         .expect("insert credential");
 }
 
+/// Insert one producer `transport_export_sequence` row (raw SQL — test-only).
+fn insert_transport_sequence(db_path: &Path, issuer: &str, target: &str, seq: u64) {
+    let db = open_db(db_path);
+    db.get_connection()
+        .execute(
+            "INSERT INTO transport_export_sequence
+               (issuer_identity_id, target_node_id, last_issued_sequence, updated_at)
+             VALUES (?1, ?2, ?3, datetime('now'))",
+            rusqlite::params![issuer, target, seq as i64],
+        )
+        .expect("insert transport sequence");
+}
+
+/// Read the live producer sequence for `(issuer, target)`, if any.
+fn transport_state(db: &Database, issuer: &str, target: &str) -> Option<u64> {
+    use rusqlite::OptionalExtension;
+    db.get_connection()
+        .query_row(
+            "SELECT last_issued_sequence FROM transport_export_sequence \
+             WHERE issuer_identity_id = ?1 AND target_node_id = ?2",
+            rusqlite::params![issuer, target],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .expect("query transport sequence")
+        .and_then(|s| u64::try_from(s).ok())
+}
+
 // ────────────────────────── BR-06: audit survivability ──────────────────────────
 
 #[test]
@@ -463,6 +491,115 @@ fn regressing_ledger_state_requires_ceremony_and_records_marker() {
     assert_eq!(marker.session_user_id.as_deref(), Some("u1"));
 }
 
+// ─────────────── SEC-054 (F1): producer transport stream protection ───────────────
+
+#[test]
+fn lower_producer_sequence_requires_ceremony_on_actual_restore_path() {
+    // TEST 4 (Phase 4 / SEC-054): live producer sequence = 10, backup = 5, all
+    // other fingerprint dimensions equal ⇒ the restore MUST NOT silently
+    // classify the backup as Equal. It must require the same older-trust
+    // confirmation used for other regressing protected state.
+    let e = env();
+    insert_transport_sequence(&e.db_path, ISSUER, "TGT", 5);
+    let backup = create_backup(&e); // backup carries producer sequence 5
+
+    // Advance the live producer stream to 10 (same issuer+target). All other
+    // dimensions are empty in both candidate and live — only the producer
+    // sequence differs.
+    {
+        let db = open_db(&e.db_path);
+        db.get_connection()
+            .execute(
+                "UPDATE transport_export_sequence SET last_issued_sequence = 10, \
+                 updated_at = datetime('now') WHERE issuer_identity_id = ?1 AND target_node_id = ?2",
+                rusqlite::params![ISSUER, "TGT"],
+            )
+            .unwrap();
+    }
+
+    // Without the ceremony: rejected (fail closed).
+    let err = preflight_err(&e, &backup, None);
+    assert!(
+        err.to_string().contains("RESTORE-OLDER-TRUST"),
+        "lower producer sequence must require ceremony, got: {err}"
+    );
+
+    // With the ceremony: deliberately allowed, marker records regressing=true.
+    let preflight = prepare_restore_backup(
+        &e.db_path,
+        &backup,
+        Some("RESTORE-OLDER-TRUST"),
+        "u1",
+        e.crypto,
+    )
+    .expect("ceremony allows deliberate producer regression");
+    assert_eq!(preflight.regression, RestoreRegressionStatus::Regressing);
+    let markers = read_markers(&e.db_path);
+    assert!(markers.iter().any(|m| m.regressing));
+}
+
+#[test]
+fn equal_producer_sequence_is_accepted_without_ceremony_on_actual_restore_path() {
+    // TEST 2 (integration): live = backup = producer sequence 10 and all other
+    // dimensions equal ⇒ no false regression (Equal), no ceremony required.
+    let e = env();
+    insert_transport_sequence(&e.db_path, ISSUER, "TGT", 10);
+    let backup = create_backup(&e);
+    let preflight =
+        prepare_restore_backup(&e.db_path, &backup, None, "u1", e.crypto).expect("equal accepted");
+    assert_eq!(preflight.regression, RestoreRegressionStatus::Equal);
+    let markers = read_markers(&e.db_path);
+    let marker = markers
+        .iter()
+        .find(|m| m.marker_id == preflight.marker_id)
+        .expect("marker recorded");
+    assert!(!marker.regressing);
+}
+
+#[test]
+fn restore_overlay_preserves_live_producer_sequence_max() {
+    // TEST 5 (Phase 4 / SEC-054): after a permitted restore of an older backup,
+    // the producer stream must not be physically rewound. The ledger overlay
+    // advances the restored producer value to the MAX of candidate and live.
+    let e = env();
+    insert_transport_sequence(&e.db_path, ISSUER, "TGT", 5);
+    let backup = create_backup(&e); // T0: producer = 5
+
+    // Advance live producer to 10 AFTER the backup (would rewind to 5 on swap).
+    {
+        let db = open_db(&e.db_path);
+        db.get_connection()
+            .execute(
+                "UPDATE transport_export_sequence SET last_issued_sequence = 10, \
+                 updated_at = datetime('now') WHERE issuer_identity_id = ?1 AND target_node_id = ?2",
+                rusqlite::params![ISSUER, "TGT"],
+            )
+            .unwrap();
+    }
+
+    let preflight = prepare_restore_backup(
+        &e.db_path,
+        &backup,
+        Some("RESTORE-OLDER-TRUST"),
+        "u1",
+        e.crypto,
+    )
+    .expect("ceremony");
+    assert_eq!(preflight.regression, RestoreRegressionStatus::Regressing);
+
+    // Swap WITHOUT boot overlay: producer is rewound to the backup's 5.
+    adapter(&e).restore_backup_atomic(&backup).expect("swap");
+    {
+        let db = open_db(&e.db_path);
+        assert_eq!(transport_state(&db, ISSUER, "TGT"), Some(5), "rewound before overlay");
+    }
+
+    // Boot: overlay advances producer to MAX(5, 10) = 10 — never silently rewound.
+    append_restore_marker_commit(&e.db_path, &preflight.marker_id).unwrap();
+    let db = boot_phases(&e.db_path);
+    assert_eq!(transport_state(&db, ISSUER, "TGT"), Some(10), "overlay preserves producer MAX");
+}
+
 // ────────────────────────── BR-05: monotonic ledger overlay ──────────────────────────
 
 #[test]
@@ -580,6 +717,7 @@ fn overlay_fails_closed_on_error_without_partial_application() {
             issuer_identity_id: Some(ISSUER.to_string()),
         }],
         issuer_sequences: vec![(ISSUER.to_string(), 1)],
+        transport_sequences: vec![],
     };
 
     // Corrupted sidecar → fail closed.

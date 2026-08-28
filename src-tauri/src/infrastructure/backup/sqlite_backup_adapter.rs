@@ -790,9 +790,44 @@ impl BackupPort for SqliteBackupAdapter {
             }
         }
 
+        // SEC-054 (F1): capture producer transport streams alongside the consumer
+        // registry so the post-restore overlay can never silently rewind them.
+        let mut transport_sequences = Vec::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT issuer_identity_id, target_node_id, last_issued_sequence
+                       FROM transport_export_sequence
+                       ORDER BY issuer_identity_id, target_node_id"#,
+                )
+                .map_err(|e| io::Error::other(format!("prepare transport ledger: {e}")))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let seq = row.get::<_, i64>(2)?;
+                    let seq = u64::try_from(seq).map_err(|_| {
+                        rusqlite::Error::InvalidColumnType(
+                            2,
+                            "u64".into(),
+                            rusqlite::types::Type::Integer,
+                        )
+                    })?;
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        seq,
+                    ))
+                })
+                .map_err(|e| io::Error::other(format!("query transport ledger: {e}")))?;
+            for row in rows {
+                transport_sequences
+                    .push(row.map_err(|e| io::Error::other(format!("map transport row: {e}")))?);
+            }
+        }
+
         Ok(RestoreLedgerSnapshot {
             applied_packages: packages,
             issuer_sequences: sequences,
+            transport_sequences,
         })
     }
 
@@ -831,6 +866,24 @@ impl BackupPort for SqliteBackupAdapter {
                 rusqlite::params![issuer_identity_id, *sequence as i64],
             )
             .map_err(|e| io::Error::other(format!("overlay issuer sequence: {e}")))?;
+        }
+
+        // SEC-054 (F1): overlay producer transport streams with MAX so a restore
+        // can never silently rewind a live producer stream and later re-issue a
+        // duplicate outbound sequence. The producer allocator's own issuance
+        // contract (first=1, +1, advance-on-success, no gaps) is untouched — this
+        // only preserves the pre-restore high-water mark.
+        for (issuer_identity_id, target_node_id, sequence) in &snapshot.transport_sequences {
+            tx.execute(
+                r#"INSERT INTO transport_export_sequence
+                   (issuer_identity_id, target_node_id, last_issued_sequence, updated_at)
+                   VALUES (?1, ?2, ?3, datetime('now'))
+                   ON CONFLICT(issuer_identity_id, target_node_id) DO UPDATE SET
+                     last_issued_sequence = MAX(transport_export_sequence.last_issued_sequence, excluded.last_issued_sequence),
+                     updated_at = datetime('now')"#,
+                rusqlite::params![issuer_identity_id, target_node_id, *sequence as i64],
+            )
+            .map_err(|e| io::Error::other(format!("overlay transport sequence: {e}")))?;
         }
 
         tx.commit()
@@ -961,12 +1014,46 @@ fn read_security_fingerprint(db_file: &Path) -> io::Result<SecurityFingerprint> 
         .map_err(|e| io::Error::other(format!("query ACTIVE ADMIN credential: {e}")))?
     };
 
+    // SEC-054 (F1): capture the producer transport streams so a restore can
+    // never silently rewind them. Identical query runs against candidate and
+    // live so the comparison is exact. A structurally-invalid file with no
+    // `transport_export_sequence` table fails the fingerprint read and the
+    // restore fails closed (the same way the other fingerprint queries do).
+    let transport_sequences = {
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT issuer_identity_id, target_node_id, last_issued_sequence
+                   FROM transport_export_sequence
+                   ORDER BY issuer_identity_id, target_node_id"#,
+            )
+            .map_err(|e| io::Error::other(format!("prepare transport fingerprint: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let seq = row.get::<_, i64>(2)?;
+                let seq = u64::try_from(seq).map_err(|_| {
+                    rusqlite::Error::InvalidColumnType(
+                        2,
+                        "u64".into(),
+                        rusqlite::types::Type::Integer,
+                    )
+                })?;
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, seq))
+            })
+            .map_err(|e| io::Error::other(format!("query transport fingerprint: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| io::Error::other(format!("map transport row: {e}")))?);
+        }
+        out
+    };
+
     Ok(SecurityFingerprint {
         credential_states,
         active_wilaya_anchor_generation,
         registry_package_ids,
         issuer_sequences,
         active_admin_credential,
+        transport_sequences,
     })
 }
 
