@@ -31,7 +31,6 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -41,7 +40,7 @@ use grpc_lib::application::services::{
 };
 use grpc_lib::application::usecases::sync::import_products_package::PRODUCTS_PACKAGE_KIND;
 use grpc_lib::commands::{import_admin_access_package_impl, AppState};
-use grpc_lib::db::{run_migrations, ConnectionFactory, Database};
+use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
     CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySigner,
     IdentityStorePort, SubjectType, SIGNATURE_VERSION_ED25519,
@@ -387,98 +386,129 @@ fn migration_011_applies_on_fresh_database() {
 }
 
 #[test]
-fn migration_011_upgrade_resets_fragmented_producer_streams() {
-    let dir = TempDir::new().expect("temp dir");
-    let path = dir.path().join("upgrade.db");
-    let conn = Connection::open(&path).expect("open");
+fn consolidated_baseline_creates_complete_final_schema() {
+    // SEC-049: a fresh database initialized from the consolidated runner
+    // (001 + 004 + 011) must contain the complete required final schema, with
+    // the retired fragmented producer tables absent and all security/transport
+    // invariants present.
+    let db = ConnectionFactory::new_for_test().expect("db");
+    let conn = db.get_connection();
 
-    // Simulate the pre-011 schema: apply migrations 1..10 verbatim (the runner
-    // wraps each in its own transaction; here we only need the final shape).
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_version (
-            version INTEGER PRIMARY KEY,
-            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            description TEXT
-        );",
-    )
-    .expect("schema_version");
-    for (version, sql) in [
-        (1, include_str!("../src/db/migrations/001_initial.sql")),
-        (
-            2,
-            include_str!("../src/db/migrations/002_identity_store.sql"),
-        ),
-        (
-            3,
-            include_str!("../src/db/migrations/003_certificate_signature.sql"),
-        ),
-        (
-            4,
-            include_str!("../src/db/migrations/004_sync_issuer_sequence.sql"),
-        ),
-        (
-            5,
-            include_str!("../src/db/migrations/005_registry_snapshots.sql"),
-        ),
-        (
-            6,
-            include_str!("../src/db/migrations/006_issuer_sequence_state.sql"),
-        ),
-        (
-            8,
-            include_str!("../src/db/migrations/008_single_active_admin.sql"),
-        ),
-        (
-            9,
-            include_str!("../src/db/migrations/009_identity_access_export_sequence.sql"),
-        ),
-        (
-            10,
-            include_str!("../src/db/migrations/010_admin_access_export_sequence.sql"),
-        ),
+    let version: i64 = conn
+        .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
+        .expect("read schema version");
+    assert_eq!(version, 11, "consolidated runner must land on version 11");
+
+    let mut stmt = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .expect("prepare");
+    let tables: std::collections::HashSet<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .expect("map tables")
+        .collect::<Result<_, _>>()
+        .expect("collect tables");
+
+    for required in [
+        "settings",
+        "users",
+        "units",
+        "fiscal_year_status",
+        "applied_fiscal_transitions",
+        "fiscal_closure_package_registry",
+        "products",
+        "inventory_stocks",
+        "opening_balance_snapshots",
+        "stock_movements",
+        "fifo_stock_layers",
+        "inventory_layer_consumptions",
+        "reference_price_snapshots",
+        "daily_reports",
+        "daily_report_meals",
+        "daily_report_meal_items",
+        "supplier_orders",
+        "supplier_order_items",
+        "unit_monthly_snapshots",
+        "monthly_reports",
+        "report_generation_metadata",
+        "audit_log",
+        "audit_summary",
+        "import_audit_events",
+        "applied_sync_packages",
+        "sync_conflicts",
+        "import_reproducibility_metadata",
+        "fiscal_export_snapshots",
+        "fiscal_operational_snapshots",
+        "integrity_verification_attempts",
+        "operational_findings_log",
+        "operational_sessions",
+        "telemetry_events",
+        "domain_events",
+        "rate_limiter_attempts",
+        "identity_store",
+        "sync_issuer_sequence",
+        "registry_snapshots",
+        "transport_export_sequence",
     ] {
-        conn.execute_batch(sql).expect("apply simulated migration");
-        conn.execute(
-            "INSERT INTO schema_version (version, description) VALUES (?1, ?2)",
-            rusqlite::params![version, "simulated"],
-        )
-        .expect("record simulated migration");
+        assert!(
+            tables.contains(required),
+            "required table {required} missing from fresh consolidated schema"
+        );
     }
 
-    // Seed the three legacy producer streams with state (VOID per ADR-0053 §8).
-    conn.execute(
-        "INSERT INTO sync_issuer_sequence_state (issuer_identity_id, last_issued_sequence) VALUES ('wilaya-legacy', 7)",
-        [],
-    )
-    .expect("seed global ledger row");
-    conn.execute(
-        "INSERT INTO identity_access_export_sequence (issuer_identity_id, target_unit_code, last_issued_sequence) VALUES ('wilaya-legacy', 'UNIT-A', 3)",
-        [],
-    )
-    .expect("seed identity_access row");
-    conn.execute(
-        "INSERT INTO admin_access_export_sequence (issuer_identity_id, last_issued_sequence) VALUES ('wilaya-legacy', 5)",
-        [],
-    )
-    .expect("seed admin_access row");
-    // Seed the CONSUMER ledger — this MUST survive the upgrade.
-    conn.execute(
-        "INSERT INTO sync_issuer_sequence (issuer_identity_id, last_applied_sequence) VALUES ('wilaya-legacy', 2)",
-        [],
-    )
-    .expect("seed consumer row");
+    for retired in [
+        "sync_issuer_sequence_state",
+        "identity_access_export_sequence",
+        "admin_access_export_sequence",
+    ] {
+        assert!(
+            !tables.contains(retired),
+            "retired table {retired} must NOT exist in the fresh schema"
+        );
+    }
 
-    run_migrations(&conn).expect("upgrade must succeed");
+    // security / transport invariants
+    let has_index = |name: &str| -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name = ?1",
+            rusqlite::params![name],
+            |r| r.get::<_, i64>(0),
+        )
+        .expect("index presence")
+            == 1
+    };
+    assert!(has_index("idx_identity_active_subject"));
+    assert!(has_index("idx_identity_single_active_admin"));
+
+    let sig: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('identity_store') WHERE name = 'signature'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("signature column presence");
+    assert_eq!(sig, 1, "identity_store.signature column must exist");
+}
+
+#[test]
+fn migration_final_schema_retires_fragmented_producer_streams() {
+    // SEC-049: migrations 006/009/010 are removed and 002/003/005/008 are
+    // consolidated into 001. The final fresh schema (001 + 004 + 011) must
+    // contain the unified producer stream and the frozen consumer ledger, while
+    // the retired fragmented producer tables never exist. This is an
+    // invariant-based proof for the consolidated pre-release baseline, replacing
+    // the obsolete pre-011 upgrade simulation.
+    let db = ConnectionFactory::new_for_test().expect("db");
+    let conn = db.get_connection();
 
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .expect("read schema version");
     assert_eq!(
         version, 11,
-        "upgrade must land on version 11 (unified transport stream)"
+        "consolidated schema must land on version 11 (unified transport stream)"
     );
 
-    // Legacy producer streams are retired together with their VOID state…
+    // The retired fragmented producer tables NEVER exist in the final schema.
     for table in [
         "sync_issuer_sequence_state",
         "identity_access_export_sequence",
@@ -491,27 +521,50 @@ fn migration_011_upgrade_resets_fragmented_producer_streams() {
                 |r| r.get(0),
             )
             .expect("table presence");
-        assert_eq!(present, 0, "{table} must be dropped by the upgrade");
+        assert_eq!(present, 0, "{table} must be absent from the final schema");
     }
 
-    // …while the frozen CONSUMER ledger data survives byte-identical.
+    // The frozen CONSUMER ledger exists and is writable (migration 004).
+    let consumer: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'sync_issuer_sequence'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("consumer presence");
+    assert_eq!(
+        consumer, 1,
+        "sync_issuer_sequence (frozen consumer ledger) must exist"
+    );
+    conn.execute(
+        "INSERT INTO sync_issuer_sequence (issuer_identity_id, last_applied_sequence) VALUES ('wilaya-proof', 2)",
+        [],
+    )
+    .expect("seed consumer row");
     let applied: i64 = conn
         .query_row(
-            "SELECT last_applied_sequence FROM sync_issuer_sequence WHERE issuer_identity_id = 'wilaya-legacy'",
+            "SELECT last_applied_sequence FROM sync_issuer_sequence WHERE issuer_identity_id = 'wilaya-proof'",
             [],
             |r| r.get(0),
         )
         .expect("consumer row");
+    assert_eq!(applied, 2, "consumer ledger data must be persistable");
+
+    // The unified producer stream exists (migration 011).
+    let unified: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'transport_export_sequence'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("unified presence");
     assert_eq!(
-        applied, 2,
-        "consumer ledger data must survive migration 011"
+        unified, 1,
+        "transport_export_sequence (frozen unified producer stream) must exist"
     );
 
     // Post-reset, every unified stream starts fresh at 1 (void-artifact policy).
-    let pending = ConnectionFactory::new_for_test().unwrap();
-    let _ = pending; // silence unused when feature sets differ
-    let repo_conn = ConnectionFactory::new_for_test().unwrap();
-    let first = repo_conn
+    let first = db
         .executor()
         .transport_export_sequence_state()
         .begin_export("wilaya-post-reset", "UNIT-A")

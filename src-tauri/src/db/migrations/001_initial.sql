@@ -414,6 +414,63 @@ CREATE TABLE IF NOT EXISTS import_reproducibility_metadata (
 );
 
 -- =============================================================================
+-- 6B. IDENTITY STORE (consolidated from migrations 002/003/008)
+-- RFC 2026-08-04-node-identity-trust / ADR-0038 / ADR-0039 / SEC-002
+--
+-- The Identity Store is the single source of truth for identity state.
+-- Signing/verification material (public keys) is stored as an opaque BLOB;
+-- all cryptographic operations live in infrastructure/security/identity.
+--
+-- The `signature` column (previously migration 003) is incorporated directly
+-- into the CREATE TABLE: it is NULL ONLY during the legacy migration window
+-- (records issued before Identity Trust activation may carry no signature);
+-- because this is a pre-release consolidated baseline, NULL remains the
+-- migration mechanism until V1 support is removed (ADR-0039 §6). It is an
+-- opaque Ed25519 BLOB (64 bytes); the domain enforces the fixed length at the
+-- boundary via Ed25519CertificateSignature.
+--
+-- Single-ACTIVE-per-subject (Invariant 6) and single-ACTIVE-ADMIN (SEC-002)
+-- are enforced at the DATABASE level by the partial unique indexes created in
+-- section 8 (identity_store indexes).
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS identity_store (
+    identity_id TEXT PRIMARY KEY,
+    subject_type TEXT NOT NULL CHECK(subject_type IN ('WILAYA', 'UNIT', 'ADMIN')),
+    subject_id TEXT NOT NULL,
+    issuer_identity_id TEXT,
+    credential_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK(generation >= 1),
+    status TEXT NOT NULL CHECK(status IN ('ACTIVE', 'REVOKED', 'SUPERSEDED', 'EXPIRED')),
+    public_key BLOB NOT NULL,
+    algorithm_version INTEGER NOT NULL,
+    signature BLOB,
+    not_after TEXT,
+    package_sequence INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1))
+);
+
+-- =============================================================================
+-- 6C. REGISTRY FLEET-STATE SNAPSHOTS (consolidated from migration 005)
+-- RFC 2026-08-04-node-identity-trust §3.9 / B4
+--
+-- Stores each accepted Registry Package payload for auditability (P4) and
+-- deterministic replay. Unit-management mutation stays out of scope.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS registry_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_id TEXT NOT NULL UNIQUE,
+    snapshot_version INTEGER NOT NULL,
+    wilaya_identity_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    imported_at TEXT NOT NULL,
+    imported_by TEXT NOT NULL
+);
+
+-- =============================================================================
 -- 7. OBSERVABILITY & TELEMETRY
 -- =============================================================================
 
@@ -594,6 +651,28 @@ CREATE INDEX IF NOT EXISTS idx_fiscal_package_registry_fiscal_year ON fiscal_clo
 CREATE INDEX IF NOT EXISTS idx_fiscal_package_registry_exported_at ON fiscal_closure_package_registry(exported_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON telemetry_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_telemetry_event_type ON telemetry_events(event_type);
+
+-- Identity Store (consolidated from migrations 002/003/008)
+-- Invariant 6: exactly one ACTIVE credential per subject (WILAYA singleton included).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_active_subject
+    ON identity_store(subject_type, subject_id) WHERE status = 'ACTIVE' AND deleted = 0;
+
+-- Single ACTIVE ADMIN (SEC-002): at most one ACTIVE ADMIN credential.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_single_active_admin
+    ON identity_store(subject_type)
+    WHERE subject_type = 'ADMIN' AND status = 'ACTIVE' AND deleted = 0;
+
+-- Invariants 2/3: credential lifecycle traversal (credential_id, generation).
+CREATE INDEX IF NOT EXISTS idx_identity_credential_generation
+    ON identity_store(credential_id, generation);
+
+-- Trust chain traversal (issuer -> issued); NULL issuer = offline Authority Root.
+CREATE INDEX IF NOT EXISTS idx_identity_issuer
+    ON identity_store(issuer_identity_id);
+
+-- Local node resolution (singleton subject types, e.g. WILAYA).
+CREATE INDEX IF NOT EXISTS idx_identity_subject_type_status
+    ON identity_store(subject_type, status, generation);
 
 -- =============================================================================
 -- 9. TRIGGERS (SYNC & TEMPORAL INTEGRITY)
