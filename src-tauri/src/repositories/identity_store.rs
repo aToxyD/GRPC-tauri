@@ -51,8 +51,7 @@ fn map_row(row: &Row<'_>) -> rusqlite::Result<IdentityCertificate> {
     let public_key: Vec<u8> = row.get(7)?;
     let algorithm_version: i64 = row.get(8)?;
     let not_after: Option<String> = row.get(9)?;
-    let package_sequence: Option<i64> = row.get(10)?;
-    let signature: Option<Vec<u8>> = row.get(11)?;
+    let signature: Option<Vec<u8>> = row.get(10)?;
 
     let not_after = parse_not_after(not_after).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(e))
@@ -74,7 +73,7 @@ fn map_row(row: &Row<'_>) -> rusqlite::Result<IdentityCertificate> {
         .map(|bytes| {
             bytes.try_into().map_err(|e: String| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    11,
+                    10,
                     rusqlite::types::Type::Blob,
                     Box::new(AppError::Internal(e)),
                 )
@@ -95,7 +94,10 @@ fn map_row(row: &Row<'_>) -> rusqlite::Result<IdentityCertificate> {
         public_key,
         algorithm_version: algorithm_version as u16,
         not_after,
-        package_sequence: package_sequence.map(|v| v as u64),
+        // SEC-051 removed the identity_store.package_sequence column. The domain
+        // field is retained (transport/signature-aware certificates set it), but
+        // no value is persisted on the Identity Store, so it is read back as None.
+        package_sequence: None,
         signature,
     })
 }
@@ -105,7 +107,7 @@ fn parse_uuid_field_with_idx(idx: usize) -> impl FnOnce(String) -> rusqlite::Res
 }
 
 const SELECT_COLUMNS: &str =
-    "identity_id, subject_type, subject_id, issuer_identity_id, credential_id, generation, status, public_key, algorithm_version, not_after, package_sequence, signature";
+    "identity_id, subject_type, subject_id, issuer_identity_id, credential_id, generation, status, public_key, algorithm_version, not_after, signature";
 
 impl<'a> IdentityStoreRepository<'a> {
     pub fn new(executor: DbExecutor<'a>) -> Self {
@@ -198,9 +200,9 @@ impl<'a> IdentityStorePort for IdentityStoreRepository<'a> {
         self.executor.execute(
             "INSERT INTO identity_store \
              (identity_id, subject_type, subject_id, issuer_identity_id, credential_id, \
-              generation, status, public_key, algorithm_version, not_after, package_sequence, \
+              generation, status, public_key, algorithm_version, not_after, \
               signature, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
              ON CONFLICT(identity_id) DO UPDATE SET \
                  subject_type = excluded.subject_type, \
                  subject_id = excluded.subject_id, \
@@ -211,7 +213,6 @@ impl<'a> IdentityStorePort for IdentityStoreRepository<'a> {
                  public_key = excluded.public_key, \
                  algorithm_version = excluded.algorithm_version, \
                  not_after = excluded.not_after, \
-                 package_sequence = excluded.package_sequence, \
                  signature = excluded.signature, \
                  updated_at = excluded.updated_at, \
                  deleted = 0",
@@ -226,7 +227,6 @@ impl<'a> IdentityStorePort for IdentityStoreRepository<'a> {
                 certificate.public_key,
                 certificate.algorithm_version as i64,
                 certificate.not_after.map(|dt| dt.to_rfc3339()),
-                certificate.package_sequence.map(|v| v as i64),
                 certificate.signature.as_ref().map(|sig| sig.to_vec()),
                 now,
                 now,
@@ -360,13 +360,11 @@ mod tests {
 
         cert.generation = 2;
         cert.status = CredentialStatus::Superseded;
-        cert.package_sequence = Some(2);
         repo.upsert(&cert, "2026-08-04T01:00:00Z").unwrap();
 
         let stored = repo.get_by_identity_id(&id).unwrap().unwrap();
         assert_eq!(stored.generation, 2);
         assert_eq!(stored.status, CredentialStatus::Superseded);
-        assert_eq!(stored.package_sequence, Some(2));
     }
 
     #[test]

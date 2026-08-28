@@ -188,8 +188,8 @@ fn insert_credential(
             "INSERT INTO identity_store
                (identity_id, subject_type, subject_id, issuer_identity_id, credential_id,
                 generation, status, public_key, algorithm_version, not_after,
-                package_sequence, created_at, updated_at, deleted)
-             VALUES (?1, ?2, ?3, ?1, ?4, ?5, ?6, ?7, 1, NULL, NULL, datetime('now'), datetime('now'), 0)",
+                created_at, updated_at, deleted)
+             VALUES (?1, ?2, ?3, ?1, ?4, ?5, ?6, ?7, 1, NULL, datetime('now'), datetime('now'), 0)",
             rusqlite::params![
                 identity_id,
                 subject_type,

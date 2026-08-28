@@ -180,17 +180,6 @@ CREATE TABLE IF NOT EXISTS inventory_layer_consumptions (
     consumed_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS reference_price_snapshots (
-    id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL
-        REFERENCES products(id) ON DELETE RESTRICT,
-    fiscal_year INTEGER NOT NULL,
-    reference_price REAL NOT NULL CHECK(reference_price >= 0),
-    approved_by TEXT NOT NULL,
-    approved_at TEXT NOT NULL,
-    UNIQUE(product_id, fiscal_year)
-);
-
 -- =============================================================================
 -- 4. OPERATIONAL DOCUMENTS (ORDERS & CONSUMPTION)
 -- =============================================================================
@@ -317,17 +306,6 @@ CREATE TABLE IF NOT EXISTS monthly_reports (
     UNIQUE(unit_id, report_year, report_month)
 );
 
-CREATE TABLE IF NOT EXISTS report_generation_metadata (
-    id TEXT PRIMARY KEY,
-    report_type TEXT NOT NULL,
-    generated_at TEXT NOT NULL,
-    generated_by TEXT NOT NULL,
-    fiscal_year INTEGER NOT NULL,
-    inventory_valuation_method TEXT NOT NULL,
-    product_count INTEGER NOT NULL,
-    movement_count INTEGER NOT NULL
-);
-
 -- =============================================================================
 -- 6. SYNC & AUDIT TRAIL
 -- =============================================================================
@@ -446,7 +424,6 @@ CREATE TABLE IF NOT EXISTS identity_store (
     algorithm_version INTEGER NOT NULL,
     signature BLOB,
     not_after TEXT,
-    package_sequence INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1))
@@ -623,8 +600,6 @@ CREATE INDEX IF NOT EXISTS idx_layer_consumptions_movement ON inventory_layer_co
 -- Snapshots
 CREATE INDEX IF NOT EXISTS idx_opening_balance_snapshots_product ON opening_balance_snapshots(product_id);
 CREATE INDEX IF NOT EXISTS idx_opening_balance_snapshots_fiscal_year ON opening_balance_snapshots(fiscal_year);
-CREATE INDEX IF NOT EXISTS idx_report_generation_metadata_year ON report_generation_metadata(fiscal_year);
-CREATE INDEX IF NOT EXISTS idx_ref_price_year ON reference_price_snapshots(fiscal_year);
 
 -- Sync Support
 CREATE INDEX IF NOT EXISTS idx_products_sync ON products(updated_at, node_id, deleted) WHERE deleted = 0;

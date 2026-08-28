@@ -421,7 +421,6 @@ fn consolidated_baseline_creates_complete_final_schema() {
         "stock_movements",
         "fifo_stock_layers",
         "inventory_layer_consumptions",
-        "reference_price_snapshots",
         "daily_reports",
         "daily_report_meals",
         "daily_report_meal_items",
@@ -429,7 +428,6 @@ fn consolidated_baseline_creates_complete_final_schema() {
         "supplier_order_items",
         "unit_monthly_snapshots",
         "monthly_reports",
-        "report_generation_metadata",
         "audit_log",
         "audit_summary",
         "import_audit_events",
@@ -459,6 +457,8 @@ fn consolidated_baseline_creates_complete_final_schema() {
         "sync_issuer_sequence_state",
         "identity_access_export_sequence",
         "admin_access_export_sequence",
+        "reference_price_snapshots",
+        "report_generation_metadata",
     ] {
         assert!(
             !tables.contains(retired),
@@ -487,6 +487,18 @@ fn consolidated_baseline_creates_complete_final_schema() {
         )
         .expect("signature column presence");
     assert_eq!(sig, 1, "identity_store.signature column must exist");
+
+    let seq: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('identity_store') WHERE name = 'package_sequence'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("package_sequence column absence");
+    assert_eq!(
+        seq, 0,
+        "identity_store.package_sequence column must NOT exist (removed in SEC-051)"
+    );
 }
 
 #[test]
