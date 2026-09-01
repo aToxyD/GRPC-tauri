@@ -304,32 +304,6 @@ impl SyncPackageIdentityVerificationService {
 
         Ok(())
     }
-
-    /// Resolve the issuer's last applied transport sequence from the
-    /// `sync_issuer_sequence` ledger. Thin wrapper so the import pipeline
-    /// (commands layer) never constructs repositories directly.
-    ///
-    /// Only consumed by `run_import_pipeline` as input to `TransportGuard::check`.
-    pub fn last_applied_sequence(
-        executor: DbExecutor<'_>,
-        issuer_identity_id: &str,
-    ) -> AppResult<Option<u64>> {
-        executor
-            .sync_applied_packages()
-            .last_applied_sequence_for_issuer(issuer_identity_id)
-    }
-
-    /// Advance the per-issuer transport ledger after a package has been applied.
-    /// Must run inside the same transaction as the import (fail-closed).
-    pub fn advance_issuer_sequence(
-        executor: DbExecutor<'_>,
-        issuer_identity_id: &str,
-        package_sequence: u64,
-    ) -> AppResult<()> {
-        executor
-            .sync_applied_packages()
-            .record_issuer_sequence(issuer_identity_id, package_sequence)
-    }
 }
 
 #[cfg(test)]
@@ -401,7 +375,6 @@ mod tests {
             metadata: crate::application::sync::SyncPackageMetadata {
                 created_at: Utc::now(),
                 integrity_hash: None,
-                package_sequence: Some(1),
                 issuer_identity_id: Some(issuer_id),
                 package_id: PackageId(Uuid::new_v4().to_string()),
                 schema_version: SchemaVersion::V2,
@@ -529,7 +502,6 @@ mod tests {
             metadata: crate::application::sync::SyncPackageMetadata {
                 created_at: Utc::now(),
                 integrity_hash: None,
-                package_sequence: None,
                 issuer_identity_id: None,
                 package_id: PackageId(Uuid::new_v4().to_string()),
                 schema_version: SchemaVersion::V1,
@@ -554,7 +526,6 @@ mod tests {
             metadata: crate::application::sync::SyncPackageMetadata {
                 created_at: Utc::now(),
                 integrity_hash: None,
-                package_sequence: None,
                 issuer_identity_id: None,
                 package_id: PackageId(Uuid::new_v4().to_string()),
                 schema_version: SchemaVersion::V2,
@@ -897,7 +868,6 @@ mod tests {
             metadata: crate::application::sync::SyncPackageMetadata {
                 created_at: Utc::now(),
                 integrity_hash: None,
-                package_sequence: Some(1),
                 issuer_identity_id: Some(issuer_id),
                 package_id: PackageId(Uuid::new_v4().to_string()),
                 schema_version: SchemaVersion::V2,

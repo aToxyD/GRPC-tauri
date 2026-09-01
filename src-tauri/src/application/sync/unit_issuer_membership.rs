@@ -42,11 +42,10 @@ pub fn verify_unit_issuer_membership(
         return Err(reject("هوية المُصدِر فارغة"));
     }
 
-    let unit = executor.units().get_unit(subject_id)?.ok_or_else(|| {
-        reject(&format!(
-            "هوية المُصدِر «{subject_id}» لا تطابق أي وحدة مسجلة"
-        ))
-    })?;
+    let unit = executor
+        .units()
+        .get_unit(subject_id)?
+        .ok_or_else(|| reject(&format!("هوية المُصدِر «{subject_id}» لا تطابق أي وحدة مسجلة")))?;
 
     if unit.wilaya_code.trim() != importer_wilaya_code.trim() {
         return Err(reject(&format!(

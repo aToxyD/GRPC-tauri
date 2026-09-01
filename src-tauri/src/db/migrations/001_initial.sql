@@ -6,13 +6,11 @@
 -- Canonical fresh-install schema. Sec-049/SEC-051/SEC-055 fold the entire
 -- pre-release migration history into this single baseline (migration 1 only).
 -- In particular, this file is the complete final schema and directly includes
--- the objects formerly introduced by:
---   - migration 004 (B4 sync transport ordering ledger, RFC 2026-08-04 §3.4.1,
---     ADR-0038): `applied_sync_packages.package_sequence`,
---     `applied_sync_packages.issuer_identity_id`, `sync_issuer_sequence`.
---   - migration 011 (unified per-target transport sequence, ADR-0053):
---     `transport_export_sequence`. The fragmented 006/009/010 producer streams
---     are intentionally absent here (never created on a fresh install).
+-- SEC-056D/SEC-057: the sync transport sequence is retired entirely. The
+-- objects formerly introduced by migration 004/011 (per-issuer transport
+-- ledger `sync_issuer_sequence`, producer stream `transport_export_sequence`,
+-- and `applied_sync_packages.package_sequence`) are intentionally absent on a
+-- fresh install. Package replay protection is `package_id`-exact only.
 -- =============================================================================
 
 -- =============================================================================
@@ -373,10 +371,6 @@ CREATE TABLE IF NOT EXISTS applied_sync_packages (
     source_node_id TEXT,
     imported_at TEXT NOT NULL DEFAULT (datetime('now')),
     imported_by TEXT NOT NULL,
-    -- B4 transport metadata (RFC 2026-08-04 §3.4.1 / ADR-0038, formerly
-    -- migration 004). Recorded on every applied V2 package; nullable for
-    -- schema stability (SEC-007: all accepted packages populate both).
-    package_sequence INTEGER,
     issuer_identity_id TEXT
 );
 
@@ -405,38 +399,6 @@ CREATE TABLE IF NOT EXISTS import_reproducibility_metadata (
     validation_state TEXT NOT NULL,
     source_integrity_state TEXT,
     rejected_records_count INTEGER NOT NULL DEFAULT 0 CHECK (rejected_records_count >= 0)
-);
-
--- =============================================================================
--- 6A. TRANSPORT ORDERING (RFC 2026-08-04 §3.4.1 / ADR-0038 / ADR-0053)
---
--- Consumer ledger (`sync_issuer_sequence`, formerly migration 004) and the
--- unified producer stream (`transport_export_sequence`, formerly migration
--- 011) are folded directly into the canonical baseline. These are the exact
--- final schemas; no historical cleanup is needed on a fresh database. The
--- retired producer tables `sync_issuer_sequence_state`, `identity_access_
--- export_sequence`, and `admin_access_export_sequence` are intentionally
--- never created here (SEC-031 → SEC-032 / ADR-0053 retirement).
---
--- Consumer (Transport Guard, fail-closed on import):
---   expected = last_applied_sequence[issuer] + 1
---   if incoming.sequence != expected → reject / defer
-CREATE TABLE IF NOT EXISTS sync_issuer_sequence (
-    issuer_identity_id TEXT PRIMARY KEY,
-    last_applied_sequence INTEGER NOT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Producer (ADR-0053 unified per-target allocator). Allocation contract
--- (first = 1, +1, advance-on-success, no gaps, single-writer under the SQLite
--- mutex) lives in `transport_export_sequence_state`; this table only persists
--- the high-water mark. SEC-054 fingerprints and MAX-overlays it on restore.
-CREATE TABLE IF NOT EXISTS transport_export_sequence (
-    issuer_identity_id TEXT NOT NULL,
-    target_node_id TEXT NOT NULL,
-    last_issued_sequence INTEGER NOT NULL CHECK (last_issued_sequence >= 1),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (issuer_identity_id, target_node_id)
 );
 
 -- =============================================================================

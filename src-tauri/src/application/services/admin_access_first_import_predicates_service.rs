@@ -82,19 +82,16 @@ impl AdminAccessFirstImportPredicatesService {
         }
     }
 
-    /// ADR-0051 §8 first-package acceptance gate for an EMPTY transport
-    /// ledger, mirroring the certified `.unit` V2 shape (ADR-0044 A44-08 /
-    /// ADR-0045 A45-06): on a node with no ledger state for this issuer, the
-    /// only admissible first package carries sequence 1. Later packages are
-    /// governed exclusively by the standard Transport Guard continuity rule,
-    /// whose state is strictly local per node (fleet-wide broadcast property:
-    /// every UNIT independently accepts the same sequence N).
-    ///
-    /// Fail-closed when the anchor is missing or the issuer is not the anchor.
-    pub fn verify_first_package_sequence(
+    /// ADR-0051 §8 first-import acceptance gate. The transport-sequence
+    /// bootstrap (SEC-056D/SEC-057 retirement) is removed: no sequence-1
+    /// requirement and no per-issuer transport ledger check. The only
+    /// remaining fail-closed predicate here is the issuer-pinning check — the
+    /// package issuer MUST be the locally installed ACTIVE WILAYA anchor
+    /// (cross-WILAYA rejection). The "first import only" property is carried
+    /// by the `no_active_admin` predicate and exact `package_id` dedup.
+    pub fn verify_first_import_issuer(
         executor: &DbExecutor<'_>,
         issuer_identity_id: &str,
-        package_sequence: Option<u64>,
     ) -> Result<(), AppError> {
         let rejection = |message: &str| {
             AppError::Validation(ValidationError::InvalidFormat {
@@ -116,16 +113,6 @@ impl AdminAccessFirstImportPredicatesService {
             ));
         }
 
-        let last = executor
-            .sync_applied_packages()
-            .last_applied_sequence_for_issuer(issuer_identity_id)?;
-        // Empty ledger ⇒ strict bootstrap: sequence MUST be exactly 1.
-        // Non-empty ledger ⇒ the exemption never applies at all.
-        if last.is_none() && package_sequence != Some(1) {
-            return Err(rejection(
-                "أول حزمة حساب مدير على العقدة يجب أن تحمل رقم التسلسل 1",
-            ));
-        }
         Ok(())
     }
 }

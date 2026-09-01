@@ -109,7 +109,12 @@ impl SerdeJsonSyncPackageDeserializer {
                 },
             ));
         }
-        if package.metadata.signature.as_deref().is_none_or(str::is_empty) {
+        if package
+            .metadata
+            .signature
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
             return Err(AppError::Validation(
                 crate::errors::ValidationError::InvalidFormat {
                     field: "signature".into(),

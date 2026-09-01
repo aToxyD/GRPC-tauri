@@ -116,7 +116,6 @@ mod tests {
                 schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
                 created_at: chrono::Utc::now(),
                 source_node_id: "w-node".to_string(),
-                package_sequence: Some(1),
                 issuer_identity_id: Some(Uuid::from_u128(
                     0x0000_0000_0000_0000_0000_0000_0000_0001,
                 )),
@@ -145,7 +144,6 @@ mod tests {
             REGISTRY_PACKAGE_KIND,
             Some("w-node"),
             "admin",
-            Some(1),
             Some("issuer-a"),
         )
     }

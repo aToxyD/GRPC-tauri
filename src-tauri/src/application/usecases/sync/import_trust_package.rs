@@ -395,7 +395,6 @@ mod tests {
                 schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
                 created_at: chrono::Utc::now(),
                 source_node_id: "w-node".to_string(),
-                package_sequence: Some(1),
                 issuer_identity_id: Some(issuer),
                 package_id: PackageId(pkg_id.to_string()),
                 signature_version: Some(2),
@@ -416,7 +415,6 @@ mod tests {
             TRUST_PACKAGE_KIND,
             Some("w-node"),
             "admin",
-            Some(1),
             Some("issuer-a"),
         )
     }
@@ -427,7 +425,12 @@ mod tests {
         let wilaya_id = seed_local_wilaya(&db);
         let before = db.executor().identity_store().list_all().unwrap().len();
 
-        let package = trust_package(wilaya_id, "pkg-trust-identical", vec![anchor_cert(&db)], vec![]);
+        let package = trust_package(
+            wilaya_id,
+            "pkg-trust-identical",
+            vec![anchor_cert(&db)],
+            vec![],
+        );
         let outcome = execute(
             make_executor(&db),
             &registry(&db),
@@ -441,7 +444,10 @@ mod tests {
         assert_eq!(outcome.certificate_count, 1);
         assert_eq!(outcome.revocation_count, 0);
         let after = db.executor().identity_store().list_all().unwrap().len();
-        assert_eq!(before, after, "identical anchor re-presentation is a ZERO-write no-op");
+        assert_eq!(
+            before, after,
+            "identical anchor re-presentation is a ZERO-write no-op"
+        );
     }
 
     #[test]
@@ -450,12 +456,7 @@ mod tests {
         let wilaya_id = seed_local_wilaya(&db);
         let before = db.executor().identity_store().list_all().unwrap().len();
 
-        let unit = issued_cert(
-            SubjectType::Unit,
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            wilaya_id,
-        );
+        let unit = issued_cert(SubjectType::Unit, Uuid::new_v4(), Uuid::new_v4(), wilaya_id);
         let package = trust_package(wilaya_id, "pkg-trust-unit-cert", vec![unit], vec![]);
         let err = execute(
             make_executor(&db),
@@ -736,7 +737,10 @@ mod tests {
             .get_active_by_subject_type(SubjectType::Wilaya)
             .unwrap()
             .expect("anchor still present");
-        assert!(stored.is_identical_to(&anchor), "anchor must not be replaced");
+        assert!(
+            stored.is_identical_to(&anchor),
+            "anchor must not be replaced"
+        );
     }
 
     #[test]
@@ -783,7 +787,12 @@ mod tests {
         let _ = seed_local_wilaya(&db);
         let other_wilaya_id = Uuid::new_v4();
 
-        let package = trust_package(other_wilaya_id, "pkg-trust-wrong-issuer", vec![anchor_cert(&db)], vec![]);
+        let package = trust_package(
+            other_wilaya_id,
+            "pkg-trust-wrong-issuer",
+            vec![anchor_cert(&db)],
+            vec![],
+        );
         let err = execute(
             make_executor(&db),
             &registry(&db),
@@ -937,7 +946,11 @@ mod tests {
             .get_by_identity_id(&admin_id)
             .unwrap()
             .expect("identity present");
-        assert_eq!(stored.status, CredentialStatus::Active, "ADMIN must not be revoked");
+        assert_eq!(
+            stored.status,
+            CredentialStatus::Active,
+            "ADMIN must not be revoked"
+        );
     }
 
     #[test]
@@ -1026,7 +1039,11 @@ mod tests {
             .get_by_identity_id(&unit_id)
             .unwrap()
             .expect("identity present");
-        assert_eq!(stored.status, CredentialStatus::Active, "UNIT must remain ACTIVE");
+        assert_eq!(
+            stored.status,
+            CredentialStatus::Active,
+            "UNIT must remain ACTIVE"
+        );
     }
 
     #[test]
@@ -1106,7 +1123,10 @@ mod tests {
             .get_active_by_subject_type(SubjectType::Wilaya)
             .unwrap()
             .expect("anchor still present");
-        assert!(stored.is_identical_to(&anchor), "zero certificate mutations allowed");
+        assert!(
+            stored.is_identical_to(&anchor),
+            "zero certificate mutations allowed"
+        );
         assert_eq!(db.executor().identity_store().list_all().unwrap().len(), 1);
     }
 
@@ -1207,7 +1227,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome.certificate_count, 2);
-        assert_eq!(db.executor().identity_store().list_all().unwrap().len(), before);
+        assert_eq!(
+            db.executor().identity_store().list_all().unwrap().len(),
+            before
+        );
     }
 
     #[test]
@@ -1237,17 +1260,18 @@ mod tests {
         let before = db.executor().identity_store().list_all().unwrap().len();
 
         let attacker_key = Ed25519SigningProvider::new([5u8; 32]);
-        let mut forged_unit = issued_cert(
-            SubjectType::Unit,
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            wilaya_id,
-        );
+        let mut forged_unit =
+            issued_cert(SubjectType::Unit, Uuid::new_v4(), Uuid::new_v4(), wilaya_id);
         forged_unit.public_key = attacker_key.public_key();
         let sig = attacker_key.sign_certificate(&forged_unit).unwrap();
         forged_unit.signature = Some(Ed25519CertificateSignature::try_from(sig).unwrap());
 
-        let package = trust_package(wilaya_id, "pkg-trust-forged-unit", vec![forged_unit], vec![]);
+        let package = trust_package(
+            wilaya_id,
+            "pkg-trust-forged-unit",
+            vec![forged_unit],
+            vec![],
+        );
         let err = execute(
             make_executor(&db),
             &registry(&db),
@@ -1310,6 +1334,9 @@ mod tests {
             .get_active_by_subject_type(SubjectType::Wilaya)
             .unwrap()
             .expect("anchor still present");
-        assert!(stored.is_identical_to(&anchor), "anchor must remain unchanged");
+        assert!(
+            stored.is_identical_to(&anchor),
+            "anchor must remain unchanged"
+        );
     }
 }

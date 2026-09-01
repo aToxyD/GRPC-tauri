@@ -23,7 +23,6 @@ use crate::application::sync::import::{
     ImportAuditEvent, ImportAuditEventType, ImportAuditLogger, ImportFailureReason,
 };
 use crate::application::sync::{SyncPackage, SyncPackageMetadata};
-use crate::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use crate::application::usecases::exports::types::{
     DailyReportExportInput, MonthlySummaryExportInput, StockMovementsExportDataset,
 };
@@ -83,8 +82,7 @@ use crate::infrastructure::sync::{
 
 use crate::models::{
     AdminAccessPackageImportResult, DailyReportImportResult, PackageExportResult,
-    RegistryPackageImportResult, Settings, TrustPackageImportResult,
-    XlsxExportResult,
+    RegistryPackageImportResult, Settings, TrustPackageImportResult, XlsxExportResult,
 };
 use chrono::Datelike;
 use tauri::State;
@@ -194,9 +192,6 @@ fn validate_import_security_requirements(
         }
         if metadata.issuer_identity_id.is_none() {
             return Err(reject("issuer_identity_id"));
-        }
-        if metadata.package_sequence.is_none() {
-            return Err(reject("package_sequence"));
         }
         if metadata.integrity_hash.as_deref().is_none_or(str::is_empty) {
             return Err(reject("integrity_hash"));
@@ -421,7 +416,7 @@ pub fn export_daily_report_package(
         )
         .map_err(into_command_error)?;
 
-    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store())
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
@@ -576,7 +571,6 @@ pub fn import_unit_node_package(
         B8FirstImportPredicatesService::verify_unit_v2_acceptance(
             &db.executor(),
             &issuer.to_string(),
-            package.metadata.package_sequence,
         )
         .map_err(into_command_error)?;
         // `issuer` is the package issuer, already authenticated by
@@ -852,7 +846,7 @@ pub fn export_monthly_summary_package(
         )
         .map_err(into_command_error)?;
 
-    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store())
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
@@ -1032,7 +1026,7 @@ pub fn export_stock_movements_package(
         )
         .map_err(into_command_error)?;
 
-    let _sequence = IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store())
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
@@ -1367,7 +1361,11 @@ pub fn export_admin_access_package_impl(
     );
 
     let export_hash = Uuid::new_v4().to_string();
-    let result = PackageExportResult::success(file_path.clone(), outcome.record_count, "encrypted".to_string());
+    let result = PackageExportResult::success(
+        file_path.clone(),
+        outcome.record_count,
+        "encrypted".to_string(),
+    );
 
     let signing_key_id =
         crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
@@ -1442,7 +1440,7 @@ pub fn import_admin_access_package_impl(
                 file_path,
                 ADMIN_ACCESS_PACKAGE_KIND,
                 read_admin_access_package_from_file,
-                |executor, _registry, package, session, _importer_wilaya: &str| {
+                |executor, registry, package, session, _importer_wilaya: &str| {
                     // ADR-0051 §8: {anchor_installed, anchor_is_issuer,
                     // no_active_admin} — NO unit_code_matches predicate exists
                     // because the package has no target binding to check;
@@ -1468,7 +1466,7 @@ pub fn import_admin_access_package_impl(
                             },
                         ));
                     }
-                    AdminAccessFirstImportPredicatesService::verify_first_package_sequence(
+                    AdminAccessFirstImportPredicatesService::verify_first_import_issuer(
                         &executor,
                         package
                             .metadata
@@ -1477,10 +1475,10 @@ pub fn import_admin_access_package_impl(
                             .map(|u| u.to_string())
                             .as_deref()
                             .unwrap_or_default(),
-                        package.metadata.package_sequence,
                     )?;
                     apply_admin_access_package_import(
                         executor,
+                        registry,
                         package,
                         session,
                         local_unit_code.as_deref(),
@@ -1497,13 +1495,14 @@ pub fn import_admin_access_package_impl(
             ADMIN_ACCESS_PACKAGE_KIND,
             AuditAction::IdentityAccessPackageImported,
             read_admin_access_package_from_file,
-            |executor, _registry, package, session, _importer_wilaya: &str| {
+            |executor, registry, package, session, _importer_wilaya: &str| {
                 // Post-bootstrap re-imports carry the trusted local unit code
                 // through the transaction-time settings snapshot below.
                 let tx_settings = SettingsService::new(executor).get_settings()?;
                 let local_unit_code = tx_settings.unit_code.unwrap_or_default();
                 apply_admin_access_package_import(
                     executor,
+                    registry,
                     package,
                     session,
                     Some(&local_unit_code),
@@ -1517,6 +1516,7 @@ pub fn import_admin_access_package_impl(
 
 fn apply_admin_access_package_import(
     executor: crate::repositories::executor::DbExecutor<'_>,
+    registry: &SqliteImportedPackageRegistry<'_>,
     package: SyncPackage<crate::models::AdminAccessPayload>,
     session: &CurrentSession,
     local_unit_code: Option<&str>,
@@ -1525,7 +1525,7 @@ fn apply_admin_access_package_import(
         package,
         local_unit_code: local_unit_code.unwrap_or_default().to_string(),
     };
-    let outcome = apply_admin_access_package(executor, input)?;
+    let outcome = apply_admin_access_package(executor, registry, input)?;
     Ok(AdminAccessPackageImportResult {
         admin_updated: outcome.admin_updated,
         package_id: outcome.package_id,
@@ -1703,8 +1703,8 @@ where
     let source_node_id =
         Some(package.metadata.source_node_id.trim().to_string()).filter(|s| !s.is_empty());
 
-    // B4 transport metadata (RFC 2026-08-04 §3.4.1): per-issuer sequence ledger.
-    let package_sequence = package.metadata.package_sequence;
+    // B4 authenticity metadata (RFC 2026-08-04 §3.4.1): the issuing node
+    // identity. SEC-056D/SEC-057 removed the per-issuer transport sequence.
     let issuer_identity_id = package.metadata.issuer_identity_id.map(|u| u.to_string());
 
     let kind = package_kind.to_string();
@@ -1730,7 +1730,6 @@ where
             package_kind,
             source_node_id.as_deref(),
             imported_by_ref,
-            package_sequence,
             issuer_identity_id.as_deref(),
         );
 
@@ -1766,72 +1765,13 @@ where
                 payload_unit_ids,
             );
             SyncPackageIdentityVerificationService::verify_v2_package_for_import(
-                executor,
-                &package,
-                &v2_policy,
+                executor, &package, &v2_policy,
             )?;
 
-            // B4 Transport Guard (RFC 2026-08-04 §3.4.1): per-issuer sequence
-            // continuity, enforced ONLY in the import pipeline.
-            if let Some(issuer) = issuer_identity_id.as_deref() {
-                let sequence = package_sequence.ok_or_else(|| {
-                    AppError::Validation(ValidationError::InvalidFormat {
-                        field: "package_sequence".into(),
-                        message: "حزمة موقّعة بلا رقم تسلسل نقل".into(),
-                    })
-                })?;
-                let last_applied =
-                    SyncPackageIdentityVerificationService::last_applied_sequence(executor, issuer)?;
-                match TransportGuard::check(issuer, sequence, last_applied) {
-                    TransportVerdict::Accept { .. } => {}
-                    TransportVerdict::OutOfOrder { expected, got, .. } => {
-                        log::warn!(
-                            target: "grpc::import_export",
-                            "import pipeline transport guard: package_id={} issuer={} reason=OUT_OF_ORDER expected={} got={}",
-                            package_id,
-                            issuer,
-                            expected,
-                            got
-                        );
-                        return Err(AppError::BusinessLogic(
-                            BusinessLogicError::OperationNotPermitted {
-                                message: format!(
-                                    "انتهاك ترتيب النقل: المُصدِر {issuer} يُتوقّع التسلسل {expected} ووصل {got}"
-                                ),
-                            },
-                        ));
-                    }
-                    TransportVerdict::Replay { .. } => {
-                        log::warn!(
-                            target: "grpc::import_export",
-                            "import pipeline transport guard: package_id={} issuer={} reason=REPLAY sequence={}",
-                            package_id,
-                            issuer,
-                            sequence
-                        );
-                        return Err(AppError::BusinessLogic(
-                            BusinessLogicError::OperationNotPermitted {
-                                message: format!(
-                                    "إعادة بث الحزمة رقم {sequence} من المُصدِر {issuer} مرفوضة"
-                                ),
-                            },
-                        ));
-                    }
-                }
-            }
-
-            let out = importer(executor, &registry, package, &session, importer_wilaya)?;
-
-            // B4: advance the per-issuer transport ledger atomically with the import.
-            if let Some(issuer) = issuer_identity_id.as_deref() {
-                if let Some(sequence) = package_sequence {
-                    SyncPackageIdentityVerificationService::advance_issuer_sequence(
-                        executor, issuer, sequence,
-                    )?;
-                }
-            }
-
-            out
+            // SEC-056D/SEC-057: no Transport Guard, no per-issuer transport
+            // ledger. Replay protection is exact `package_id` dedup performed
+            // by the per-kind importer via the registry.
+            importer(executor, &registry, package, &session, importer_wilaya)?
         };
 
         // Main audit log entry (same transaction — was handled by AuditTxService)
@@ -1975,7 +1915,6 @@ mod security_requirement_tests {
         SyncPackageMetadata {
             created_at: Utc::now(),
             integrity_hash: Some("a".repeat(64)),
-            package_sequence: Some(1),
             issuer_identity_id: Some(Uuid::new_v4()),
             package_id: PackageId(Uuid::new_v4().to_string()),
             schema_version: SchemaVersion::V2,
@@ -2030,12 +1969,7 @@ mod security_requirement_tests {
             no_issuer.issuer_identity_id = None;
             assert_rejected(kind, &no_issuer);
 
-            // 5. missing package sequence → rejected
-            let mut no_sequence = metadata();
-            no_sequence.package_sequence = None;
-            assert_rejected(kind, &no_sequence);
-
-            // 6. missing integrity hash → rejected
+            // 5. missing integrity hash → rejected
             let mut no_hash = metadata();
             no_hash.integrity_hash = None;
             assert_rejected(kind, &no_hash);
@@ -2076,7 +2010,6 @@ mod security_requirement_tests {
             let mut v1 = metadata();
             v1.signature_version = Some(1);
             v1.issuer_identity_id = None;
-            v1.package_sequence = None;
             assert_rejected(kind, &v1);
 
             // 4. missing issuer → rejected
@@ -2084,12 +2017,7 @@ mod security_requirement_tests {
             no_issuer.issuer_identity_id = None;
             assert_rejected(kind, &no_issuer);
 
-            // 5. missing package sequence → rejected
-            let mut no_sequence = metadata();
-            no_sequence.package_sequence = None;
-            assert_rejected(kind, &no_sequence);
-
-            // 6. missing integrity hash → rejected
+            // 5. missing integrity hash → rejected
             let mut no_hash = metadata();
             no_hash.integrity_hash = None;
             assert_rejected(kind, &no_hash);
@@ -2109,7 +2037,6 @@ mod security_requirement_tests {
             metadata: SyncPackageMetadata {
                 created_at: Utc::now(),
                 integrity_hash: None,
-                package_sequence: None,
                 issuer_identity_id: None,
                 package_id: PackageId(Uuid::new_v4().to_string()),
                 schema_version: SchemaVersion::V1,
@@ -2139,7 +2066,6 @@ mod security_requirement_tests {
         SyncPackageMetadata {
             created_at: Utc::now(),
             integrity_hash: Some("a".repeat(64)),
-            package_sequence: None,
             issuer_identity_id: Some(Uuid::new_v4()),
             package_id: PackageId(Uuid::new_v4().to_string()),
             schema_version: SchemaVersion::V2,

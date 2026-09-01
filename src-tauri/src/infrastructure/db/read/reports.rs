@@ -172,6 +172,34 @@ pub fn count_daily_reports_by_month(
     Ok(count as u32)
 }
 
+/// Enforce the SEC-057 monthly completeness gate: a monthly summary for
+/// `(year, month)` — scoped to `unit_id` when `Some` — is admissible ONLY for
+/// a full calendar month (every day of the month has a daily report). A
+/// partial month is rejected on both the UNIT export path and the WILAYA
+/// import path, so a monthly total can never be silently built from
+/// incomplete daily data.
+pub fn assert_complete_calendar_month(
+    executor: DbExecutor<'_>,
+    year: i32,
+    month: u32,
+    unit_id: Option<&str>,
+) -> Result<(), AppError> {
+    let win = monthly_window(year, month)?;
+    let expected_days = win.end.day();
+    let actual = count_daily_reports_by_month(executor, year, month, unit_id)?;
+    if actual != expected_days {
+        return Err(AppError::Validation(
+            crate::errors::ValidationError::InvalidFormat {
+                field: "month".into(),
+                message: format!(
+                    "البيانات الشهرية غير مكتملة: يتطلب شهرًا كاملًا ({expected_days} يومًا) لكن وُجد {actual} تقريرًا يوميًا ({year:04}-{month:02})"
+                ),
+            },
+        ));
+    }
+    Ok(())
+}
+
 pub fn load_monthly_summary_projection(
     executor: DbExecutor<'_>,
     window: MonthlyWindow,

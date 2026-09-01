@@ -64,14 +64,11 @@ pub fn resolve_unit_transport_target(
             message: "رمز الوحدة المستهدفة فارغ".into(),
         }));
     }
-    let unit = executor
-        .units()
-        .get_unit_by_code(code)?
-        .ok_or_else(|| {
-            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: format!("الوحدة المستهدفة غير موجودة في السجل المحلي: {code} — رفض مغلق"),
-            })
-        })?;
+    let unit = executor.units().get_unit_by_code(code)?.ok_or_else(|| {
+        AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+            message: format!("الوحدة المستهدفة غير موجودة في السجل المحلي: {code} — رفض مغلق"),
+        })
+    })?;
     Ok(unit.code)
 }
 
@@ -89,7 +86,9 @@ pub fn resolve_fleet_unit_targets(executor: DbExecutor<'_>) -> AppResult<Vec<Str
     if units.is_empty() {
         return Err(AppError::BusinessLogic(
             BusinessLogicError::OperationNotPermitted {
-                message: "لا توجد وحدات مُسجَّلة في السجل المحلي — لا أهداف لتصدير حزم المزامنة (رفض مغلق)".into(),
+                message:
+                    "لا توجد وحدات مُسجَّلة في السجل المحلي — لا أهداف لتصدير حزم المزامنة (رفض مغلق)"
+                        .into(),
             },
         ));
     }
@@ -106,11 +105,7 @@ pub fn resolve_fleet_unit_targets(executor: DbExecutor<'_>) -> AppResult<Vec<Str
 /// component (the trust-rotation convention). Blank codes and path separators
 /// / traversal fragments are rejected.
 pub fn validate_unit_code_as_path_component(code: &str) -> AppResult<()> {
-    if code.is_empty()
-        || code.contains('/')
-        || code.contains('\\')
-        || code.contains("..")
-    {
+    if code.is_empty() || code.contains('/') || code.contains('\\') || code.contains("..") {
         return Err(AppError::BusinessLogic(
             BusinessLogicError::OperationNotPermitted {
                 message: format!("رمز الوحدة غير صالح كمكوّن اسم ملف مُشتق: {code} — رفض مغلق"),

@@ -50,8 +50,7 @@ mod tests {
 
     #[test]
     fn rejects_v1_as_too_old() {
-        let err =
-            SupportedSchemaWindow::can_import(SchemaVersion::V1).expect_err("V1 must reject");
+        let err = SupportedSchemaWindow::can_import(SchemaVersion::V1).expect_err("V1 must reject");
         assert_eq!(err.code(), "PACKAGE_TOO_OLD");
     }
 

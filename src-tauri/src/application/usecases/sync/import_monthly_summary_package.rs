@@ -115,6 +115,15 @@ pub fn execute(
         ));
     }
 
+    // SEC-057 monthly completeness gate: a WILAYA import must represent a full
+    // calendar month for the imported unit (no partial month).
+    crate::infrastructure::db::read::reports::assert_complete_calendar_month(
+        executor,
+        input.package.payload.summary.year,
+        input.package.payload.summary.month as u32,
+        Some(unit_trim),
+    )?;
+
     let report = monthly_report_from_package(&input.package, unit_trim, imported_by_trim);
     let report_count = input.package.payload.summary.report_count;
     MonthlyReportService::new(executor).import_monthly_report(&report)?;

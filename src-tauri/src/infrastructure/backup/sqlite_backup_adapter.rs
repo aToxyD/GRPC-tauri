@@ -747,7 +747,7 @@ impl BackupPort for SqliteBackupAdapter {
         {
             let mut stmt = conn
                 .prepare(
-                    r#"SELECT package_id, kind, source_node_id, imported_by, package_sequence, issuer_identity_id
+                    r#"SELECT package_id, kind, source_node_id, imported_by, issuer_identity_id
                        FROM applied_sync_packages ORDER BY package_id"#,
                 )
                 .map_err(|e| io::Error::other(format!("prepare ledger snapshot: {e}")))?;
@@ -758,10 +758,7 @@ impl BackupPort for SqliteBackupAdapter {
                         kind: row.get(1)?,
                         source_node_id: row.get(2)?,
                         imported_by: row.get(3)?,
-                        package_sequence: row.get::<_, Option<i64>>(4)?.and_then(|s| {
-                            u64::try_from(s).ok()
-                        }),
-                        issuer_identity_id: row.get(5)?,
+                        issuer_identity_id: row.get(4)?,
                     })
                 })
                 .map_err(|e| io::Error::other(format!("query ledger snapshot: {e}")))?;
@@ -770,64 +767,8 @@ impl BackupPort for SqliteBackupAdapter {
             }
         }
 
-        let mut sequences = Vec::new();
-        {
-            let mut stmt = conn
-                .prepare(
-                    r#"SELECT issuer_identity_id, last_applied_sequence
-                       FROM sync_issuer_sequence ORDER BY issuer_identity_id"#,
-                )
-                .map_err(|e| io::Error::other(format!("prepare issuer ledger: {e}")))?;
-            let rows = stmt
-                .query_map([], |row| {
-                    let seq = row.get::<_, i64>(1)?;
-                    let seq = u64::try_from(seq).map_err(|_| rusqlite::Error::InvalidColumnType(1, "u64".into(), rusqlite::types::Type::Integer))?;
-                    Ok((row.get::<_, String>(0)?, seq))
-                })
-                .map_err(|e| io::Error::other(format!("query issuer ledger: {e}")))?;
-            for row in rows {
-                sequences.push(row.map_err(|e| io::Error::other(format!("map issuer row: {e}")))?);
-            }
-        }
-
-        // SEC-054 (F1): capture producer transport streams alongside the consumer
-        // registry so the post-restore overlay can never silently rewind them.
-        let mut transport_sequences = Vec::new();
-        {
-            let mut stmt = conn
-                .prepare(
-                    r#"SELECT issuer_identity_id, target_node_id, last_issued_sequence
-                       FROM transport_export_sequence
-                       ORDER BY issuer_identity_id, target_node_id"#,
-                )
-                .map_err(|e| io::Error::other(format!("prepare transport ledger: {e}")))?;
-            let rows = stmt
-                .query_map([], |row| {
-                    let seq = row.get::<_, i64>(2)?;
-                    let seq = u64::try_from(seq).map_err(|_| {
-                        rusqlite::Error::InvalidColumnType(
-                            2,
-                            "u64".into(),
-                            rusqlite::types::Type::Integer,
-                        )
-                    })?;
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        seq,
-                    ))
-                })
-                .map_err(|e| io::Error::other(format!("query transport ledger: {e}")))?;
-            for row in rows {
-                transport_sequences
-                    .push(row.map_err(|e| io::Error::other(format!("map transport row: {e}")))?);
-            }
-        }
-
         Ok(RestoreLedgerSnapshot {
             applied_packages: packages,
-            issuer_sequences: sequences,
-            transport_sequences,
         })
     }
 
@@ -842,48 +783,17 @@ impl BackupPort for SqliteBackupAdapter {
         for row in &snapshot.applied_packages {
             tx.execute(
                 r#"INSERT OR IGNORE INTO applied_sync_packages
-                   (package_id, kind, source_node_id, imported_at, imported_by, package_sequence, issuer_identity_id)
-                   VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6)"#,
+                   (package_id, kind, source_node_id, imported_at, imported_by, issuer_identity_id)
+                   VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5)"#,
                 rusqlite::params![
                     row.package_id,
                     row.kind,
                     row.source_node_id,
                     row.imported_by,
-                    row.package_sequence.map(|s| s as i64),
                     row.issuer_identity_id,
                 ],
             )
             .map_err(|e| io::Error::other(format!("overlay registry row: {e}")))?;
-        }
-
-        for (issuer_identity_id, sequence) in &snapshot.issuer_sequences {
-            tx.execute(
-                r#"INSERT INTO sync_issuer_sequence (issuer_identity_id, last_applied_sequence, updated_at)
-                   VALUES (?1, ?2, datetime('now'))
-                   ON CONFLICT(issuer_identity_id) DO UPDATE SET
-                     last_applied_sequence = MAX(sync_issuer_sequence.last_applied_sequence, excluded.last_applied_sequence),
-                     updated_at = datetime('now')"#,
-                rusqlite::params![issuer_identity_id, *sequence as i64],
-            )
-            .map_err(|e| io::Error::other(format!("overlay issuer sequence: {e}")))?;
-        }
-
-        // SEC-054 (F1): overlay producer transport streams with MAX so a restore
-        // can never silently rewind a live producer stream and later re-issue a
-        // duplicate outbound sequence. The producer allocator's own issuance
-        // contract (first=1, +1, advance-on-success, no gaps) is untouched — this
-        // only preserves the pre-restore high-water mark.
-        for (issuer_identity_id, target_node_id, sequence) in &snapshot.transport_sequences {
-            tx.execute(
-                r#"INSERT INTO transport_export_sequence
-                   (issuer_identity_id, target_node_id, last_issued_sequence, updated_at)
-                   VALUES (?1, ?2, ?3, datetime('now'))
-                   ON CONFLICT(issuer_identity_id, target_node_id) DO UPDATE SET
-                     last_issued_sequence = MAX(transport_export_sequence.last_issued_sequence, excluded.last_issued_sequence),
-                     updated_at = datetime('now')"#,
-                rusqlite::params![issuer_identity_id, target_node_id, *sequence as i64],
-            )
-            .map_err(|e| io::Error::other(format!("overlay transport sequence: {e}")))?;
         }
 
         tx.commit()
@@ -970,27 +880,6 @@ fn read_security_fingerprint(db_file: &Path) -> io::Result<SecurityFingerprint> 
         out
     };
 
-    let issuer_sequences = {
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT issuer_identity_id, last_applied_sequence
-                   FROM sync_issuer_sequence ORDER BY issuer_identity_id"#,
-            )
-            .map_err(|e| io::Error::other(format!("prepare issuer fingerprint: {e}")))?;
-        let rows = stmt
-            .query_map([], |row| {
-                let seq = row.get::<_, i64>(1)?;
-                    let seq = u64::try_from(seq).map_err(|_| rusqlite::Error::InvalidColumnType(1, "u64".into(), rusqlite::types::Type::Integer))?;
-                Ok((row.get::<_, String>(0)?, seq))
-            })
-            .map_err(|e| io::Error::other(format!("query issuer fingerprint: {e}")))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| io::Error::other(format!("map issuer row: {e}")))?);
-        }
-        out
-    };
-
     let active_admin_credential = {
         use rusqlite::OptionalExtension;
         conn.query_row(
@@ -1014,46 +903,11 @@ fn read_security_fingerprint(db_file: &Path) -> io::Result<SecurityFingerprint> 
         .map_err(|e| io::Error::other(format!("query ACTIVE ADMIN credential: {e}")))?
     };
 
-    // SEC-054 (F1): capture the producer transport streams so a restore can
-    // never silently rewind them. Identical query runs against candidate and
-    // live so the comparison is exact. A structurally-invalid file with no
-    // `transport_export_sequence` table fails the fingerprint read and the
-    // restore fails closed (the same way the other fingerprint queries do).
-    let transport_sequences = {
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT issuer_identity_id, target_node_id, last_issued_sequence
-                   FROM transport_export_sequence
-                   ORDER BY issuer_identity_id, target_node_id"#,
-            )
-            .map_err(|e| io::Error::other(format!("prepare transport fingerprint: {e}")))?;
-        let rows = stmt
-            .query_map([], |row| {
-                let seq = row.get::<_, i64>(2)?;
-                let seq = u64::try_from(seq).map_err(|_| {
-                    rusqlite::Error::InvalidColumnType(
-                        2,
-                        "u64".into(),
-                        rusqlite::types::Type::Integer,
-                    )
-                })?;
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, seq))
-            })
-            .map_err(|e| io::Error::other(format!("query transport fingerprint: {e}")))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| io::Error::other(format!("map transport row: {e}")))?);
-        }
-        out
-    };
-
     Ok(SecurityFingerprint {
         credential_states,
         active_wilaya_anchor_generation,
         registry_package_ids,
-        issuer_sequences,
         active_admin_credential,
-        transport_sequences,
     })
 }
 
@@ -1388,7 +1242,10 @@ mod tests {
 
         let crypto = AgeFileEncryptionProvider::new();
         let outcome = recover_interrupted_restore_and_orphans(&db_path, &crypto).unwrap();
-        assert!(outcome.restore_completed, "Case B: candidate promoted to live");
+        assert!(
+            outcome.restore_completed,
+            "Case B: candidate promoted to live"
+        );
 
         let body = std::fs::read_to_string(&db_path).unwrap();
         assert_eq!(body, "FROM_CAND");

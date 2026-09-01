@@ -37,21 +37,11 @@ pub struct SecurityFingerprint {
     pub active_wilaya_anchor_generation: Option<u64>,
     /// All accepted imported package ids, sorted.
     pub registry_package_ids: Vec<String>,
-    /// `(issuer_identity_id, last applied sequence)` for every issuer, sorted by issuer.
-    pub issuer_sequences: Vec<(String, u64)>,
     /// The live node's ACTIVE ADMIN credential `(credential_id, generation)`,
     /// when one exists (XB-B). `#[serde(default)]` keeps markers written by
     /// earlier versions deserializable.
     #[serde(default)]
     pub active_admin_credential: Option<(String, u64)>,
-    /// `(issuer_identity_id, target_node_id, last issued sequence)` for every
-    /// producer stream, sorted by `(issuer, target)` (SEC-054, F1). Added so a
-    /// restore can never silently rewind the producer transport stream, which
-    /// would otherwise allow a duplicate outbound sequence after restore.
-    /// `#[serde(default)]` keeps markers written by earlier versions
-    /// deserializable.
-    #[serde(default)]
-    pub transport_sequences: Vec<(String, String, u64)>,
 }
 
 impl SecurityFingerprint {
@@ -61,37 +51,18 @@ impl SecurityFingerprint {
             .find(|(cid, _, _)| cid == credential_id)
             .map(|(_, g, w)| (*g, *w))
     }
-
-    pub fn sequence_for(&self, issuer_identity_id: &str) -> Option<u64> {
-        self.issuer_sequences
-            .iter()
-            .find(|(iid, _)| iid == issuer_identity_id)
-            .map(|(_, s)| *s)
-    }
-
-    pub fn transport_sequence_for(&self, issuer: &str, target: &str) -> Option<u64> {
-        self.transport_sequences
-            .iter()
-            .find(|(i, t, _)| i == issuer && t == target)
-            .map(|(_, _, s)| *s)
-    }
 }
 
 /// Pre-restore replay/registry ledger state (SEC-005 BR-05).
 ///
 /// Captured from the live database before the swap and applied as a monotonic
-/// overlay after the restore so already-accepted packages stay accepted and
-/// producer streams are never silently rewound (SEC-054, F1). `#[serde(default)]`
-/// keeps sidecars written by earlier versions deserializable.
+/// overlay after the restore so already-accepted packages stay accepted
+/// (SEC-056D/SEC-057: exact `package_id` dedup only; the transport-sequence
+/// ledgers were removed). `#[serde(default)]` keeps sidecars written by
+/// earlier versions deserializable.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RestoreLedgerSnapshot {
     pub applied_packages: Vec<LedgerPackageRow>,
-    /// `(issuer_identity_id, last applied sequence)`.
-    pub issuer_sequences: Vec<(String, u64)>,
-    /// `(issuer_identity_id, target_node_id, last issued sequence)` for every
-    /// producer transport stream, applied as a MAX overlay after restore.
-    #[serde(default)]
-    pub transport_sequences: Vec<(String, String, u64)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -100,7 +71,6 @@ pub struct LedgerPackageRow {
     pub kind: String,
     pub source_node_id: Option<String>,
     pub imported_by: String,
-    pub package_sequence: Option<u64>,
     pub issuer_identity_id: Option<String>,
 }
 

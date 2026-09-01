@@ -18,11 +18,13 @@
 //! The synchronized username is structurally canonical (`admin`, hard-coded
 //! by the repository upsert) and is never transported.
 //!
-//! Replay protection is owned exclusively by `run_import_pipeline`
-//! (`ImportedPackageRegistry` + Transport Guard) — this usecase performs no
-//! `has_imported`/`mark_imported` bookkeeping.
+//! Replay protection is exact `package_id` dedup (SEC-056D/SEC-057):
+//! replaying the same package_id is rejected before any mutation, while a
+//! distinct package_id from the trusted issuer overwrites via the canonical
+//! upsert (last-arriving-package-wins). The registry records each applied
+//! package_id.
 
-use crate::application::sync::SyncPackage;
+use crate::application::sync::{ImportedPackageRegistry, SyncPackage};
 use crate::errors::{AppError, AppResult, BusinessLogicError};
 use crate::models::AdminAccessPayload;
 use crate::repositories::{DbExecutor, RepositoryProvider};
@@ -48,6 +50,7 @@ pub struct ImportAdminAccessPackageOutcome {
 
 pub fn execute(
     executor: DbExecutor<'_>,
+    registry: &impl ImportedPackageRegistry,
     input: ImportAdminAccessPackageInput,
 ) -> AppResult<ImportAdminAccessPackageOutcome> {
     if input.package.metadata.source_node_id.trim().is_empty() {
@@ -75,6 +78,15 @@ pub fn execute(
         ));
     }
 
+    let package_id = input.package.metadata.package_id.clone();
+    if registry.has_imported(&package_id)? {
+        return Err(AppError::BusinessLogic(
+            BusinessLogicError::DuplicateSyncPackage {
+                package_id: package_id.0.clone(),
+            },
+        ));
+    }
+
     let now = chrono::Utc::now().to_rfc3339();
     executor.users().upsert_synced_admin(
         &Uuid::new_v4().to_string(),
@@ -83,9 +95,10 @@ pub fn execute(
         !input.package.payload.admin_enabled,
         &now,
     )?;
+    registry.mark_imported(&package_id)?;
 
     Ok(ImportAdminAccessPackageOutcome {
         admin_updated: true,
-        package_id: input.package.metadata.package_id.0.clone(),
+        package_id: package_id.0.clone(),
     })
 }

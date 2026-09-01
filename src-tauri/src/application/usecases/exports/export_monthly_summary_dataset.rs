@@ -12,6 +12,18 @@ pub fn execute<'a>(
 ) -> AppResult<MonthlySummaryExportDataset> {
     let MonthlySummaryExportInput { year, month } = input;
     let window = crate::infrastructure::db::read::reports::monthly_window(year, month as u32)?;
+    // SEC-057 monthly completeness gate: a UNIT-scoped export must represent a
+    // full calendar month (no partial month). A WILAYA-scoped export has no
+    // single unit whose daily completeness is being aggregated, so the gate
+    // applies only when an effective unit scope is present.
+    if let Some(unit_id) = effective_unit_id {
+        crate::infrastructure::db::read::reports::assert_complete_calendar_month(
+            executor,
+            year,
+            month as u32,
+            Some(unit_id),
+        )?;
+    }
     let projection = crate::infrastructure::db::read::reports::load_monthly_summary_projection(
         executor,
         window,

@@ -14,13 +14,10 @@ pub struct SyncPackageMetadata {
     pub created_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub integrity_hash: Option<String>,
-    /// Per-issuer transport sequence (RFC 2026-08-04 §3.4.1). Present on all
-    /// accepted packages (SEC-007/ADR-0047: V2-only); `None` is tolerated only
-    /// by the schema, never required by the V2 import path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub package_sequence: Option<u64>,
-    /// Identity of the issuing node (RFC 2026-08-04 §3.4.1). The Transport
-    /// Guard keys on `(issuer_identity_id, package_sequence)`.
+    /// Identity of the issuing node (RFC 2026-08-04 §3.4.1). Resolved via the
+    /// Identity Store to authenticate the Ed25519 package signature (SEC-056D/
+    /// SEC-057 removed the per-issuer transport sequence; authenticity is
+    /// carried by this id + signature alone).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issuer_identity_id: Option<uuid::Uuid>,
     pub package_id: PackageId,

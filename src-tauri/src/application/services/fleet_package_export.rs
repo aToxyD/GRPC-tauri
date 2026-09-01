@@ -94,8 +94,8 @@ pub fn export_admin_access_fleet(
     subject_type: SubjectType,
     requested_path: &Path,
 ) -> AppResult<FleetExportOutcome> {
-    let payload = super::UserAccountSyncService::new(db.executor(), password_port)
-        .export_admin_access()?;
+    let payload =
+        super::UserAccountSyncService::new(db.executor(), password_port).export_admin_access()?;
     let targets = transport_target::resolve_fleet_unit_targets(db.executor())?;
     emit_per_target(
         db,
@@ -133,14 +133,17 @@ fn emit_per_target<F>(
     requested_path: &Path,
 ) -> AppResult<Vec<PathBuf>>
 where
-    F: Fn(&IdentitySignedExportService<'_>, &str, &Path) -> AppResult<u64>,
+    F: Fn(&IdentitySignedExportService<'_>, &str, &Path) -> AppResult<()>,
 {
     let exporter = IdentitySignedExportService::new(db, node_key_store);
     let mut artifact_paths = Vec::with_capacity(targets.len());
     for target in targets {
-        let artifact_path =
-            transport_target::derive_per_target_artifact_path(requested_path, target, targets.len());
-        let _sequence = emit(&exporter, target, &artifact_path)?;
+        let artifact_path = transport_target::derive_per_target_artifact_path(
+            requested_path,
+            target,
+            targets.len(),
+        );
+        emit(&exporter, target, &artifact_path)?;
         artifact_paths.push(artifact_path);
     }
     Ok(artifact_paths)

@@ -31,7 +31,6 @@ pub mod sync_conflicts;
 pub mod system;
 pub mod telemetry;
 pub mod timeline;
-pub mod transport_export_sequence_state;
 pub mod units;
 pub mod users;
 
@@ -62,9 +61,6 @@ pub use sync_conflicts::SyncConflictRepository;
 pub use system::SystemRepository;
 pub use telemetry::TelemetryRepository;
 pub use timeline::TimelineRepository;
-pub use transport_export_sequence_state::{
-    PendingTransportSequence, TransportExportSequenceRepository,
-};
 pub use units::UnitRepository;
 pub use users::UserRepository;
 
@@ -84,7 +80,6 @@ impl crate::architecture::Repository for UnitRepository<'_> {}
 impl crate::architecture::Repository for OrderRepository<'_> {}
 impl crate::architecture::Repository for ReportRepository<'_> {}
 impl crate::architecture::Repository for SyncAppliedPackagesRepository<'_> {}
-impl crate::architecture::Repository for TransportExportSequenceRepository<'_> {}
 impl crate::architecture::Repository for AuditRepository<'_> {}
 impl crate::architecture::Repository for IntegrityRepository<'_> {}
 impl crate::architecture::Repository for SessionRepository<'_> {}
@@ -114,7 +109,6 @@ pub trait RepositoryProvider<'a> {
     fn stock_movements(&self) -> StockMovementRepository<'a>;
     fn units(&self) -> UnitRepository<'a>;
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a>;
-    fn transport_export_sequence_state(&self) -> TransportExportSequenceRepository<'a>;
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a>;
     fn identity_store(&self) -> IdentityStoreRepository<'a>;
     fn system(&self) -> SystemRepository<'a>;
@@ -176,9 +170,6 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn sync_applied_packages(&self) -> SyncAppliedPackagesRepository<'a> {
         SyncAppliedPackagesRepository::new(*self)
-    }
-    fn transport_export_sequence_state(&self) -> TransportExportSequenceRepository<'a> {
-        TransportExportSequenceRepository::new(*self)
     }
     fn import_audit_events(&self) -> ImportAuditEventsRepository<'a> {
         ImportAuditEventsRepository::new(*self)
