@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatAmount } from './preview';
 
-  // [arch:allow-fe146] Reason: type definition mirroring backend projection shape; Date: 2026-06-01; Owner: governance-team
+  // [arch:allow-fe146] see ADR-0054 — Reason: type definition mirroring backend projection shape; Date: 2026-08-30; Owner: governance-team
   type SummaryCardPreview = { totalBeneficiaries: number; totalCost: number; mealAverage: number };
 
   export let preview: SummaryCardPreview | null = null;

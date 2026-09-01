@@ -6,7 +6,7 @@
   import type { MealType, ProductFifoPreview } from '../../lib/types';
   import type { ConsumptionProductRow, MealFormState } from './types';
 
-  // [arch:allow-fe146] Reason: type definition mirroring backend projection shape; Date: 2026-06-01; Owner: governance-team
+  // [arch:allow-fe146] see ADR-0054 — Reason: type definition mirroring backend projection shape; Date: 2026-08-30; Owner: governance-team
   type ActiveMealSummary = { totalBeneficiaries: number; totalCost: number; mealAverage: number };
 
   let {

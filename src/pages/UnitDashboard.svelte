@@ -128,7 +128,6 @@
         </svelte:fragment>
 
         {#each stocks.slice(0, 5) as stock}
-          <!-- [arch:allow-fe141] Reason: Tailwind CSS opacity class (bg-red-50/50) — not business division; Date: 2026-06-01; Owner: governance-team -->
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors {stock.quantity < 10 ? 'bg-red-50/50 dark:bg-red-900/10' : ''}">
             <td class="table-cell font-medium">{stock.product_name}</td>
             <td class="table-cell">
