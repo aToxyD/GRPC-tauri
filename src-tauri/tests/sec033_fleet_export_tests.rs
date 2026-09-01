@@ -5,9 +5,9 @@
 //! authoritative UNIT target set and emits ONE signed V2 artifact per target:
 //! - multi-target emission suffixes `-<unit_code>` artifacts (trust-rotation
 //!   naming convention); single-target keeps the operator-requested path;
-//! - every target draws from its own `(issuer, target)` transport stream
-//!   (ADR-0053): independent, contiguous, advance-on-success sequences;
-//! - zero registered UNITs fail closed BEFORE any artifact or ledger movement;
+//! - every target gets its own distinct, verifiable package (SEC-057: no
+//!   transport sequence; package identity + business-key correctness);
+//! - zero registered UNITs fail closed BEFORE any artifact is written;
 //! - an unsafe authoritative code aborts enumeration before any emission.
 //!
 //! The consumer side is frozen and covered by `sec031_unified_stream_tests`.
@@ -24,9 +24,7 @@ use grpc_lib::application::services::{
     IdentityProvisioningService, UserAccountSyncService,
 };
 use grpc_lib::db::{ConnectionFactory, Database};
-use grpc_lib::domain::identity::{
-    Ed25519CertificateSignature, IdentitySigner, SubjectType,
-};
+use grpc_lib::domain::identity::{Ed25519CertificateSignature, IdentitySigner, SubjectType};
 use grpc_lib::infrastructure::identity::NodeKeyStore;
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::security::{Argon2PasswordHashProvider, Ed25519SigningProvider};
@@ -184,13 +182,12 @@ fn products_fleet_emits_one_suffixed_artifact_per_registered_unit() {
     assert!(names.contains(&"catalog-U-1.sync".to_string()), "{names:?}");
     assert!(names.contains(&"catalog-U-2.sync".to_string()), "{names:?}");
 
-    // Each target starts its OWN stream at sequence 1.
+    // Each target gets its OWN distinct, verifiable package (SEC-057):
+    // distinct package_id, but a shared canonical issuer identity.
     let pkg1 =
         read_products_package_from_file(&outcome.artifact_paths[0], &crypto).expect("read U pkg");
     let pkg2 =
         read_products_package_from_file(&outcome.artifact_paths[1], &crypto).expect("read U pkg");
-    assert_eq!(pkg1.metadata.package_sequence, Some(1));
-    assert_eq!(pkg2.metadata.package_sequence, Some(1));
     assert_eq!(
         pkg1.metadata.issuer_identity_id, pkg2.metadata.issuer_identity_id,
         "same issuer across targets"
@@ -202,7 +199,7 @@ fn products_fleet_emits_one_suffixed_artifact_per_registered_unit() {
 }
 
 #[test]
-fn products_fleet_sequences_advance_independently_per_target() {
+fn products_fleet_re_export_produces_readable_per_target_artifacts() {
     let mut node = fresh_node();
     bootstrap_wilaya(&mut node);
     mark_settings_wilaya(&node);
@@ -217,12 +214,9 @@ fn products_fleet_sequences_advance_independently_per_target() {
 
     let p_a1 = out_dir.path().join("catalog-U-A.sync");
     let p_b1 = out_dir.path().join("catalog-U-B.sync");
-    let second_a =
-        read_products_package_from_file(&p_a1, &crypto).expect("read back U-A stream");
-    let second_b =
-        read_products_package_from_file(&p_b1, &crypto).expect("read back U-B stream");
-    assert_eq!(second_a.metadata.package_sequence, Some(2));
-    assert_eq!(second_b.metadata.package_sequence, Some(2));
+    let second_a = read_products_package_from_file(&p_a1, &crypto).expect("read back U-A stream");
+    let second_b = read_products_package_from_file(&p_b1, &crypto).expect("read back U-B stream");
+    assert_ne!(second_a.metadata.package_id, second_b.metadata.package_id);
 }
 
 #[test]
@@ -240,8 +234,7 @@ fn products_fleet_single_target_keeps_requested_path() {
 
     // Single-target emission keeps the exact operator-requested path.
     assert!(base.exists(), "single target uses the requested path as-is");
-    let pkg = read_products_package_from_file(&base, &crypto).expect("read back");
-    assert_eq!(pkg.metadata.package_sequence, Some(1));
+    let _ = read_products_package_from_file(&base, &crypto).expect("read back");
 }
 
 #[test]
@@ -267,15 +260,14 @@ fn products_fleet_zero_registered_units_fail_closed_without_artifacts() {
     assert!(!err.to_string().is_empty());
     assert!(!base.exists());
 
-    // No sequence was burned: a later export with a registered unit still
-    // starts at 1 on that stream.
+    // Nothing was written by the failed export: a later export with a
+    // registered unit succeeds and produces a readable artifact.
     seed_units(&node, &["U-LATE"]);
     let late = out_dir.path().join("late.sync");
     products_fleet(&mut node, &crypto, &late);
     // Single registered target keeps the requested path.
-    let pkg =
-        read_products_package_from_file(&out_dir.path().join("late.sync"), &crypto).expect("read back");
-    assert_eq!(pkg.metadata.package_sequence, Some(1));
+    let _ = read_products_package_from_file(&out_dir.path().join("late.sync"), &crypto)
+        .expect("read back");
 }
 
 #[test]
@@ -306,11 +298,11 @@ fn products_fleet_unsafe_authoritative_code_aborts_before_emission() {
 }
 
 // ---------------------------------------------------------------------------
-// Admin access: fleet payload, per-target streams
+// Admin access: fleet payload, one distinct package per target
 // ---------------------------------------------------------------------------
 
 #[test]
-fn admin_access_fleet_emits_per_target_packages_with_independent_streams() {
+fn admin_access_fleet_emits_per_target_distinct_packages() {
     let mut node = fresh_node();
     bootstrap_wilaya(&mut node);
     mark_settings_wilaya(&node);
@@ -332,18 +324,12 @@ fn admin_access_fleet_emits_per_target_packages_with_independent_streams() {
     let pkg9 = read_admin_access_package_from_file(&p9, &crypto).expect("read UNIT-9 pkg");
     let pkga = read_admin_access_package_from_file(&pa, &crypto).expect("read UNIT-A pkg");
 
-    assert_eq!(pkg9.metadata.package_sequence, Some(1));
-    assert_eq!(pkga.metadata.package_sequence, Some(1));
     assert_ne!(pkg9.metadata.package_id, pkga.metadata.package_id);
 
-    // Second fleet export advances BOTH streams independently.
+    // A second fleet export still produces readable per-target artifacts.
     admin_fleet(&mut node, &crypto, &base);
-    let pkg9_again =
-        read_admin_access_package_from_file(&p9, &crypto).expect("read UNIT-9 again");
-    let pkga_again =
-        read_admin_access_package_from_file(&pa, &crypto).expect("read UNIT-A again");
-    assert_eq!(pkg9_again.metadata.package_sequence, Some(2));
-    assert_eq!(pkga_again.metadata.package_sequence, Some(2));
+    let _pkg9_again = read_admin_access_package_from_file(&p9, &crypto).expect("read UNIT-9 again");
+    let _pkga_again = read_admin_access_package_from_file(&pa, &crypto).expect("read UNIT-A again");
 }
 
 #[test]
@@ -363,6 +349,5 @@ fn admin_access_fleet_single_target_keeps_requested_path() {
 
     admin_fleet(&mut node, &crypto, &base);
     assert!(base.exists());
-    let pkg = read_admin_access_package_from_file(&base, &crypto).expect("read back");
-    assert_eq!(pkg.metadata.package_sequence, Some(1));
+    let _ = read_admin_access_package_from_file(&base, &crypto).expect("read back");
 }

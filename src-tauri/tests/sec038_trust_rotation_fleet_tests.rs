@@ -2,12 +2,11 @@
 //!
 //! Exercises the production trust rotation fleet emission path end-to-end:
 //! finalize_wilaya → enumerate UNITs → validate target codes → derive
-//! per-target paths → export_v2_package → TransportExportSequenceRepository
-//! → one artifact per UNIT.
+//! per-target paths → export_v2_package → one artifact per UNIT (SEC-057:
+//! no transport sequence; packages are distinct by exact package identity).
 //!
 //! Uses production components throughout: real migrations, real
-//! TransportExportSequenceRepository, real IdentitySignedExportService,
-//! real rotation/export path.
+//! IdentitySignedExportService, real rotation/export path.
 
 mod common;
 
@@ -27,14 +26,15 @@ use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvid
 use grpc_lib::infrastructure::security::Ed25519SigningProvider;
 use grpc_lib::infrastructure::sync::packages::canonical_json::canonical_bytes_for_signature;
 use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageVerifier, PackageVerifier};
-use grpc_lib::infrastructure::sync::read_trust_package_from_file;
+use grpc_lib::infrastructure::sync::{
+    read_products_package_from_file, read_trust_package_from_file,
+};
 use grpc_lib::models::{NodeType, Settings};
 use grpc_lib::repositories::RepositoryProvider;
 
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
 
@@ -122,14 +122,6 @@ fn wilaya_settings() -> Settings {
     }
 }
 
-fn next_sequence(node: &Node, issuer: &str, target: &str) -> Option<u64> {
-    node.db
-        .executor()
-        .transport_export_sequence_state()
-        .next_issued_sequence(issuer, target)
-        .expect("read ledger")
-}
-
 // ---------------------------------------------------------------------------
 // Case 1 — Multiple UNITs: trust rotation emits one artifact per UNIT
 // ---------------------------------------------------------------------------
@@ -161,11 +153,9 @@ fn trust_rotation_fleet_emits_per_target_trust_packages() {
     assert!(path_a.exists(), "UNIT-A trust artifact must exist");
     assert!(path_b.exists(), "UNIT-B trust artifact must exist");
 
-    // Both carry sequence=1 (fresh streams).
+    // Each target gets its own distinct, verifiable trust package.
     let pkg_a = read_trust_package_from_file(&path_a, &crypto).expect("read UNIT-A trust pkg");
     let pkg_b = read_trust_package_from_file(&path_b, &crypto).expect("read UNIT-B trust pkg");
-    assert_eq!(pkg_a.metadata.package_sequence, Some(1));
-    assert_eq!(pkg_b.metadata.package_sequence, Some(1));
 
     // Both contain the new certificate.
     assert!(pkg_a
@@ -179,10 +169,8 @@ fn trust_rotation_fleet_emits_per_target_trust_packages() {
         .iter()
         .any(|c| c.credential_id == signed.credential_id));
 
-    // Streams are independent: both at sequence 1 in the producer ledger.
-    let issuer_id = before.identity_id.to_string();
-    assert_eq!(next_sequence(&node, &issuer_id, "UNIT-A"), Some(1));
-    assert_eq!(next_sequence(&node, &issuer_id, "UNIT-B"), Some(1));
+    // Distinct exact packages per UNIT (SEC-057: package identity unique).
+    assert_ne!(pkg_a.metadata.package_id, pkg_b.metadata.package_id);
 
     // Signed by the OLD key (still ACTIVE at package-write time).
     let old_pubkey: [u8; 32] = before.public_key.as_slice().try_into().expect("32 bytes");
@@ -200,17 +188,17 @@ fn trust_rotation_fleet_emits_per_target_trust_packages() {
 }
 
 // ---------------------------------------------------------------------------
-// Case 1b — Second rotation advances both streams to sequence=2
+// Case 1b — A second rotation again emits readable per-UNIT trust packages
 // ---------------------------------------------------------------------------
 
 #[test]
-fn trust_rotation_fleet_second_rotation_advances_both_streams() {
+fn trust_rotation_fleet_second_rotation_emits_readable_packages() {
     let mut node = fresh_node();
     bootstrap_wilaya(&mut node);
     mark_settings_wilaya(&node);
     seed_units(&node, &["UNIT-A", "UNIT-B"]);
 
-    // First rotation → sequence=1 for both.
+    // First rotation.
     let plan1 = IdentityRotationCoordinator::new(&mut node.db, &node.node_key_store)
         .begin(SubjectType::Wilaya, RotationOperation::Rotate)
         .expect("begin rotation 1");
@@ -222,20 +210,12 @@ fn trust_rotation_fleet_second_rotation_advances_both_streams() {
         .finalize_wilaya(&signed1, &path1, &wilaya_settings(), &crypto)
         .expect("finalize rotation 1");
 
-    let pkg_a1 = read_trust_package_from_file(
-        &dir1.path().join("rot1-UNIT-A.sync"),
-        &crypto,
-    )
-    .expect("read A1");
-    let pkg_b1 = read_trust_package_from_file(
-        &dir1.path().join("rot1-UNIT-B.sync"),
-        &crypto,
-    )
-    .expect("read B1");
-    assert_eq!(pkg_a1.metadata.package_sequence, Some(1));
-    assert_eq!(pkg_b1.metadata.package_sequence, Some(1));
+    let _ = read_trust_package_from_file(&dir1.path().join("rot1-UNIT-A.sync"), &crypto)
+        .expect("read A1");
+    let _ = read_trust_package_from_file(&dir1.path().join("rot1-UNIT-B.sync"), &crypto)
+        .expect("read B1");
 
-    // Second rotation → sequence=2 for both.
+    // Second rotation.
     let plan2 = IdentityRotationCoordinator::new(&mut node.db, &node.node_key_store)
         .begin(SubjectType::Wilaya, RotationOperation::Rotate)
         .expect("begin rotation 2");
@@ -246,32 +226,24 @@ fn trust_rotation_fleet_second_rotation_advances_both_streams() {
         .finalize_wilaya(&signed2, &path2, &wilaya_settings(), &crypto)
         .expect("finalize rotation 2");
 
-    let pkg_a2 = read_trust_package_from_file(
-        &dir2.path().join("rot2-UNIT-A.sync"),
-        &crypto,
-    )
-    .expect("read A2");
-    let pkg_b2 = read_trust_package_from_file(
-        &dir2.path().join("rot2-UNIT-B.sync"),
-        &crypto,
-    )
-    .expect("read B2");
-    assert_eq!(pkg_a2.metadata.package_sequence, Some(2));
-    assert_eq!(pkg_b2.metadata.package_sequence, Some(2));
+    let _ = read_trust_package_from_file(&dir2.path().join("rot2-UNIT-A.sync"), &crypto)
+        .expect("read A2");
+    let _ = read_trust_package_from_file(&dir2.path().join("rot2-UNIT-B.sync"), &crypto)
+        .expect("read B2");
 }
 
 // ---------------------------------------------------------------------------
-// Case 2 — Cross-kind continuation: trust = 1, products = 2
+// Case 2 — Trust rotation then products export each emit readable artifacts
 // ---------------------------------------------------------------------------
 
 #[test]
-fn trust_rotation_products_export_shares_same_stream() {
+fn trust_rotation_then_products_export_emit_readable_packages() {
     let mut node = fresh_node();
-    let before = bootstrap_wilaya(&mut node);
+    bootstrap_wilaya(&mut node);
     mark_settings_wilaya(&node);
     seed_units(&node, &["UNIT-X"]);
 
-    // Trust rotation → sequence=1 for UNIT-X.
+    // Trust rotation.
     let plan = IdentityRotationCoordinator::new(&mut node.db, &node.node_key_store)
         .begin(SubjectType::Wilaya, RotationOperation::Rotate)
         .expect("begin rotation");
@@ -284,15 +256,12 @@ fn trust_rotation_products_export_shares_same_stream() {
         .expect("finalize rotation");
 
     // Single UNIT → original path kept (no suffix).
-    let trust_pkg = read_trust_package_from_file(&base_path, &crypto)
-        .expect("read trust pkg");
-    assert_eq!(trust_pkg.metadata.package_sequence, Some(1));
+    let _ = read_trust_package_from_file(&base_path, &crypto).expect("read trust pkg");
 
-    // Products export for UNIT-X → sequence=2 (same stream).
-    let issuer_id = before.identity_id.to_string();
+    // Products export for UNIT-X still produces a readable signed package.
     let products_path = dir.path().join("products.sync");
     let exporter = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let seq = exporter
+    exporter
         .export_v2_package(
             serde_json::json!({ "items": [] }),
             "wilaya-test-node",
@@ -303,10 +272,7 @@ fn trust_rotation_products_export_shares_same_stream() {
             &crypto,
         )
         .expect("products export");
-    assert_eq!(seq, 2, "products must continue from trust sequence 1");
-
-    // Ledger confirms stream at 2.
-    assert_eq!(next_sequence(&node, &issuer_id, "UNIT-X"), Some(2));
+    let _ = read_products_package_from_file(&products_path, &crypto).expect("read products pkg");
 }
 
 // ---------------------------------------------------------------------------
@@ -341,21 +307,6 @@ fn trust_rotation_unsafe_unit_code_fails_closed() {
     // No artifacts produced.
     assert!(!dir.path().join("rotation-UNIT-GOOD.sync").exists());
     assert!(!dir.path().join("rotation-..escape.sync").exists());
-
-    // No sequence burn: streams stay empty.
-    let issuer_id = before_identity_id(&node);
-    assert_eq!(next_sequence(&node, &issuer_id, "UNIT-GOOD"), None);
-}
-
-fn before_identity_id(node: &Node) -> String {
-    node.db
-        .executor()
-        .identity_store()
-        .get_active_by_subject_type(SubjectType::Wilaya)
-        .expect("query")
-        .expect("ACTIVE WILAYA")
-        .identity_id
-        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -466,7 +417,10 @@ fn cross_unit_trust_artifact_acceptance_regression() {
 
     // --- 2. Payload is identical (fleet-wide broadcast) ---
     // Both packages carry the exact same payload: the new WILAYA certificate.
-    assert_eq!(pkg_a.payload.certificates.len(), pkg_b.payload.certificates.len());
+    assert_eq!(
+        pkg_a.payload.certificates.len(),
+        pkg_b.payload.certificates.len()
+    );
     for (a, b) in pkg_a
         .payload
         .certificates
@@ -531,9 +485,5 @@ fn cross_unit_trust_artifact_acceptance_regression() {
     assert_eq!(
         pkg_a.metadata.issuer_identity_id, pkg_b.metadata.issuer_identity_id,
         "both packages share the same issuer — cross-UNIT acceptance is by issuer, not target"
-    );
-    assert_eq!(
-        pkg_a.metadata.package_sequence, pkg_b.metadata.package_sequence,
-        "same rotation → same sequence in both per-target streams"
     );
 }

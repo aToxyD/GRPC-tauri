@@ -8,20 +8,21 @@
 //!   A3 fail-closed: disabled fleet admin blocks export;
 //!   A4 fleet-identical admin hash / per-unit node-bound user hash.
 //! Section B — consumer (UNIT) side, import pipeline (mirror of
-//!   `run_import_pipeline`): verify_v2_signature → Transport Guard → importer
-//!   → ledger advance.
-//!   B1 canonical admin+user apply + ledger advance;
-//!   B2 replay rejected, ledger not consumed;
-//!   B3 out-of-order rejected;
-//!   B4 wrong-issuer rejected before the importer;
-//!   B5 tampered payload (refreshed hash, stale signature) rejected;
-//!   B6 canonical rename of a legacy admin-named unit user preserves row id;
-//!   B7 disabled user rejected at the login source; reapply re-enables;
-//!   B8 fleet admin disabled after export — the signed snapshot still applies;
-//!   B9 foreign payload shape (SyncPackage<TrustPackagePayload>) rejected at
+//!   `run_import_pipeline`): verify_v2_signature → importer.
+//!   SEC-056D/SEC-057: no Transport Guard and no per-issuer transport ledger.
+//!   Replay protection is exact `package_id` dedup — re-importing an already
+//!   imported `package_id` is an idempotent skip.
+//!   B1 canonical admin+user apply;
+//!   B2 duplicated package_id rejected (data state preserved);
+//!   B3 wrong-issuer rejected before the importer;
+//!   B4 tampered payload (refreshed hash, stale signature) rejected;
+//!   B5 canonical rename of a legacy admin-named unit user preserves row id;
+//!   B6 disabled user rejected at the login source; reapply re-enables;
+//!   B7 fleet admin disabled after export — the signed snapshot still applies;
+//!   B8 foreign payload shape (SyncPackage<TrustPackagePayload>) rejected at
 //!      parse — dispatch is type-driven, there is no V2 `kind` field;
-//!   B10 failed import does not consume the ledger; the same-sequence valid
-//!      retry succeeds.
+//!   B9 failed import does not mark the package imported; the same-package
+//!      valid retry succeeds.
 //! Section C — authorization via `authorize_command`.
 
 #[allow(dead_code)]
@@ -39,8 +40,9 @@ use grpc_lib::application::services::{
     IdentityProvisioningService, IdentitySignedExportService, SettingsService,
     SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
 };
-use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
-use grpc_lib::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
+use grpc_lib::application::sync::{
+    ImportedPackageRegistry, PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata,
+};
 use grpc_lib::application::usecases::sync::import_identity_access_package::{
     execute as apply_identity_access_package, ImportIdentityAccessPackageInput,
     ImportIdentityAccessPackageOutcome, IDENTITY_ACCESS_PACKAGE_KIND,
@@ -147,7 +149,6 @@ fn identity_access_package(
     pkg_id: &str,
     issuer_id: Uuid,
     secret: [u8; 32],
-    sequence: u64,
     payload: IdentityAccessPayload,
 ) -> SyncPackage<IdentityAccessPayload> {
     let signer = Ed25519PackageSigner::new(secret);
@@ -156,7 +157,6 @@ fn identity_access_package(
             schema_version: SchemaVersion::V2,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
-            package_sequence: Some(sequence),
             issuer_identity_id: Some(issuer_id),
             package_id: PackageId(pkg_id.to_string()),
             signature_version: Some(SIGNATURE_VERSION_ED25519),
@@ -172,7 +172,6 @@ fn trust_package(
     pkg_id: &str,
     issuer_id: Uuid,
     secret: [u8; 32],
-    sequence: u64,
 ) -> SyncPackage<TrustPackagePayload> {
     let signer = Ed25519PackageSigner::new(secret);
     SyncPackage {
@@ -180,7 +179,6 @@ fn trust_package(
             schema_version: SchemaVersion::V2,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
-            package_sequence: Some(sequence),
             issuer_identity_id: Some(issuer_id),
             package_id: PackageId(pkg_id.to_string()),
             signature_version: Some(SIGNATURE_VERSION_ED25519),
@@ -220,8 +218,9 @@ fn write_encrypted<T: serde::Serialize>(package: &SyncPackage<T>, secret: [u8; 3
 }
 
 /// Mirror of `run_import_pipeline`'s B8 sequence (RFC §3.4/§3.10): V2 signature
-/// verification runs BEFORE the Transport Guard, then the identity_access
-/// importer, then the per-issuer ledger is advanced — all in one transaction.
+/// verification runs BEFORE package_id dedup, then the identity_access importer.
+/// SEC-056D/SEC-057: no Transport Guard and no per-issuer transport ledger —
+/// replay protection is exact `package_id` dedup through the registry.
 fn run_identity_access_pipeline(
     db: &mut Database,
     imported_by: &str,
@@ -229,7 +228,6 @@ fn run_identity_access_pipeline(
 ) -> Result<ImportIdentityAccessPackageOutcome, AppError> {
     let source_node_id =
         Some(package.metadata.source_node_id.trim().to_string()).filter(|s| !s.is_empty());
-    let package_sequence = package.metadata.package_sequence;
     let issuer_identity_id = package.metadata.issuer_identity_id.map(|u| u.to_string());
 
     let (outcome, _buf) = db.with_event_persistence(|ctx| {
@@ -239,38 +237,18 @@ fn run_identity_access_pipeline(
             "identity_access",
             source_node_id.as_deref(),
             imported_by,
-            package_sequence,
             issuer_identity_id.as_deref(),
         );
 
         SyncPackageIdentityVerificationService::verify_v2_signature(executor, &package)?;
 
-        if let Some(issuer) = issuer_identity_id.as_deref() {
-            let sequence = package_sequence.ok_or_else(|| {
-                AppError::Validation(ValidationError::InvalidFormat {
-                    field: "package_sequence".into(),
-                    message: "حزمة موقّعة بلا رقم تسلسل نقل".into(),
-                })
-            })?;
-            let last_applied =
-                SyncPackageIdentityVerificationService::last_applied_sequence(executor, issuer)?;
-            match TransportGuard::check(issuer, sequence, last_applied) {
-                TransportVerdict::Accept { .. } => {}
-                TransportVerdict::OutOfOrder { expected, got, .. } => {
-                    return Err(AppError::BusinessLogic(
-                        BusinessLogicError::OperationNotPermitted {
-                            message: format!("out-of-order expected={expected} got={got}"),
-                        },
-                    ));
-                }
-                TransportVerdict::Replay { .. } => {
-                    return Err(AppError::BusinessLogic(
-                        BusinessLogicError::OperationNotPermitted {
-                            message: format!("replay sequence={sequence}"),
-                        },
-                    ));
-                }
-            }
+        let package_id = package.metadata.package_id.clone();
+        if registry.has_imported(&package_id)? {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DuplicateSyncPackage {
+                    package_id: package_id.0.clone(),
+                },
+            ));
         }
 
         let password_port = Argon2PasswordHashProvider;
@@ -278,24 +256,9 @@ fn run_identity_access_pipeline(
             package,
             imported_by: imported_by.to_string(),
         };
-        let out = apply_identity_access_package(executor, &registry, &password_port, input)?;
-
-        if let Some(issuer) = issuer_identity_id.as_deref() {
-            if let Some(sequence) = package_sequence {
-                SyncPackageIdentityVerificationService::advance_issuer_sequence(
-                    executor, issuer, sequence,
-                )?;
-            }
-        }
-
-        Ok(out)
+        apply_identity_access_package(executor, &registry, &password_port, input)
     })?;
     Ok(outcome)
-}
-
-fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
-    SyncPackageIdentityVerificationService::last_applied_sequence(make_executor(db), issuer)
-        .expect("read ledger")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -398,7 +361,7 @@ fn export_identity_access_round_trips_as_signed_v2_package() {
         .export("UNIT-9")
         .expect("export payload");
 
-    let sequence = IdentitySignedExportService::new(&node.db, &node.node_key_store)
+    IdentitySignedExportService::new(&node.db, &node.node_key_store)
         .export_v2_package(
             exported.clone(),
             "wilaya-test-node",
@@ -409,14 +372,12 @@ fn export_identity_access_round_trips_as_signed_v2_package() {
             &crypto,
         )
         .expect("signed V2 export");
-    assert_eq!(sequence, 1);
 
     let pkg = read_identity_access_package_from_file(&path, &crypto)
         .expect("read back identity access package");
     let meta = &pkg.metadata;
     assert_eq!(meta.signature_version, Some(SIGNATURE_VERSION_ED25519));
     assert_eq!(meta.issuer_identity_id, Some(wilaya_cert.identity_id));
-    assert_eq!(meta.package_sequence, Some(1));
     assert_eq!(
         meta.signing_key_id.as_deref(),
         Some(hex::encode(&wilaya_cert.public_key).as_str()),
@@ -530,7 +491,7 @@ fn export_carries_fleet_identical_admin_and_node_bound_user_hashes() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn import_happy_path_applies_canonical_accounts_and_advances_ledger() {
+fn import_happy_path_applies_canonical_accounts() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     let issuer_id = Uuid::new_v4();
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
@@ -540,7 +501,6 @@ fn import_happy_path_applies_canonical_accounts_and_advances_ledger() {
             "ia-pkg-1",
             issuer_id,
             ISSUER_SECRET,
-            1,
             payload("UNIT-9", true, true),
         ),
         ISSUER_SECRET,
@@ -576,72 +536,47 @@ fn import_happy_path_applies_canonical_accounts_and_advances_ledger() {
     assert!(port
         .verify_node(UNIT_PASSWORD, "UNIT-9", &user.password_hash)
         .expect("verify user"));
-
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
 }
 
 #[test]
-fn import_replay_sequence_is_rejected_and_ledger_not_consumed() {
-    let mut db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_issuer(&db, issuer_id, ISSUER_SECRET);
-
-    let first = sign_v2_package(
-        identity_access_package(
-            "ia-pkg-a",
-            issuer_id,
-            ISSUER_SECRET,
-            1,
-            payload("UNIT-9", true, true),
-        ),
-        ISSUER_SECRET,
-    );
-    run_identity_access_pipeline(&mut db, "admin", first).expect("first import ok");
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
-
-    // Same issuer, NEW package id, but sequence 1 again → Transport Guard Replay.
-    let replay = sign_v2_package(
-        identity_access_package(
-            "ia-pkg-b",
-            issuer_id,
-            ISSUER_SECRET,
-            1,
-            payload("UNIT-9", true, true),
-        ),
-        ISSUER_SECRET,
-    );
-    let err = run_identity_access_pipeline(&mut db, "admin", replay)
-        .expect_err("replay must be rejected");
-    match err {
-        AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
-        e => panic!("expected OperationNotPermitted, got {e:?}"),
-    }
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
-}
-
-#[test]
-fn import_out_of_order_sequence_is_rejected() {
+fn import_duplicate_package_id_is_rejected_and_state_preserved() {
+    // SEC-056D/SEC-057: replay protection is exact `package_id` dedup. There is
+    // no per-issuer sequence, so a NEW package id from the same issuer is
+    // accepted; re-presenting the SAME package id is a rejected idempotent skip.
     let mut db = ConnectionFactory::new_for_test().expect("db");
     let issuer_id = Uuid::new_v4();
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
 
     let package = sign_v2_package(
         identity_access_package(
-            "ia-pkg-c",
+            "ia-pkg-dedup",
             issuer_id,
             ISSUER_SECRET,
-            3,
             payload("UNIT-9", true, true),
         ),
         ISSUER_SECRET,
     );
+    run_identity_access_pipeline(&mut db, "admin", package.clone()).expect("first import ok");
+
+    // Same package id again → the registry dedup rejects the re-import.
     let err = run_identity_access_pipeline(&mut db, "admin", package)
-        .expect_err("out-of-order must be rejected");
+        .expect_err("duplicate package_id must be rejected");
     match err {
-        AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
-        e => panic!("expected OperationNotPermitted, got {e:?}"),
+        AppError::BusinessLogic(BusinessLogicError::DuplicateSyncPackage { package_id }) => {
+            assert_eq!(package_id, "ia-pkg-dedup");
+        }
+        e => panic!("expected DuplicateSyncPackage, got {e:?}"),
     }
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
+
+    // The rejected re-import consumed nothing: exactly one canonical admin row.
+    let admins = db
+        .executor()
+        .users()
+        .get_user_by_username("admin", "UNIT-9")
+        .expect("read")
+        .expect("canonical admin present");
+    assert_eq!(admins.role, UserRole::Admin);
+    assert_eq!(admins.node_id, "UNIT-9");
 }
 
 #[test]
@@ -657,7 +592,6 @@ fn import_wrong_issuer_is_rejected_before_importer() {
             "ia-pkg-wrong-issuer",
             issuer_id,
             OTHER_SECRET,
-            1,
             payload("UNIT-9", true, true),
         ),
         OTHER_SECRET,
@@ -673,7 +607,8 @@ fn import_wrong_issuer_is_rejected_before_importer() {
     }
 
     // The importer never ran: the seeded `admin` is untouched (still WILAYA
-    // node-bound, not the canonical UNIT-9 sync row), ledger untouched.
+    // node-bound, not the canonical UNIT-9 sync row), and the package was never
+    // registered as imported.
     let admin = db
         .executor()
         .users()
@@ -681,7 +616,6 @@ fn import_wrong_issuer_is_rejected_before_importer() {
         .expect("read")
         .expect("seeded admin present");
     assert_eq!(admin.node_id, "WILAYA", "importer must not have run");
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
 }
 
 #[test]
@@ -695,7 +629,6 @@ fn import_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
             "ia-pkg-tamper",
             issuer_id,
             ISSUER_SECRET,
-            1,
             payload("UNIT-9", true, true),
         ),
         ISSUER_SECRET,
@@ -719,7 +652,6 @@ fn import_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
         }
         e => panic!("expected signature validation error, got {e:?}"),
     }
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
 }
 
 #[test]
@@ -744,7 +676,6 @@ fn import_preserves_canonical_operator_row_without_rename() {
             "ia-pkg-canonical",
             issuer_id,
             ISSUER_SECRET,
-            1,
             payload("UNIT-9", true, true),
         ),
         ISSUER_SECRET,
@@ -804,7 +735,6 @@ fn sec029_unit_security_scope_is_unit_code_not_display_name() {
             "ia-pkg-s29",
             issuer_id,
             ISSUER_SECRET,
-            1,
             payload("UNIT-S29", true, true),
         ),
         ISSUER_SECRET,
@@ -904,7 +834,6 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
             "ia-pkg-disabled",
             issuer_id,
             ISSUER_SECRET,
-            1,
             payload("UNIT-9", true, false),
         ),
         ISSUER_SECRET,
@@ -919,13 +848,12 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
         "disabled unit user must be rejected at the login source"
     );
 
-    // Package 2: re-enabled by the Wilaya (new sequence, new snapshot).
+    // Package 2: re-enabled by the Wilaya (new package id, new snapshot).
     let enabled = sign_v2_package(
         identity_access_package(
             "ia-pkg-enabled",
             issuer_id,
             ISSUER_SECRET,
-            2,
             payload("UNIT-9", true, true),
         ),
         ISSUER_SECRET,
@@ -939,7 +867,6 @@ fn import_disabled_user_rejected_at_source_and_reapply_reenables() {
             .is_some(),
         "re-enabled unit user must authenticate at source"
     );
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(2));
 }
 
 #[test]
@@ -967,7 +894,7 @@ fn fleet_admin_disabled_after_export_old_snapshot_still_applies() {
     let mut consumer = ConnectionFactory::new_for_test().expect("db");
     seed_issuer(&consumer, issuer_id, ISSUER_SECRET);
     let package = sign_v2_package(
-        identity_access_package("ia-pkg-snapshot", issuer_id, ISSUER_SECRET, 1, exported),
+        identity_access_package("ia-pkg-snapshot", issuer_id, ISSUER_SECRET, exported),
         ISSUER_SECRET,
     );
     let outcome = run_identity_access_pipeline(&mut consumer, "admin", package)
@@ -984,7 +911,6 @@ fn fleet_admin_disabled_after_export_old_snapshot_still_applies() {
     assert!(port
         .verify_admin(FLEET_PASSWORD, &admin.password_hash)
         .expect("verify admin from snapshot"));
-    assert_eq!(last_applied(&consumer, &issuer_id.to_string()), Some(1));
 }
 
 #[test]
@@ -996,7 +922,7 @@ fn foreign_payload_shape_is_rejected_at_parse() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("trust_as_identity_access.sync");
     let issuer_id = Uuid::new_v4();
-    let package = trust_package("trust-shape", issuer_id, ISSUER_SECRET, 1);
+    let package = trust_package("trust-shape", issuer_id, ISSUER_SECRET);
     write_encrypted(&package, ISSUER_SECRET, &path);
 
     let err = read_identity_access_package_from_file(&path, &AgeFileEncryptionProvider::new())
@@ -1010,19 +936,19 @@ fn foreign_payload_shape_is_rejected_at_parse() {
 }
 
 #[test]
-fn failed_import_does_not_consume_ledger_and_same_sequence_retry_succeeds() {
+fn failed_import_does_not_mark_package_imported_and_same_package_retry_succeeds() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     let issuer_id = Uuid::new_v4();
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
 
     // First attempt: validly signed but with the WRONG issuer key → rejected at
-    // signature verification, before the importer and before ledger advance.
+    // signature verification, before the importer and before the registry is
+    // told the package was imported.
     let bad = sign_v2_package(
         identity_access_package(
             "ia-pkg-retry",
             issuer_id,
             OTHER_SECRET,
-            1,
             payload("UNIT-9", true, true),
         ),
         OTHER_SECRET,
@@ -1034,24 +960,22 @@ fn failed_import_does_not_consume_ledger_and_same_sequence_retry_succeeds() {
         }
         e => panic!("expected signature validation error, got {e:?}"),
     }
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
 
-    // Retry with the SAME package id + sequence 1, correctly signed → succeeds.
-    // The failed import consumed nothing, so the transport guard accepts.
+    // Retry with the SAME package id, correctly signed → succeeds. The failed
+    // attempt never marked the package imported, so the package_id dedup skips
+    // nothing here.
     let good = sign_v2_package(
         identity_access_package(
             "ia-pkg-retry",
             issuer_id,
             ISSUER_SECRET,
-            1,
             payload("UNIT-9", true, true),
         ),
         ISSUER_SECRET,
     );
     let outcome = run_identity_access_pipeline(&mut db, "admin", good)
-        .expect("same-sequence valid retry succeeds");
+        .expect("same-package valid retry succeeds");
     assert!(outcome.admin_updated);
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1122,9 +1046,7 @@ fn authz_manage_account_sync_requires_wilaya_admin() {
     set_session(&state, "Admin");
     let err = authorize_command(&state, action, None).expect_err("deny unit");
     match err {
-        AppError::Authorization(
-            grpc_lib::errors::AuthorizationError::InsufficientPermissions,
-        ) => {}
+        AppError::Authorization(grpc_lib::errors::AuthorizationError::InsufficientPermissions) => {}
         e => panic!("expected InsufficientPermissions, got {e:?}"),
     }
 
@@ -1243,7 +1165,7 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
         .expect("export payload");
     let crypto = AgeFileEncryptionProvider::new();
     let path = dir.path().join("identity_access.sync");
-    let sequence = IdentitySignedExportService::new(&wilaya.db, &wilaya.node_key_store)
+    IdentitySignedExportService::new(&wilaya.db, &wilaya.node_key_store)
         .export_v2_package(
             exported.clone(),
             "wilaya-test-node",
@@ -1254,7 +1176,6 @@ fn sec013_phase3_post_provisioning_admin_credential_lifecycle() {
             &crypto,
         )
         .expect("signed V2 export");
-    assert_eq!(sequence, 1);
 
     // Fresh UNIT: anchor-first trust material = the REAL WILAYA certificate
     // (the same certificate that authenticates the package signature).

@@ -338,7 +338,6 @@ fn wilaya_full_rotation_emits_old_key_signed_trust_package_and_promotes() {
 
     // Trust package exists, carries the new certificate, and is sequence 1.
     let package = read_trust_package_from_file(&package_path, &crypto).expect("read trust package");
-    assert_eq!(package.metadata.package_sequence, Some(1));
     assert!(package
         .payload
         .certificates

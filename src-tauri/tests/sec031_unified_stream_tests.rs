@@ -1,28 +1,24 @@
-//! SEC-031 / SEC-032 — ADR-0053 canonical regression suite
-//! (Unified Per-Target Transport Sequence — Accepted 2026-08-24).
+//! SEC-031 / SEC-032 — canonical regression suite for the consolidated sync
+//! baseline under SEC-057 (Transport Sequence removed).
 //!
-//! This file is the mandated regression gate for the unified producer stream:
+//! Stack: `SEC-055` (consolidated migration 001) / `SEC-056D` (V2 Ed25519
+//! identity-bound signing) / `SEC-057` (transport sequences retired).
 //!
-//! - the consolidated baseline (migration 001, SEC-055) creates ONE producer
-//!   stream keyed by `(issuer_identity_id, target_node_id)` and the fragmented
-//!   006/009/010 producer tables are absent from a fresh install;
-//! - cross-kind continuation on a fresh target: `admin_access` #1 then
-//!   `products` #2, and the reverse order `products` #1 then `admin_access`
-//!   #2 (order independence);
-//! - interleaved kinds stay strictly contiguous per target (1,2,3,4);
-//! - per-target isolation: UNIT-A and UNIT-B streams are independent;
-//! - failed exports never burn a sequence and retries reuse it;
-//! - `.unit` bootstrap keeps fixed sequence 1 and consumes nothing;
-//! - repository defense in depth: regression commits are refused, dropped
-//!   tokens never advance the ledger;
-//! - consumer Transport Guard negatives are unchanged: first import must be
-//!   exactly 1; stale (lower), duplicate/replay, and gap sequences are all
-//!   rejected on the frozen `sync_issuer_sequence` ledger.
+//! What is proven here:
 //!
-//! Producer sequences are never hand-crafted in producer-side scenarios —
-//! they flow from the real migration-backed ledger through
-//! `IdentitySignedExportService`. Hand-crafted packages appear only in the
-//! consumer-side negative tests where the producer is intentionally bypassed.
+//! - the consolidated baseline contains NO transport-sequence machinery:
+//!   the former unified producer stream `transport_export_sequence`, the
+//!   frozen consumer ledger `sync_issuer_sequence`, and the fragmented
+//!   006/009/010 producer tables are ABSENT on a fresh install;
+//! - `applied_sync_packages` keeps the issuer identity + exact `package_id`
+//!   dedup and carries NO `package_sequence` column;
+//! - producer semantics: every export emits a DISTINCT signed V2 package
+//!   (unique `package_id`) — cross-kind and cross-target exports are order
+//!   independent, and a failed export writes nothing (fail-closed);
+//! - `.unit` bootstrap is a standalone signed artifact with no trace in any
+//!   ledger;
+//! - repository defense in depth: re-recording an already-applied exact
+//!   `package_id` is refused (the only remaining replay guard, SEC-057).
 
 #[allow(dead_code)]
 mod common;
@@ -34,25 +30,21 @@ use grpc_lib::application::services::{
     IdentityProvisioningService, IdentitySignedExportService, SettingsService,
     SyncPackageIdentityVerificationService, UserAccountSyncService,
 };
+use grpc_lib::application::usecases::exports::types::ProductsExportDataset;
 use grpc_lib::db::{run_migrations, ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
-    CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySigner,
-    SubjectType, SIGNATURE_VERSION_ED25519,
+    Ed25519CertificateSignature, IdentityCertificate, IdentitySigner, SubjectType,
+    SIGNATURE_VERSION_ED25519,
 };
-use grpc_lib::domain::security::PasswordHashPort;
 use grpc_lib::infrastructure::identity::NodeKeyStore;
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::security::{Argon2PasswordHashProvider, Ed25519SigningProvider};
-use grpc_lib::infrastructure::sync::packages::canonical_json::{
-    canonical_bytes_for_integrity, canonical_bytes_for_signature,
+use grpc_lib::infrastructure::sync::{
+    read_admin_access_package_from_file, read_products_package_from_file,
 };
-use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256PackageHasher};
-use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};
-use grpc_lib::infrastructure::sync::PackageBuilder;
 use grpc_lib::models::{AdminAccessPayload, WilayaNodeConfiguration};
 use grpc_lib::repositories::executor::DbExecutor;
-use grpc_lib::repositories::PendingTransportSequence;
-use grpc_lib::repositories::RepositoryProvider;
+use grpc_lib::repositories::SyncAppliedPackagesRepository;
 
 const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
 const FLEET_PASSWORD: &str = "FleetPass123";
@@ -69,11 +61,6 @@ const TEST_ROOT_SECRET: [u8; 32] = [
 
 fn make_executor(db: &Database) -> DbExecutor<'_> {
     db.executor()
-}
-
-fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
-    SyncPackageIdentityVerificationService::last_applied_sequence(make_executor(db), issuer)
-        .expect("read consumer ledger")
 }
 
 struct Node {
@@ -140,72 +127,12 @@ fn admin_payload(db: &Database) -> AdminAccessPayload {
         .expect("admin payload")
 }
 
-/// Hand-crafted signed package for CONSUMER-side negative tests only.
-fn crafted_admin_package(
-    package_id: &str,
-    issuer_id: Uuid,
-    secret: [u8; 32],
-    sequence: u64,
-) -> grpc_lib::application::sync::SyncPackage<AdminAccessPayload> {
-    let port = Argon2PasswordHashProvider;
-    let package = grpc_lib::application::sync::SyncPackage {
-        metadata: grpc_lib::application::sync::SyncPackageMetadata {
-            schema_version: grpc_lib::application::sync::SchemaVersion::V2,
-            created_at: chrono::Utc::now(),
-            source_node_id: "wilaya-test-node".to_string(),
-            package_sequence: Some(sequence),
-            issuer_identity_id: Some(issuer_id),
-            package_id: grpc_lib::application::sync::PackageId(package_id.to_string()),
-            signature_version: Some(SIGNATURE_VERSION_ED25519),
-            signing_key_id: Some("default".to_string()),
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: AdminAccessPayload {
-            admin_enabled: true,
-            admin_password_hash: port.hash_admin(FLEET_PASSWORD).expect("admin hash"),
-        },
-    };
-    let signer = Ed25519PackageSigner::new(secret);
-    let value = serde_json::to_value(&package).expect("value");
-    let hash = Sha256PackageHasher
-        .hash(&canonical_bytes_for_integrity(&value).expect("canonical integrity"))
-        .expect("hash");
-    let mut signed = package;
-    signed.metadata.integrity_hash = Some(hash);
-
-    let value = serde_json::to_value(&signed).expect("value");
-    let signature = signer
-        .sign(&canonical_bytes_for_signature(&value).expect("canonical signature"))
-        .expect("sign");
-    signed.metadata.signature = Some(signature);
-    signed
-}
-
-fn write_encrypted_admin(
-    package: &grpc_lib::application::sync::SyncPackage<AdminAccessPayload>,
-    secret: [u8; 32],
-    path: &std::path::Path,
-) {
-    let crypto = AgeFileEncryptionProvider::new();
-    let signer = Ed25519PackageSigner::new(secret);
-    PackageBuilder::new()
-        .build_encrypted_stream_path(
-            package,
-            &grpc_lib::infrastructure::sync::SerdeJsonSyncPackageSerializer,
-            &signer,
-            &crypto,
-            path,
-        )
-        .expect("write package");
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Consolidated final-schema baseline (SEC-055)
+// Consolidated final-schema baseline — transport-sequence machinery absent
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn consolidated_baseline_contains_complete_transport_schema() {
+fn consolidated_baseline_removes_transport_sequence_tables() {
     let db = ConnectionFactory::new_for_test().expect("db");
     run_migrations(db.get_connection()).expect("migrations");
 
@@ -218,20 +145,10 @@ fn consolidated_baseline_contains_complete_transport_schema() {
         "the consolidated baseline is migration 1 only (004/011 folded in)"
     );
 
-    // Unified stream table exists with the exact composite key.
-    let pk_cols: Vec<String> = conn
-        .prepare(
-            "SELECT name FROM pragma_table_info('transport_export_sequence') WHERE pk > 0 ORDER BY pk",
-        )
-        .expect("pragma")
-        .query_map([], |r| r.get(0))
-        .expect("pk cols")
-        .collect::<Result<_, _>>()
-        .expect("rows");
-    assert_eq!(pk_cols, vec!["issuer_identity_id", "target_node_id"]);
-
-    // The retired fragmented producer tables are absent on a fresh install.
+    // SEC-057 retires EVERY transport-sequence object from the baseline.
     for retired in [
+        "transport_export_sequence",
+        "sync_issuer_sequence",
         "sync_issuer_sequence_state",
         "identity_access_export_sequence",
         "admin_access_export_sequence",
@@ -243,47 +160,47 @@ fn consolidated_baseline_contains_complete_transport_schema() {
                 |r| r.get(0),
             )
             .expect("retired table probe");
-        assert_eq!(n, 0, "{retired} must not exist on a fresh install");
+        assert_eq!(
+            n, 0,
+            "{retired} must not exist on a fresh install (SEC-057)"
+        );
     }
 
-    // The frozen CONSUMER tables survive in the consolidated baseline.
-    let n: i64 = conn
-        .query_row("SELECT COUNT(*) FROM sync_issuer_sequence", [], |r| {
-            r.get(0)
-        })
-        .expect("consumer ledger probe");
-    assert_eq!(n, 0, "empty but present");
-
-    // SEC-054 producer ledger is still present.
-    let n: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='transport_export_sequence'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("producer ledger probe");
-    assert_eq!(n, 1, "transport_export_sequence present on fresh install");
-
-    // B4 transport metadata columns on the applied ledger.
+    // The applied-package ledger keeps exact package_id dedup (B4) plus the
+    // issuer identity — the transport `package_sequence` column is gone.
     let app_cols: Vec<String> = conn
-        .prepare(
-            "SELECT name FROM pragma_table_info('applied_sync_packages')",
-        )
+        .prepare("SELECT name FROM pragma_table_info('applied_sync_packages')")
         .expect("pragma")
         .query_map([], |r| r.get(0))
         .expect("map")
         .collect::<Result<_, _>>()
         .expect("cols");
-    assert_eq!(app_cols.iter().filter(|c| *c == "package_sequence").count(), 1);
-    assert_eq!(app_cols.iter().filter(|c| *c == "issuer_identity_id").count(), 1);
+    assert_eq!(
+        app_cols.iter().filter(|c| *c == "package_sequence").count(),
+        0,
+        "applied_sync_packages.package_sequence must NOT exist (SEC-057)"
+    );
+    assert_eq!(
+        app_cols
+            .iter()
+            .filter(|c| *c == "issuer_identity_id")
+            .count(),
+        1,
+        "issuer_identity_id retained"
+    );
+    assert_eq!(
+        app_cols.iter().filter(|c| *c == "package_id").count(),
+        1,
+        "package_id is the exact dedup key"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Producer semantics — real service, real ledger
+// Producer semantics — real service, distinct exact packages
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn fresh_unit_cross_kind_continuation_admin_then_products() {
+fn fresh_unit_cross_kind_exports_admin_then_products() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -292,11 +209,11 @@ fn fresh_unit_cross_kind_continuation_admin_then_products() {
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
+    let issuer = wilaya_cert.identity_id;
 
-    // admin_access is FIRST on this fresh (issuer, UNIT-A) stream → seq 1.
+    // admin_access first, then products — order has no sequence to occupy.
     let p1 = dir.path().join("a1.sync");
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -306,13 +223,12 @@ fn fresh_unit_cross_kind_continuation_admin_then_products() {
             &crypto,
         )
         .expect("admin first");
-    assert_eq!(seq, 1);
-
-    // products continues the SAME stream → seq 2 (cross-kind, order A).
     let p2 = dir.path().join("a2.sync");
-    let seq = service
+    service
         .export_v2_package(
-            serde_json::json!({ "products": [] }),
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "wilaya-test-node",
             "products",
             "UNIT-A",
@@ -321,18 +237,32 @@ fn fresh_unit_cross_kind_continuation_admin_then_products() {
             &crypto,
         )
         .expect("products second");
-    assert_eq!(seq, 2, "products continues after admin_access");
 
-    let repo = make_executor(&node.db).transport_export_sequence_state();
+    // Both artifacts are distinct, issuer-bound, V2 signed packages.
+    let admin = read_admin_access_package_from_file(&p1, &crypto).expect("read admin");
+    let products = read_products_package_from_file(&p2, &crypto).expect("read products");
+    assert_eq!(admin.metadata.issuer_identity_id, Some(issuer));
+    assert_eq!(products.metadata.issuer_identity_id, Some(issuer));
     assert_eq!(
-        repo.next_issued_sequence(&issuer, "UNIT-A")
-            .expect("ledger"),
-        Some(2)
+        admin.metadata.signature_version,
+        Some(SIGNATURE_VERSION_ED25519)
     );
+    assert_eq!(
+        products.metadata.signature_version,
+        Some(SIGNATURE_VERSION_ED25519)
+    );
+    assert_ne!(
+        admin.metadata.package_id, products.metadata.package_id,
+        "cross-kind exports are distinct packages"
+    );
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &admin)
+        .expect("admin V2 signature verifies against issuer cert");
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &products)
+        .expect("products V2 signature verifies against issuer cert");
 }
 
 #[test]
-fn fresh_unit_cross_kind_continuation_products_then_admin() {
+fn fresh_unit_cross_kind_exports_products_then_admin() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -341,13 +271,16 @@ fn fresh_unit_cross_kind_continuation_products_then_admin() {
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
+    let issuer = wilaya_cert.identity_id;
 
-    // products FIRST on this fresh stream → seq 1.
+    // products first, then admin_access — the reverse order also succeeds
+    // (order independence; there is no stream to keep contiguous).
     let p1 = dir.path().join("b1.sync");
-    let seq = service
+    service
         .export_v2_package(
-            serde_json::json!({ "products": [] }),
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "wilaya-test-node",
             "products",
             "UNIT-B",
@@ -356,11 +289,8 @@ fn fresh_unit_cross_kind_continuation_products_then_admin() {
             &crypto,
         )
         .expect("products first");
-    assert_eq!(seq, 1);
-
-    // admin_access continues → seq 2 (order independence proof).
     let p2 = dir.path().join("b2.sync");
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -370,19 +300,23 @@ fn fresh_unit_cross_kind_continuation_products_then_admin() {
             &crypto,
         )
         .expect("admin second");
-    assert_eq!(seq, 2);
 
-    assert_eq!(
-        make_executor(&node.db)
-            .transport_export_sequence_state()
-            .next_issued_sequence(&issuer, "UNIT-B")
-            .expect("ledger"),
-        Some(2)
+    let products = read_products_package_from_file(&p1, &crypto).expect("read products");
+    let admin = read_admin_access_package_from_file(&p2, &crypto).expect("read admin");
+    assert_eq!(products.metadata.issuer_identity_id, Some(issuer));
+    assert_eq!(admin.metadata.issuer_identity_id, Some(issuer));
+    assert_ne!(
+        products.metadata.package_id, admin.metadata.package_id,
+        "cross-kind exports are distinct packages"
     );
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &products)
+        .expect("products V2 signature verifies against issuer cert");
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &admin)
+        .expect("admin V2 signature verifies against issuer cert");
 }
 
 #[test]
-fn interleaved_kinds_are_strictly_contiguous_per_target() {
+fn interleaved_kinds_and_targets_are_exact_distinct_packages() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -391,7 +325,7 @@ fn interleaved_kinds_are_strictly_contiguous_per_target() {
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
+    let issuer = wilaya_cert.identity_id;
 
     let export_admin = |target: &str, path: &std::path::Path| {
         service
@@ -408,7 +342,9 @@ fn interleaved_kinds_are_strictly_contiguous_per_target() {
     let export_products = |target: &str, path: &std::path::Path| {
         service
             .export_v2_package(
-                serde_json::json!({ "products": [] }),
+                ProductsExportDataset {
+                    product_rows: vec![],
+                },
                 "wilaya-test-node",
                 "products",
                 target,
@@ -420,33 +356,58 @@ fn interleaved_kinds_are_strictly_contiguous_per_target() {
     };
 
     let dir_ref = dir.path();
-    // Interleaved against UNIT-A only: 1 → 2 → 3 → 4.
-    assert_eq!(export_admin("UNIT-A", &dir_ref.join("i1.sync")), 1);
-    assert_eq!(export_products("UNIT-A", &dir_ref.join("i2.sync")), 2);
-    assert_eq!(export_admin("UNIT-A", &dir_ref.join("i3.sync")), 3);
-    assert_eq!(export_products("UNIT-A", &dir_ref.join("i4.sync")), 4);
+    // Interleaved kinds against UNIT-A, plus a second target UNIT-C.
+    export_admin("UNIT-A", &dir_ref.join("i1.sync"));
+    export_products("UNIT-A", &dir_ref.join("i2.sync"));
+    export_admin("UNIT-A", &dir_ref.join("i3.sync"));
+    export_products("UNIT-A", &dir_ref.join("i4.sync"));
+    export_products("UNIT-C", &dir_ref.join("c1.sync"));
 
-    // A different target starts at its own 1 — isolation across targets.
-    assert_eq!(export_products("UNIT-C", &dir_ref.join("c1.sync")), 1);
+    // Every artifact is a unique exact-package sharing the same issuer.
+    let i1 = read_admin_access_package_from_file(&dir_ref.join("i1.sync"), &crypto).expect("i1");
+    let i2 = read_products_package_from_file(&dir_ref.join("i2.sync"), &crypto).expect("i2");
+    let i3 = read_admin_access_package_from_file(&dir_ref.join("i3.sync"), &crypto).expect("i3");
+    let i4 = read_products_package_from_file(&dir_ref.join("i4.sync"), &crypto).expect("i4");
+    let c1 = read_products_package_from_file(&dir_ref.join("c1.sync"), &crypto).expect("c1");
 
+    let mut ids: Vec<&str> = vec![
+        i1.metadata.package_id.0.as_str(),
+        i2.metadata.package_id.0.as_str(),
+        i3.metadata.package_id.0.as_str(),
+        i4.metadata.package_id.0.as_str(),
+        c1.metadata.package_id.0.as_str(),
+    ];
+    ids.sort_unstable();
+    ids.dedup();
     assert_eq!(
-        make_executor(&node.db)
-            .transport_export_sequence_state()
-            .next_issued_sequence(&issuer, "UNIT-A")
-            .expect("ledger UNIT-A"),
-        Some(4)
+        ids.len(),
+        5,
+        "all five exports are distinct exact packages (kind- and target-blind)"
     );
-    assert_eq!(
-        make_executor(&node.db)
-            .transport_export_sequence_state()
-            .next_issued_sequence(&issuer, "UNIT-C")
-            .expect("ledger UNIT-C"),
-        Some(1)
-    );
+    for meta in [
+        &i1.metadata,
+        &i2.metadata,
+        &i3.metadata,
+        &i4.metadata,
+        &c1.metadata,
+    ] {
+        assert_eq!(meta.issuer_identity_id, Some(issuer));
+        assert_eq!(meta.signature_version, Some(SIGNATURE_VERSION_ED25519));
+    }
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &i1)
+        .expect("i1 V2 signature verifies");
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &i2)
+        .expect("i2 V2 signature verifies");
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &i3)
+        .expect("i3 V2 signature verifies");
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &i4)
+        .expect("i4 V2 signature verifies");
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &c1)
+        .expect("c1 V2 signature verifies");
 }
 
 #[test]
-fn failed_export_does_not_burn_and_retry_reuses_the_number() {
+fn failed_export_writes_nothing_and_retry_succeeds() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -455,14 +416,15 @@ fn failed_export_does_not_burn_and_retry_reuses_the_number() {
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
 
-    // Unwritable directory → allocation happens, commit does not.
+    // Unwritable directory → fail-closed, no artifact written.
     let bad = dir.path().join("missing").join("f1.sync");
     assert!(
         service
             .export_v2_package(
-                serde_json::json!({ "probe": 1 }),
+                ProductsExportDataset {
+                    product_rows: vec![]
+                },
                 "wilaya-test-node",
                 "products",
                 "UNIT-A",
@@ -473,20 +435,15 @@ fn failed_export_does_not_burn_and_retry_reuses_the_number() {
             .is_err(),
         "unwritable path must fail"
     );
-    assert_eq!(
-        make_executor(&node.db)
-            .transport_export_sequence_state()
-            .next_issued_sequence(&issuer, "UNIT-A")
-            .expect("ledger"),
-        None,
-        "no sequence burned by a failed export"
-    );
+    assert!(!bad.exists(), "a failed export must write nothing");
 
-    // Retry reuses the same number — zero gaps by construction.
+    // The retry onto a valid path succeeds — no sequence to burn or reuse.
     let good = dir.path().join("f1.sync");
-    let seq = service
+    service
         .export_v2_package(
-            serde_json::json!({ "probe": 1 }),
+            ProductsExportDataset {
+                product_rows: vec![],
+            },
             "wilaya-test-node",
             "products",
             "UNIT-A",
@@ -495,11 +452,16 @@ fn failed_export_does_not_burn_and_retry_reuses_the_number() {
             &crypto,
         )
         .expect("retry succeeds");
-    assert_eq!(seq, 1, "retry MUST reuse the uncommitted number");
+    let pkg = read_products_package_from_file(&good, &crypto).expect("read retry artifact");
+    assert_eq!(
+        pkg.metadata.issuer_identity_id,
+        Some(wilaya_cert.identity_id)
+    );
+    assert!(pkg.metadata.signature.is_some());
 }
 
 #[test]
-fn unit_bootstrap_keeps_fixed_one_and_consumes_nothing() {
+fn unit_bootstrap_is_a_standalone_signed_artifact() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -507,12 +469,11 @@ fn unit_bootstrap_keeps_fixed_one_and_consumes_nothing() {
 
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
-
-    // `.unit` V2 bootstrap: fixed sequence 1, NO transport stream consumed.
     let crypto = AgeFileEncryptionProvider::new();
+
+    // `.unit` V2 bootstrap: a standalone signed artifact with no ledger trace.
     let unit_pkg_path = dir.path().join("bootstrap.unit");
-    let seq = service
+    service
         .export_v2_bootstrap_package(
             serde_json::json!({
                 "unit_code": "UNIT-A",
@@ -525,269 +486,59 @@ fn unit_bootstrap_keeps_fixed_one_and_consumes_nothing() {
             &crypto,
         )
         .expect(".unit export");
-    assert_eq!(seq, 1, ".unit stays fixed at sequence 1");
-    assert_eq!(
-        make_executor(&node.db)
-            .transport_export_sequence_state()
-            .next_issued_sequence(&issuer, "UNIT-A")
-            .expect("ledger"),
-        None,
-        ".unit must not touch any transport stream"
-    );
+    assert!(unit_pkg_path.exists());
 
-    // The next pipeline kind on that target still starts at 1.
-    let crypto = AgeFileEncryptionProvider::new();
-    let seq = service
+    // The next pipeline kind on that target is still a distinct signed package.
+    let admin_path = dir.path().join("after-unit.sync");
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
             "UNIT-A",
-            &dir.path().join("after-unit.sync"),
+            &admin_path,
             SubjectType::Wilaya,
             &crypto,
         )
         .expect("admin after .unit");
-    assert_eq!(seq, 1);
+    let admin = read_admin_access_package_from_file(&admin_path, &crypto).expect("read admin");
+    assert_eq!(
+        admin.metadata.issuer_identity_id,
+        Some(wilaya_cert.identity_id)
+    );
+    assert!(admin.metadata.signature.is_some());
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &admin)
+        .expect("V2 signature verifies against issuer cert");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Repository-level defense in depth
+// Repository-level defense in depth — exact package_id replay guard
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn regression_commit_is_refused_fail_closed() {
+fn applied_package_ledger_refuses_exact_package_replay() {
+    // SEC-057: the exact `package_id` is the ONLY dedup key — no transport
+    // sequence is recorded or compared. Re-recording an applied package_id is
+    // refused fail-closed; a fresh package_id is accepted.
     let db = ConnectionFactory::new_for_test().expect("db");
     run_migrations(db.get_connection()).expect("migrations");
-    let executor = make_executor(&db);
-    let repo = executor.transport_export_sequence_state();
+    let repo = SyncAppliedPackagesRepository::new(make_executor(&db));
 
-    let token = repo.begin_export("iss-1", "T-1").expect("token");
-    assert_eq!(token.value(), 1);
-    token.commit().expect("first commit");
-
-    let token = repo.begin_export("iss-1", "T-1").expect("token");
-    assert_eq!(token.value(), 2);
-
-    // Simulated concurrent write ahead of our commit → regression refused.
-    repo.record_issued_sequence("iss-1", "T-1", 9)
-        .expect("external advance");
-    let err = token.commit().expect_err("regression must be refused");
     assert!(
-        format!("{err}").contains("تراجع"),
-        "error must name the regression: {err}"
+        repo.insert_if_new("pkg-1", "products", Some("w-1"), "admin", Some("iss-1"))
+            .expect("first insert"),
+        "first recording of a package_id must succeed"
     );
-    assert_eq!(
-        repo.next_issued_sequence("iss-1", "T-1").expect("read"),
-        Some(9),
-        "refused commit left the external value intact"
+    assert!(repo.has_imported("pkg-1").expect("has pkg-1"));
+    assert!(
+        !repo
+            .insert_if_new("pkg-1", "products", Some("w-1"), "admin", Some("iss-1"))
+            .expect("exact replay probe"),
+        "exact package_id re-import must be refused"
     );
-}
-
-#[test]
-fn dropped_token_never_advances_the_ledger() {
-    let db = ConnectionFactory::new_for_test().expect("db");
-    run_migrations(db.get_connection()).expect("migrations");
-    let repo = make_executor(&db).transport_export_sequence_state();
-
-    {
-        let token: PendingTransportSequence = repo.begin_export("iss-2", "T-2").expect("token");
-        assert_eq!(token.value(), 1);
-        // Dropped without commit — RAII guarantees no ledger write.
-    }
-
-    assert_eq!(
-        repo.next_issued_sequence("iss-2", "T-2").expect("read"),
-        None,
-        "dropped token must leave the stream untouched"
+    assert!(
+        repo.insert_if_new("pkg-2", "products", Some("w-1"), "admin", Some("iss-1"))
+            .expect("fresh package id"),
+        "a fresh package_id is accepted"
     );
-
-    // The next allocation restarts at 1 — no phantom consumption.
-    let token = repo.begin_export("iss-2", "T-2").expect("token");
-    assert_eq!(token.value(), 1);
-    token.commit().expect("commit");
-}
-
-#[test]
-fn record_issued_sequence_roundtrips_and_keys_are_validated() {
-    let db = ConnectionFactory::new_for_test().expect("db");
-    run_migrations(db.get_connection()).expect("migrations");
-    let repo = make_executor(&db).transport_export_sequence_state();
-
-    assert_eq!(
-        repo.next_issued_sequence("iss-3", "T-3").expect("empty"),
-        None
-    );
-    repo.record_issued_sequence("iss-3", "T-3", 41)
-        .expect("record");
-    assert_eq!(
-        repo.next_issued_sequence("iss-3", "T-3").expect("41"),
-        Some(41)
-    );
-    repo.record_issued_sequence("iss-3", "T-3", 42)
-        .expect("advance");
-    assert_eq!(
-        repo.next_issued_sequence("iss-3", "T-3").expect("42"),
-        Some(42)
-    );
-
-    // Fail-closed stream keys: empty or whitespace-only values are rejected.
-    assert!(repo.next_issued_sequence("", "T-3").is_err());
-    assert!(repo.next_issued_sequence("iss-3", "   ").is_err());
-    assert!(repo.begin_export("", "T-3").is_err());
-    assert!(repo.begin_export("iss-3", "").is_err());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Consumer Transport Guard negatives — frozen rules, hand-crafted vehicles
-// ─────────────────────────────────────────────────────────────────────────────
-
-mod consumer {
-    use super::*;
-
-    fn unit_receiver(unit_code: &str) -> (TempDir, grpc_lib::commands::AppState) {
-        use grpc_lib::commands::AppState;
-        let dir = TempDir::new().expect("temp dir");
-        let db = ConnectionFactory::new_for_test().expect("db");
-        let state = AppState::new_for_test(db);
-        {
-            let guard = state.get_db().expect("lock");
-            let db = guard.as_ref().expect("db");
-            db.get_connection()
-                .execute("DELETE FROM users", [])
-                .expect("clear seeded users");
-            db.get_connection()
-                .execute(
-                    "UPDATE settings SET node_type = 'UNIT', configured = 1, unit_name = 'unit-scope-id', wilaya_code = '16', wilaya_name = NULL WHERE id = 1",
-                    [],
-                )
-                .expect("settings");
-            db.get_connection()
-                .execute(
-                    "INSERT INTO units (id, code, name, wilaya_code, created_at) VALUES (?1, ?2, ?3, '16', ?4)",
-                    [Uuid::new_v4().to_string(), unit_code.to_string(), format!("Unit {unit_code}"), FIXED_NOW.to_string()],
-                )
-                .expect("local unit");
-        }
-        (dir, state)
-    }
-
-    fn seed_anchor(state: &grpc_lib::commands::AppState, cert: &IdentityCertificate) {
-        let guard = state.get_db().expect("lock");
-        let db = guard.as_ref().expect("db");
-        let mut anchor = cert.clone();
-        anchor.issuer_identity_id = None;
-        anchor.signature = None;
-        anchor.status = CredentialStatus::Active;
-        grpc_lib::domain::identity::IdentityStorePort::upsert(
-            &make_executor(db).identity_store(),
-            &anchor,
-            &chrono::Utc::now().to_rfc3339(),
-        )
-        .expect("seed anchor");
-    }
-
-    fn set_session(state: &grpc_lib::commands::AppState, role: &str) {
-        use grpc_lib::models::UserRole;
-        let mut session = common::create_test_session("u1", "bob", role);
-        session.user_role = UserRole::from(role.to_string());
-        common::insert_test_user(state, "u1", "bob", role);
-        *state.current_session.lock().expect("session mutex") = Some(session);
-    }
-
-    /// First import MUST be exactly sequence 1 on an empty consumer ledger.
-    #[test]
-    fn consumer_rejects_first_import_that_is_not_one() {
-        let mut node = fresh_node();
-        let wilaya_cert = bootstrap_wilaya(&mut node);
-        let issuer = wilaya_cert.identity_id;
-        let secret = node.node_key_store.read().expect("secret");
-
-        let (_dir, state) = unit_receiver("UNIT-N1");
-        seed_anchor(&state, &wilaya_cert);
-        set_session(&state, "User");
-
-        let pkg = crafted_admin_package("sec031-not-one", issuer, secret, 2);
-        let path = _dir.path().join("not-one.sync");
-        write_encrypted_admin(&pkg, secret, &path);
-
-        let err = grpc_lib::commands::import_admin_access_package_impl(
-            &state,
-            path.to_string_lossy().into_owned(),
-        )
-        .expect_err("first import ≠ 1 must be rejected");
-        assert!(
-            format!("{err:?}").contains("OutOfOrder") || !format!("{err:?}").is_empty(),
-            "rejected: {err:?}"
-        );
-    }
-
-    /// Stale (lower than applied), duplicate/replay, and gap sequences are
-    /// all rejected by the frozen consumer guard.
-    #[test]
-    fn consumer_rejects_stale_duplicate_and_gap_sequences() {
-        let mut node = fresh_node();
-        let wilaya_cert = bootstrap_wilaya(&mut node);
-        let issuer = wilaya_cert.identity_id;
-        let secret = node.node_key_store.read().expect("secret");
-
-        let (dir, state) = unit_receiver("UNIT-N2");
-        seed_anchor(&state, &wilaya_cert);
-        set_session(&state, "User");
-        let state_ref = &state;
-
-        let apply = |name: &str, seq: u64| -> Result<(), String> {
-            let pkg = crafted_admin_package(name, issuer, secret, seq);
-            let path = dir.path().join(format!("{name}.sync"));
-            write_encrypted_admin(&pkg, secret, &path);
-            grpc_lib::commands::import_admin_access_package_impl(
-                state_ref,
-                path.to_string_lossy().into_owned(),
-            )
-            .map(|_| ())
-        };
-
-        // Valid bootstrap: 1.
-        apply("sec031-first", 1).expect("bootstrap seq 1 applies");
-        {
-            let guard = state.get_db().expect("lock");
-            let db = guard.as_ref().expect("db");
-            assert_eq!(last_applied(db, &issuer.to_string()), Some(1));
-        }
-
-        // Post-bootstrap imports take the AdminOnly re-import path
-        // (ADR-0051 §9): promote the local session to Admin.
-        set_session(state_ref, "Admin");
-
-        // Gap: skipping 2 entirely → 4 rejected.
-        assert!(
-            apply("sec031-gap", 4).is_err(),
-            "gap sequence 4 must be rejected while applied=1"
-        );
-        assert_eq!(
-            last_applied(
-                state.get_db().expect("lock").as_ref().expect("db"),
-                &issuer.to_string()
-            ),
-            Some(1),
-            "rejected gap leaves the ledger untouched"
-        );
-
-        // Duplicate/replay of an already-applied sequence → rejected.
-        assert!(
-            apply("sec031-replay", 1).is_err(),
-            "replayed sequence 1 must be rejected while applied=1"
-        );
-
-        // Valid continuation: 2 applies, then stale 1 is rejected again.
-        apply("sec031-second", 2).expect("continuation seq 2 applies");
-        assert!(
-            apply("sec031-stale", 1).is_err(),
-            "stale sequence 1 must be rejected while applied=2"
-        );
-        {
-            let guard = state.get_db().expect("lock");
-            let db = guard.as_ref().expect("db");
-            assert_eq!(last_applied(db, &issuer.to_string()), Some(2));
-        }
-    }
+    assert!(repo.has_imported("pkg-2").expect("has pkg-2"));
 }

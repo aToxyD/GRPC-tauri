@@ -9,9 +9,7 @@
 //! Section B — `verify_unit_v2_acceptance` (`.unit` V2 gate, A44-01/07/08):
 //!   B1 anchor-first: no anchor → reject;
 //!   B2 anchor == issuer binding;
-//!   B3 fixed bootstrap sequence 1 (A44-08);
-//!   B4 one-time: non-empty ledger → reject;
-//!   B5 all conditions → accept.
+//!   B3 all conditions → accept (SEC-057: no sequence, no ledger).
 //! Section C — D1 cutover (ADR-0051 §9): legacy `identity_access` imports
 //!   fail closed at the kind boundary before any mutation:
 //!   C1 a fully valid legacy bootstrap artifact is still rejected;
@@ -19,8 +17,8 @@
 //!   C3 repeated attempts leave zero partial state;
 //!   C4 rejection applies on every node type;
 //!   C5 the legacy kind is never reinterpreted as `admin_access`.
-//! Section D — `.unit` V2 producer: fixed sequence 1, V2/Ed25519, ledger
-//!   untouched (next export still allocates 1).
+//! Section D — `.unit` V2 producer: V2/Ed25519 producer integrity (SEC-057:
+//!   no sequence allocation, no ledger is touched).
 
 #[allow(dead_code)]
 mod common;
@@ -53,9 +51,8 @@ const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
 
 /// RFC 8032 §7.1 TEST 1 secret — matches the debug-mode Root fallback.
 const TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 
 fn make_executor(db: &Database) -> DbExecutor<'_> {
@@ -209,7 +206,6 @@ fn b1_unit_v2_rejected_without_anchor() {
     let err = B8FirstImportPredicatesService::verify_unit_v2_acceptance(
         &make_executor(&db),
         &issuer_id.to_string(),
-        Some(1),
     )
     .expect_err("anchor-first: must reject without an anchor");
     assert!(matches!(err, AppError::Validation(_)));
@@ -224,49 +220,13 @@ fn b2_unit_v2_rejected_when_issuer_not_anchor() {
     let err = B8FirstImportPredicatesService::verify_unit_v2_acceptance(
         &make_executor(&db),
         &other.to_string(),
-        Some(1),
     )
     .expect_err("anchor==issuer must be enforced");
     assert!(matches!(err, AppError::Validation(_)));
 }
 
 #[test]
-fn b3_unit_v2_rejected_when_sequence_not_one() {
-    let db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_anchor(&db, issuer_id, ISSUER_SECRET);
-    for seq in [None, Some(0), Some(2), Some(5)] {
-        let err = B8FirstImportPredicatesService::verify_unit_v2_acceptance(
-            &make_executor(&db),
-            &issuer_id.to_string(),
-            seq,
-        )
-        .expect_err("A44-08: first .unit V2 must carry sequence 1");
-        assert!(matches!(err, AppError::Validation(_)));
-    }
-}
-
-#[test]
-fn b4_unit_v2_rejected_when_ledger_not_empty() {
-    let db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_anchor(&db, issuer_id, ISSUER_SECRET);
-    make_executor(&db)
-        .sync_applied_packages()
-        .record_issuer_sequence(&issuer_id.to_string(), 1)
-        .expect("advance ledger");
-
-    let err = B8FirstImportPredicatesService::verify_unit_v2_acceptance(
-        &make_executor(&db),
-        &issuer_id.to_string(),
-        Some(1),
-    )
-    .expect_err("one-time bootstrap: non-empty ledger must reject");
-    assert!(matches!(err, AppError::Validation(_)));
-}
-
-#[test]
-fn b5_unit_v2_acceptance_succeeds_on_fresh_anchor_first_node() {
+fn b3_unit_v2_acceptance_succeeds_on_fresh_anchor_first_node() {
     let db = ConnectionFactory::new_for_test().expect("db");
     let issuer_id = Uuid::new_v4();
     seed_anchor(&db, issuer_id, ISSUER_SECRET);
@@ -274,9 +234,8 @@ fn b5_unit_v2_acceptance_succeeds_on_fresh_anchor_first_node() {
     B8FirstImportPredicatesService::verify_unit_v2_acceptance(
         &make_executor(&db),
         &issuer_id.to_string(),
-        Some(1),
     )
-    .expect("fresh node + installed anchor + seq 1 must be accepted");
+    .expect("fresh node + installed anchor must be accepted");
 }
 
 // ── Section D: `.unit` V2 producer (ADR-0044 A44-07/08) ──────────────────
@@ -339,7 +298,7 @@ fn d1_unit_v2_export_is_fixed_sequence_one_and_ledger_untouched() {
         unit_private_key: None,
     };
 
-    let sequence = IdentitySignedExportService::new(&db, &node_key_store)
+    IdentitySignedExportService::new(&db, &node_key_store)
         .export_v2_bootstrap_package(
             dataset.clone(),
             "wilaya-test-node",
@@ -349,25 +308,13 @@ fn d1_unit_v2_export_is_fixed_sequence_one_and_ledger_untouched() {
         )
         .expect("bootstrap export");
 
-    assert_eq!(sequence, 1, "A44-08: fixed bootstrap sequence 1");
-
     let pkg = read_unit_node_package_from_file(&path, &crypto).expect("read .unit back");
     let meta = &pkg.metadata;
     assert_eq!(meta.signature_version, Some(SIGNATURE_VERSION_ED25519));
-    assert_eq!(meta.package_sequence, Some(1));
     assert_eq!(meta.issuer_identity_id, Some(wilaya_cert.identity_id));
     assert!(meta.signature.is_some(), "Ed25519 signature must be set");
     assert_eq!(pkg.payload.unit.code, dataset.unit.code);
     assert_eq!(pkg.payload.unit.name, dataset.unit.name);
     assert_eq!(pkg.payload.user.username, dataset.user.username);
     assert_eq!(pkg.payload.user.role, dataset.user.role);
-
-    // The bootstrap artifact never advances any transport ledger (ADR-0053):
-    // the unified per-target stream for this issuer stays empty.
-    let issued = db
-        .executor()
-        .transport_export_sequence_state()
-        .next_issued_sequence(&wilaya_cert.identity_id.to_string(), "UNIT-A")
-        .expect("read ledger");
-    assert_eq!(issued, None, ".unit export must not burn ledger sequence");
 }

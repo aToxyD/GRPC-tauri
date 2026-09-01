@@ -13,7 +13,7 @@ use grpc_lib::application::usecases::exports::types::{
     DailyReportExportDataset, ProductsExportDataset,
 };
 use grpc_lib::infrastructure::sync::packages::signing::{
-    DEFAULT_SIGNATURE_VERSION, Ed25519PackageSigner,
+    Ed25519PackageSigner, DEFAULT_SIGNATURE_VERSION,
 };
 use grpc_lib::infrastructure::sync::{
     read_daily_report_package_from_file, read_products_package_from_file,
@@ -46,7 +46,6 @@ fn fixture_products_package() -> SyncPackage<ProductsExportDataset> {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "16".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("pkg-products-rt-1".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),
@@ -72,7 +71,6 @@ fn fixture_daily_package() -> SyncPackage<DailyReportExportDataset> {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "unit-alpha".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("pkg-daily-rt-1".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),
@@ -161,7 +159,6 @@ fn v1_shaped_package_is_rejected_by_deserializer() {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc.with_ymd_and_hms(2026, 2, 1, 10, 0, 0).unwrap(),
             source_node_id: "16".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("pkg-v1-rt-1".into()),
             signature_version: None,
@@ -174,8 +171,10 @@ fn v1_shaped_package_is_rejected_by_deserializer() {
         },
     };
     let plaintext = serde_json::to_vec(&pkg).expect("serialize");
-    let err = grpc_lib::infrastructure::sync::SerdeJsonSyncPackageDeserializer
-        ::products_from_reader(std::io::BufReader::new(std::io::Cursor::new(plaintext)))
+    let err =
+        grpc_lib::infrastructure::sync::SerdeJsonSyncPackageDeserializer::products_from_reader(
+            std::io::BufReader::new(std::io::Cursor::new(plaintext)),
+        )
         .expect_err("V1 legacy package must be rejected");
     assert!(matches!(err, grpc_lib::errors::AppError::Validation(_)));
 }

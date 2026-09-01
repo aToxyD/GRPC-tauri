@@ -10,7 +10,7 @@ use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset
 use grpc_lib::errors::AppError;
 use grpc_lib::infrastructure::security::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::sync::packages::signing::{
-    DEFAULT_SIGNATURE_VERSION, Ed25519PackageSigner,
+    Ed25519PackageSigner, DEFAULT_SIGNATURE_VERSION,
 };
 use grpc_lib::infrastructure::sync::{
     read_monthly_summary_package_from_file, SerdeJsonSyncPackageDeserializer,
@@ -52,7 +52,6 @@ fn v2_package_roundtrips_encrypted_and_validates() {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
             source_node_id: "u-1".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("p-v2-rt".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),
@@ -77,8 +76,7 @@ fn v2_package_roundtrips_encrypted_and_validates() {
         )
         .expect("build");
 
-    let decoded =
-        read_monthly_summary_package_from_file(&path, &crypto_port).expect("read+decode");
+    let decoded = read_monthly_summary_package_from_file(&path, &crypto_port).expect("read+decode");
     validate_monthly_summary_package_for_import(&decoded).expect("validate");
     assert_eq!(decoded.payload.summary.month, 1);
 }
@@ -91,7 +89,6 @@ fn rejects_unsupported_schema_version() {
             schema_version: SchemaVersion::new(SYNC_PACKAGE_SCHEMA_VERSION.as_u16() + 99),
             created_at,
             source_node_id: "u".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("p1".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),
@@ -122,7 +119,6 @@ fn rejects_integrity_hash_mismatch() {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "u-1".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("p2".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),
@@ -151,7 +147,6 @@ fn rejects_package_without_integrity_hash() {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "u-1".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("p-no-hash".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),
@@ -178,7 +173,6 @@ fn rejects_package_too_old_schema() {
             schema_version: SchemaVersion::new(0),
             created_at,
             source_node_id: "u".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("p-old".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),

@@ -12,11 +12,9 @@ use grpc_lib::application::sync::{
 use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
 use grpc_lib::infrastructure::security::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::sync::packages::signing::{
-    DEFAULT_SIGNATURE_VERSION, Ed25519PackageSigner,
+    Ed25519PackageSigner, DEFAULT_SIGNATURE_VERSION,
 };
-use grpc_lib::infrastructure::sync::{
-    PackageBuilder, SerdeJsonSyncPackageSerializer,
-};
+use grpc_lib::infrastructure::sync::{PackageBuilder, SerdeJsonSyncPackageSerializer};
 use grpc_lib::models::{DailyDetailSyncSnapshot, MonthlySummary};
 // PlaintextSeal is no longer needed as we test through the real age-encryption provider
 // but verify the decrypted content for determinism.
@@ -31,7 +29,6 @@ fn monthly_fixture_package() -> SyncPackage<MonthlySummaryExportDataset> {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "contract-node".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("contract-pkg-monthly-001".into()),
             signature_version: Some(DEFAULT_SIGNATURE_VERSION),

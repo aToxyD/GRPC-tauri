@@ -1,10 +1,11 @@
-//! SEC-055 — consolidated fresh-install baseline.
+//! SEC-055 — consolidated fresh-install baseline (as amended by SEC-057).
 //!
 //! The application is pre-release and has never been deployed. SEC-049/SEC-051
 //! folded the migration history into a single consolidated baseline; SEC-055
 //! folds the B4 sync transport ledger (formerly migration 004) and the unified
 //! producer transport sequence (formerly migration 011) directly into
-//! `001_initial.sql`.
+//! `001_initial.sql`. SEC-057 then removes the transport-sequence ledgers and
+//! the `applied_sync_packages.package_sequence` column from that baseline.
 //!
 //! This test proves that a genuinely fresh database built through the Rust
 //! migration runner (migration 1 only) contains the complete final schema:
@@ -69,20 +70,40 @@ fn fresh_baseline_is_single_migration_with_complete_schema() {
     assert_eq!(version, 1, "expected_schema_version must be 1");
 
     // --- Retained transport/security objects (must EXIST) ---
-    assert!(table_exists(conn, "sync_issuer_sequence"), "consumer ledger present");
-    assert!(table_exists(conn, "transport_export_sequence"), "producer ledger present");
-    assert!(table_exists(conn, "applied_sync_packages"), "applied ledger present");
-    assert!(table_exists(conn, "identity_store"), "identity store present");
-    assert!(column_exists(conn, "identity_store", "signature"), "identity_store.signature present");
+    assert!(
+        table_exists(conn, "applied_sync_packages"),
+        "applied ledger present"
+    );
+    assert!(
+        table_exists(conn, "identity_store"),
+        "identity store present"
+    );
+    assert!(
+        column_exists(conn, "identity_store", "signature"),
+        "identity_store.signature present"
+    );
     assert!(table_exists(conn, "audit_summary"), "audit_summary present");
-    assert!(table_exists(conn, "import_reproducibility_metadata"), "import_reproducibility_metadata present");
+    assert!(
+        table_exists(conn, "import_reproducibility_metadata"),
+        "import_reproducibility_metadata present"
+    );
     assert!(table_exists(conn, "domain_events"), "domain_events present");
 
-    // B4 transport metadata folded onto the applied ledger.
-    assert!(column_exists(conn, "applied_sync_packages", "package_sequence"), "applied.package_sequence present");
-    assert!(column_exists(conn, "applied_sync_packages", "issuer_identity_id"), "applied.issuer_identity_id present");
+    // B4 sync metadata folded onto the applied ledger.
+    assert!(
+        column_exists(conn, "applied_sync_packages", "issuer_identity_id"),
+        "applied.issuer_identity_id present"
+    );
 
     // --- Intentionally-retired objects (must NOT EXIST) ---
+    // SEC-057: the transport-sequence ledgers and the applied-package
+    // package_sequence column are removed.
+    table_absent(conn, "sync_issuer_sequence");
+    table_absent(conn, "transport_export_sequence");
+    assert!(
+        !column_exists(conn, "applied_sync_packages", "package_sequence"),
+        "applied_sync_packages.package_sequence must NOT exist"
+    );
     assert!(
         !column_exists(conn, "identity_store", "package_sequence"),
         "identity_store.package_sequence must NOT exist"

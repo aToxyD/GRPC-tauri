@@ -14,8 +14,7 @@
 //!   B5 structural: the command takes NO unit selector.
 //! Section C — first-import predicates service (exact triple):
 //!   C1 all hold; C2 no anchor; C3 issuer ≠ anchor; C4 active admin exists;
-//!   C5 first package must carry sequence 1 on an empty ledger;
-//!   C6 non-empty ledger defers to the Transport Guard (accepts seq 2 next).
+//!   C5 anchor-issuer acceptance gate (SEC-056D/SEC-057: no sequence);
 //! Section D — import command routing & authorization:
 //!   D1 unauthenticated import fails;
 //!   D2 WILAYA node cannot use the UNIT import path (structural guard);
@@ -99,14 +98,12 @@ fn seed_anchor(db: &Database, identity_id: Uuid, secret: [u8; 32]) {
 fn admin_package(
     package_id: &str,
     issuer_id: Uuid,
-    sequence: u64,
     payload: AdminAccessPayload,
 ) -> SyncPackage<AdminAccessPayload> {
     SyncPackage {
         metadata: SyncPackageMetadata {
             created_at: Utc::now(),
             integrity_hash: None,
-            package_sequence: Some(sequence),
             issuer_identity_id: Some(issuer_id),
             package_id: PackageId(package_id.to_string()),
             schema_version: SchemaVersion::V2,
@@ -304,11 +301,8 @@ fn b1_unauthenticated_export_fails() {
     let state = wilaya_state();
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(
-        &state,
-        path.to_string_lossy().into_owned(),
-    )
-    .expect_err("unauthenticated export must fail");
+    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
+        .expect_err("unauthenticated export must fail");
     assert!(!err.is_empty());
 }
 
@@ -318,11 +312,8 @@ fn b2_unit_node_cannot_export() {
     set_session(&state, "Admin");
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(
-        &state,
-        path.to_string_lossy().into_owned(),
-    )
-    .expect_err("export is Wilaya-only");
+    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
+        .expect_err("export is Wilaya-only");
     assert!(err.contains("غير مصرح"), "got: {err}");
 }
 
@@ -332,11 +323,8 @@ fn b3_non_admin_wilaya_session_cannot_export() {
     set_session(&state, "User");
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(
-        &state,
-        path.to_string_lossy().into_owned(),
-    )
-    .expect_err("export requires an Admin session");
+    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
+        .expect_err("export requires an Admin session");
     assert!(err.contains("غير مصرح"), "got: {err}");
 }
 
@@ -347,11 +335,8 @@ fn b4_locked_store_fails_closed() {
     *state.db.lock().expect("db mutex") = None;
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
-    let err = export_admin_access_package_impl(
-        &state,
-        path.to_string_lossy().into_owned(),
-    )
-    .expect_err("locked store must fail closed");
+    let err = export_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
+        .expect_err("locked store must fail closed");
     assert!(!err.is_empty());
 }
 
@@ -459,51 +444,46 @@ fn c4_existing_admin_blocks_bootstrap() {
 }
 
 #[test]
-fn c5_first_package_on_empty_ledger_must_be_sequence_1() {
+fn c5_first_import_issuer_gate_binds_issuer_to_anchor() {
+    // SEC-056D/SEC-057: the transport-sequence bootstrap is gone. The first
+    // import acceptance gate is issuer-pinning only — the package issuer MUST
+    // be the locally installed ACTIVE WILAYA anchor; no sequence participates.
     let state = provisioned_unit_state("UNIT-9");
-    let issuer_id = Uuid::new_v4();
+    let anchor_id = Uuid::new_v4();
+    let foreign = Uuid::new_v4();
     let guard = state.get_db().expect("lock");
     let db = guard.as_ref().expect("db");
-    seed_anchor(db, issuer_id, ISSUER_SECRET);
+    seed_anchor(db, anchor_id, ISSUER_SECRET);
 
-    AdminAccessFirstImportPredicatesService::verify_first_package_sequence(
+    AdminAccessFirstImportPredicatesService::verify_first_import_issuer(
         &make_executor(db),
-        &issuer_id.to_string(),
-        Some(1),
+        &anchor_id.to_string(),
     )
-    .expect("sequence 1 is admissible as the first package");
+    .expect("the installed anchor as issuer is admissible");
 
-    let err = AdminAccessFirstImportPredicatesService::verify_first_package_sequence(
+    let err = AdminAccessFirstImportPredicatesService::verify_first_import_issuer(
         &make_executor(db),
-        &issuer_id.to_string(),
-        Some(2),
+        &foreign.to_string(),
     )
-    .expect_err("sequence 2 must NOT be admissible as the first package");
+    .expect_err("a foreign (non-anchor) issuer must be rejected");
     assert!(matches!(err, grpc_lib::errors::AppError::Validation(_)));
 }
 
 #[test]
-fn c6_non_empty_ledger_defers_to_transport_guard() {
+fn c6_issuer_gate_is_independent_of_ledger_state() {
+    // No per-issuer transport ledger exists (SEC-057). The anchor-issuer gate
+    // holds regardless of how many packages preceded it.
     let state = provisioned_unit_state("UNIT-9");
     let issuer_id = Uuid::new_v4();
     {
         let guard = state.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
         seed_anchor(db, issuer_id, ISSUER_SECRET);
-        // Simulate one already-applied package (ledger = 3).
-        make_executor(db)
-            .sync_applied_packages()
-            .record_issuer_sequence(&issuer_id.to_string(), 3)
-            .expect("advance ledger");
-        // With ledger state present the strict "must be 1" bootstrap gate
-        // does not apply; continuity is owned by the Transport Guard (whose
-        // local-ledger semantics are covered in f1_multi_unit_producer_tests).
-        AdminAccessFirstImportPredicatesService::verify_first_package_sequence(
+        AdminAccessFirstImportPredicatesService::verify_first_import_issuer(
             &make_executor(db),
             &issuer_id.to_string(),
-            Some(4),
         )
-        .expect("non-empty ledger defers to the Transport Guard rule");
+        .expect("anchor-issuer gate holds on a fresh node");
     }
 }
 
@@ -525,7 +505,7 @@ fn d0_invalid_signature_is_rejected_with_zero_mutation() {
     let path = dir.path().join("forged.sync");
     // …but the package is signed with a DIFFERENT key.
     let package = sign_v2_package(
-        admin_package("aa-d0", issuer_id, 1, fleet_payload(FLEET_PASSWORD)),
+        admin_package("aa-d0", issuer_id, fleet_payload(FLEET_PASSWORD)),
         OTHER_SECRET,
     );
     write_encrypted(&package, OTHER_SECRET, &path);
@@ -583,19 +563,13 @@ fn d3_post_bootstrap_user_session_rejected_with_zero_mutation() {
                 FIXED_NOW,
             )
             .expect("existing admin");
-        // Ledger at 1 so the seq-2 package passes the Transport Guard and
-        // reaches the predicates (proving the PREDICATES reject a User).
-        make_executor(db)
-            .sync_applied_packages()
-            .record_issuer_sequence(&issuer_id.to_string(), 1)
-            .expect("seed ledger");
     }
     set_session(&state, "User");
 
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("second.sync");
     let package = sign_v2_package(
-        admin_package("aa-d3", issuer_id, 2, fleet_payload(FLEET_PASSWORD)),
+        admin_package("aa-d3", issuer_id, fleet_payload(FLEET_PASSWORD)),
         ISSUER_SECRET,
     );
     write_encrypted(&package, ISSUER_SECRET, &path);
@@ -636,7 +610,7 @@ fn d4_post_bootstrap_admin_rotation_import_succeeds() {
     set_session(&state, "User");
     let first = dir.path().join("first.sync");
     let p1 = sign_v2_package(
-        admin_package("aa-d4a", issuer_id, 1, fleet_payload(FLEET_PASSWORD)),
+        admin_package("aa-d4a", issuer_id, fleet_payload(FLEET_PASSWORD)),
         ISSUER_SECRET,
     );
     write_encrypted(&p1, ISSUER_SECRET, &first);
@@ -648,12 +622,7 @@ fn d4_post_bootstrap_admin_rotation_import_succeeds() {
     set_session(&state, "Admin");
     let second = dir.path().join("second.sync");
     let p2 = sign_v2_package(
-        admin_package(
-            "aa-d4b",
-            issuer_id,
-            2,
-            fleet_payload(FLEET_PASSWORD_ROTATED),
-        ),
+        admin_package("aa-d4b", issuer_id, fleet_payload(FLEET_PASSWORD_ROTATED)),
         ISSUER_SECRET,
     );
     write_encrypted(&p2, ISSUER_SECRET, &second);
@@ -714,7 +683,7 @@ fn e1_bootstrap_import_preserves_operator_row_and_credentials() {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("grpc-admin-access.sync");
     let package = sign_v2_package(
-        admin_package("aa-e1", issuer_id, 1, fleet_payload(FLEET_PASSWORD)),
+        admin_package("aa-e1", issuer_id, fleet_payload(FLEET_PASSWORD)),
         ISSUER_SECRET,
     );
     write_encrypted(&package, ISSUER_SECRET, &path);
@@ -795,7 +764,7 @@ fn e2_rotation_reimport_still_never_touches_operator_row() {
     let dir = TempDir::new().expect("temp dir");
     let first = dir.path().join("first.sync");
     let p1 = sign_v2_package(
-        admin_package("aa-e2a", issuer_id, 1, fleet_payload(FLEET_PASSWORD)),
+        admin_package("aa-e2a", issuer_id, fleet_payload(FLEET_PASSWORD)),
         ISSUER_SECRET,
     );
     write_encrypted(&p1, ISSUER_SECRET, &first);
@@ -805,12 +774,7 @@ fn e2_rotation_reimport_still_never_touches_operator_row() {
     set_session(&state, "Admin");
     let second = dir.path().join("second.sync");
     let p2 = sign_v2_package(
-        admin_package(
-            "aa-e2b",
-            issuer_id,
-            2,
-            fleet_payload(FLEET_PASSWORD_ROTATED),
-        ),
+        admin_package("aa-e2b", issuer_id, fleet_payload(FLEET_PASSWORD_ROTATED)),
         ISSUER_SECRET,
     );
     write_encrypted(&p2, ISSUER_SECRET, &second);
@@ -846,7 +810,7 @@ fn e3_no_user_account_is_created_by_synchronization() {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("first.sync");
     let package = sign_v2_package(
-        admin_package("aa-e3", issuer_id, 1, fleet_payload(FLEET_PASSWORD)),
+        admin_package("aa-e3", issuer_id, fleet_payload(FLEET_PASSWORD)),
         ISSUER_SECRET,
     );
     write_encrypted(&package, ISSUER_SECRET, &path);

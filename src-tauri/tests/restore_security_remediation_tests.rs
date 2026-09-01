@@ -2,9 +2,10 @@
 //!
 //! Covers: restore audit survivability (external marker, boot-time
 //! `AuditAction::RestoreBackup` emission, idempotency, no false-success),
-//! security-regression guard + `RESTORE-OLDER-TRUST` ceremony, monotonic
-//! ledger overlay, crash-safety convergence, authorization matrix, and the B8
-//! setup-mode interaction.
+//! security-regression guard + `RESTORE-OLDER-TRUST` ceremony, registry
+//! overlay, crash-safety convergence, authorization matrix, and the B8
+//! setup-mode interaction. SEC-057 removed the transport-sequence ledgers from
+//! the restore path; only the exact-`package_id` registry overlay remains.
 
 #[allow(dead_code)]
 mod common;
@@ -16,24 +17,22 @@ use grpc_lib::application::authz::Action;
 use grpc_lib::application::services::runtime_bootstrap::{
     apply_pending_restore_ledger_overlays, consume_restore_markers,
 };
-use grpc_lib::application::services::{
-    AuditService, B8FirstImportPredicatesService, RestoreRegressionStatus,
-};
+use grpc_lib::application::services::{AuditService, RestoreRegressionStatus};
 use grpc_lib::application::sync::{ImportedPackageRegistry, PackageId};
 use grpc_lib::commands::backup::{
-    RestorePreflight, append_restore_marker_commit, cleanup_failed_restore_artifacts,
-    prepare_restore_backup,
+    append_restore_marker_commit, cleanup_failed_restore_artifacts, prepare_restore_backup,
+    RestorePreflight,
 };
-use grpc_lib::commands::{AppState, authorize_command};
+use grpc_lib::commands::{authorize_command, AppState};
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::audit::{AuditAction, AuditFilters, AuditStatus, EntityType};
 use grpc_lib::domain::ports::backup::{
-    BackupPort, RestoreMarker, restore_archive_dir, restore_ledger_sidecar_path,
-    restore_marker_history_path,
+    restore_archive_dir, restore_ledger_sidecar_path, restore_marker_history_path, BackupPort,
+    RestoreMarker,
 };
 use grpc_lib::errors::BusinessLogicError;
 use grpc_lib::infrastructure::backup::{
-    SqliteBackupAdapter, recover_interrupted_restore_and_orphans,
+    recover_interrupted_restore_and_orphans, SqliteBackupAdapter,
 };
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
@@ -42,7 +41,6 @@ use tempfile::tempdir;
 
 const ISSUER: &str = "11111111-1111-4111-8111-111111111111";
 const PKG: &str = "pkg-P";
-const PKG2: &str = "pkg-Q";
 const PKG_KIND: &str = "daily_report";
 // identity_store uuid fields (identity_id / subject_id / credential_id all
 // parse as UUIDs at the repository boundary — see identity_store map_row).
@@ -89,9 +87,7 @@ fn committed_restore(
 ) -> (RestorePreflight, Database) {
     let preflight = prepare_restore_backup(&env.db_path, backup, older_token, "u1", env.crypto)
         .expect("preflight");
-    adapter(env)
-        .restore_backup_atomic(backup)
-        .expect("swap");
+    adapter(env).restore_backup_atomic(backup).expect("swap");
     append_restore_marker_commit(&env.db_path, &preflight.marker_id).expect("commit line");
     let db = boot_phases(&env.db_path);
     (preflight, db)
@@ -147,29 +143,11 @@ fn read_markers(db_path: &Path) -> Vec<RestoreMarker> {
         .collect()
 }
 
-fn insert_ledger_row(db_path: &Path, package_id: &str, issuer: &str, seq: u64) {
+fn insert_ledger_row(db_path: &Path, package_id: &str, issuer: &str) {
     let db = open_db(db_path);
     let repo = SyncAppliedPackagesRepository::new(db.executor());
-    repo.insert_if_new(package_id, PKG_KIND, Some(issuer), "admin", Some(seq), Some(issuer))
+    repo.insert_if_new(package_id, PKG_KIND, Some(issuer), "admin", Some(issuer))
         .expect("insert package");
-    repo.record_issuer_sequence(issuer, seq).expect("record seq");
-}
-
-fn ledger_state(db: &Database) -> (Vec<String>, Option<u64>) {
-    let repo = SyncAppliedPackagesRepository::new(db.executor());
-    let has_p = repo.has_imported(PKG).expect("has_imported");
-    let has_q = repo.has_imported(PKG2).expect("has_imported q");
-    let mut ids = Vec::new();
-    if has_p {
-        ids.push(PKG.to_string());
-    }
-    if has_q {
-        ids.push(PKG2.to_string());
-    }
-    let seq = repo
-        .last_applied_sequence_for_issuer(ISSUER)
-        .expect("seq");
-    (ids, seq)
 }
 
 /// Insert one identity_store credential row (raw SQL — test-only).
@@ -203,34 +181,6 @@ fn insert_credential(
         .expect("insert credential");
 }
 
-/// Insert one producer `transport_export_sequence` row (raw SQL — test-only).
-fn insert_transport_sequence(db_path: &Path, issuer: &str, target: &str, seq: u64) {
-    let db = open_db(db_path);
-    db.get_connection()
-        .execute(
-            "INSERT INTO transport_export_sequence
-               (issuer_identity_id, target_node_id, last_issued_sequence, updated_at)
-             VALUES (?1, ?2, ?3, datetime('now'))",
-            rusqlite::params![issuer, target, seq as i64],
-        )
-        .expect("insert transport sequence");
-}
-
-/// Read the live producer sequence for `(issuer, target)`, if any.
-fn transport_state(db: &Database, issuer: &str, target: &str) -> Option<u64> {
-    use rusqlite::OptionalExtension;
-    db.get_connection()
-        .query_row(
-            "SELECT last_issued_sequence FROM transport_export_sequence \
-             WHERE issuer_identity_id = ?1 AND target_node_id = ?2",
-            rusqlite::params![issuer, target],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()
-        .expect("query transport sequence")
-        .and_then(|s| u64::try_from(s).ok())
-}
-
 // ────────────────────────── BR-06: audit survivability ──────────────────────────
 
 #[test]
@@ -254,10 +204,15 @@ fn marker_written_before_swap_and_audit_emitted_into_restored_db() {
     // and participates in the normal audit chain.
     let entries = restore_audit_entries(&db);
     assert_eq!(entries.len(), 1, "exactly one RestoreBackup audit");
-    assert_eq!(entries[0].entity_id.as_deref(), Some(preflight.marker_id.as_str()));
+    assert_eq!(
+        entries[0].entity_id.as_deref(),
+        Some(preflight.marker_id.as_str())
+    );
     assert_eq!(entries[0].entity_type, EntityType::Backup);
     assert_eq!(entries[0].status, AuditStatus::Success);
-    AuditService::new(db.executor()).verify_audit_hash_chain().expect("audit chain valid");
+    AuditService::new(db.executor())
+        .verify_audit_hash_chain()
+        .expect("audit chain valid");
 
     // Historical evidence retained: history line still present after boot.
     assert!(!read_markers(&e.db_path).is_empty());
@@ -332,8 +287,15 @@ fn failed_restore_never_produces_false_success_audit() {
     assert!(!restore_ledger_sidecar_path(&e.db_path, &preflight.marker_id).exists());
 
     let db = boot_phases(&e.db_path);
-    assert_eq!(count_restore_audits(&db), 0, "no audit for a restore that never committed");
-    assert!(!read_markers(&e.db_path).is_empty(), "attempt evidence retained");
+    assert_eq!(
+        count_restore_audits(&db),
+        0,
+        "no audit for a restore that never committed"
+    );
+    assert!(
+        !read_markers(&e.db_path).is_empty(),
+        "attempt evidence retained"
+    );
 }
 
 #[test]
@@ -346,9 +308,16 @@ fn uncommitted_attempt_without_commit_record_gets_no_audit() {
         prepare_restore_backup(&e.db_path, &backup, None, "u1", e.crypto).expect("preflight");
 
     let db = boot_phases(&e.db_path);
-    assert_eq!(count_restore_audits(&db), 0, "mere attempt must not be audited");
+    assert_eq!(
+        count_restore_audits(&db),
+        0,
+        "mere attempt must not be audited"
+    );
     assert!(!restore_ledger_sidecar_path(&e.db_path, &preflight.marker_id).exists());
-    assert!(!read_markers(&e.db_path).is_empty(), "attempt evidence retained");
+    assert!(
+        !read_markers(&e.db_path).is_empty(),
+        "attempt evidence retained"
+    );
 }
 
 // ────────────────────── BR-03/BR-14: regression guard + ceremony ──────────────────────
@@ -368,9 +337,9 @@ fn equal_state_backup_is_accepted_without_ceremony() {
 fn newer_state_backup_is_accepted_without_ceremony() {
     let e = env();
     let t0 = create_backup(&e); // T0: empty ledger
-    insert_ledger_row(&e.db_path, PKG, ISSUER, 1);
+    insert_ledger_row(&e.db_path, PKG, ISSUER);
     let newer = create_backup(&e); // backup contains package P (newer state)
-    // Rewind live back to T0: live is now the older state.
+                                   // Rewind live back to T0: live is now the older state.
     adapter(&e).restore_backup_atomic(&t0).expect("rewind");
 
     let preflight =
@@ -383,7 +352,15 @@ fn newer_state_backup_is_accepted_without_ceremony() {
 #[test]
 fn older_credential_generation_requires_ceremony() {
     let e = env();
-    insert_credential(&e.db_path, "11111111-1111-4111-8111-111111111101", "WILAYA", ANCHOR_SUBJECT, ANCHOR_CRED, 1, "ACTIVE");
+    insert_credential(
+        &e.db_path,
+        "11111111-1111-4111-8111-111111111101",
+        "WILAYA",
+        ANCHOR_SUBJECT,
+        ANCHOR_CRED,
+        1,
+        "ACTIVE",
+    );
     let backup = create_backup(&e);
 
     // Rotate: gen1 → SUPERSEDED, gen2 ACTIVE (distinct identity rows,
@@ -397,7 +374,15 @@ fn older_credential_generation_requires_ceremony() {
             )
             .unwrap();
     }
-    insert_credential(&e.db_path, "11111111-1111-4111-8111-111111111102", "WILAYA", ANCHOR_SUBJECT, ANCHOR_CRED, 2, "ACTIVE");
+    insert_credential(
+        &e.db_path,
+        "11111111-1111-4111-8111-111111111102",
+        "WILAYA",
+        ANCHOR_SUBJECT,
+        ANCHOR_CRED,
+        2,
+        "ACTIVE",
+    );
 
     // Without the ceremony: rejected (fail closed).
     let err = preflight_err(&e, &backup, None);
@@ -420,7 +405,15 @@ fn older_credential_generation_requires_ceremony() {
 #[test]
 fn pre_revocation_backup_is_rejected_without_ceremony() {
     let e = env();
-    insert_credential(&e.db_path, ISSUER, "WILAYA", ANCHOR_SUBJECT, ANCHOR_CRED, 1, "ACTIVE");
+    insert_credential(
+        &e.db_path,
+        ISSUER,
+        "WILAYA",
+        ANCHOR_SUBJECT,
+        ANCHOR_CRED,
+        1,
+        "ACTIVE",
+    );
     let backup = create_backup(&e);
 
     // Revoke at the SAME generation (watermark 0 → 1).
@@ -437,14 +430,28 @@ fn pre_revocation_backup_is_rejected_without_ceremony() {
     let err = preflight_err(&e, &backup, None);
     assert!(err.to_string().contains("RESTORE-OLDER-TRUST"));
 
-    prepare_restore_backup(&e.db_path, &backup, Some("RESTORE-OLDER-TRUST"), "u1", e.crypto)
-        .expect("ceremony allows deliberate regression");
+    prepare_restore_backup(
+        &e.db_path,
+        &backup,
+        Some("RESTORE-OLDER-TRUST"),
+        "u1",
+        e.crypto,
+    )
+    .expect("ceremony allows deliberate regression");
 }
 
 #[test]
 fn wrong_ceremony_confirmation_is_rejected() {
     let e = env();
-    insert_credential(&e.db_path, ISSUER, "WILAYA", ANCHOR_SUBJECT, ANCHOR_CRED, 1, "ACTIVE");
+    insert_credential(
+        &e.db_path,
+        ISSUER,
+        "WILAYA",
+        ANCHOR_SUBJECT,
+        ANCHOR_CRED,
+        1,
+        "ACTIVE",
+    );
     let backup = create_backup(&e);
     {
         let db = open_db(&e.db_path);
@@ -456,9 +463,19 @@ fn wrong_ceremony_confirmation_is_rejected() {
             .unwrap();
     }
 
-    for wrong in ["", "RESTORE", "restore-older-trust", "RESTORE-OLDER", "BOGUS", "RESTORE-OLDER-TRUSTX"] {
+    for wrong in [
+        "",
+        "RESTORE",
+        "restore-older-trust",
+        "RESTORE-OLDER",
+        "BOGUS",
+        "RESTORE-OLDER-TRUSTX",
+    ] {
         let err = preflight_err(&e, &backup, Some(wrong));
-        assert!(err.to_string().contains("RESTORE-OLDER-TRUST"), "wrong={wrong:?}");
+        assert!(
+            err.to_string().contains("RESTORE-OLDER-TRUST"),
+            "wrong={wrong:?}"
+        );
     }
 }
 
@@ -466,7 +483,7 @@ fn wrong_ceremony_confirmation_is_rejected() {
 fn regressing_ledger_state_requires_ceremony_and_records_marker() {
     let e = env();
     let backup = create_backup(&e); // T0: empty ledger
-    insert_ledger_row(&e.db_path, PKG, ISSUER, 1);
+    insert_ledger_row(&e.db_path, PKG, ISSUER);
 
     let err = preflight_err(&e, &backup, None);
     assert!(err.to_string().contains("RESTORE-OLDER-TRUST"));
@@ -491,124 +508,15 @@ fn regressing_ledger_state_requires_ceremony_and_records_marker() {
     assert_eq!(marker.session_user_id.as_deref(), Some("u1"));
 }
 
-// ─────────────── SEC-054 (F1): producer transport stream protection ───────────────
-
-#[test]
-fn lower_producer_sequence_requires_ceremony_on_actual_restore_path() {
-    // TEST 4 (Phase 4 / SEC-054): live producer sequence = 10, backup = 5, all
-    // other fingerprint dimensions equal ⇒ the restore MUST NOT silently
-    // classify the backup as Equal. It must require the same older-trust
-    // confirmation used for other regressing protected state.
-    let e = env();
-    insert_transport_sequence(&e.db_path, ISSUER, "TGT", 5);
-    let backup = create_backup(&e); // backup carries producer sequence 5
-
-    // Advance the live producer stream to 10 (same issuer+target). All other
-    // dimensions are empty in both candidate and live — only the producer
-    // sequence differs.
-    {
-        let db = open_db(&e.db_path);
-        db.get_connection()
-            .execute(
-                "UPDATE transport_export_sequence SET last_issued_sequence = 10, \
-                 updated_at = datetime('now') WHERE issuer_identity_id = ?1 AND target_node_id = ?2",
-                rusqlite::params![ISSUER, "TGT"],
-            )
-            .unwrap();
-    }
-
-    // Without the ceremony: rejected (fail closed).
-    let err = preflight_err(&e, &backup, None);
-    assert!(
-        err.to_string().contains("RESTORE-OLDER-TRUST"),
-        "lower producer sequence must require ceremony, got: {err}"
-    );
-
-    // With the ceremony: deliberately allowed, marker records regressing=true.
-    let preflight = prepare_restore_backup(
-        &e.db_path,
-        &backup,
-        Some("RESTORE-OLDER-TRUST"),
-        "u1",
-        e.crypto,
-    )
-    .expect("ceremony allows deliberate producer regression");
-    assert_eq!(preflight.regression, RestoreRegressionStatus::Regressing);
-    let markers = read_markers(&e.db_path);
-    assert!(markers.iter().any(|m| m.regressing));
-}
-
-#[test]
-fn equal_producer_sequence_is_accepted_without_ceremony_on_actual_restore_path() {
-    // TEST 2 (integration): live = backup = producer sequence 10 and all other
-    // dimensions equal ⇒ no false regression (Equal), no ceremony required.
-    let e = env();
-    insert_transport_sequence(&e.db_path, ISSUER, "TGT", 10);
-    let backup = create_backup(&e);
-    let preflight =
-        prepare_restore_backup(&e.db_path, &backup, None, "u1", e.crypto).expect("equal accepted");
-    assert_eq!(preflight.regression, RestoreRegressionStatus::Equal);
-    let markers = read_markers(&e.db_path);
-    let marker = markers
-        .iter()
-        .find(|m| m.marker_id == preflight.marker_id)
-        .expect("marker recorded");
-    assert!(!marker.regressing);
-}
-
-#[test]
-fn restore_overlay_preserves_live_producer_sequence_max() {
-    // TEST 5 (Phase 4 / SEC-054): after a permitted restore of an older backup,
-    // the producer stream must not be physically rewound. The ledger overlay
-    // advances the restored producer value to the MAX of candidate and live.
-    let e = env();
-    insert_transport_sequence(&e.db_path, ISSUER, "TGT", 5);
-    let backup = create_backup(&e); // T0: producer = 5
-
-    // Advance live producer to 10 AFTER the backup (would rewind to 5 on swap).
-    {
-        let db = open_db(&e.db_path);
-        db.get_connection()
-            .execute(
-                "UPDATE transport_export_sequence SET last_issued_sequence = 10, \
-                 updated_at = datetime('now') WHERE issuer_identity_id = ?1 AND target_node_id = ?2",
-                rusqlite::params![ISSUER, "TGT"],
-            )
-            .unwrap();
-    }
-
-    let preflight = prepare_restore_backup(
-        &e.db_path,
-        &backup,
-        Some("RESTORE-OLDER-TRUST"),
-        "u1",
-        e.crypto,
-    )
-    .expect("ceremony");
-    assert_eq!(preflight.regression, RestoreRegressionStatus::Regressing);
-
-    // Swap WITHOUT boot overlay: producer is rewound to the backup's 5.
-    adapter(&e).restore_backup_atomic(&backup).expect("swap");
-    {
-        let db = open_db(&e.db_path);
-        assert_eq!(transport_state(&db, ISSUER, "TGT"), Some(5), "rewound before overlay");
-    }
-
-    // Boot: overlay advances producer to MAX(5, 10) = 10 — never silently rewound.
-    append_restore_marker_commit(&e.db_path, &preflight.marker_id).unwrap();
-    let db = boot_phases(&e.db_path);
-    assert_eq!(transport_state(&db, ISSUER, "TGT"), Some(10), "overlay preserves producer MAX");
-}
-
 // ────────────────────────── BR-05: monotonic ledger overlay ──────────────────────────
 
 #[test]
 fn replay_chain_re_import_rejected_after_restore_and_overlay() {
     let e = env();
-    let backup = create_backup(&e); // T0: empty ledger
+    let backup = create_backup(&e); // T0: empty registry
 
-    // Import package P (seq 1) AFTER the backup was created.
-    insert_ledger_row(&e.db_path, PKG, ISSUER, 1);
+    // Import package P AFTER the backup was created.
+    insert_ledger_row(&e.db_path, PKG, ISSUER);
 
     let preflight = prepare_restore_backup(
         &e.db_path,
@@ -620,26 +528,35 @@ fn replay_chain_re_import_rejected_after_restore_and_overlay() {
     .expect("ceremony");
     assert_eq!(preflight.regression, RestoreRegressionStatus::Regressing);
 
-    // Restore T0 WITHOUT boot overlay yet: the ledger is rewound.
+    // Restore T0 WITHOUT boot overlay yet: the registry is rewound.
     adapter(&e).restore_backup_atomic(&backup).expect("swap");
     {
         let db = open_db(&e.db_path);
-        let (ids, seq) = ledger_state(&db);
-        assert!(ids.is_empty(), "ledger rewound before overlay");
-        assert_eq!(seq, None);
+        let repo = SyncAppliedPackagesRepository::new(db.executor());
+        assert!(
+            !repo.has_imported(PKG).unwrap(),
+            "registry rewound before overlay"
+        );
     }
 
-    // Boot: overlay restores monotonicity BEFORE normal use.
+    // Boot: overlay restores the registry before normal use.
     append_restore_marker_commit(&e.db_path, &preflight.marker_id).unwrap();
     let db = boot_phases(&e.db_path);
 
-    let (ids, seq) = ledger_state(&db);
-    assert!(ids.contains(&PKG.to_string()), "registry union preserves post-backup package");
-    assert_eq!(seq, Some(1), "issuer sequence max preserves post-backup value");
+    let repo = SyncAppliedPackagesRepository::new(db.executor());
+    assert!(
+        repo.has_imported(PKG).unwrap(),
+        "registry union preserves post-backup package"
+    );
 
     // Re-import of P must be REJECTED (already applied).
-    let registry =
-        SqliteImportedPackageRegistry::new(db.executor(), PKG_KIND, Some(ISSUER), "admin", Some(1), Some(ISSUER));
+    let registry = SqliteImportedPackageRegistry::new(
+        db.executor(),
+        PKG_KIND,
+        Some(ISSUER),
+        "admin",
+        Some(ISSUER),
+    );
     let err = registry
         .mark_imported(&PackageId(PKG.to_string()))
         .expect_err("re-import must be rejected");
@@ -652,152 +569,45 @@ fn replay_chain_re_import_rejected_after_restore_and_overlay() {
 }
 
 #[test]
-fn issuer_sequence_max_preserves_latest_sequence() {
-    let e = env();
-    let backup = create_backup(&e); // T0
-    insert_ledger_row(&e.db_path, PKG, ISSUER, 1);
-    insert_ledger_row(&e.db_path, PKG2, ISSUER, 2);
-
-    prepare_restore_backup(&e.db_path, &backup, Some("RESTORE-OLDER-TRUST"), "u1", e.crypto)
-        .expect("ceremony");
-    adapter(&e).restore_backup_atomic(&backup).expect("swap");
-
-    // Simulate a crash before boot: rerun overlay twice (idempotency).
-    let crypto = AgeFileEncryptionProvider::new();
-    recover_interrupted_restore_and_orphans(&e.db_path, &crypto).unwrap();
-    apply_pending_restore_ledger_overlays(&e.db_path, &crypto).unwrap();
-    apply_pending_restore_ledger_overlays(&e.db_path, &crypto).unwrap();
-
-    let db = open_db(&e.db_path);
-    let (ids, seq) = ledger_state(&db);
-    assert_eq!(ids.len(), 2);
-    assert_eq!(seq, Some(2), "MAX preserves the latest post-backup sequence");
-}
-
-#[test]
-fn overlay_is_idempotent_on_rerun() {
-    let e = env();
-    let backup = create_backup(&e); // T0: empty ledger
-    insert_ledger_row(&e.db_path, PKG, ISSUER, 1);
-    let preflight =
-        prepare_restore_backup(&e.db_path, &backup, Some("RESTORE-OLDER-TRUST"), "u1", e.crypto)
-            .expect("ceremony");
-    adapter(&e).restore_backup_atomic(&backup).expect("swap");
-    append_restore_marker_commit(&e.db_path, &preflight.marker_id).unwrap();
-
-    let crypto = AgeFileEncryptionProvider::new();
-    apply_pending_restore_ledger_overlays(&e.db_path, &crypto).unwrap();
-    let db1 = open_db(&e.db_path);
-    let (ids1, seq1) = ledger_state(&db1);
-
-    // Rerun (crash-after-overlay simulation).
-    apply_pending_restore_ledger_overlays(&e.db_path, &crypto).unwrap();
-    let db2 = open_db(&e.db_path);
-    let (ids2, seq2) = ledger_state(&db2);
-
-    assert_eq!(ids1, ids2);
-    assert_eq!(seq1, seq2);
-    assert!(ids2.contains(&PKG.to_string()));
-    assert_eq!(seq2, Some(1));
-}
-
-#[test]
-fn overlay_fails_closed_on_error_without_partial_application() {
-    let e = env();
-    let db_path = e.db_path.clone();
-
-    // Snapshot with one package + one issuer sequence.
-    let snapshot = grpc_lib::domain::ports::backup::RestoreLedgerSnapshot {
-        applied_packages: vec![grpc_lib::domain::ports::backup::LedgerPackageRow {
-            package_id: PKG.to_string(),
-            kind: PKG_KIND.to_string(),
-            source_node_id: Some(ISSUER.to_string()),
-            imported_by: "admin".to_string(),
-            package_sequence: Some(1),
-            issuer_identity_id: Some(ISSUER.to_string()),
-        }],
-        issuer_sequences: vec![(ISSUER.to_string(), 1)],
-        transport_sequences: vec![],
-    };
-
-    // Corrupted sidecar → fail closed.
-    let orphan_sidecar = restore_ledger_sidecar_path(&db_path, "corrupt-marker");
-    fs::write(&orphan_sidecar, b"{not json").unwrap();
-    let crypto = AgeFileEncryptionProvider::new();
-    assert!(apply_pending_restore_ledger_overlays(&db_path, &crypto).is_err());
-    fs::remove_file(&orphan_sidecar).unwrap();
-
-    // Mid-transaction failure: the sequences table is missing → the packages
-    // insert succeeds, then the sequence insert fails → full rollback.
-    {
-        let db = open_db(&db_path);
-        db.get_connection()
-            .execute("DROP TABLE sync_issuer_sequence", [])
-            .unwrap();
-    }
-    let adapter = SqliteBackupAdapter::new(&db_path, e.crypto);
-    assert!(adapter.apply_ledger_snapshot(&snapshot).is_err());
-    {
-        let db = open_db(&db_path);
-        let repo = SyncAppliedPackagesRepository::new(db.executor());
-        assert!(
-            !repo.has_imported(PKG).unwrap(),
-            "no partial application after failed overlay"
-        );
-    }
-
-    // Repair and rerun → succeeds.
-    {
-        let db = open_db(&db_path);
-        db.get_connection()
-            .execute_batch(
-                "CREATE TABLE sync_issuer_sequence (
-                    issuer_identity_id TEXT PRIMARY KEY,
-                    last_applied_sequence INTEGER NOT NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
-            )
-            .unwrap();
-    }
-    adapter.apply_ledger_snapshot(&snapshot).expect("overlay after repair");
-    let db = open_db(&db_path);
-    let (ids, seq) = ledger_state(&db);
-    assert!(ids.contains(&PKG.to_string()));
-    assert_eq!(seq, Some(1));
-}
-
-#[test]
 fn b8_setup_mode_restore_does_not_reopen_first_import() {
     let e = env();
-    // Setup-mode state: WILAYA anchor installed, ledger EMPTY.
-    insert_credential(&e.db_path, ISSUER, "WILAYA", ANCHOR_SUBJECT, ANCHOR_CRED, 1, "ACTIVE");
-    let backup = create_backup(&e); // T0: setup state (empty ledger)
+    // Setup-mode state: WILAYA anchor installed, registry EMPTY.
+    insert_credential(
+        &e.db_path,
+        ISSUER,
+        "WILAYA",
+        ANCHOR_SUBJECT,
+        ANCHOR_CRED,
+        1,
+        "ACTIVE",
+    );
+    let backup = create_backup(&e); // T0: setup state (empty registry)
 
-    // Later the node imported its first package (ledger now non-empty).
-    insert_ledger_row(&e.db_path, PKG, ISSUER, 1);
+    // Later the node imported its first package (registry now non-empty).
+    insert_ledger_row(&e.db_path, PKG, ISSUER);
 
-    prepare_restore_backup(&e.db_path, &backup, Some("RESTORE-OLDER-TRUST"), "u1", e.crypto)
-        .expect("ceremony");
+    prepare_restore_backup(
+        &e.db_path,
+        &backup,
+        Some("RESTORE-OLDER-TRUST"),
+        "u1",
+        e.crypto,
+    )
+    .expect("ceremony");
     adapter(&e).restore_backup_atomic(&backup).expect("swap");
 
-    // Boot overlay keeps the ledger non-empty.
+    // Boot overlay keeps the registry non-empty (exact package_id dedup): the
+    // post-backup package is never forgotten, so its re-import stays closed.
     let crypto = AgeFileEncryptionProvider::new();
     recover_interrupted_restore_and_orphans(&e.db_path, &crypto).unwrap();
     apply_pending_restore_ledger_overlays(&e.db_path, &crypto).unwrap();
     let db = open_db(&e.db_path);
 
-    let (ids, seq) = ledger_state(&db);
-    assert!(ids.contains(&PKG.to_string()), "ledger non-empty after setup-mode restore");
-    assert_eq!(seq, Some(1));
-
-    // B8 first-import re-entry is closed: the ledger is non-empty, so the
-    // one-time `.unit` acceptance predicate fails closed.
-    let err = B8FirstImportPredicatesService::verify_unit_v2_acceptance(
-        &db.executor(),
-        ISSUER,
-        Some(1),
-    )
-    .expect_err("B8 must reject first-import re-entry");
-    assert!(err.to_string().contains("مرة واحدة فقط"), "got: {err}");
+    let repo = SyncAppliedPackagesRepository::new(db.executor());
+    assert!(
+        repo.has_imported(PKG).unwrap(),
+        "registry non-empty after setup-mode restore"
+    );
 }
 
 // ────────────────────────── crash-safety convergence ──────────────────────────
@@ -807,11 +617,7 @@ fn sidecar_without_marker_line_fails_closed() {
     let e = env();
     // Craft the state left by a crash between sidecar write and marker append.
     let orphan = restore_ledger_sidecar_path(&e.db_path, "orphan-marker");
-    fs::write(
-        &orphan,
-        r#"{"applied_packages":[],"issuer_sequences":[]}"#,
-    )
-    .unwrap();
+    fs::write(&orphan, r#"{"applied_packages":[]}"#).unwrap();
 
     let crypto = AgeFileEncryptionProvider::new();
     apply_pending_restore_ledger_overlays(&e.db_path, &crypto).unwrap();
@@ -848,7 +654,11 @@ fn interrupted_swap_journal_cases_converge_with_audit() {
     .unwrap();
 
     let db = boot_phases(&e.db_path); // recovery completes the swap → audit
-    assert_eq!(count_restore_audits(&db), 1, "interrupted swap completes and is audited");
+    assert_eq!(
+        count_restore_audits(&db),
+        1,
+        "interrupted swap completes and is audited"
+    );
     assert!(!journal.exists());
 
     // Case B: live already moved to rollback, candidate present.
@@ -916,7 +726,7 @@ fn crash_after_audit_before_archive_converges() {
     // (The prior boot already archived; re-create the state for this test by
     // writing a fresh sidecar + marker line directly.)
     let sidecar = restore_ledger_sidecar_path(&e.db_path, "dup-marker");
-    fs::write(&sidecar, r#"{"applied_packages":[],"issuer_sequences":[]}"#).unwrap();
+    fs::write(&sidecar, r#"{"applied_packages":[]}"#).unwrap();
     let history = restore_marker_history_path(&e.db_path);
     let marker_json = serde_json::json!({
         "marker_id": "dup-marker",
@@ -926,8 +736,7 @@ fn crash_after_audit_before_archive_converges() {
         "fingerprint": {
             "credential_states": [],
             "active_wilaya_anchor_generation": null,
-            "registry_package_ids": [],
-            "issuer_sequences": []
+            "registry_package_ids": []
         },
         "regressing": false
     })
@@ -951,7 +760,11 @@ fn crash_after_audit_before_archive_converges() {
     // Operator clears the obstruction → rerun converges: dedup + archive.
     fs::remove_file(&archive_dir).unwrap();
     consume_restore_markers(&e.db_path, db.executor(), false).expect("converged rerun");
-    assert_eq!(count_restore_audits(&db), 2, "no duplicate audit after convergence");
+    assert_eq!(
+        count_restore_audits(&db),
+        2,
+        "no duplicate audit after convergence"
+    );
     assert!(!sidecar.exists(), "sidecar archived after convergence");
 }
 
@@ -1098,7 +911,10 @@ fn recovery_outcome_reports_completion() {
     let e = env();
     fs::write(e.db_path.with_extension("restore.journal"), b"{}").unwrap();
     let outcome = recover_interrupted_restore_and_orphans(&e.db_path, &crypto).unwrap();
-    assert!(!outcome.restore_completed, "corrupt journal is not completion");
+    assert!(
+        !outcome.restore_completed,
+        "corrupt journal is not completion"
+    );
     assert!(!e.db_path.with_extension("restore.journal").exists());
 }
 
@@ -1111,11 +927,7 @@ fn set_session(state: &AppState, session: grpc_lib::domain::session::CurrentSess
         &session.username,
         &session.user_role.to_string(),
     );
-    state
-        .current_session
-        .lock()
-        .unwrap()
-        .replace(session);
+    state.current_session.lock().unwrap().replace(session);
 }
 
 fn unit_state() -> AppState {
@@ -1160,7 +972,9 @@ fn authorization_matrix_backup_restore() {
         .expect_err("UNIT User must be denied restore");
     assert!(matches!(
         err,
-        grpc_lib::errors::AppError::Authorization(grpc_lib::errors::AuthorizationError::RequiresAdmin)
+        grpc_lib::errors::AppError::Authorization(
+            grpc_lib::errors::AuthorizationError::RequiresAdmin
+        )
     ));
 
     // UNIT Admin: full access.
@@ -1188,22 +1002,22 @@ fn ceremony_token_grants_no_authority_to_user() {
             .expect_err("token must not bypass AdminOnly");
         assert!(matches!(
             err,
-            grpc_lib::errors::AppError::Authorization(grpc_lib::errors::AuthorizationError::RequiresAdmin)
+            grpc_lib::errors::AppError::Authorization(
+                grpc_lib::errors::AuthorizationError::RequiresAdmin
+            )
         ));
     }
 
     // And the internal preflight itself is not an IPC command at all — a User
     // cannot reach it through any command surface.
-    assert!(
-        grpc_lib::commands::backup::prepare_restore_backup(
-            Path::new("/nonexistent/live.db"),
-            Path::new("/nonexistent/b.bak"),
-            None,
-            "u1",
-            AgeFileEncryptionProvider::new(),
-        )
-        .is_err()
-    );
+    assert!(grpc_lib::commands::backup::prepare_restore_backup(
+        Path::new("/nonexistent/live.db"),
+        Path::new("/nonexistent/b.bak"),
+        None,
+        "u1",
+        AgeFileEncryptionProvider::new(),
+    )
+    .is_err());
 }
 
 // ────────────────────────── XB-B: stale ADMIN resurrection ──────────────────────────
@@ -1290,8 +1104,14 @@ fn stale_admin_generation_backup_is_rejected_without_ceremony() {
     let err = preflight_err(&e, &backup, None);
     assert!(err.to_string().contains("RESTORE-OLDER-TRUST"));
 
-    prepare_restore_backup(&e.db_path, &backup, Some("RESTORE-OLDER-TRUST"), "u1", e.crypto)
-        .expect("ceremony allows deliberate regression");
+    prepare_restore_backup(
+        &e.db_path,
+        &backup,
+        Some("RESTORE-OLDER-TRUST"),
+        "u1",
+        e.crypto,
+    )
+    .expect("ceremony allows deliberate regression");
 }
 
 /// XB-B: a backup taken while the ADMIN credential is ACTIVE must not force

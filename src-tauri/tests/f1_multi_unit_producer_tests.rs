@@ -1,35 +1,34 @@
-//! ADR-0053 (Unified Per-Target Transport Sequence — Accepted 2026-08-24)
-//! integration tests — successor of the F-1 Option A suite (ADR-0045 §26.9).
+//! F-1 Option A suite (ADR-0045 §26.9) under SEC-057 — Transport Sequence
+//! removed. Successor semantics: stack `ADR-0053`/`SEC-055`/`SEC-056D`/`SEC-057`.
 //!
-//! RFC 2026-08-04-node-identity-trust §3.4.1 (amended 2026-08-24) / ADR-0053.
+//! RFC 2026-08-04-node-identity-trust §3.4.1 / ADR-0038.
 //!
 //! What is proven here:
-//! - the consolidated baseline (migration 001, SEC-055) creates ONE canonical
-//!   producer stream `(issuer_identity_id, target_node_id)` and the fragmented
-//!   006/009/010 producer tables are absent from a fresh install (controlled
-//!   pre-release reset — pre-ADR-0053 artifacts are void);
-//! - the frozen CONSUMER ledger (`sync_issuer_sequence`, formerly migration
-//!   004) survives in the consolidated baseline byte-identical;
-//! - all pipeline kinds share one contiguous per-target stream:
-//!   interleaved admin_access/products allocate 1,2,3,4 against the same
-//!   `(issuer, target)`; a second UNIT starts at its own 1;
-//! - `.unit` V2 keeps fixed sequence 1 and never consumes any stream;
-//! - REAL producer path: fresh UNIT-A and fresh UNIT-B each receive their own
-//!   sequence-1 packages from the SAME WILAYA issuer through their own
-//!   per-target streams, bootstrap through the real import command,
-//!   continuation works per target, replay is rejected, ledgers untouched;
-//! - consumer Transport Guard rules are unchanged: first import = 1 on an
-//!   empty ledger (A45-06 / B8 control 11), stale/gap rejected.
-//!
-//! Producer sequences are NEVER hand-crafted here — they come from the real
-//! migration-backed ledger through `IdentitySignedExportService`. Hand-crafted
-//! packages appear only in the consumer-side continuity tests where the
-//! producer is intentionally bypassed.
+//! - the consolidated baseline (migration 001, SEC-055, SEC-056D/SEC-057)
+//!   contains NO transport-sequence machinery: the former unified producer
+//!   stream `transport_export_sequence` and the frozen consumer ledger
+//!   `sync_issuer_sequence` are ABSENT on a fresh install, as are the
+//!   fragmented producer tables (006/009/010 — pre-ADR-0053 artifacts are
+//!   void);
+//! - packages are unique by exact `package_id` only: the producer emits a
+//!   fresh `package_id` per export and never hand-crafts sequences;
+//! - producer exports are fail-closed: a write into an unwritable target
+//!   leaves nothing behind and the retry onto a valid path succeeds;
+//! - `.unit` V2 bootstrap (A44-08) is a standalone signed artifact with no
+//!   trace in any ledger;
+//! - REAL producer path: fresh UNIT-A and UNIT-B each receive their OWN
+//!   signed artifacts from the SAME WILAYA issuer, bootstrap through the real
+//!   import command, and continuation works per unit;
+//! - re-importing an already-applied exact package is IDEMPOTENT (the single
+//!   canonical fleet admin is preserved) — there is no transport sequence to
+//!   enforce replay rejection anymore (SEC-057);
+//! - Ed25519 V2 signatures verify against the issuer certificate on every
+//!   artifact read back from disk in the E2E path.
 
 #[allow(dead_code)]
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -45,18 +44,10 @@ use grpc_lib::domain::identity::{
     CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySigner,
     IdentityStorePort, SubjectType, SIGNATURE_VERSION_ED25519,
 };
-use grpc_lib::domain::security::PasswordHashPort;
 use grpc_lib::infrastructure::identity::NodeKeyStore;
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::security::{Argon2PasswordHashProvider, Ed25519SigningProvider};
-use grpc_lib::infrastructure::sync::packages::canonical_json::{
-    canonical_bytes_for_integrity, canonical_bytes_for_signature,
-};
-use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256PackageHasher};
-use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};
-use grpc_lib::infrastructure::sync::{
-    read_admin_access_package_from_file, PackageBuilder, SerdeJsonSyncPackageSerializer,
-};
+use grpc_lib::infrastructure::sync::read_admin_access_package_from_file;
 use grpc_lib::models::{
     AdminAccessPayload, CreateUnitRequest, UnitNodePackage, UserExport, WilayaNodeConfiguration,
 };
@@ -92,11 +83,6 @@ fn count_canonical_admins(db: &Database) -> i64 {
             |row| row.get(0),
         )
         .expect("count canonical admins")
-}
-
-fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
-    SyncPackageIdentityVerificationService::last_applied_sequence(make_executor(db), issuer)
-        .expect("read ledger")
 }
 
 /// A fresh node directory: real DB + node key store (WILAYA provisioning).
@@ -234,78 +220,12 @@ fn set_session(state: &AppState, role: &str) {
     *state.current_session.lock().expect("session mutex") = Some(session);
 }
 
-/// Hand-crafted signed package for CONSUMER-side continuity tests only.
-/// Vehicle: `admin_access` — the active security-critical account kind after
-/// the D1 cutover (ADR-0051 §9).
-fn crafted_admin_payload() -> AdminAccessPayload {
-    let port = Argon2PasswordHashProvider;
-    AdminAccessPayload {
-        admin_enabled: true,
-        admin_password_hash: port.hash_admin(FLEET_PASSWORD).expect("admin hash"),
-    }
-}
-
-fn crafted_admin_package(
-    package_id: &str,
-    issuer_id: Uuid,
-    secret: [u8; 32],
-    sequence: u64,
-) -> grpc_lib::application::sync::SyncPackage<AdminAccessPayload> {
-    let package = grpc_lib::application::sync::SyncPackage {
-        metadata: grpc_lib::application::sync::SyncPackageMetadata {
-            schema_version: grpc_lib::application::sync::SchemaVersion::V2,
-            created_at: chrono::Utc::now(),
-            source_node_id: "wilaya-test-node".to_string(),
-            package_sequence: Some(sequence),
-            issuer_identity_id: Some(issuer_id),
-            package_id: grpc_lib::application::sync::PackageId(package_id.to_string()),
-            signature_version: Some(SIGNATURE_VERSION_ED25519),
-            signing_key_id: Some("default".to_string()),
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: crafted_admin_payload(),
-    };
-    let signer = Ed25519PackageSigner::new(secret);
-    let value = serde_json::to_value(&package).expect("value");
-    let hash = Sha256PackageHasher
-        .hash(&canonical_bytes_for_integrity(&value).expect("canonical integrity"))
-        .expect("hash");
-    let mut signed = package;
-    signed.metadata.integrity_hash = Some(hash);
-
-    let value = serde_json::to_value(&signed).expect("value");
-    let signature = signer
-        .sign(&canonical_bytes_for_signature(&value).expect("canonical signature"))
-        .expect("sign");
-    signed.metadata.signature = Some(signature);
-    signed
-}
-
-fn write_encrypted_admin(
-    package: &grpc_lib::application::sync::SyncPackage<AdminAccessPayload>,
-    secret: [u8; 32],
-    path: &Path,
-) {
-    let crypto = AgeFileEncryptionProvider::new();
-    let signer = Ed25519PackageSigner::new(secret);
-    PackageBuilder::new()
-        .build_encrypted_stream_path(
-            package,
-            &SerdeJsonSyncPackageSerializer,
-            &signer,
-            &crypto,
-            path,
-        )
-        .expect("write package");
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Consolidated baseline audit — unified stream present, fragmented streams absent
+// Consolidated baseline audit — transport-sequence machinery absent
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn consolidated_baseline_contains_unified_stream() {
+fn consolidated_baseline_removes_transport_sequence_tables() {
     let db = ConnectionFactory::new_for_test().expect("db");
 
     let version: i64 = db
@@ -317,46 +237,11 @@ fn consolidated_baseline_contains_unified_stream() {
         "schema must be at version 1 (consolidated fresh-install baseline)"
     );
 
-    // Composite PK (issuer, target) — the ADR-0053 stream key.
-    let mut stmt = db
-        .get_connection()
-        .prepare("PRAGMA table_info(transport_export_sequence)")
-        .expect("pragma");
-    let cols: Vec<(String, i64)> = stmt
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(1)?, row.get::<_, i64>(5)?))
-        })
-        .expect("map")
-        .collect::<Result<_, _>>()
-        .expect("cols");
-    let issuer_pk = cols
-        .iter()
-        .find(|(name, _)| name == "issuer_identity_id")
-        .map(|(_, pk)| *pk)
-        .expect("issuer column");
-    let target_pk = cols
-        .iter()
-        .find(|(name, _)| name == "target_node_id")
-        .map(|(_, pk)| *pk)
-        .expect("target column");
-    assert_eq!(issuer_pk, 1, "issuer_identity_id must be part of the PK");
-    assert_eq!(
-        target_pk, 2,
-        "target_node_id must be part of the composite PK"
-    );
-    assert!(cols.iter().any(|(n, _)| n == "last_issued_sequence"));
-    assert!(cols.iter().any(|(n, _)| n == "updated_at"));
-    let count: i64 = db
-        .get_connection()
-        .query_row("SELECT COUNT(*) FROM transport_export_sequence", [], |r| {
-            r.get(0)
-        })
-        .expect("count");
-    assert_eq!(count, 0);
-
-    // The fragmented producer streams are retired…
+    // SEC-057: every transport-sequence object is retired from the baseline.
     let conn = db.get_connection();
     for table in [
+        "transport_export_sequence",
+        "sync_issuer_sequence",
         "sync_issuer_sequence_state",
         "identity_access_export_sequence",
         "admin_access_export_sequence",
@@ -368,29 +253,43 @@ fn consolidated_baseline_contains_unified_stream() {
                 |r| r.get(0),
             )
             .expect("table presence");
-        assert_eq!(present, 0, "{table} must be absent on a fresh install");
+        assert_eq!(
+            present, 0,
+            "{table} must be absent on a fresh install (SEC-057)"
+        );
     }
 
-    // …while the frozen CONSUMER ledger survives in the consolidated baseline.
-    let consumer: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'sync_issuer_sequence'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("consumer presence");
-    assert_eq!(
-        consumer, 1,
-        "sync_issuer_sequence must exist in the consolidated baseline"
+    // The applied-package ledger keeps exact package_id dedup (B4) plus the
+    // issuer identity, and carries NO `package_sequence` column.
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(applied_sync_packages)")
+        .expect("pragma");
+    let cols: Vec<String> = stmt
+        .query_map([], |row| row.get(1))
+        .expect("map")
+        .collect::<Result<_, _>>()
+        .expect("cols");
+    assert!(
+        cols.contains(&"package_id".to_string()),
+        "package_id is the exact dedup key"
+    );
+    assert!(
+        cols.contains(&"issuer_identity_id".to_string()),
+        "issuer_identity_id retained"
+    );
+    assert!(
+        !cols.contains(&"package_sequence".to_string()),
+        "applied_sync_packages.package_sequence must NOT exist (SEC-057)"
     );
 }
 
 #[test]
 fn consolidated_baseline_creates_complete_final_schema() {
-    // SEC-049/SEC-055: a fresh database initialized from the consolidated
-    // runner (migration 001 only, 004/011 folded in) must contain the complete
-    // required final schema, with the retired fragmented producer tables absent
-    // and all security/transport invariants present.
+    // SEC-049/SEC-055/SEC-056D/SEC-057: a fresh database initialized from the
+    // consolidated runner (migration 001 only, 004/011 folded in) must contain
+    // the complete required final schema, with the retired fragmented producer
+    // tables absent AND the transport-sequence tables removed, while security
+    // invariants present.
     let db = ConnectionFactory::new_for_test().expect("db");
     let conn = db.get_connection();
 
@@ -443,9 +342,7 @@ fn consolidated_baseline_creates_complete_final_schema() {
         "domain_events",
         "rate_limiter_attempts",
         "identity_store",
-        "sync_issuer_sequence",
         "registry_snapshots",
-        "transport_export_sequence",
     ] {
         assert!(
             tables.contains(required),
@@ -454,6 +351,8 @@ fn consolidated_baseline_creates_complete_final_schema() {
     }
 
     for retired in [
+        "sync_issuer_sequence",
+        "transport_export_sequence",
         "sync_issuer_sequence_state",
         "identity_access_export_sequence",
         "admin_access_export_sequence",
@@ -466,7 +365,7 @@ fn consolidated_baseline_creates_complete_final_schema() {
         );
     }
 
-    // security / transport invariants
+    // security / identity invariants
     let has_index = |name: &str| -> bool {
         conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name = ?1",
@@ -499,100 +398,28 @@ fn consolidated_baseline_creates_complete_final_schema() {
         seq, 0,
         "identity_store.package_sequence column must NOT exist (removed in SEC-051)"
     );
-}
 
-#[test]
-fn migration_final_schema_retires_fragmented_producer_streams() {
-    // SEC-049: migrations 006/009/010 are removed and 002/003/005/008 are
-    // consolidated into 001. SEC-055 folds 004/011 in too, so the final fresh
-    // schema (migration 001 only) contains the unified producer stream and the
-    // frozen consumer ledger, while the retired fragmented producer tables
-    // never exist. This is an invariant-based proof for the consolidated
-    // pre-release baseline.
-    let db = ConnectionFactory::new_for_test().expect("db");
-    let conn = db.get_connection();
-
-    let version: i64 = conn
-        .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
-        .expect("read schema version");
-    assert_eq!(
-        version, 1,
-        "consolidated schema must land on version 1"
-    );
-
-    // The retired fragmented producer tables NEVER exist in the final schema.
-    for table in [
-        "sync_issuer_sequence_state",
-        "identity_access_export_sequence",
-        "admin_access_export_sequence",
-    ] {
-        let present: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
-                rusqlite::params![table],
-                |r| r.get(0),
-            )
-            .expect("table presence");
-        assert_eq!(present, 0, "{table} must be absent from the final schema");
-    }
-
-    // The frozen CONSUMER ledger exists and is writable (consolidated baseline).
-    let consumer: i64 = conn
+    let applied_seq: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'sync_issuer_sequence'",
+            "SELECT COUNT(*) FROM pragma_table_info('applied_sync_packages') WHERE name = 'package_sequence'",
             [],
             |r| r.get(0),
         )
-        .expect("consumer presence");
+        .expect("applied package_sequence column absence");
     assert_eq!(
-        consumer, 1,
-        "sync_issuer_sequence (frozen consumer ledger) must exist"
+        applied_seq, 0,
+        "applied_sync_packages.package_sequence column must NOT exist (removed in SEC-057)"
     );
-    conn.execute(
-        "INSERT INTO sync_issuer_sequence (issuer_identity_id, last_applied_sequence) VALUES ('wilaya-proof', 2)",
-        [],
-    )
-    .expect("seed consumer row");
-    let applied: i64 = conn
-        .query_row(
-            "SELECT last_applied_sequence FROM sync_issuer_sequence WHERE issuer_identity_id = 'wilaya-proof'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("consumer row");
-    assert_eq!(applied, 2, "consumer ledger data must be persistable");
-
-    // The unified producer stream exists (consolidated baseline).
-    let unified: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'transport_export_sequence'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("unified presence");
-    assert_eq!(
-        unified, 1,
-        "transport_export_sequence (frozen unified producer stream) must exist"
-    );
-
-    // Post-reset, every unified stream starts fresh at 1 (void-artifact policy).
-    let first = db
-        .executor()
-        .transport_export_sequence_state()
-        .begin_export("wilaya-post-reset", "UNIT-A")
-        .expect("begin");
-    assert_eq!(first.value(), 1, "post-reset stream starts at 1");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Unified stream: all kinds share one contiguous per-(issuer, target) chain
+// Producer semantics — no sequences, only exact distinct packages
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn all_kinds_share_one_contiguous_stream_per_target() {
+fn producer_exports_distinct_packages_across_kinds_and_targets() {
     let mut node = fresh_node();
-    let wilaya_cert = bootstrap_wilaya(&mut node);
-    configure_producer_as_wilaya(&node.db);
+    bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
     create_unit(&node.db, "UNIT-A");
     create_unit(&node.db, "UNIT-B");
@@ -602,10 +429,10 @@ fn all_kinds_share_one_contiguous_stream_per_target() {
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
 
-    // Interleaving admin/products against the SAME target UNIT-A allocates
-    // one contiguous 1..n chain (the SEC-030 hazard is structurally gone):
-    //   admin #1 → products #2 → products #3 → admin #4
-    let seq = service
+    // Interleaving admin/products against the same target, plus a second
+    // target: each export is a DISTINCT signed package (unique package_id).
+    // SEC-057 removes every transport stream — there is nothing to consume.
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -615,12 +442,7 @@ fn all_kinds_share_one_contiguous_stream_per_target() {
             &crypto,
         )
         .expect("export admin 1");
-    assert_eq!(
-        seq, 1,
-        "first allocation on the (issuer, UNIT-A) stream = 1"
-    );
-
-    let seq = service
+    service
         .export_v2_package(
             serde_json::json!({ "probe": "products-for-a" }),
             "wilaya-test-node",
@@ -631,9 +453,7 @@ fn all_kinds_share_one_contiguous_stream_per_target() {
             &crypto,
         )
         .expect("export products 2");
-    assert_eq!(seq, 2, "products continues the SAME stream (kind-blind)");
-
-    let seq = service
+    service
         .export_v2_package(
             serde_json::json!({ "probe": "products-for-a-2" }),
             "wilaya-test-node",
@@ -644,9 +464,7 @@ fn all_kinds_share_one_contiguous_stream_per_target() {
             &crypto,
         )
         .expect("export products 3");
-    assert_eq!(seq, 3);
-
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -656,10 +474,7 @@ fn all_kinds_share_one_contiguous_stream_per_target() {
             &crypto,
         )
         .expect("export admin 4");
-    assert_eq!(seq, 4, "interleaved kinds stay contiguous per target");
-
-    // A second UNIT is an INDEPENDENT stream: its first package = 1.
-    let seq = service
+    service
         .export_v2_package(
             serde_json::json!({ "probe": "products-for-b" }),
             "wilaya-test-node",
@@ -670,35 +485,40 @@ fn all_kinds_share_one_contiguous_stream_per_target() {
             &crypto,
         )
         .expect("export products to UNIT-B");
-    assert_eq!(seq, 1, "UNIT-B stream starts at its own 1");
 
-    // Producer ledger rows confirm the isolation.
-    let issuer = wilaya_cert.identity_id.to_string();
-    let repo = node.db.executor().transport_export_sequence_state();
+    // The admin_access artifacts are distinct exact packages sharing the
+    // issuer; their V2 signatures verify against the issuer certificate.
+    let adm1 = read_admin_access_package_from_file(&dir.path().join("adm1.sync"), &crypto)
+        .expect("read adm1");
+    let adm4 = read_admin_access_package_from_file(&dir.path().join("adm4.sync"), &crypto)
+        .expect("read adm4");
     assert_eq!(
-        repo.next_issued_sequence(&issuer, "UNIT-A").unwrap(),
-        Some(4)
+        adm1.metadata.issuer_identity_id, adm4.metadata.issuer_identity_id,
+        "same issuer across kinds and targets"
     );
-    assert_eq!(
-        repo.next_issued_sequence(&issuer, "UNIT-B").unwrap(),
-        Some(1)
+    assert_ne!(
+        adm1.metadata.package_id, adm4.metadata.package_id,
+        "every export is a distinct exact package"
     );
+    assert!(adm1.metadata.signature.is_some() && adm4.metadata.signature.is_some());
+    for pkg in [&adm1, &adm4] {
+        SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), pkg)
+            .expect("V2 signature verifies against issuer cert");
+    }
 }
 
 #[test]
-fn failed_export_does_not_burn_a_unified_sequence_and_retry_reuses_it() {
+fn failed_export_writes_nothing_and_retry_succeeds() {
     let mut node = fresh_node();
-    let wilaya_cert = bootstrap_wilaya(&mut node);
+    bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
     set_fleet_password(&node.db);
 
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
 
-    // An unwritable path fails AFTER allocation but BEFORE commit → no
-    // sequence burned; the retry into a valid path reuses the same number.
+    // An unwritable target directory fails closed BEFORE any artifact exists.
     let bad_path = dir.path().join("missing-dir").join("p1.sync");
     assert!(
         service
@@ -714,18 +534,14 @@ fn failed_export_does_not_burn_a_unified_sequence_and_retry_reuses_it() {
             .is_err(),
         "build into a missing directory must fail"
     );
-    assert_eq!(
-        node.db
-            .executor()
-            .transport_export_sequence_state()
-            .next_issued_sequence(&issuer, "UNIT-A")
-            .expect("read stream"),
-        None,
-        "failed export must not advance the stream"
+    assert!(
+        !bad_path.exists(),
+        "no artifact may be written by a failed export"
     );
 
+    // The retry onto a valid path succeeds independently of any ledger.
     let good_path = dir.path().join("p1.sync");
-    let seq = service
+    service
         .export_v2_package(
             serde_json::json!({ "probe": "products" }),
             "wilaya-test-node",
@@ -735,12 +551,12 @@ fn failed_export_does_not_burn_a_unified_sequence_and_retry_reuses_it() {
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("retry export");
-    assert_eq!(seq, 1, "retry after failure reuses the same sequence");
+        .expect("retry export succeeds");
+    assert!(good_path.exists());
 }
 
 #[test]
-fn unit_bootstrap_package_does_not_consume_the_unified_stream() {
+fn unit_bootstrap_and_admin_export_are_distinct_artifacts() {
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
     configure_producer_as_wilaya(&node.db);
@@ -750,10 +566,9 @@ fn unit_bootstrap_package_does_not_consume_the_unified_stream() {
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
-    let issuer = wilaya_cert.identity_id.to_string();
 
-    // `.unit` V2 (A44-08): fixed sequence 1, outside any ledger.
-    let seq = service
+    // `.unit` V2 (A44-08) is a standalone signed artifact.
+    service
         .export_v2_bootstrap_package(
             UnitNodePackage {
                 unit: grpc_lib::models::Unit {
@@ -778,19 +593,10 @@ fn unit_bootstrap_package_does_not_consume_the_unified_stream() {
             &crypto,
         )
         .expect("bootstrap export");
-    assert_eq!(seq, 1, "A44-08: fixed bootstrap sequence 1");
 
-    // The unified stream must NOT be advanced by the `.unit`.
-    let stream = node
-        .db
-        .executor()
-        .transport_export_sequence_state()
-        .next_issued_sequence(&issuer, "UNIT-A")
-        .expect("read stream");
-    assert_eq!(stream, None, ".unit must not burn a transport sequence");
-
-    // First admin_access export after `.unit` still receives sequence 1.
-    let seq = service
+    // The next admin_access export is a distinct signed package with the
+    // same issuer — no sequencing involved (SEC-057).
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -800,23 +606,32 @@ fn unit_bootstrap_package_does_not_consume_the_unified_stream() {
             &crypto,
         )
         .expect("export admin 1");
-    assert_eq!(seq, 1, "A45-06 holds: first package after .unit is 1");
+    let pkg = read_admin_access_package_from_file(&dir.path().join("a1.sync"), &crypto)
+        .expect("read admin package");
+    assert_eq!(
+        pkg.metadata.issuer_identity_id,
+        Some(wilaya_cert.identity_id)
+    );
+    assert!(pkg.metadata.signature.is_some());
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &pkg)
+        .expect("V2 signature verifies");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REAL producer per-target delivery E2E — the ADR-0053 closer
+// REAL producer per-unit delivery E2E — the SEC-057 closer
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn real_producer_per_target_delivery_continuation_and_replay() {
-    // ADR-0053 semantics: each UNIT receives artifacts emitted on ITS OWN
-    // `(issuer, unit_code)` stream. Replay state is strictly local per UNIT;
-    // the frozen consumer guard never observes the producer's targets.
+fn real_producer_delivery_continuation_and_idempotent_reimport() {
+    // SEC-057 semantics: no per-target transport streams exist. Each UNIT
+    // receives its OWN signed artifact from the same WILAYA issuer; bootstrap
+    // and continuation flow through the real import command; re-importing an
+    // already-applied package is IDEMPOTENT (no transport sequence exists to
+    // classify it as replay).
 
     // WILAYA fleet: UNIT-A and UNIT-B provisioned on the WILAYA.
     let mut node = fresh_node();
     let wilaya_cert = bootstrap_wilaya(&mut node);
-    configure_producer_as_wilaya(&node.db);
     configure_producer_as_wilaya(&node.db);
     create_unit(&node.db, "UNIT-A");
     create_unit(&node.db, "UNIT-B");
@@ -827,9 +642,9 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
     let service = IdentitySignedExportService::new(&node.db, &node.node_key_store);
     let issuer = wilaya_cert.identity_id;
 
-    // ── Phase A — each UNIT gets its own sequence-1 bootstrap artifact ─────
+    // ── Phase A — each UNIT receives its own bootstrap artifact ────────────
     let a1: PathBuf = dir.path().join("a1.sync");
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -838,11 +653,9 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export UNIT-A seq 1");
-    assert_eq!(seq, 1, "first UNIT-A-targeted admin_access export = seq 1");
-
+        .expect("real producer export UNIT-A");
     let b1: PathBuf = dir.path().join("b1.sync");
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -851,18 +664,25 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export UNIT-B seq 1");
-    assert_eq!(seq, 1, "UNIT-B stream starts at its OWN sequence 1");
+        .expect("real producer export UNIT-B");
 
-    let pkg = read_admin_access_package_from_file(&a1, &crypto).expect("read seq-1 artifact");
-    assert_eq!(pkg.metadata.package_sequence, Some(1));
+    let pkg = read_admin_access_package_from_file(&a1, &crypto).expect("read UNIT-A artifact");
     assert_eq!(pkg.metadata.issuer_identity_id, Some(issuer));
+    assert_eq!(
+        pkg.metadata.signature_version,
+        Some(SIGNATURE_VERSION_ED25519),
+        "SEC-056D: V2 Ed25519 package signature"
+    );
     // Fleet-wide account payload: carries NO unit dimension (ADR-0051 §4).
     let serialized = serde_json::to_value(&pkg.payload).expect("payload value");
     assert!(
         serialized.get("unit_code").is_none() && serialized.get("user_password_hash").is_none(),
         "admin_access payload must carry no UNIT/operator material"
     );
+
+    // The artifact verifies against the issuer certificate in the producer DB.
+    SyncPackageIdentityVerificationService::verify_v2_signature(make_executor(&node.db), &pkg)
+        .expect("producer-side V2 signature verifies");
 
     let state_a = unit_state("UNIT-A");
     seed_anchor_from_cert(
@@ -871,20 +691,16 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
     );
     set_session(&state_a, "User");
 
+    // The real import command verifies the V2 signature against the anchor.
     import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
-        .expect("UNIT-A bootstrap succeeds from its own stream artifact");
+        .expect("UNIT-A bootstrap succeeds from its own artifact");
     {
         let guard = state_a.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
         assert_eq!(count_canonical_admins(db), 1, "canonical Admin created");
-        assert_eq!(
-            last_applied(db, &issuer.to_string()),
-            Some(1),
-            "UNIT-A ledger = 1"
-        );
     }
 
-    // ── Phase B — UNIT-B bootstraps from ITS OWN seq-1 artifact ────────────
+    // ── Phase B — UNIT-B bootstraps from ITS OWN artifact ──────────────────
     let state_b = unit_state("UNIT-B");
     seed_anchor_from_cert(
         state_b.get_db().expect("lock").as_ref().expect("db"),
@@ -893,22 +709,17 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
     set_session(&state_b, "User");
 
     import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
-        .expect("UNIT-B bootstrap succeeds from its own stream artifact");
+        .expect("UNIT-B bootstrap succeeds from its own artifact");
     {
         let guard = state_b.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
         assert_eq!(count_canonical_admins(db), 1, "canonical Admin created");
-        assert_eq!(
-            last_applied(db, &issuer.to_string()),
-            Some(1),
-            "UNIT-B ledger = 1 (independent local replay state)"
-        );
     }
 
-    // ── Continuation — per-target seq-2 packages applied on both units ─────
+    // ── Continuation — distinct follow-up packages apply on both units ─────
     set_session(&state_a, "Admin");
     let a2: PathBuf = dir.path().join("a2.sync");
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -917,11 +728,10 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export UNIT-A seq 2");
-    assert_eq!(seq, 2, "second UNIT-A-targeted export = seq 2");
+        .expect("real producer export UNIT-A continuation");
 
     let b2: PathBuf = dir.path().join("b2.sync");
-    let seq = service
+    service
         .export_v2_admin_access_package(
             admin_payload(&node.db),
             "wilaya-test-node",
@@ -930,34 +740,55 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
             SubjectType::Wilaya,
             &crypto,
         )
-        .expect("real producer export UNIT-B seq 2");
-    assert_eq!(seq, 2, "second UNIT-B-targeted export = seq 2 (own stream)");
+        .expect("real producer export UNIT-B continuation");
+
+    let a1_meta = read_admin_access_package_from_file(&a1, &crypto)
+        .expect("a1")
+        .metadata;
+    let a2_meta = read_admin_access_package_from_file(&a2, &crypto)
+        .expect("a2")
+        .metadata;
+    let b1_meta = read_admin_access_package_from_file(&b1, &crypto)
+        .expect("b1")
+        .metadata;
+    let b2_meta = read_admin_access_package_from_file(&b2, &crypto)
+        .expect("b2")
+        .metadata;
+    assert_ne!(
+        a1_meta.package_id, a2_meta.package_id,
+        "every UNIT-A export is a distinct package_id"
+    );
+    assert_ne!(
+        b1_meta.package_id, b2_meta.package_id,
+        "every UNIT-B export is a distinct package_id"
+    );
+    assert_eq!(a1_meta.issuer_identity_id, Some(issuer));
+    assert_eq!(b2_meta.issuer_identity_id, Some(issuer));
 
     import_admin_access_package_impl(&state_a, a2.to_string_lossy().into_owned())
-        .expect("UNIT-A seq 2 import succeeds (AdminOnly)");
+        .expect("UNIT-A continuation import succeeds (AdminOnly)");
     set_session(&state_b, "Admin");
     import_admin_access_package_impl(&state_b, b2.to_string_lossy().into_owned())
-        .expect("UNIT-B applies its own seq-2 package independently (AdminOnly)");
+        .expect("UNIT-B applies its own continuation package independently (AdminOnly)");
 
     {
         let guard_a = state_a.get_db().expect("lock");
         let db_a = guard_a.as_ref().expect("db");
         let guard_b = state_b.get_db().expect("lock");
         let db_b = guard_b.as_ref().expect("db");
-        assert_eq!(last_applied(db_a, &issuer.to_string()), Some(2));
-        assert_eq!(last_applied(db_b, &issuer.to_string()), Some(2));
         assert_eq!(count_canonical_admins(db_a), 1);
         assert_eq!(count_canonical_admins(db_b), 1);
     }
 
-    // ── Replay — exact bootstrap package re-import is rejected, state intact ──
+    // ── Re-import — an already-applied exact package re-applies idempotently ──
+    // SEC-057: admin_access has no replay ledger — the single canonical admin
+    // UPSERT preserves state instead of rejecting the exact package.
     set_session(&state_a, "Admin");
-    let err = import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
-        .expect_err("replay of the bootstrap package must be rejected");
-    assert!(!err.is_empty());
-    let err = import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
-        .expect_err("replay of the bootstrap package must be rejected");
-    assert!(!err.is_empty());
+    import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
+        .expect("re-import of the applied package is idempotent");
+    set_session(&state_b, "Admin");
+    import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
+        .expect("re-import of the applied package is idempotent");
     {
         let guard_a = state_a.get_db().expect("lock");
         let db_a = guard_a.as_ref().expect("db");
@@ -966,146 +797,12 @@ fn real_producer_per_target_delivery_continuation_and_replay() {
         assert_eq!(
             count_canonical_admins(db_a),
             1,
-            "Admin count stays one after replay"
+            "Admin count stays one after idempotent re-import"
         );
         assert_eq!(
             count_canonical_admins(db_b),
             1,
-            "Admin count stays one after replay"
+            "Admin count stays one after idempotent re-import"
         );
-        assert_eq!(
-            last_applied(db_a, &issuer.to_string()),
-            Some(2),
-            "ledger unchanged"
-        );
-        assert_eq!(
-            last_applied(db_b, &issuer.to_string()),
-            Some(2),
-            "ledger unchanged"
-        );
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Consumer side unchanged: Transport Guard rule "first import = 1"
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The consumer must still reject every non-1 first sequence on an empty
-/// ledger (A45-06 / B8 control 11) — the ADR-0053 remediation is producer-side.
-/// These tests hand-craft packages intentionally: they probe the CONSUMER,
-/// which is unchanged.
-#[test]
-fn consumer_rejects_non_one_first_sequence_stale_and_gap() {
-    // seq 2 as first import on an empty ledger → OutOfOrder expected=1.
-    // Vehicle: `admin_access` (the active account kind after D1); the
-    // Transport Guard rule is kind-agnostic and unchanged.
-    let state = unit_state("UNIT-9");
-    let issuer_id = Uuid::new_v4();
-    {
-        let guard = state.get_db().expect("lock");
-        let db = guard.as_ref().expect("db");
-        let cert = IdentityCertificate {
-            identity_id: issuer_id,
-            subject_type: SubjectType::Wilaya,
-            subject_id: issuer_id,
-            issuer_identity_id: None,
-            credential_id: Uuid::new_v4(),
-            generation: 1,
-            status: CredentialStatus::Active,
-            public_key: Ed25519SigningProvider::new([42u8; 32]).public_key(),
-            algorithm_version: SIGNATURE_VERSION_ED25519,
-            not_after: None,
-            package_sequence: Some(1),
-            signature: None,
-        };
-        IdentityStorePort::upsert(
-            &make_executor(db).identity_store(),
-            &cert,
-            &chrono::Utc::now().to_rfc3339(),
-        )
-        .expect("seed anchor");
-    }
-    set_session(&state, "User");
-
-    let dir = TempDir::new().expect("temp dir");
-
-    // seq 2 as first → rejected (empty-ledger baseline is 1).
-    let seq2_first = dir.path().join("seq2.sync");
-    write_encrypted_admin(
-        &crafted_admin_package("f1-seq2", issuer_id, [42u8; 32], 2),
-        [42u8; 32],
-        &seq2_first,
-    );
-    let err = import_admin_access_package_impl(&state, seq2_first.to_string_lossy().into_owned())
-        .expect_err("seq 2 as first import must be OutOfOrder");
-    assert!(err.contains("ترتيب") || !err.is_empty());
-
-    // seq 0 as first → rejected.
-    let seq0_first = dir.path().join("seq0.sync");
-    write_encrypted_admin(
-        &crafted_admin_package("f1-seq0", issuer_id, [42u8; 32], 0),
-        [42u8; 32],
-        &seq0_first,
-    );
-    let err = import_admin_access_package_impl(&state, seq0_first.to_string_lossy().into_owned())
-        .expect_err("seq 0 as first import must be rejected");
-    assert!(!err.is_empty());
-
-    // A valid seq 1 bootstrap succeeds.
-    let first = dir.path().join("first.sync");
-    write_encrypted_admin(
-        &crafted_admin_package("f1-first", issuer_id, [42u8; 32], 1),
-        [42u8; 32],
-        &first,
-    );
-    import_admin_access_package_impl(&state, first.to_string_lossy().into_owned())
-        .expect("valid seq 1 bootstrap succeeds");
-    {
-        let guard = state.get_db().expect("lock");
-        let db = guard.as_ref().expect("db");
-        assert_eq!(count_canonical_admins(db), 1);
-        assert_eq!(last_applied(db, &issuer_id.to_string()), Some(1));
-    }
-
-    // Post-bootstrap: stale seq 1 → Replay; gap (seq 4) → OutOfOrder.
-    set_session(&state, "Admin");
-    let stale = dir.path().join("stale.sync");
-    write_encrypted_admin(
-        &crafted_admin_package("f1-stale", issuer_id, [42u8; 32], 1),
-        [42u8; 32],
-        &stale,
-    );
-    let err = import_admin_access_package_impl(&state, stale.to_string_lossy().into_owned())
-        .expect_err("stale seq 1 must be Replay");
-    assert!(!err.is_empty());
-
-    let gap = dir.path().join("gap.sync");
-    write_encrypted_admin(
-        &crafted_admin_package("f1-gap", issuer_id, [42u8; 32], 4),
-        [42u8; 32],
-        &gap,
-    );
-    let err = import_admin_access_package_impl(&state, gap.to_string_lossy().into_owned())
-        .expect_err("gap to seq 4 must be OutOfOrder (expected 2)");
-    assert!(!err.is_empty());
-
-    // The valid next sequence still imports.
-    let second = dir.path().join("second.sync");
-    write_encrypted_admin(
-        &crafted_admin_package("f1-second", issuer_id, [42u8; 32], 2),
-        [42u8; 32],
-        &second,
-    );
-    import_admin_access_package_impl(&state, second.to_string_lossy().into_owned())
-        .expect("valid contiguous seq 2 succeeds after failed probes");
-    {
-        let guard = state.get_db().expect("lock");
-        let db = guard.as_ref().expect("db");
-        assert_eq!(
-            count_canonical_admins(db),
-            1,
-            "failed probes must not create admins"
-        );
-        assert_eq!(last_applied(db, &issuer_id.to_string()), Some(2));
     }
 }

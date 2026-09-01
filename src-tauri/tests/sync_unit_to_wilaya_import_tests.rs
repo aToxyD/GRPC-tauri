@@ -26,17 +26,15 @@ use chrono::{NaiveDate, Utc};
 use std::path::Path;
 use uuid::Uuid;
 
-use grpc_lib::application::services::SyncPackageIdentityVerificationService;
-use grpc_lib::application::sync::{
-    PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata,
-};
+use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
+use grpc_lib::application::usecases::exports::export_monthly_summary_dataset::execute as export_monthly_summary_dataset;
 use grpc_lib::application::usecases::exports::types::{
-    DailyReportExportDataset, MonthlySummaryExportDataset, ProductsExportDataset,
-    StockMovementsExportDataset,
+    DailyReportExportDataset, MonthlySummaryExportDataset, MonthlySummaryExportInput,
+    ProductsExportDataset, StockMovementsExportDataset,
 };
 use grpc_lib::commands::{
-    import_daily_report_package_impl,
-    import_monthly_summary_package_impl, import_products_package_impl, import_registry_package_impl,
+    import_daily_report_package_impl, import_monthly_summary_package_impl,
+    import_products_package_impl, import_registry_package_impl,
     import_stock_movements_package_impl, import_trust_package_impl, AppState,
 };
 use grpc_lib::db::ConnectionFactory;
@@ -52,9 +50,9 @@ use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256P
 use grpc_lib::infrastructure::sync::packages::signing::{Ed25519PackageSigner, PackageSigner};
 use grpc_lib::infrastructure::sync::{PackageBuilder, SerdeJsonSyncPackageSerializer};
 use grpc_lib::models::{
-    DailyConsumptionSyncLine, DailyReportSyncSnapshot, DailyDetailSyncSnapshot,
-    MealSectionSyncSnapshot, MealType, MonthlySummary, Product, ProductExportRow,
-    StockMovement, StockMovementType,
+    DailyConsumptionSyncLine, DailyDetailSyncSnapshot, DailyReportSyncSnapshot,
+    MealSectionSyncSnapshot, MealType, MonthlySummary, Product, ProductExportRow, StockMovement,
+    StockMovementType,
 };
 use grpc_lib::repositories::RepositoryProvider;
 
@@ -240,13 +238,12 @@ fn write_encrypted<T: serde::Serialize>(package: &SyncPackage<T>, secret: [u8; 3
         .expect("build encrypted package");
 }
 
-fn v2_metadata(pkg_id: &str, issuer_id: Uuid, source_node_id: &str, sequence: u64) -> SyncPackageMetadata {
+fn v2_metadata(pkg_id: &str, issuer_id: Uuid, source_node_id: &str) -> SyncPackageMetadata {
     let signer = Ed25519PackageSigner::new(UNIT_SECRET);
     SyncPackageMetadata {
         schema_version: SchemaVersion::V2,
         created_at: Utc::now(),
         source_node_id: source_node_id.to_string(),
-        package_sequence: Some(sequence),
         issuer_identity_id: Some(issuer_id),
         package_id: PackageId(pkg_id.to_string()),
         signature_version: Some(SIGNATURE_VERSION_ED25519),
@@ -256,7 +253,12 @@ fn v2_metadata(pkg_id: &str, issuer_id: Uuid, source_node_id: &str, sequence: u6
     }
 }
 
-fn movement(id: &str, product_id: &str, unit_id: Option<&str>, in_out: StockMovementType) -> StockMovement {
+fn movement(
+    id: &str,
+    product_id: &str,
+    unit_id: Option<&str>,
+    in_out: StockMovementType,
+) -> StockMovement {
     StockMovement {
         id: id.to_string(),
         product_id: product_id.to_string(),
@@ -281,11 +283,10 @@ fn stock_movements_package(
     pkg_id: &str,
     issuer_id: Uuid,
     unit_id: Uuid,
-    sequence: u64,
     movements: Vec<StockMovement>,
 ) -> SyncPackage<StockMovementsExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
+        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: StockMovementsExportDataset { movements },
     }
 }
@@ -294,10 +295,9 @@ fn daily_report_package(
     pkg_id: &str,
     issuer_id: Uuid,
     unit_id: Uuid,
-    sequence: u64,
 ) -> SyncPackage<DailyReportExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
+        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: DailyReportExportDataset {
             snapshot: DailyReportSyncSnapshot {
                 report_id: format!("rep-{pkg_id}"),
@@ -332,10 +332,9 @@ fn monthly_summary_package(
     pkg_id: &str,
     issuer_id: Uuid,
     unit_id: Uuid,
-    sequence: u64,
 ) -> SyncPackage<MonthlySummaryExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
+        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: MonthlySummaryExportDataset {
             summary: MonthlySummary {
                 month: 8,
@@ -365,10 +364,9 @@ fn products_package(
     pkg_id: &str,
     issuer_id: Uuid,
     unit_id: Uuid,
-    sequence: u64,
 ) -> SyncPackage<ProductsExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
+        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: ProductsExportDataset {
             product_rows: vec![ProductExportRow {
                 product: Product {
@@ -392,11 +390,10 @@ fn trust_package(
     pkg_id: &str,
     issuer_id: Uuid,
     unit_id: Uuid,
-    sequence: u64,
 ) -> SyncPackage<grpc_lib::application::usecases::sync::import_trust_package::TrustPackagePayload> {
     use grpc_lib::application::usecases::sync::import_trust_package::TrustPackagePayload;
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
+        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: TrustPackagePayload {
             certificates: vec![],
             revocations: vec![],
@@ -408,24 +405,18 @@ fn registry_package(
     pkg_id: &str,
     issuer_id: Uuid,
     unit_id: Uuid,
-    sequence: u64,
-) -> SyncPackage<grpc_lib::application::usecases::sync::import_registry_package::RegistryPackagePayload> {
+) -> SyncPackage<
+    grpc_lib::application::usecases::sync::import_registry_package::RegistryPackagePayload,
+> {
     use grpc_lib::application::usecases::sync::import_registry_package::RegistryPackagePayload;
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string(), sequence),
+        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: RegistryPackagePayload {
             snapshot_version: 1,
             wilaya_identity_id: issuer_id,
             units: vec![],
         },
     }
-}
-
-fn last_applied(state: &AppState, issuer: &str) -> Option<u64> {
-    let guard = state.get_db().expect("lock");
-    let db = guard.as_ref().expect("db");
-    SyncPackageIdentityVerificationService::last_applied_sequence(db.executor(), issuer)
-        .expect("read ledger")
 }
 
 fn movement_rows(state: &AppState, unit_id: &str) -> Vec<(String, String, String)> {
@@ -448,11 +439,18 @@ fn movement_rows(state: &AppState, unit_id: &str) -> Vec<(String, String, String
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn unit_stock_movements_imported_on_wilaya_with_sequence_1() {
+fn unit_stock_movements_imported_on_wilaya() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
     let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
 
@@ -463,10 +461,19 @@ fn unit_stock_movements_imported_on_wilaya_with_sequence_1() {
             "sm-pkg-1",
             unit_identity,
             unit_id,
-            1,
             vec![
-                movement("m1", &product_id, Some(&unit_id.to_string()), StockMovementType::In),
-                movement("m2", &product_id, Some(&unit_id.to_string()), StockMovementType::Out),
+                movement(
+                    "m1",
+                    &product_id,
+                    Some(&unit_id.to_string()),
+                    StockMovementType::In,
+                ),
+                movement(
+                    "m2",
+                    &product_id,
+                    Some(&unit_id.to_string()),
+                    StockMovementType::Out,
+                ),
             ],
         ),
         UNIT_SECRET,
@@ -480,61 +487,16 @@ fn unit_stock_movements_imported_on_wilaya_with_sequence_1() {
     )
     .expect("UNIT stock movements accepted on WILAYA");
     assert_eq!(result.movement_count, 2);
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(1));
 
     let rows = movement_rows(&state, &unit_id.to_string());
-    assert_eq!(rows.len(), 2, "movements persisted under the authenticated unit");
+    assert_eq!(
+        rows.len(),
+        2,
+        "movements persisted under the authenticated unit"
+    );
     for (_, stored_unit, _) in rows {
         assert_eq!(stored_unit, unit_id.to_string());
     }
-}
-
-#[test]
-fn unit_stock_movements_sequence_2_accepted_after_sequence_1() {
-    let (state, anchor_id) = build_wilaya_state();
-    let unit_identity = Uuid::new_v4();
-    let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
-    set_wilaya_admin_session(&state);
-    let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
-
-    let dir = tempfile::tempdir().expect("temp dir");
-    let first = sign_v2_package(
-        stock_movements_package(
-            "sm-pkg-1",
-            unit_identity,
-            unit_id,
-            1,
-            vec![movement("m1", &product_id, Some(&unit_id.to_string()), StockMovementType::In)],
-        ),
-        UNIT_SECRET,
-    );
-    write_encrypted(&first, UNIT_SECRET, &dir.path().join("first.sync"));
-    import_stock_movements_package_impl(
-        &state,
-        dir.path().join("first.sync").to_string_lossy().into_owned(),
-        unit_id.to_string(),
-    )
-    .expect("sequence 1 accepted");
-
-    let second = sign_v2_package(
-        stock_movements_package(
-            "sm-pkg-2",
-            unit_identity,
-            unit_id,
-            2,
-            vec![movement("m2", &product_id, Some(&unit_id.to_string()), StockMovementType::Out)],
-        ),
-        UNIT_SECRET,
-    );
-    write_encrypted(&second, UNIT_SECRET, &dir.path().join("second.sync"));
-    import_stock_movements_package_impl(
-        &state,
-        dir.path().join("second.sync").to_string_lossy().into_owned(),
-        unit_id.to_string(),
-    )
-    .expect("sequence 2 accepted");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(2));
 }
 
 #[test]
@@ -542,7 +504,14 @@ fn unit_movements_without_unit_id_are_restamped_to_authenticated_subject() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
     let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
 
@@ -556,7 +525,6 @@ fn unit_movements_without_unit_id_are_restamped_to_authenticated_subject() {
             "sm-pkg-restamp",
             unit_identity,
             unit_id,
-            1,
             vec![movement("m1", &product_id, None, StockMovementType::Out)],
         ),
         UNIT_SECRET,
@@ -580,13 +548,20 @@ fn unit_daily_report_imported_on_wilaya() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("daily.sync");
     let package = sign_v2_package(
-        daily_report_package("dr-pkg-1", unit_identity, unit_id, 1),
+        daily_report_package("dr-pkg-1", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -598,7 +573,6 @@ fn unit_daily_report_imported_on_wilaya() {
     )
     .expect("UNIT daily report accepted on WILAYA");
     assert_eq!(result.report_count, 1);
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(1));
 }
 
 #[test]
@@ -606,13 +580,42 @@ fn unit_monthly_summary_imported_on_wilaya() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
+
+    // SEC-057 monthly completeness gate: a monthly import is admissible ONLY
+    // for a full calendar month. Seed a complete August 2026 (31 daily
+    // reports) for this unit so the import clears the gate.
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        let now = Utc::now().to_rfc3339();
+        for day in 1..=31 {
+            db.get_connection()
+                .execute(
+                    "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year, deleted) VALUES (?1, ?2, ?3, 0, 0, 0, ?4, 2026, 0)",
+                    rusqlite::params![
+                        format!("dr-aug-{day}"),
+                        format!("2026-08-{day:02}"),
+                        unit_id.to_string(),
+                        now
+                    ],
+                )
+                .expect("insert daily report");
+        }
+    }
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("monthly.sync");
     let package = sign_v2_package(
-        monthly_summary_package("ms-pkg-1", unit_identity, unit_id, 1),
+        monthly_summary_package("ms-pkg-1", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -624,51 +627,120 @@ fn unit_monthly_summary_imported_on_wilaya() {
     )
     .expect("UNIT monthly summary accepted on WILAYA");
     assert_eq!(result.report_count, 1);
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(1));
 }
 
 #[test]
-fn unit_issuer_cross_kind_sequence_continuity_holds() {
-    // Same authenticated UNIT issuer, different data kinds: the per-issuer
-    // transport ledger is sequence-continuous across kinds.
+fn unit_monthly_summary_partial_month_rejected_on_wilaya() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
-    let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
+
+    // SEC-057 monthly completeness gate: seed a PARTIAL August 2026 (15 days)
+    // so the import must fail closed — a partial month is never accepted.
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        let now = Utc::now().to_rfc3339();
+        for day in 1..=15 {
+            db.get_connection()
+                .execute(
+                    "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year, deleted) VALUES (?1, ?2, ?3, 0, 0, 0, ?4, 2026, 0)",
+                    rusqlite::params![
+                        format!("dr-aug-part-{day}"),
+                        format!("2026-08-{day:02}"),
+                        unit_id.to_string(),
+                        now
+                    ],
+                )
+                .expect("insert daily report");
+        }
+    }
 
     let dir = tempfile::tempdir().expect("temp dir");
-    let first = sign_v2_package(
-        stock_movements_package(
-            "sm-pkg-1",
-            unit_identity,
-            unit_id,
-            1,
-            vec![movement("m1", &product_id, Some(&unit_id.to_string()), StockMovementType::In)],
-        ),
+    let path = dir.path().join("monthly.sync");
+    let package = sign_v2_package(
+        monthly_summary_package("ms-pkg-partial", unit_identity, unit_id),
         UNIT_SECRET,
     );
-    write_encrypted(&first, UNIT_SECRET, &dir.path().join("first.sync"));
-    import_stock_movements_package_impl(
-        &state,
-        dir.path().join("first.sync").to_string_lossy().into_owned(),
-        unit_id.to_string(),
-    )
-    .expect("stock movements seq 1");
+    write_encrypted(&package, UNIT_SECRET, &path);
 
-    let second = sign_v2_package(
-        daily_report_package("dr-pkg-2", unit_identity, unit_id, 2),
-        UNIT_SECRET,
-    );
-    write_encrypted(&second, UNIT_SECRET, &dir.path().join("second.sync"));
-    import_daily_report_package_impl(
+    let err = import_monthly_summary_package_impl(
         &state,
-        dir.path().join("second.sync").to_string_lossy().into_owned(),
+        path.to_string_lossy().into_owned(),
         unit_id.to_string(),
     )
-    .expect("daily report seq 2 with same issuer");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(2));
+    .expect_err("partial month must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("البيانات الشهرية غير مكتملة"),
+        "expected completeness gate rejection, got: {msg}"
+    );
+}
+
+#[test]
+fn unit_monthly_dataset_partial_month_rejected_on_export_cycle() {
+    // SEC-057 monthly completeness gate on the UNIT EXPORT path: the export
+    // dataset usecase must fail closed on a partial month and pass only once
+    // the calendar month is complete.
+    let (state, _anchor_id, unit_id) = build_unit_state();
+
+    let input = MonthlySummaryExportInput {
+        year: 2026,
+        month: 8,
+    };
+    let guard = state.get_db().expect("lock");
+    let db = guard.as_ref().expect("db");
+    {
+        let now = Utc::now().to_rfc3339();
+        for day in 1..=15 {
+            db.get_connection()
+                .execute(
+                    "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year, deleted) VALUES (?1, ?2, ?3, 0, 0, 0, ?4, 2026, 0)",
+                    rusqlite::params![
+                        format!("dr-export-part-{day}"),
+                        format!("2026-08-{day:02}"),
+                        unit_id.to_string(),
+                        now
+                    ],
+                )
+                .expect("insert daily report");
+        }
+    }
+    let err = export_monthly_summary_dataset(db.executor(), input, Some(&unit_id.to_string()))
+        .expect_err("partial month must be rejected on UNIT export");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("البيانات الشهرية غير مكتملة"),
+        "expected completeness gate rejection, got: {msg}"
+    );
+
+    {
+        let now = Utc::now().to_rfc3339();
+        for day in 16..=31 {
+            db.get_connection()
+                .execute(
+                    "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year, deleted) VALUES (?1, ?2, ?3, 0, 0, 0, ?4, 2026, 0)",
+                    rusqlite::params![
+                        format!("dr-export-full-{day}"),
+                        format!("2026-08-{day:02}"),
+                        unit_id.to_string(),
+                        now
+                    ],
+                )
+                .expect("insert daily report");
+        }
+    }
+    let _dataset = export_monthly_summary_dataset(db.executor(), input, Some(&unit_id.to_string()))
+        .expect("complete month must export on UNIT");
 }
 
 #[test]
@@ -691,7 +763,7 @@ fn wilaya_issued_data_package_still_accepted() {
     // WILAYA anchor as package issuer (source_node_id = wilaya code).
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("wilaya-daily.sync");
-    let mut package = daily_report_package("dr-wilaya-1", anchor_uuid, unit_id, 1);
+    let mut package = daily_report_package("dr-wilaya-1", anchor_uuid, unit_id);
     package.metadata.source_node_id = WILAYA_CODE.to_string();
     let package = sign_v2_package(package, WILAYA_SECRET);
     write_encrypted(&package, WILAYA_SECRET, &path);
@@ -702,7 +774,6 @@ fn wilaya_issued_data_package_still_accepted() {
         unit_id.to_string(),
     )
     .expect("WILAYA-issued daily report still accepted");
-    assert_eq!(last_applied(&state, &anchor_uuid.to_string()), Some(1));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -714,13 +785,20 @@ fn unit_issuer_rejected_when_certificate_revoked() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Revoked, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Revoked,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("mov.sync");
     let package = sign_v2_package(
-        stock_movements_package("sm-revoked", unit_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-revoked", unit_identity, unit_id, vec![]),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -732,7 +810,6 @@ fn unit_issuer_rejected_when_certificate_revoked() {
     )
     .expect_err("revoked UNIT issuer must be rejected");
     assert!(err.contains("غير نشط"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -740,13 +817,20 @@ fn unit_issuer_rejected_when_certificate_superseded() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Superseded, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Superseded,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("daily.sync");
     let package = sign_v2_package(
-        daily_report_package("dr-superseded", unit_identity, unit_id, 1),
+        daily_report_package("dr-superseded", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -758,7 +842,6 @@ fn unit_issuer_rejected_when_certificate_superseded() {
     )
     .expect_err("superseded UNIT issuer must be rejected");
     assert!(err.contains("غير نشط"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -766,7 +849,14 @@ fn unit_issuer_rejected_when_certificate_expired() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     {
         let now = Utc::now().to_rfc3339();
         let expired = (Utc::now() - chrono::Duration::days(1)).to_rfc3339();
@@ -784,7 +874,7 @@ fn unit_issuer_rejected_when_certificate_expired() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("monthly.sync");
     let package = sign_v2_package(
-        monthly_summary_package("ms-expired", unit_identity, unit_id, 1),
+        monthly_summary_package("ms-expired", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -796,7 +886,6 @@ fn unit_issuer_rejected_when_certificate_expired() {
     )
     .expect_err("expired UNIT issuer must be rejected");
     assert!(err.contains("منتهية الصلاحية"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -810,7 +899,7 @@ fn unit_issuer_rejected_when_certificate_unknown() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("mov.sync");
     let package = sign_v2_package(
-        stock_movements_package("sm-unknown", unknown_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-unknown", unknown_identity, unit_id, vec![]),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -822,7 +911,6 @@ fn unit_issuer_rejected_when_certificate_unknown() {
     )
     .expect_err("unknown UNIT issuer must be rejected");
     assert!(err.contains("غير موجود"), "got: {err}");
-    assert_eq!(last_applied(&state, &unknown_identity.to_string()), None);
 }
 
 #[test]
@@ -831,13 +919,20 @@ fn unit_issuer_rejected_when_unit_belongs_to_foreign_wilaya() {
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
     // Unit row of ANOTHER wilaya (10) — membership must fail against 16.
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, "10");
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        "10",
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("mov.sync");
     let package = sign_v2_package(
-        stock_movements_package("sm-foreign", unit_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-foreign", unit_identity, unit_id, vec![]),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -849,7 +944,6 @@ fn unit_issuer_rejected_when_unit_belongs_to_foreign_wilaya() {
     )
     .expect_err("foreign-wilaya UNIT issuer must be rejected");
     assert!(err.contains("لا تنتمي إلى ولاية المستورد"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -857,13 +951,20 @@ fn unit_issuer_rejected_when_import_target_mismatches_authenticated_subject() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("mov.sync");
     let package = sign_v2_package(
-        stock_movements_package("sm-mismatch", unit_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-mismatch", unit_identity, unit_id, vec![]),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -875,7 +976,6 @@ fn unit_issuer_rejected_when_import_target_mismatches_authenticated_subject() {
     )
     .expect_err("renderer-selected unit different from authenticated subject must be rejected");
     assert!(err.contains("لا تطابق هوية المُصدِر الموثّقة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -883,7 +983,14 @@ fn unit_issuer_rejected_when_payload_movement_belongs_to_another_unit() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
     let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
 
@@ -895,8 +1002,12 @@ fn unit_issuer_rejected_when_payload_movement_belongs_to_another_unit() {
             "sm-wrong-movement-unit",
             unit_identity,
             unit_id,
-            1,
-            vec![movement("m1", &product_id, Some(&foreign_unit), StockMovementType::Out)],
+            vec![movement(
+                "m1",
+                &product_id,
+                Some(&foreign_unit),
+                StockMovementType::Out,
+            )],
         ),
         UNIT_SECRET,
     );
@@ -909,7 +1020,6 @@ fn unit_issuer_rejected_when_payload_movement_belongs_to_another_unit() {
     )
     .expect_err("signed movement of another unit must be rejected");
     assert!(err.contains("وحدة بيانات الحزمة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -917,7 +1027,14 @@ fn unit_issuer_rejected_when_signature_forged_with_other_key() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
@@ -925,7 +1042,7 @@ fn unit_issuer_rejected_when_signature_forged_with_other_key() {
     // Package claims the UNIT issuer but is signed with OTHER_SECRET — whose
     // key does not match the issuer certificate's UNIT_SECRET key.
     let package = sign_v2_package(
-        stock_movements_package("sm-forged", unit_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-forged", unit_identity, unit_id, vec![]),
         OTHER_SECRET,
     );
     write_encrypted(&package, OTHER_SECRET, &path);
@@ -937,7 +1054,6 @@ fn unit_issuer_rejected_when_signature_forged_with_other_key() {
     )
     .expect_err("forged signature must be rejected");
     assert!(err.contains("فشل التحقق"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -945,13 +1061,20 @@ fn unit_package_with_tampered_payload_and_refreshed_hash_rejected() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("mov.sync");
     let mut package = sign_v2_package(
-        stock_movements_package("sm-tamper", unit_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-tamper", unit_identity, unit_id, vec![]),
         UNIT_SECRET,
     );
     // Attacker swaps the payload and recomputes the SHA-256 integrity hash
@@ -959,7 +1082,12 @@ fn unit_package_with_tampered_payload_and_refreshed_hash_rejected() {
     // serialized + encrypted directly (bypassing PackageBuilder, which would
     // re-sign and thereby re-validate the tampered payload).
     package.payload = StockMovementsExportDataset {
-        movements: vec![movement("m-evil", "prod-evil", Some(&unit_id.to_string()), StockMovementType::Out)],
+        movements: vec![movement(
+            "m-evil",
+            "prod-evil",
+            Some(&unit_id.to_string()),
+            StockMovementType::Out,
+        )],
     };
     let value = serde_json::to_value(&package).expect("value");
     let hash = Sha256PackageHasher
@@ -985,7 +1113,6 @@ fn unit_package_with_tampered_payload_and_refreshed_hash_rejected() {
     )
     .expect_err("tampered package must be rejected");
     assert!(err.contains("فشل التحقق"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -998,13 +1125,20 @@ fn unit_issuer_rejected_for_products_kind() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("products.sync");
     let package = sign_v2_package(
-        products_package("prod-unit-1", unit_identity, unit_id, 1),
+        products_package("prod-unit-1", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -1012,7 +1146,6 @@ fn unit_issuer_rejected_for_products_kind() {
     let err = import_products_package_impl(&state, path.to_string_lossy().into_owned())
         .expect_err("UNIT-issued products package must be rejected");
     assert!(err.contains("غير مسموح له بصنف الحزمة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -1020,13 +1153,20 @@ fn unit_issuer_rejected_for_trust_kind() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("trust.sync");
     let package = sign_v2_package(
-        trust_package("trust-unit-1", unit_identity, unit_id, 1),
+        trust_package("trust-unit-1", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -1034,7 +1174,6 @@ fn unit_issuer_rejected_for_trust_kind() {
     let err = import_trust_package_impl(&state, path.to_string_lossy().into_owned())
         .expect_err("UNIT-issued trust package must be rejected");
     assert!(err.contains("غير مسموح له بصنف الحزمة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -1042,13 +1181,20 @@ fn unit_issuer_rejected_for_registry_kind() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("registry.sync");
     let package = sign_v2_package(
-        registry_package("registry-unit-1", unit_identity, unit_id, 1),
+        registry_package("registry-unit-1", unit_identity, unit_id),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -1056,86 +1202,6 @@ fn unit_issuer_rejected_for_registry_kind() {
     let err = import_registry_package_impl(&state, path.to_string_lossy().into_owned())
         .expect_err("UNIT-issued registry package must be rejected");
     assert!(err.contains("غير مسموح له بصنف الحزمة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Negative: transport discipline (B4 ledger unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn unit_replay_sequence_is_rejected_and_ledger_not_consumed() {
-    let (state, anchor_id) = build_wilaya_state();
-    let unit_identity = Uuid::new_v4();
-    let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
-    set_wilaya_admin_session(&state);
-    let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
-
-    let dir = tempfile::tempdir().expect("temp dir");
-    let first = sign_v2_package(
-        stock_movements_package(
-            "sm-replay-1",
-            unit_identity,
-            unit_id,
-            1,
-            vec![movement("m1", &product_id, Some(&unit_id.to_string()), StockMovementType::In)],
-        ),
-        UNIT_SECRET,
-    );
-    write_encrypted(&first, UNIT_SECRET, &dir.path().join("first.sync"));
-    import_stock_movements_package_impl(
-        &state,
-        dir.path().join("first.sync").to_string_lossy().into_owned(),
-        unit_id.to_string(),
-    )
-    .expect("sequence 1 accepted");
-
-    let replay = sign_v2_package(
-        stock_movements_package(
-            "sm-replay-2",
-            unit_identity,
-            unit_id,
-            1,
-            vec![movement("m2", &product_id, Some(&unit_id.to_string()), StockMovementType::Out)],
-        ),
-        UNIT_SECRET,
-    );
-    write_encrypted(&replay, UNIT_SECRET, &dir.path().join("replay.sync"));
-    let err = import_stock_movements_package_impl(
-        &state,
-        dir.path().join("replay.sync").to_string_lossy().into_owned(),
-        unit_id.to_string(),
-    )
-    .expect_err("replay must be rejected");
-    assert!(err.contains("إعادة بث"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(1));
-}
-
-#[test]
-fn unit_out_of_order_sequence_is_rejected() {
-    let (state, anchor_id) = build_wilaya_state();
-    let unit_identity = Uuid::new_v4();
-    let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
-    set_wilaya_admin_session(&state);
-
-    let dir = tempfile::tempdir().expect("temp dir");
-    let path = dir.path().join("daily.sync");
-    let package = sign_v2_package(
-        daily_report_package("dr-oof-1", unit_identity, unit_id, 3),
-        UNIT_SECRET,
-    );
-    write_encrypted(&package, UNIT_SECRET, &path);
-
-    let err = import_daily_report_package_impl(
-        &state,
-        path.to_string_lossy().into_owned(),
-        unit_id.to_string(),
-    )
-    .expect_err("out-of-order must be rejected");
-    assert!(err.contains("انتهاك ترتيب النقل"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 #[test]
@@ -1143,13 +1209,20 @@ fn unit_issuer_rejected_when_import_unit_id_missing() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("mov.sync");
     let package = sign_v2_package(
-        stock_movements_package("sm-no-target", unit_identity, unit_id, 1, vec![]),
+        stock_movements_package("sm-no-target", unit_identity, unit_id, vec![]),
         UNIT_SECRET,
     );
     write_encrypted(&package, UNIT_SECRET, &path);
@@ -1161,7 +1234,6 @@ fn unit_issuer_rejected_when_import_unit_id_missing() {
     )
     .expect_err("missing import unit id must be rejected");
     assert!(err.contains("لا تطابق هوية المُصدِر الموثّقة"), "got: {err}");
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), None);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1170,8 +1242,8 @@ fn unit_issuer_rejected_when_import_unit_id_missing() {
 
 /// F-01 (SYNC-006 INFO): UNIT issuer → UNIT importer must be rejected through
 /// the REAL production pipeline (authz → file loading → decrypt → deserialize
-/// → integrity → signature → kind policy), with NO mutation and NO per-issuer
-/// ledger advancement. The rejection happens at ADR-0046 I3.3 (`importer_is_wilaya`),
+/// → integrity → signature → kind policy), with NO mutation. The rejection
+/// happens at ADR-0046 I3.3 (`importer_is_wilaya`),
 /// before membership/binding — a UNIT node cannot import its own or any UNIT's
 /// data packages.
 #[test]
@@ -1198,7 +1270,6 @@ fn unit_issuer_rejected_when_importer_is_a_unit_node() {
             "sm-unit-node",
             unit_identity,
             local_unit_id,
-            1,
             vec![movement(
                 "m1",
                 &product_id,
@@ -1222,11 +1293,6 @@ fn unit_issuer_rejected_when_importer_is_a_unit_node() {
         0,
         "rejected UNIT→UNIT import must not mutate stock_movements"
     );
-    assert_eq!(
-        last_applied(&state, &unit_identity.to_string()),
-        None,
-        "rejected UNIT→UNIT import must not advance the per-issuer ledger"
-    );
 }
 
 /// F-02 (SYNC-006 INFO): an empty payload `unit_id` is NOT an independent
@@ -1239,7 +1305,14 @@ fn empty_payload_unit_id_is_restamped_to_authenticated_subject() {
     let (state, anchor_id) = build_wilaya_state();
     let unit_identity = Uuid::new_v4();
     let unit_id = Uuid::new_v4();
-    seed_unit(&state, unit_identity, unit_id, CredentialStatus::Active, anchor_id, WILAYA_CODE);
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
     set_wilaya_admin_session(&state);
     let product_id = common::create_test_product(&state, "Bread", 20.0, 2026);
 
@@ -1250,7 +1323,6 @@ fn empty_payload_unit_id_is_restamped_to_authenticated_subject() {
             "sm-empty-unit",
             unit_identity,
             unit_id,
-            1,
             vec![movement("m1", &product_id, Some(""), StockMovementType::In)],
         ),
         UNIT_SECRET,
@@ -1264,10 +1336,13 @@ fn empty_payload_unit_id_is_restamped_to_authenticated_subject() {
     )
     .expect("empty payload unit_id is not an independent identity (ADR-0046 I3.7d)");
     assert_eq!(result.movement_count, 1);
-    assert_eq!(last_applied(&state, &unit_identity.to_string()), Some(1));
 
     let rows = movement_rows(&state, &unit_id.to_string());
-    assert_eq!(rows.len(), 1, "movement persisted under the authenticated unit");
+    assert_eq!(
+        rows.len(),
+        1,
+        "movement persisted under the authenticated unit"
+    );
     for (_, stored_unit, _) in rows {
         assert_eq!(
             stored_unit,
