@@ -206,7 +206,10 @@ pub fn seed_default_admin(db: &Database) -> crate::errors::AppResult<()> {
         .unwrap_or_else(|_| "WILAYA".to_string());
 
     // ADR-0052: existence is scoped to this node's identity.
-    let existing = db.executor().users().get_user_by_username("admin", &node_id)?;
+    let existing = db
+        .executor()
+        .users()
+        .get_user_by_username("admin", &node_id)?;
     if existing.is_some() {
         return Ok(());
     }

@@ -3,8 +3,8 @@ mod common;
 
 #[cfg(test)]
 mod tests {
-    use super::common::{clear_fiscal_status, create_test_state, seed_fiscal_year_open};
     use super::common::seed_wilaya_identity;
+    use super::common::{clear_fiscal_status, create_test_state, seed_fiscal_year_open};
     use grpc_lib::application::services::FiscalClosurePackageService;
     use grpc_lib::infrastructure::sync::packages::signing::Ed25519PackageSigner;
     use grpc_lib::repositories::RepositoryProvider;

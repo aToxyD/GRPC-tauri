@@ -192,10 +192,7 @@ fn bootstrap_sign_succeeds_without_active_unit_identity() {
     let signed = sign_bootstrap(&mut wilaya, &csr);
 
     // Issuer bound to the ACTIVE WILAYA (R5), never caller-controlled.
-    assert_eq!(
-        signed.issuer_identity_id,
-        Some(wilaya_cert.identity_id)
-    );
+    assert_eq!(signed.issuer_identity_id, Some(wilaya_cert.identity_id));
     // Signed under the WILAYA key and verifiable.
     let signature = signed.signature.as_ref().expect("signature present");
     assert!(Ed25519SignatureVerifier
@@ -282,7 +279,10 @@ fn bootstrap_sign_allowed_when_only_revoked_identity_exists() {
     let second = sign_bootstrap(&mut wilaya, &csr2);
 
     assert_eq!(second.credential_id, csr2.credential_id);
-    assert_eq!(stored_active_unit(&wilaya).credential_id, csr2.credential_id);
+    assert_eq!(
+        stored_active_unit(&wilaya).credential_id,
+        csr2.credential_id
+    );
 }
 
 #[test]
@@ -314,7 +314,10 @@ fn bootstrap_sign_allowed_when_only_superseded_identity_exists() {
     let second = sign_bootstrap(&mut wilaya, &csr2);
 
     assert_eq!(second.credential_id, csr2.credential_id);
-    assert_eq!(stored_active_unit(&wilaya).credential_id, csr2.credential_id);
+    assert_eq!(
+        stored_active_unit(&wilaya).credential_id,
+        csr2.credential_id
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -451,7 +454,10 @@ fn command_wilaya_admin_signs_unit_and_records_audit() {
     assert_eq!(entry.user_id, "u1");
     assert_eq!(entry.username, "wilaya-admin");
     assert_eq!(entry.action, AuditAction::SignUnitIdentityRequest);
-    assert_eq!(entry.entity_type, grpc_lib::domain::audit::EntityType::System);
+    assert_eq!(
+        entry.entity_type,
+        grpc_lib::domain::audit::EntityType::System
+    );
     assert_eq!(entry.entity_id, Some(certificate.identity_id.to_string()));
     assert_eq!(entry.entity_name.as_deref(), Some(UNIT_ID));
     assert_eq!(entry.status, AuditStatus::Success);
@@ -524,6 +530,9 @@ fn command_denied_duplicate_records_no_false_success_audit() {
     is_operation_not_permitted(err, "duplicate bootstrap issuance is denied");
 
     let resp = audit_for(&state);
-    assert_eq!(resp.total_count, 1, "no false success audit on the denied attempt");
+    assert_eq!(
+        resp.total_count, 1,
+        "no false success audit on the denied attempt"
+    );
     assert_eq!(resp.entries[0].status, AuditStatus::Success);
 }

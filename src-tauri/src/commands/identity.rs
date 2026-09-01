@@ -15,10 +15,10 @@
 //! decisions to the `IdentityRotationCoordinator`.
 
 use crate::application::authz::Action;
-use crate::application::services::identity_challenge_service::CHALLENGE_RATE_LIMIT_KEY;
 use crate::application::services::identity_authentication_policy::{
     AdminCredentialState, IdentityAuthenticationPolicy,
 };
+use crate::application::services::identity_challenge_service::CHALLENGE_RATE_LIMIT_KEY;
 use crate::application::services::{
     AuditService, AuditTxService, FinalizeUnitProvisionResult, IdentityBootstrapStatusService,
     IdentityChallengeService, IdentityProvisioningService, IdentityRotationCoordinator,
@@ -275,7 +275,8 @@ pub fn sign_unit_identity_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<IdentityCertificate, String> {
-    sign_unit_identity_request_impl(&state, request_json, &node_key_store()).map_err(into_command_error)
+    sign_unit_identity_request_impl(&state, request_json, &node_key_store())
+        .map_err(into_command_error)
 }
 
 /// Testable command body for `sign_unit_identity_request`.
@@ -294,20 +295,21 @@ pub fn sign_unit_identity_request_impl(
     request_json: String,
     node_key_store: &NodeKeyStore,
 ) -> Result<IdentityCertificate, AppError> {
-    let (session, _settings) =
-        authorize_command(state, Action::SignUnitIdentityRequest, None)?;
+    let (session, _settings) = authorize_command(state, Action::SignUnitIdentityRequest, None)?;
     state.touch_session();
 
-    let request: IdentityCertificate = serde_json::from_str(&request_json).map_err(|e| {
-        AppError::FileFormat(format!("Malformed UNIT CSR: {e}"))
-    })?;
+    let request: IdentityCertificate = serde_json::from_str(&request_json)
+        .map_err(|e| AppError::FileFormat(format!("Malformed UNIT CSR: {e}")))?;
 
     let mut guard = state.get_db()?;
     let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
     let now = chrono::Utc::now().to_rfc3339();
-    let certificate = IdentityProvisioningService::new(db)
-        .sign_unit_bootstrap_request(&request, node_key_store, &now)?;
+    let certificate = IdentityProvisioningService::new(db).sign_unit_bootstrap_request(
+        &request,
+        node_key_store,
+        &now,
+    )?;
 
     drop(guard);
     log_unit_identity_signing_audit(state, &session, &certificate);
@@ -408,15 +410,10 @@ pub fn install_wilaya_certificate(
     // installed BEFORE any account exists on a fresh UNIT node (anchor-first
     // `.unit` V2 acceptance).
     let user_ctx = UserContext::new("system", "system_bootstrap", None);
-    AuditTxService::execute_with_audit(
-        db,
-        AuditAction::TrustAnchorInstalled,
-        &user_ctx,
-        |tx| {
-            let mut svc = IdentityTrustAnchorService::new(tx.executor);
-            svc.install_wilaya_certificate(&signed_cert, &now)
-        },
-    )
+    AuditTxService::execute_with_audit(db, AuditAction::TrustAnchorInstalled, &user_ctx, |tx| {
+        let mut svc = IdentityTrustAnchorService::new(tx.executor);
+        svc.install_wilaya_certificate(&signed_cert, &now)
+    })
     .map_err(into_command_error)
 }
 
@@ -520,8 +517,13 @@ pub fn finalize_wilaya_rotation(
     cert_file_path: String,
     rotation_package_path: String,
 ) -> Result<RotationFinalizeOutcome, String> {
-    finalize_wilaya_rotation_impl(&state, cert_file_path, rotation_package_path, &node_key_store())
-        .map_err(into_command_error)
+    finalize_wilaya_rotation_impl(
+        &state,
+        cert_file_path,
+        rotation_package_path,
+        &node_key_store(),
+    )
+    .map_err(into_command_error)
 }
 
 /// Command-boundary implementation of `finalize_wilaya_rotation`.
@@ -542,9 +544,8 @@ pub fn finalize_wilaya_rotation_impl(
     crate::domain::validation::validate_file_path(&rotation_package_path, &["sync"])?;
 
     let json = std::fs::read_to_string(&cert_file_path).map_err(AppError::Io)?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
-        AppError::FileFormat(format!("Malformed signed certificate file: {e}"))
-    })?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
+        .map_err(|e| AppError::FileFormat(format!("Malformed signed certificate file: {e}")))?;
 
     let mut guard = state.get_db()?;
     let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
@@ -623,15 +624,14 @@ pub fn sign_unit_rotation_request_impl(
     let (session, _settings) = authorize_command(state, Action::RotateCredential, None)?;
     state.touch_session();
 
-    let request: IdentityCertificate = serde_json::from_str(&request_json).map_err(|e| {
-        AppError::FileFormat(format!("Malformed UNIT rotation CSR: {e}"))
-    })?;
+    let request: IdentityCertificate = serde_json::from_str(&request_json)
+        .map_err(|e| AppError::FileFormat(format!("Malformed UNIT rotation CSR: {e}")))?;
 
     let mut guard = state.get_db()?;
     let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
-    let result = IdentityRotationCoordinator::new(db, node_key_store)
-        .sign_unit_rotation(&request)?;
+    let result =
+        IdentityRotationCoordinator::new(db, node_key_store).sign_unit_rotation(&request)?;
     drop(guard);
     log_rotation_audit(state, &session, &result.operation, &result.certificate);
     Ok(result)
@@ -667,15 +667,14 @@ pub fn finalize_unit_rotation_impl(
     crate::domain::validation::validate_file_path(&cert_file_path, &["json"])?;
 
     let json = std::fs::read_to_string(&cert_file_path).map_err(AppError::Io)?;
-    let signed_cert: IdentityCertificate = serde_json::from_str(&json).map_err(|e| {
-        AppError::FileFormat(format!("Malformed signed certificate file: {e}"))
-    })?;
+    let signed_cert: IdentityCertificate = serde_json::from_str(&json)
+        .map_err(|e| AppError::FileFormat(format!("Malformed signed certificate file: {e}")))?;
 
     let mut guard = state.get_db()?;
     let db = db_mut_or_command_error(guard.as_mut()).map_err(AppError::Internal)?;
 
-    let outcome = IdentityRotationCoordinator::new(db, node_key_store)
-        .finalize_unit(&signed_cert)?;
+    let outcome =
+        IdentityRotationCoordinator::new(db, node_key_store).finalize_unit(&signed_cert)?;
 
     drop(guard);
     match &outcome {

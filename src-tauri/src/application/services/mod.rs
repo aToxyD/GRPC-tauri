@@ -9,9 +9,9 @@ pub mod fiscal_closing_service;
 pub mod fiscal_reporting_service;
 pub mod fiscal_scope;
 pub mod fiscal_validation_service;
+pub mod fleet_package_export;
 pub mod identity_authentication_policy;
 pub mod identity_bootstrap_status_service;
-pub mod fleet_package_export;
 pub mod identity_challenge_service;
 pub mod identity_node_resolver;
 pub mod identity_provisioning_service;
@@ -54,15 +54,15 @@ pub use fifo_preview_service::FifoPreviewService;
 pub use fiscal_closing_service::FiscalClosingService;
 pub use fiscal_reporting_service::FiscalReportingService;
 pub use fiscal_validation_service::FiscalValidationService;
+pub use fleet_package_export::{
+    export_admin_access_fleet, export_products_fleet, FleetExportOutcome,
+};
 pub use identity_authentication_policy::{AdminCredentialState, IdentityAuthenticationPolicy};
 pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;
 pub use identity_challenge_service::IdentityChallengeService;
 pub use identity_node_resolver::NodeIdentityResolver;
 pub use identity_provisioning_service::{
     FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult, IdentityProvisioningService,
-};
-pub use fleet_package_export::{
-    export_admin_access_fleet, export_products_fleet, FleetExportOutcome,
 };
 pub use identity_rotation_coordinator::{
     IdentityRotationCoordinator, RotationFinalizeOutcome, SignedUnitRotation,

@@ -128,7 +128,8 @@ pub fn run_fiscal_integrity_scan(
 /// `get_advanced_diagnostics_bundle`). Extracted for command-boundary testing.
 pub fn run_fiscal_integrity_scan_impl(
     state: &AppState,
-) -> Result<crate::application::services::fiscal_integrity_service::FiscalIntegrityReport, AppError> {
+) -> Result<crate::application::services::fiscal_integrity_service::FiscalIntegrityReport, AppError>
+{
     let (_session, _settings) = authorize_command(state, Action::ViewSystemHealth, None)?;
     state.touch_session();
 
@@ -201,9 +202,11 @@ pub fn export_fiscal_closure_package(
     // SEC-008: resolve the local WILAYA identity whose Ed25519 key signs the
     // package (fail-closed inside the service). No env-based signing secret is
     // ever consulted.
-    let (signer_info, signer) =
-        FiscalClosurePackageService::resolve_wilaya_signer(db, &crate::commands::common::node_key_store())
-            .map_err(into_command_error)?;
+    let (signer_info, signer) = FiscalClosurePackageService::resolve_wilaya_signer(
+        db,
+        &crate::commands::common::node_key_store(),
+    )
+    .map_err(into_command_error)?;
 
     let pkg = FiscalClosurePackageService::build_closure_package(
         node_id,

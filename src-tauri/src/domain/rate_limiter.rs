@@ -427,7 +427,10 @@ mod tests {
         limiter.record_login_failure("user1");
         limiter.record_login_failure("user1");
 
-        assert!(!limiter.is_allowed("user1"), "per-user limit must still trip");
+        assert!(
+            !limiter.is_allowed("user1"),
+            "per-user limit must still trip"
+        );
         assert!(limiter.is_allowed("user2"), "other users unaffected");
         assert!(
             limiter.is_global_login_allowed(),
@@ -465,7 +468,10 @@ mod tests {
         // A fresh victim still has a clean per-user bucket, but `login()` checks
         // `is_global_login_allowed()` FIRST and rejects the attempt node-wide.
         assert!(limiter.is_allowed("victim"), "per-user bucket is clean");
-        assert!(!limiter.is_global_login_allowed(), "node-wide login is rejected");
+        assert!(
+            !limiter.is_global_login_allowed(),
+            "node-wide login is rejected"
+        );
     }
 
     #[test]
@@ -514,7 +520,10 @@ mod tests {
             limiter.record_failure("admin");
         }
 
-        assert!(!limiter.is_allowed("admin"), "per-key bucket locks normally");
+        assert!(
+            !limiter.is_allowed("admin"),
+            "per-key bucket locks normally"
+        );
         assert!(
             limiter.is_global_login_allowed(),
             "Challenge–Response failures must NOT trip the node-wide breaker"

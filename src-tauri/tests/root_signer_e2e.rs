@@ -107,8 +107,11 @@ fn generate_csr(node: &mut Node) -> IdentityCertificate {
 }
 
 fn write_json(path: &Path, certificate: &IdentityCertificate) {
-    std::fs::write(path, serde_json::to_string_pretty(certificate).expect("serialize"))
-        .expect("write file");
+    std::fs::write(
+        path,
+        serde_json::to_string_pretty(certificate).expect("serialize"),
+    )
+    .expect("write file");
 }
 
 fn run_signer(args: &[String], grpc_root_public_key: Option<&str>) -> Output {
@@ -219,11 +222,9 @@ fn real_binary_signs_csr_and_grpc_reaches_wilaya_active_then_ready() {
         .public_key()
         .try_into()
         .expect("32-byte key");
-    assert!(
-        Ed25519SignatureVerifier
-            .verify_certificate(&signed_cert, &derived, &signature)
-            .expect("verify")
-    );
+    assert!(Ed25519SignatureVerifier
+        .verify_certificate(&signed_cert, &derived, &signature)
+        .expect("verify"));
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +246,11 @@ fn certificate_signed_by_wrong_root_key_is_rejected_by_grpc_finalize() {
         &sign_args(&csr_path, &signed_path, &hex::encode(FOREIGN_ROOT_SECRET)),
         None,
     );
-    assert!(output.status.success(), "signer must sign: {}", stderr(&output));
+    assert!(
+        output.status.success(),
+        "signer must sign: {}",
+        stderr(&output)
+    );
 
     let signed_json = std::fs::read_to_string(&signed_path).expect("signed file written");
     let signed_cert: IdentityCertificate = serde_json::from_str(&signed_json).expect("valid JSON");
@@ -276,7 +281,10 @@ fn binary_refuses_when_derived_key_mismatches_grpc_root_public_key() {
         &sign_args(&csr_path, &signed_path, &hex::encode(FOREIGN_ROOT_SECRET)),
         Some(DEV_ROOT_PUBLIC_KEY_B64),
     );
-    assert!(!output.status.success(), "signer must refuse a key mismatch");
+    assert!(
+        !output.status.success(),
+        "signer must refuse a key mismatch"
+    );
     assert!(
         stderr(&output).contains("GRPC_ROOT_PUBLIC_KEY"),
         "got: {}",
@@ -306,7 +314,10 @@ fn binary_refuses_csr_that_is_already_signed() {
         &sign_args(&csr_path, &signed_path, &hex::encode(TEST_ROOT_SECRET)),
         None,
     );
-    assert!(!output.status.success(), "already-signed CSR must be refused");
+    assert!(
+        !output.status.success(),
+        "already-signed CSR must be refused"
+    );
     assert!(
         stderr(&output).contains("already carries a signature"),
         "got: {}",
@@ -350,7 +361,10 @@ fn binary_refuses_unsupported_algorithm_version() {
         &sign_args(&csr_path, &signed_path, &hex::encode(TEST_ROOT_SECRET)),
         None,
     );
-    assert!(!output.status.success(), "unsupported version must be refused");
+    assert!(
+        !output.status.success(),
+        "unsupported version must be refused"
+    );
     assert!(
         stderr(&output).contains("algorithm_version"),
         "got: {}",

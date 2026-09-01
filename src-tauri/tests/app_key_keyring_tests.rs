@@ -17,10 +17,12 @@
 
 mod common;
 
-use common::{IDENTITY_A, IDENTITY_B, InMemorySecretStorage, KeyringSeamGuard};
+use common::{InMemorySecretStorage, KeyringSeamGuard, IDENTITY_A, IDENTITY_B};
 use grpc_lib::commands::{initialize_app_key_impl, unlock_app_key_impl};
 use grpc_lib::domain::ports::SecretStoragePort;
-use grpc_lib::infrastructure::security::keyring_secret_storage::{APP_KEY_RING_ENTRY, KEYRING_SERVICE};
+use grpc_lib::infrastructure::security::keyring_secret_storage::{
+    APP_KEY_RING_ENTRY, KEYRING_SERVICE,
+};
 use grpc_lib::infrastructure::security::{
     cache_app_key, clear_app_key_cache, forget_remembered_app_key_with, keyring_app_key_from,
     remember_app_key_best_effort_with, resolve_app_encryption_key,
@@ -39,7 +41,9 @@ static XDG_LOCK: StdMutex<()> = StdMutex::new(());
 #[test]
 fn port_set_get_roundtrip() {
     let store = InMemorySecretStorage::new();
-    store.set_secret(APP_KEY_RING_ENTRY, IDENTITY_A).expect("set");
+    store
+        .set_secret(APP_KEY_RING_ENTRY, IDENTITY_A)
+        .expect("set");
     assert_eq!(
         store.get_secret(APP_KEY_RING_ENTRY).expect("get"),
         Some(IDENTITY_A.to_string())
@@ -52,7 +56,9 @@ fn port_overwrite_existing_secret() {
     store
         .set_secret(APP_KEY_RING_ENTRY, "first")
         .expect("set first");
-    store.set_secret(APP_KEY_RING_ENTRY, IDENTITY_A).expect("overwrite");
+    store
+        .set_secret(APP_KEY_RING_ENTRY, IDENTITY_A)
+        .expect("overwrite");
     assert_eq!(
         store.get_secret(APP_KEY_RING_ENTRY).expect("get"),
         Some(IDENTITY_A.to_string())
@@ -62,7 +68,9 @@ fn port_overwrite_existing_secret() {
 #[test]
 fn port_delete_then_get_is_absent() {
     let store = InMemorySecretStorage::new();
-    store.set_secret(APP_KEY_RING_ENTRY, IDENTITY_A).expect("set");
+    store
+        .set_secret(APP_KEY_RING_ENTRY, IDENTITY_A)
+        .expect("set");
     assert!(store.delete_secret(APP_KEY_RING_ENTRY).expect("delete"));
     assert_eq!(store.get_secret(APP_KEY_RING_ENTRY).expect("get"), None);
 }
@@ -88,7 +96,9 @@ fn port_namespace_is_application_fixed() {
     // username, password, session, DB content, node credential, or auth state
     // participates in the identifier.
     let store = InMemorySecretStorage::new();
-    store.set_secret(APP_KEY_RING_ENTRY, IDENTITY_A).expect("set");
+    store
+        .set_secret(APP_KEY_RING_ENTRY, IDENTITY_A)
+        .expect("set");
     let entries = store.entries_snapshot();
     assert_eq!(entries.len(), 1);
     assert!(entries.contains_key(APP_KEY_RING_ENTRY));
@@ -101,7 +111,8 @@ fn port_namespace_is_application_fixed() {
 
 #[test]
 fn keyring_valid_key_is_accepted_and_normalized() {
-    let store = InMemorySecretStorage::with_secret(APP_KEY_RING_ENTRY, &format!("  {IDENTITY_A}  "));
+    let store =
+        InMemorySecretStorage::with_secret(APP_KEY_RING_ENTRY, &format!("  {IDENTITY_A}  "));
     assert_eq!(keyring_app_key_from(&store).as_deref(), Some(IDENTITY_A));
 }
 
@@ -118,10 +129,8 @@ fn keyring_malformed_value_is_rejected() {
     let store = InMemorySecretStorage::with_secret(APP_KEY_RING_ENTRY, "not-an-age-key");
     assert_eq!(keyring_app_key_from(&store), None);
 
-    let store = InMemorySecretStorage::with_secret(
-        APP_KEY_RING_ENTRY,
-        "AGE-SECRET-KEY-1INVALIDBASE64!!!",
-    );
+    let store =
+        InMemorySecretStorage::with_secret(APP_KEY_RING_ENTRY, "AGE-SECRET-KEY-1INVALIDBASE64!!!");
     assert_eq!(keyring_app_key_from(&store), None);
 }
 
@@ -143,7 +152,9 @@ fn clear_env_and_cache() {
 
 #[test]
 fn valid_env_beats_keyring() {
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::install(Arc::new(InMemorySecretStorage::with_secret(
         APP_KEY_RING_ENTRY,
         IDENTITY_A,
@@ -161,7 +172,9 @@ fn valid_env_beats_keyring() {
 fn invalid_explicit_env_is_terminal_despite_valid_keyring() {
     // Rank 1 preserves its fail-closed semantics: an explicitly supplied but
     // invalid GRPC_APP_KEY NEVER falls through to the keyring.
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::install(Arc::new(InMemorySecretStorage::with_secret(
         APP_KEY_RING_ENTRY,
         IDENTITY_A,
@@ -177,7 +190,9 @@ fn invalid_explicit_env_is_terminal_despite_valid_keyring() {
 
 #[test]
 fn keyring_beats_cache() {
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::install(Arc::new(InMemorySecretStorage::with_secret(
         APP_KEY_RING_ENTRY,
         IDENTITY_A,
@@ -193,7 +208,9 @@ fn keyring_beats_cache() {
 
 #[test]
 fn absent_keyring_falls_through_to_cache() {
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::absent();
     clear_env_and_cache();
     cache_app_key(IDENTITY_B).expect("cache B");
@@ -205,7 +222,9 @@ fn absent_keyring_falls_through_to_cache() {
 
 #[test]
 fn unavailable_keyring_falls_through_to_cache() {
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::install(Arc::new(InMemorySecretStorage::unavailable()));
     clear_env_and_cache();
     cache_app_key(IDENTITY_B).expect("cache B");
@@ -219,14 +238,17 @@ fn unavailable_keyring_falls_through_to_cache() {
 fn malformed_keyring_value_never_used_as_app_key() {
     // The malformed entry is rejected; the resolver never returns it — the
     // cache (or, in debug, the dev fallback) is used instead.
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::install(Arc::new(InMemorySecretStorage::with_secret(
         APP_KEY_RING_ENTRY,
         "malformed-keyring-value",
     )));
     clear_env_and_cache();
     cache_app_key(IDENTITY_B).expect("cache B");
-    let resolved = resolve_app_encryption_key().expect("resolution continues past malformed keyring");
+    let resolved =
+        resolve_app_encryption_key().expect("resolution continues past malformed keyring");
     assert_eq!(resolved, IDENTITY_B);
     assert_ne!(resolved, "malformed-keyring-value");
 }
@@ -236,10 +258,7 @@ fn complete_absence_reaches_fail_closed() {
     // Deterministic fail-closed check via the pure core with the dev fallback
     // disabled — the release path (no dev key) must error, never invent a key.
     let err = grpc_lib::infrastructure::security::resolve_app_encryption_key_impl(
-        None,
-        None,
-        None,
-        false,
+        None, None, None, false,
     );
     assert!(
         err.is_err(),
@@ -334,7 +353,9 @@ fn no_secret_is_written_before_validation_succeeds() {
 /// and log dirs). The deployment-readiness gate in `bootstrap_runtime` passes;
 /// the in-memory keyring fake absorbs `remember` writes (never the real keyring).
 fn with_security_harness(f: impl FnOnce(&SecurityHarness)) {
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _seam = KeyringSeamGuard::absent();
     let temp = tempfile::TempDir::new().expect("temp root");
     let xdg_dir = temp.path().join("xdg");
@@ -434,8 +455,7 @@ fn resolution_does_not_authenticate_any_user() {
     // (covered end-to-end by `identity_bootstrap_tests`).
     with_security_harness(|h| {
         initialize_app_key_impl(&h.state, "StrongPass123", None, None).expect("initialize");
-        let key =
-            resolve_app_encryption_key().expect("key resolves through the in-memory cache");
+        let key = resolve_app_encryption_key().expect("key resolves through the in-memory cache");
         assert!(key.starts_with("AGE-SECRET-KEY-1"));
         let session = h.state.current_session.lock().expect("session lock");
         assert!(session.is_none(), "resolved App Key ≠ authenticated user");

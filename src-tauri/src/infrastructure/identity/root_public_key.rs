@@ -218,8 +218,9 @@ mod tests {
     fn debug_semantics_still_accept_test_keys() {
         // Dev/test workflows must remain usable: test vectors are allowed when
         // the dev fallback is permitted (debug builds).
-        let key = resolve_root_public_key_impl(Some(RFC8032_TEST2_PUBLIC_KEY_B64.to_string()), true)
-            .unwrap();
+        let key =
+            resolve_root_public_key_impl(Some(RFC8032_TEST2_PUBLIC_KEY_B64.to_string()), true)
+                .unwrap();
         assert_eq!(key.len(), ED25519_PUBLIC_KEY_LEN);
     }
 

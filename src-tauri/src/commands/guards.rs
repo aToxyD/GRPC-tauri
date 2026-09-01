@@ -58,9 +58,9 @@ pub(crate) fn require_authenticated(state: &AppState) -> Result<CurrentSession, 
     // `get_user_by_id` deliberately returns disabled rows (unlike the login
     // lookup), so existence, `deleted`, and `role` are all checkable here.
     let valid = {
-        let db_guard = state.get_db().map_err(|_| {
-            AppError::Authentication(AuthenticationError::SessionNotFound)
-        })?;
+        let db_guard = state
+            .get_db()
+            .map_err(|_| AppError::Authentication(AuthenticationError::SessionNotFound))?;
         let Some(db) = db_guard.as_ref() else {
             return Err(AppError::Authentication(
                 AuthenticationError::SessionNotFound,
@@ -85,9 +85,11 @@ pub(crate) fn require_authenticated(state: &AppState) -> Result<CurrentSession, 
         if let Ok(mut s) = state.current_session.lock() {
             *s = None;
         }
-        return Err(AppError::Authentication(AuthenticationError::UserNotFound {
-            username: session.username,
-        }));
+        return Err(AppError::Authentication(
+            AuthenticationError::UserNotFound {
+                username: session.username,
+            },
+        ));
     }
 
     Ok(session)

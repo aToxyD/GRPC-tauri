@@ -148,12 +148,23 @@ fn valid_package_previews_and_applies() {
     let path = temp.path().join("pkg.sync");
     let path = path.to_str().unwrap();
     let issuer_id = export(db, path, WILAYA_SECRET);
-    assert_eq!(issuer_id, read_envelope(path)["package"]["issuer_identity_id"].as_str().unwrap().parse::<uuid::Uuid>().unwrap());
+    assert_eq!(
+        issuer_id,
+        read_envelope(path)["package"]["issuer_identity_id"]
+            .as_str()
+            .unwrap()
+            .parse::<uuid::Uuid>()
+            .unwrap()
+    );
 
     // export → preview → apply full success flow
     let service = FiscalClosurePackageService::new(db.executor());
     let preview = service.preview_closure_package(path).unwrap();
-    assert!(preview.validation_ok, "issues: {:?}", preview.validation_issues);
+    assert!(
+        preview.validation_ok,
+        "issues: {:?}",
+        preview.validation_issues
+    );
     assert_eq!(preview.closed_year, 2025);
     assert_eq!(preview.opened_year, 2026);
     assert_eq!(preview.schema_version, 3);
@@ -201,10 +212,7 @@ fn invalid_signature_is_rejected() {
     envelope["signature_hex"] = json!("00".repeat(64));
     write_package(path, envelope);
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -221,10 +229,7 @@ fn unknown_signer_is_rejected() {
         .export_to_file(&pkg, &s, path)
         .unwrap();
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -243,10 +248,7 @@ fn signer_whose_key_mismatches_certificate_is_rejected() {
         .export_to_file(&pkg, &s, path)
         .unwrap();
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -269,10 +271,7 @@ fn expired_signer_certificate_is_rejected() {
         .export_to_file(&pkg, &s, path)
         .unwrap();
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -295,10 +294,7 @@ fn revoked_signer_certificate_is_rejected() {
         .export_to_file(&pkg, &s, path)
         .unwrap();
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -314,10 +310,7 @@ fn missing_signature_is_rejected() {
     envelope["signature_hex"] = json!("");
     write_package(path, envelope);
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -333,10 +326,7 @@ fn unsupported_signature_version_is_rejected() {
     envelope["signature_version"] = json!(1);
     write_package(path, envelope);
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -352,10 +342,7 @@ fn unsupported_schema_version_is_rejected() {
     envelope["package"]["schema_version"] = json!(2);
     write_package(path, envelope);
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 // ─── §13: legacy HMAC envelopes can never authorize ─────────────────────────
@@ -403,7 +390,13 @@ fn unit_identity_cannot_forge_wilaya_package() {
     let db_guard = state.db.lock().unwrap();
     let db = db_guard.as_ref().unwrap();
     // Only a UNIT identity exists on this node — no WILAYA cert at all.
-    let unit_id = seed_cert(db, SubjectType::Unit, WILAYA_SECRET, CredentialStatus::Active, None);
+    let unit_id = seed_cert(
+        db,
+        SubjectType::Unit,
+        WILAYA_SECRET,
+        CredentialStatus::Active,
+        None,
+    );
     let s = signer(WILAYA_SECRET);
     let pkg = build_package(unit_id, &s.public_key_hex(), 2025);
     let path = temp.path().join("unit-forged.sync");
@@ -412,10 +405,7 @@ fn unit_identity_cannot_forge_wilaya_package() {
         .export_to_file(&pkg, &s, path)
         .unwrap();
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
@@ -441,16 +431,16 @@ fn unrelated_wilaya_cannot_authorize() {
         .export_to_file(&pkg, &s, path)
         .unwrap();
 
-    assert!(matches!(
-        preview_err(db, path),
-        AppError::BusinessLogic(_)
-    ));
+    assert!(matches!(preview_err(db, path), AppError::BusinessLogic(_)));
 }
 
 #[test]
 fn hmac_env_config_cannot_authorize_packages() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    std::env::set_var("GRPC_PACKAGE_SIGNING_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    std::env::set_var(
+        "GRPC_PACKAGE_SIGNING_KEY",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    );
     std::env::set_var("GRPC_ACTIVE_SIGNING_KEY_ID", "legacy-hmac-key");
 
     let (state, temp) = common::create_test_state();
@@ -464,7 +454,10 @@ fn hmac_env_config_cannot_authorize_packages() {
     export(db, path, WILAYA_SECRET);
     let service = FiscalClosurePackageService::new(db.executor());
     let preview = service.preview_closure_package(path);
-    assert!(preview.is_ok(), "env vars must not influence Ed25519 verify");
+    assert!(
+        preview.is_ok(),
+        "env vars must not influence Ed25519 verify"
+    );
 
     let legacy_path = temp.path().join("legacy.sync");
     let legacy_path = legacy_path.to_str().unwrap();
@@ -541,28 +534,32 @@ fn replay_protection_is_unchanged() {
     // Same file re-applied → replay rejected (same fiscal_transition_id).
     let replay = service.apply_closure_package(path, "system", "user1");
     let err_str = format!("{:?}", replay);
-    assert!(
-        replay.is_err(),
-        "replay must be rejected; got: {err_str}"
-    );
+    assert!(replay.is_err(), "replay must be rejected; got: {err_str}");
     assert!(
         err_str.contains("OperationNotPermitted") || err_str.contains("DuplicateSyncPackage"),
         "unexpected replay error: {err_str}"
     );
 
     // Registry retains the applied package with the Ed25519 public key id.
-    let registry = db
-        .executor()
-        .fiscal_package_registry()
-        .list_all()
-        .unwrap();
+    let registry = db.executor().fiscal_package_registry().list_all().unwrap();
     assert_eq!(registry.len(), 1);
-    assert_eq!(registry[0].transition_id, read_envelope(path)["package"]["fiscal_transition_id"].as_str().unwrap());
+    assert_eq!(
+        registry[0].transition_id,
+        read_envelope(path)["package"]["fiscal_transition_id"]
+            .as_str()
+            .unwrap()
+    );
     assert_eq!(
         registry[0].signing_key_id,
-        read_envelope(path)["package"]["signing_key_id"].as_str().unwrap()
+        read_envelope(path)["package"]["signing_key_id"]
+            .as_str()
+            .unwrap()
     );
-    assert_eq!(registry[0].signing_key_id.len(), 64, "must be Ed25519 public key hex");
+    assert_eq!(
+        registry[0].signing_key_id.len(),
+        64,
+        "must be Ed25519 public key hex"
+    );
     assert!(registry[0].applied_at.is_some());
 
     // Retention lifecycle unchanged: archive keeps the record queryable.
@@ -570,11 +567,12 @@ fn replay_protection_is_unchanged() {
         .fiscal_package_registry()
         .mark_archived(&registry[0].transition_id, true)
         .unwrap();
-    let registry = db
-        .executor()
-        .fiscal_package_registry()
-        .list_all()
-        .unwrap();
+    let registry = db.executor().fiscal_package_registry().list_all().unwrap();
     assert!(registry[0].archived);
-    assert_eq!(issuer_id.to_string(), read_envelope(path)["package"]["issuer_identity_id"].as_str().unwrap());
+    assert_eq!(
+        issuer_id.to_string(),
+        read_envelope(path)["package"]["issuer_identity_id"]
+            .as_str()
+            .unwrap()
+    );
 }

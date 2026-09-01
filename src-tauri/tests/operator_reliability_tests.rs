@@ -13,7 +13,9 @@ use grpc_lib::infrastructure::identity::NodeKeyStore;
 
 /// Test node key store in a throwaway temp dir (never touches the real data dir).
 fn test_node_key_store() -> NodeKeyStore {
-    NodeKeyStore::new(std::env::temp_dir().join(format!("grpc_reliability_test_{}", std::process::id())))
+    NodeKeyStore::new(
+        std::env::temp_dir().join(format!("grpc_reliability_test_{}", std::process::id())),
+    )
 }
 
 fn open_test_db() -> grpc_lib::db::Database {
@@ -34,14 +36,10 @@ fn deployment_readiness_passes_on_fresh_test_db() {
     let backup_dir = SqliteBackupAdapter::compute_backup_dir(&path);
     let _ = std::fs::create_dir_all(&backup_dir);
 
-    let report = DeploymentReadinessService::new(
-        db.executor(),
-        path.clone(),
-        &db,
-        &test_node_key_store(),
-    )
-    .verify()
-    .unwrap();
+    let report =
+        DeploymentReadinessService::new(db.executor(), path.clone(), &db, &test_node_key_store())
+            .verify()
+            .unwrap();
     assert_eq!(
         report.status,
         DeploymentReadinessStatus::Ready,
@@ -173,14 +171,10 @@ fn restore_journal_leftover_blocks_readiness() {
     let journal = path.with_extension("restore.journal");
     std::fs::write(&journal, b"{}").unwrap();
 
-    let report = DeploymentReadinessService::new(
-        db.executor(),
-        path.clone(),
-        &db,
-        &test_node_key_store(),
-    )
-    .verify()
-    .unwrap();
+    let report =
+        DeploymentReadinessService::new(db.executor(), path.clone(), &db, &test_node_key_store())
+            .verify()
+            .unwrap();
     assert_eq!(report.status, DeploymentReadinessStatus::NotReady);
     assert!(report
         .blocking_failures
@@ -196,14 +190,10 @@ fn backup_directory_probe_matches_adapter_layout() {
     let db_path = db.get_connection_path().unwrap();
     let backup_dir = SqliteBackupAdapter::compute_backup_dir(&db_path);
     std::fs::create_dir_all(&backup_dir).unwrap();
-    let report = DeploymentReadinessService::new(
-        db.executor(),
-        db_path,
-        &db,
-        &test_node_key_store(),
-    )
-    .verify()
-    .unwrap();
+    let report =
+        DeploymentReadinessService::new(db.executor(), db_path, &db, &test_node_key_store())
+            .verify()
+            .unwrap();
     let backup_check = report
         .checks
         .iter()

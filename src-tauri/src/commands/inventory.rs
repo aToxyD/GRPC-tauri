@@ -335,8 +335,8 @@ pub fn get_fifo_layers(
     unit_id: String,
     product_id: String,
 ) -> Result<Vec<FifoStockLayer>, String> {
-    let (_session, _settings) =
-        authorize_command(&state, Action::ReadInventory, Some(&unit_id)).map_err(into_command_error)?;
+    let (_session, _settings) = authorize_command(&state, Action::ReadInventory, Some(&unit_id))
+        .map_err(into_command_error)?;
 
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;

@@ -13,8 +13,8 @@ use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::domain::ports::backup::{
-    BackupInfo, BackupPort, RestoreLedgerSnapshot, RestoreMarker, RestoreMarkerCommit,
-    SecurityFingerprint, restore_ledger_sidecar_path, restore_marker_history_path,
+    restore_ledger_sidecar_path, restore_marker_history_path, BackupInfo, BackupPort,
+    RestoreLedgerSnapshot, RestoreMarker, RestoreMarkerCommit, SecurityFingerprint,
 };
 use crate::errors::{into_command_error, AppError};
 use crate::infrastructure::backup::SqliteBackupAdapter;
@@ -575,9 +575,7 @@ pub fn prepare_restore_backup(
 
     let (candidate_fp, live_fp) = backup_manager
         .compute_security_fingerprints(backup_path)
-        .map_err(|e| {
-            AppError::Internal(format!("فشل حساب بصمة الحالة الأمنية للنسخة: {e}"))
-        })?;
+        .map_err(|e| AppError::Internal(format!("فشل حساب بصمة الحالة الأمنية للنسخة: {e}")))?;
     let regression = SecurityRegressionGuard::compare(&candidate_fp, &live_fp);
 
     if regression.is_regressing() {

@@ -92,11 +92,10 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
     // foreign-scope username (e.g. another unit's shadow operator) is
     // indistinguishable from an unknown account.
     use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
-    let node_scope = crate::infrastructure::security::SettingsNodeIdentityProvider::new(
-        db.executor(),
-    )
-    .current_node_id()
-    .unwrap_or_else(|_| "WILAYA".to_string());
+    let node_scope =
+        crate::infrastructure::security::SettingsNodeIdentityProvider::new(db.executor())
+            .current_node_id()
+            .unwrap_or_else(|_| "WILAYA".to_string());
 
     let password_allowed =
         IdentityAuthenticationPolicy::password_login_allowed(db, &request.username, &node_scope)

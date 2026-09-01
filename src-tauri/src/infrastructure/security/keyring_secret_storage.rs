@@ -93,7 +93,10 @@ mod tests {
 
     #[test]
     fn read_no_entry_is_absent() {
-        assert_eq!(classify_read(Err(keyring::Error::NoEntry)).expect("absent"), None);
+        assert_eq!(
+            classify_read(Err(keyring::Error::NoEntry)).expect("absent"),
+            None
+        );
     }
 
     #[test]
@@ -111,10 +114,7 @@ mod tests {
 
     #[test]
     fn read_platform_failure_is_unavailable() {
-        assert!(classify_read(Err(keyring::Error::PlatformFailure(Box::new(
-            TestError
-        ))))
-        .is_err());
+        assert!(classify_read(Err(keyring::Error::PlatformFailure(Box::new(TestError)))).is_err());
     }
 
     #[test]

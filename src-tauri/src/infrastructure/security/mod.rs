@@ -14,7 +14,7 @@ use crate::errors::{AppError, AppResult, ValidationError};
 pub use appkey_store::{AppKeyFile, AppKeyStore};
 pub use file_encryption::AgeFileEncryptionProvider;
 pub use identity::{Ed25519SignatureVerifier, Ed25519SigningProvider};
-pub use keyring_secret_storage::{APP_KEY_RING_ENTRY, KeyringSecretStorage};
+pub use keyring_secret_storage::{KeyringSecretStorage, APP_KEY_RING_ENTRY};
 pub use node_identity_provider::{NodeIdentityProvider, SettingsNodeIdentityProvider};
 pub use password_hash_provider::Argon2PasswordHashProvider;
 
@@ -229,7 +229,9 @@ fn parse_and_validate_app_key(raw: &str) -> Option<String> {
     if !trimmed.starts_with("AGE-SECRET-KEY-1") {
         return None;
     }
-    age::x25519::Identity::from_str(&trimmed).ok().map(|_| trimmed)
+    age::x25519::Identity::from_str(&trimmed)
+        .ok()
+        .map(|_| trimmed)
 }
 
 /// Best-effort remember (ADR-0041 §11.4): persists the VALIDATED decrypted App
@@ -449,8 +451,7 @@ mod key_resolution_tests {
 
     #[test]
     fn app_key_keyring_beats_cache_and_dev_fallback_in_debug_mode() {
-        let keyring =
-            "AGE-SECRET-KEY-1KEYRINGVALUE0000000000000000000000000000".to_string();
+        let keyring = "AGE-SECRET-KEY-1KEYRINGVALUE0000000000000000000000000000".to_string();
         let cached =
             "AGE-SECRET-KEY-1CACHEVALUE000000000000000000000000000000000000000".to_string();
         let got = resolve_app_encryption_key_impl(None, Some(keyring.clone()), Some(cached), true)
@@ -460,8 +461,7 @@ mod key_resolution_tests {
 
     #[test]
     fn app_key_keyring_resolves_without_dev_fallback_in_release_mode() {
-        let keyring =
-            "AGE-SECRET-KEY-1KEYRINGVALUE0000000000000000000000000000".to_string();
+        let keyring = "AGE-SECRET-KEY-1KEYRINGVALUE0000000000000000000000000000".to_string();
         let got = resolve_app_encryption_key_impl(None, Some(keyring.clone()), None, false)
             .expect("keyring key accepted in release");
         assert_eq!(got, keyring);

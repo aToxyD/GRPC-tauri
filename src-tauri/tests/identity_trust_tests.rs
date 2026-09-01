@@ -428,7 +428,10 @@ fn auth01_repeated_failures_trigger_rate_limiting() {
     );
     assert_lockout_error(blocked);
     assert_eq!(
-        state.lock().expect("state lock").state(&challenge.session_id),
+        state
+            .lock()
+            .expect("state lock")
+            .state(&challenge.session_id),
         Some(ChallengeState::Pending),
         "a blocked attempt must not consume the challenge"
     );
@@ -470,7 +473,12 @@ fn auth03_valid_passphrase_succeeds_before_lockout() {
     let challenge = begin_challenge(&service, &device);
     let signature = operator_sign(&challenge, &device.adminkey_provider);
     let established = service
-        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
         .expect("valid passphrase succeeds before lockout");
     assert_eq!(established.session.username, "admin");
 }
@@ -531,7 +539,12 @@ fn auth06_expired_challenge_is_removed() {
     backdate_challenge(&state, &challenge);
 
     let signature = operator_sign(&challenge, &device.adminkey_provider);
-    let _ = service.complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature);
+    let _ = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
 
     let guard = state.lock().expect("state lock");
     assert_eq!(
@@ -550,7 +563,12 @@ fn auth07_challenge_cannot_be_used_twice() {
     let challenge = begin_challenge(&service, &device);
     let signature = operator_sign(&challenge, &device.adminkey_provider);
     service
-        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
         .expect("first completion succeeds");
 
     let replay = service.complete(
@@ -585,7 +603,10 @@ fn auth08_failed_authentication_consumes_the_challenge() {
     );
     assert!(failed.is_err(), "wrong passphrase must fail");
     assert_eq!(
-        state.lock().expect("state lock").state(&challenge.session_id),
+        state
+            .lock()
+            .expect("state lock")
+            .state(&challenge.session_id),
         Some(ChallengeState::Consumed),
         "a failed attempt must consume the challenge (one-shot fail-closed)"
     );
@@ -625,14 +646,15 @@ fn auth10_expired_challenges_do_not_consume_capacity() {
     for _ in 0..MAX_OUTSTANDING_CHALLENGES {
         let expired =
             ChallengeMessage::new(uuid::Uuid::new_v4(), device.wilaya_identity_id, [1u8; 32]);
-        assert!(
-            state
-                .lock()
-                .expect("state lock")
-                .try_begin(expired, now_epoch_secs() - 100_000)
-        );
+        assert!(state
+            .lock()
+            .expect("state lock")
+            .try_begin(expired, now_epoch_secs() - 100_000));
     }
-    assert_eq!(state.lock().expect("state lock").len(), MAX_OUTSTANDING_CHALLENGES);
+    assert_eq!(
+        state.lock().expect("state lock").len(),
+        MAX_OUTSTANDING_CHALLENGES
+    );
 
     // A fresh begin prunes the expired entries and succeeds.
     let fresh = try_begin_challenge(&service, &device).expect("fresh challenge accepted");
@@ -795,7 +817,12 @@ fn sec00110_successful_challenge_is_not_audited_as_failure() {
     let challenge = begin_challenge(&service, &device);
     let signature = operator_sign(&challenge, &device.adminkey_provider);
     service
-        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
         .expect("valid credentials succeed");
 
     assert_eq!(
@@ -830,7 +857,10 @@ fn sec00110_rate_limited_attempt_is_neither_consumed_nor_audited() {
     );
     assert_lockout_error(blocked);
     assert_eq!(
-        _state.lock().expect("state lock").state(&challenge.session_id),
+        _state
+            .lock()
+            .expect("state lock")
+            .state(&challenge.session_id),
         Some(ChallengeState::Pending),
         "a blocked attempt must not consume the challenge"
     );

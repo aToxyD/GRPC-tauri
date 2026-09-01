@@ -44,9 +44,8 @@ mod common;
 
 /// RFC 8032 §7.1 TEST 1 secret — matches the debug-mode Root fallback.
 const IMPORT_TEST_ROOT_SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
-    0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
-    0x7f, 0x60,
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
 ];
 
 static APP_KEY_CACHE_LOCK: Mutex<()> = Mutex::new(());
@@ -74,8 +73,7 @@ fn bootstrap_wilaya(db: &mut Database, node_key_store: &NodeKeyStore) -> Identit
         .sign_certificate(&request)
         .expect("root signed request");
     let mut signed = request;
-    signed.signature =
-        Some(Ed25519CertificateSignature::try_from(signature).expect("sig wrap"));
+    signed.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("sig wrap"));
     match provisioning
         .finalize_wilaya_provision(&signed, node_key_store, "2026-08-04T00:00:00Z")
         .expect("wilaya finalized")
@@ -135,12 +133,9 @@ fn fresh_unit_import_flow_decrypts_unit_with_imported_key() {
     std::fs::write(&artifact, format!("{identity}\n")).unwrap();
     let store = AppKeyStore::new(store_dir.path().to_path_buf());
 
-    let (result, imported) = import_app_key_into_store(
-        &store,
-        "correct-horse-import",
-        artifact.to_str().unwrap(),
-    )
-    .expect("import succeeds on fresh store");
+    let (result, imported) =
+        import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+            .expect("import succeeds on fresh store");
     assert!(result.provisioned);
     assert!(result.unlocked);
     assert_eq!(imported, identity);
@@ -160,8 +155,14 @@ fn fresh_unit_import_flow_decrypts_unit_with_imported_key() {
 
     let pkg =
         read_unit_node_package_from_file(&unit_path, &crypto).expect("imported key must decrypt");
-    assert_eq!(pkg.metadata.signature_version, Some(SIGNATURE_VERSION_ED25519));
-    assert_eq!(pkg.metadata.issuer_identity_id, Some(wilaya_cert.identity_id));
+    assert_eq!(
+        pkg.metadata.signature_version,
+        Some(SIGNATURE_VERSION_ED25519)
+    );
+    assert_eq!(
+        pkg.metadata.issuer_identity_id,
+        Some(wilaya_cert.identity_id)
+    );
     assert_eq!(pkg.payload.unit.code, dataset.unit.code);
     assert_eq!(pkg.payload.unit.name, dataset.unit.name);
     assert_eq!(pkg.payload.user.username, dataset.user.username);

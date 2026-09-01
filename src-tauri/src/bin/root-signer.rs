@@ -34,12 +34,10 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use grpc_lib::domain::identity::{
-    Ed25519CertificateSignature, IdentityCertificate, IdentitySignatureVerifier, IdentitySigner,
-    CredentialStatus, IDENTITY_ALGORITHM_PROFILE_ED25519, SubjectType,
+    CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySignatureVerifier,
+    IdentitySigner, SubjectType, IDENTITY_ALGORITHM_PROFILE_ED25519,
 };
-use grpc_lib::infrastructure::security::{
-    Ed25519SignatureVerifier, Ed25519SigningProvider,
-};
+use grpc_lib::infrastructure::security::{Ed25519SignatureVerifier, Ed25519SigningProvider};
 
 const ED25519_PUBLIC_KEY_LEN: usize = 32;
 
@@ -156,7 +154,9 @@ fn resolve_private_key(
     key_hex: Option<String>,
 ) -> Result<[u8; 32], String> {
     match (key_file, key_hex) {
-        (Some(_), Some(_)) => Err("provide exactly one key source: --key-file OR --key-hex".to_string()),
+        (Some(_), Some(_)) => {
+            Err("provide exactly one key source: --key-file OR --key-hex".to_string())
+        }
         (Some(path), None) => {
             let content = std::fs::read_to_string(&path)
                 .map_err(|e| format!("cannot read key file {path}: {e}"))?;
@@ -261,7 +261,10 @@ fn run_sign(args: &SignArgs) -> Result<(), String> {
         .verify_certificate(
             &signed,
             &derived_public_key,
-            signed.signature.as_ref().ok_or("internal: missing signature")?,
+            signed
+                .signature
+                .as_ref()
+                .ok_or("internal: missing signature")?,
         )
         .map_err(|e| format!("self-verification error: {e}"))?;
     if !self_valid {
@@ -272,8 +275,8 @@ fn run_sign(args: &SignArgs) -> Result<(), String> {
         );
     }
 
-    let out_json = serde_json::to_string_pretty(&signed)
-        .map_err(|e| format!("serialization failed: {e}"))?;
+    let out_json =
+        serde_json::to_string_pretty(&signed).map_err(|e| format!("serialization failed: {e}"))?;
     std::fs::write(&args.out_path, out_json)
         .map_err(|e| format!("cannot write signed certificate {}: {e}", args.out_path))?;
     eprintln!(
@@ -586,8 +589,9 @@ mod tests {
     /// RFC 8032 §7.1 TEST 1 secret — the matching public key is the debug-mode
     /// dev Root fallback (`root_public_key.rs`). Never a production key.
     const TEST_ROOT_SECRET: [u8; 32] = [
-        0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
-        0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
+        0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
+        0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
+        0x7f, 0x60,
     ];
 
     fn sample_wilaya_csr() -> IdentityCertificate {
@@ -614,7 +618,11 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let csr_path = dir.path().join("csr.json");
         let out_path = dir.path().join("signed.json");
-        std::fs::write(&csr_path, serde_json::to_string_pretty(certificate).unwrap()).unwrap();
+        std::fs::write(
+            &csr_path,
+            serde_json::to_string_pretty(certificate).unwrap(),
+        )
+        .unwrap();
         let args = SignArgs {
             csr_path: csr_path.to_string_lossy().into_owned(),
             out_path: out_path.to_string_lossy().into_owned(),
@@ -642,11 +650,9 @@ mod tests {
             .public_key()
             .try_into()
             .unwrap();
-        assert!(
-            Ed25519SignatureVerifier
-                .verify_certificate(&signed, &pk, &sig)
-                .unwrap()
-        );
+        assert!(Ed25519SignatureVerifier
+            .verify_certificate(&signed, &pk, &sig)
+            .unwrap());
     }
 
     #[test]
@@ -795,9 +801,15 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let args = init_in(&dir);
         run_init(&args).unwrap();
-        let secret_mode = std::fs::metadata(&args.secret_file).unwrap().permissions().mode();
+        let secret_mode = std::fs::metadata(&args.secret_file)
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(secret_mode & 0o777, 0o600);
-        let public_mode = std::fs::metadata(&args.public_key_file).unwrap().permissions().mode();
+        let public_mode = std::fs::metadata(&args.public_key_file)
+            .unwrap()
+            .permissions()
+            .mode();
         assert_ne!(public_mode & 0o777, 0o600);
     }
 
@@ -871,7 +883,8 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let args = init_in(&dir);
         run_init(&args).unwrap();
-        let seed = decode_private_key(&std::fs::read_to_string(&args.secret_file).unwrap()).unwrap();
+        let seed =
+            decode_private_key(&std::fs::read_to_string(&args.secret_file).unwrap()).unwrap();
         let public: [u8; 32] = Ed25519SigningProvider::new(seed)
             .public_key()
             .try_into()
@@ -889,8 +902,11 @@ mod tests {
             decode_private_key(&std::fs::read_to_string(&args.secret_file).unwrap()).unwrap();
         let csr_path = dir.path().join("csr.json");
         let out_path = dir.path().join("signed.json");
-        std::fs::write(&csr_path, serde_json::to_string_pretty(&sample_wilaya_csr()).unwrap())
-            .unwrap();
+        std::fs::write(
+            &csr_path,
+            serde_json::to_string_pretty(&sample_wilaya_csr()).unwrap(),
+        )
+        .unwrap();
 
         run_sign(&SignArgs {
             csr_path: csr_path.to_string_lossy().into_owned(),

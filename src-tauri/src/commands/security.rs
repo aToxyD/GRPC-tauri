@@ -87,8 +87,7 @@ pub fn import_app_key_into_store(
 ) -> AppResult<(AppKeyImportResult, String)> {
     if store.exists() {
         return Err(AppError::Configuration(
-            "appkey.age already exists — refusing to overwrite; unlock the existing store"
-                .into(),
+            "appkey.age already exists — refusing to overwrite; unlock the existing store".into(),
         ));
     }
 
@@ -210,10 +209,7 @@ pub fn initialize_app_key_impl(
     cache_app_key(&raw_identity).map_err(into_command_error)?;
 
     let mut exported_backup = false;
-    if let Some(path) = export_backup
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-    {
+    if let Some(path) = export_backup.map(str::trim).filter(|p| !p.is_empty()) {
         crate::domain::validation::validate_file_path(path, BACKUP_EXPORT_EXTENSIONS)
             .map_err(into_command_error)?;
         std::fs::write(path, &raw_identity).map_err(|e| into_command_error(AppError::Io(e)))?;
@@ -277,9 +273,8 @@ pub fn import_app_key_impl(
     }
 
     let store = appkey_store();
-    let (result, identity) =
-        import_app_key_into_store(&store, passphrase, artifact_path.trim())
-            .map_err(into_command_error)?;
+    let (result, identity) = import_app_key_into_store(&store, passphrase, artifact_path.trim())
+        .map_err(into_command_error)?;
 
     cache_app_key(&identity).map_err(into_command_error)?;
 
@@ -530,7 +525,11 @@ mod tests {
     #[test]
     fn import_creates_encrypted_store_with_0600() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
         let (result, identity) =
@@ -550,7 +549,11 @@ mod tests {
     #[test]
     fn import_store_contains_no_plaintext_identity() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
         import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
@@ -565,7 +568,11 @@ mod tests {
     #[test]
     fn import_roundtrip_decrypt_with_passphrase() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
         let (_, identity) =
@@ -583,7 +590,11 @@ mod tests {
     #[test]
     fn import_wrong_passphrase_cannot_decrypt() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
         import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
@@ -598,7 +609,11 @@ mod tests {
     #[test]
     fn import_never_mutates_or_deletes_artifact() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
         import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
@@ -616,14 +631,19 @@ mod tests {
     #[test]
     fn import_refuses_when_store_already_exists() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
         import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
             .unwrap();
 
         let before = std::fs::read(store.file_path()).unwrap();
-        let err = import_app_key_into_store(&store, "second-passphrase", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "second-passphrase", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::Configuration(_)));
         let after = std::fs::read(store.file_path()).unwrap();
         assert_eq!(before, after, "existing store must remain byte-identical");
@@ -632,12 +652,21 @@ mod tests {
     #[test]
     fn import_second_invocation_refuses() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.age", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.age",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
         import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
             .unwrap();
-        assert!(import_app_key_into_store(&store, "another-passphrase-1", artifact.to_str().unwrap()).is_err());
+        assert!(import_app_key_into_store(
+            &store,
+            "another-passphrase-1",
+            artifact.to_str().unwrap()
+        )
+        .is_err());
     }
 
     // ------------------------------------------------------------------
@@ -647,11 +676,16 @@ mod tests {
     #[test]
     fn import_rejects_disallowed_extension() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key.unit", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key.unit",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
         assert!(!store.exists());
     }
@@ -659,11 +693,16 @@ mod tests {
     #[test]
     fn import_rejects_missing_extension() {
         let dir = TempDir::new().unwrap();
-        let artifact = write_artifact(&dir, "grpc-app-key", format!("{VALID_ARTIFACT}\n").as_bytes());
+        let artifact = write_artifact(
+            &dir,
+            "grpc-app-key",
+            format!("{VALID_ARTIFACT}\n").as_bytes(),
+        );
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
         assert!(!store.exists());
     }
@@ -673,12 +712,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(
-            &store,
-            "correct-horse-import",
-            "../../../etc/passwd",
-        )
-        .unwrap_err();
+        let err = import_app_key_into_store(&store, "correct-horse-import", "../../../etc/passwd")
+            .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
         assert!(!store.exists());
     }
@@ -703,8 +738,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", dir.path().to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", dir.path().to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
         assert!(!store.exists());
     }
@@ -716,8 +752,9 @@ mod tests {
         let artifact = write_artifact(&dir, "grpc-app-key.age", &big);
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::Internal(_)));
         assert!(!store.exists());
     }
@@ -728,8 +765,9 @@ mod tests {
         let artifact = write_artifact(&dir, "grpc-app-key.age", b"");
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::FileFormat(_)));
         assert!(!store.exists());
     }
@@ -737,12 +775,14 @@ mod tests {
     #[test]
     fn import_rejects_multiline_artifact() {
         let dir = TempDir::new().unwrap();
-        let content = format!("{VALID_ARTIFACT}\nAGE-SECRET-KEY-1SECONDKEY0000000000000000000000\n");
+        let content =
+            format!("{VALID_ARTIFACT}\nAGE-SECRET-KEY-1SECONDKEY0000000000000000000000\n");
         let artifact = write_artifact(&dir, "grpc-app-key.age", content.as_bytes());
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::FileFormat(_)));
         assert!(!store.exists());
     }
@@ -757,8 +797,9 @@ mod tests {
         );
         let store = test_store(&dir);
 
-        let err = import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
-            .unwrap_err();
+        let err =
+            import_app_key_into_store(&store, "correct-horse-import", artifact.to_str().unwrap())
+                .unwrap_err();
         assert!(matches!(err, AppError::FileFormat(_)));
         assert!(!store.exists());
     }
