@@ -31,10 +31,15 @@ impl<'a> FiscalYearTaxPolicyRepository<'a> {
         Self { executor }
     }
 
-    pub fn insert_policy(&self, req: &SetTaxPolicyRequest, set_by: &str) -> Result<(), AppError> {
+    pub fn insert_policy(
+        &self,
+        req: &SetTaxPolicyRequest,
+        set_by: &str,
+        created_at: &str,
+    ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO fiscal_year_tax_policy (fiscal_year, tva_rate, frozen, set_by) VALUES (?1, ?2, 0, ?3)",
-            params![req.fiscal_year, req.tva_rate, set_by],
+            "INSERT INTO fiscal_year_tax_policy (fiscal_year, tva_rate, frozen, set_by, created_at) VALUES (?1, ?2, 0, ?3, ?4)",
+            params![req.fiscal_year, req.tva_rate, set_by, created_at],
         )?;
         Ok(())
     }

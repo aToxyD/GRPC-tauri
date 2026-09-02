@@ -75,9 +75,11 @@ impl<'a> FiscalTaxPolicyService<'a> {
             return Ok(policy.clone());
         }
 
-        self.executor
-            .fiscal_tax_policy()
-            .insert_policy(req, set_by)?;
+        self.executor.fiscal_tax_policy().insert_policy(
+            req,
+            set_by,
+            &chrono::Utc::now().to_rfc3339(),
+        )?;
         Ok(self
             .executor
             .fiscal_tax_policy()

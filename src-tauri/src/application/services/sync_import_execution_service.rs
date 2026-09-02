@@ -324,9 +324,10 @@ impl<'a> SyncImportExecutionService<'a> {
                     continue;
                 }
                 scoped_allocation_ids.insert(alloc_row.allocation.id.clone());
-                let existing = contract_repo.get_allocation(&alloc_row.allocation.id)?;
-                contract_repo
-                    .upsert_sync_allocation(&alloc_row.allocation, &alloc_row.created_at)?;
+                let a = &alloc_row;
+                let existing = contract_repo.get_allocation(&a.allocation.id)?;
+                // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: replay detection runs in the ContractCatalog import usecase registry BEFORE this service applies rows; this upsert is the post-replay apply step; Date: 2026-09-02; Owner: Sync
+                contract_repo.upsert_sync_allocation(&a.allocation, &a.created_at)?;
                 if existing.is_some() {
                     summary.allocations_updated += 1;
                 } else {

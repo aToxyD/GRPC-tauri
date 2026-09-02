@@ -37,7 +37,7 @@ impl<'a> ReportCalculationService<'a> {
     }
 
     pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> f64 {
-        base_price * (1.0 + tva / 100.0)
+        crate::domain::pricing::price::price_with_tva(base_price, tva)
     }
 
     pub fn build_wilaya_reports(

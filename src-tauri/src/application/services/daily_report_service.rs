@@ -352,8 +352,4 @@ impl<'a> DailyReportService<'a> {
         );
         DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
-
-    pub fn calculate_product_price_with_tva(&self, base_price: f64, tva: f64) -> f64 {
-        base_price * (1.0 + tva / 100.0)
-    }
 }
