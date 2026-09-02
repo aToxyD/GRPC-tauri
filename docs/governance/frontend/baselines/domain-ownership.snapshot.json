@@ -5,7 +5,8 @@
       "listSuppliers",
       "createSupplier",
       "updateSupplier",
-      "setSupplierActive"
+      "setSupplierActive",
+      "exportSuppliersExcel"
     ],
     "ContractsPage": [
       "listContracts",
@@ -22,6 +23,8 @@
       "cancelContract",
       "releaseContractAllocation",
       "revokeContractAllocationRelease",
+      "exportContractsExcel",
+      "exportContractAllocationsExcel",
       "listUnits",
       "listSuppliers",
       "listProducts",

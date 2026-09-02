@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { showAsk } from '../lib/tauri';
+  import { saveFile, showAsk } from '../lib/tauri';
   import {
     listSuppliers,
     createSupplier,
     updateSupplier,
     setSupplierActive,
+    exportSuppliersExcel,
   } from '../lib/contracts';
   import type { Supplier, CreateSupplierRequest, UpdateSupplierRequest } from '../lib/types';
   import Layout from '../components/Layout.svelte';
@@ -122,12 +123,27 @@
     if (!confirmed) return;
     await toggleActive(supplier);
   }
+
+  async function handleExport() {
+    const filePath = await saveFile({
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+      defaultPath: `الموردون.xlsx`,
+    });
+    if (!filePath) return;
+    await suppliersOp.run(async () => {
+      const result = await exportSuppliersExcel(filePath);
+      if (result.success) {
+        setSuccessWithTimeout(`تم تصدير الموردين بنجاح (${result.record_count})`);
+      }
+    });
+  }
 </script>
 
 <Layout nodeType="WILAYA" title="الموردون" subtitle="إدارة موردي التموين على مستوى الولاية">
   <div dir="rtl" class="mb-8">
     <AppPageHeader title="إدارة الموردين" subtitle="قاعدة إسناد عقود التموين للوحدات">
       <svelte:fragment slot="actions">
+        <AppButton variant="secondary" on:click={handleExport}>تصدير Excel</AppButton>
         <AppButton on:click={openCreateModal} ariaLabel="إضافة مورد جديد">
           إضافة مورد
         </AppButton>

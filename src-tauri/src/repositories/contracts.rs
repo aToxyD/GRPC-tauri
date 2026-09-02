@@ -383,6 +383,16 @@ impl<'a> ContractRepository<'a> {
         )?)
     }
 
+    /// Every non-deleted `contract_allocations` row (fleet-wide entitlement
+    /// projection for the WILAYA Excel export — ADR-0055 / SEC-087-F).
+    pub fn list_all_allocations(&self) -> Result<Vec<ContractAllocation>, AppError> {
+        Ok(self.executor.query_all(
+            &format!("SELECT {ALLOCATION_COLUMNS} FROM contract_allocations WHERE deleted = 0"),
+            [],
+            map_allocation_row,
+        )?)
+    }
+
     /// Contract allocation rows plus their authoritative `created_at` (sync
     /// dataset export — the `ContractAllocation` model does not expose it).
     pub fn list_sync_allocations_for_contract(

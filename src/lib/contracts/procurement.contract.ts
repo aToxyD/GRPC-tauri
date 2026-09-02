@@ -18,6 +18,7 @@ import type {
   SetTaxPolicyRequest,
   Supplier,
   UpdateSupplierRequest,
+  XlsxExportResult,
 } from '../types';
 
 // Suppliers (WILAYA admin only)
@@ -174,6 +175,31 @@ export async function listAllocationExceptions(
   allocationId: string,
 ): Promise<ContractAllocationException[]> {
   return await safeInvoke('list_allocation_exceptions', { allocationId });
+}
+
+// Procurement Excel exports (WILAYA admin only)
+export async function exportSuppliersExcel(filePath: string): Promise<XlsxExportResult> {
+  return await safeInvoke('export_suppliers_xlsx', { filePath });
+}
+
+export async function exportContractsExcel(
+  filePath: string,
+  unitId?: string | null,
+  supplierId?: string | null,
+  fiscalYear?: number | null,
+): Promise<XlsxExportResult> {
+  return await safeInvoke('export_contracts_xlsx', {
+    filePath,
+    unitId: unitId ?? null,
+    supplierId: supplierId ?? null,
+    fiscalYear: fiscalYear ?? null,
+  });
+}
+
+export async function exportContractAllocationsExcel(
+  filePath: string,
+): Promise<XlsxExportResult> {
+  return await safeInvoke('export_contract_allocations_xlsx', { filePath });
 }
 
 export type { ContractStatus };

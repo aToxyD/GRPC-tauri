@@ -207,7 +207,10 @@ pub fn authorize(
         | Action::CloseContract
         | Action::ManageTaxPolicy
         | Action::ReleaseContractAllocation
-        | Action::RevokeContractAllocationRelease => {
+        | Action::RevokeContractAllocationRelease
+        | Action::ExportSuppliers
+        | Action::ExportContracts
+        | Action::ExportContractAllocations => {
             if let ResourceContext::WilayaNode = resource {
                 system::authorize_system(principal, Action::AdminOnly, resource)
             } else {
@@ -395,6 +398,9 @@ mod tests {
             Action::ReleaseContractAllocation,
             Action::RevokeContractAllocationRelease,
             Action::ExportContractCatalogPackage,
+            Action::ExportSuppliers,
+            Action::ExportContracts,
+            Action::ExportContractAllocations,
         ];
 
         for action in write_actions {

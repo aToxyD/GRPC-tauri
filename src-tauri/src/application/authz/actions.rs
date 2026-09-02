@@ -76,4 +76,9 @@ pub enum Action {
     RevokeContractAllocationRelease,
     ExportContractCatalogPackage,
     ImportContractCatalogPackage,
+
+    // Contract-centric procurement Excel exports (ADR-0055 / SEC-087-F)
+    ExportSuppliers,
+    ExportContracts,
+    ExportContractAllocations,
 }

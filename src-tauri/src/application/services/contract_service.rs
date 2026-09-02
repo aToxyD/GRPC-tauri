@@ -533,6 +533,12 @@ impl<'a> ContractService<'a> {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    /// Fleet-wide entitlement projection (WILAYA Excel export surface).
+    pub fn list_all_allocation_views(&self) -> Result<Vec<ContractAllocationView>, AppError> {
+        let rows = self.executor.contracts().list_all_allocations()?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     pub fn list_active_allocations_for_unit_year(
         &self,
         unit_id: &str,

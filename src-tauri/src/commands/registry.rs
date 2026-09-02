@@ -125,6 +125,10 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::export_daily_report_excel,
         commands::export_monthly_summary_excel,
         commands::export_all_units_monthly_status_excel,
+        // Procurement Excel Export (ADR-0055 / SEC-087-F)
+        commands::export_suppliers_xlsx,
+        commands::export_contracts_xlsx,
+        commands::export_contract_allocations_xlsx,
         // Sync Package Import (SECURE - with file hash verification)
         commands::import_products_package,
         commands::import_contract_catalog_package,

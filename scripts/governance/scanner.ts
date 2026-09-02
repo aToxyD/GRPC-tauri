@@ -137,6 +137,7 @@ export const DOMAIN_REGISTRY: Record<string, {
       "releaseContractAllocation", "revokeContractAllocationRelease",
       "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies",
       "getSupplier", "listSuppliers", "listUnitSuppliers", "getContract", "listContracts", "getContractProducts", "listContractAllocations", "listAllocationExceptions",
+      "exportSuppliersExcel", "exportContractsExcel", "exportContractAllocationsExcel",
     ],
     crossDomainExceptions: ["listProducts", "listUnits"],
   },

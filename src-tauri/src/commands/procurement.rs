@@ -17,13 +17,14 @@ use crate::commands::common::{
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
+use crate::domain::validation;
 use crate::errors::into_command_error;
 use crate::models::{
     AddContractProductRequest, AssociateUnitSupplierRequest, Contract, ContractAllocationException,
     ContractAllocationView, ContractProduct, ContractTransitionRequest, CreateContractRequest,
     CreateSupplierRequest, FiscalYearTaxPolicy, ReleaseContractAllocationRequest,
     RevokeContractAllocationReleaseRequest, SetAgreedPriceRequest, SetSupplierActiveRequest,
-    SetTaxPolicyRequest, Supplier, UpdateSupplierRequest,
+    SetTaxPolicyRequest, Supplier, UpdateSupplierRequest, XlsxExportResult,
 };
 use tauri::State;
 
@@ -496,4 +497,101 @@ pub fn list_fiscal_tax_policies(
     FiscalTaxPolicyService::new(db.executor())
         .list_policies()
         .map_err(into_command_error)
+}
+
+// ---------------------------------------------------------------------------
+// Procurement Excel exports (WILAYA admin, ADR-0055 / SEC-087-F)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn export_suppliers_xlsx(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<XlsxExportResult, String> {
+    let (_session, _settings) =
+        authorize_command(&state, Action::ExportSuppliers, None).map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(|e| e.to_string())?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(|e| e.to_string())?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    let suppliers = SupplierService::new(db.executor())
+        .list_suppliers()
+        .map_err(into_command_error)?;
+
+    use crate::domain::ports::export::ExcelPort;
+    use crate::infrastructure::export::XlsxAdapter;
+    use std::fs;
+
+    let adapter = XlsxAdapter::new();
+    let buffer = adapter
+        .export_suppliers(&suppliers)
+        .map_err(|e| e.to_string())?;
+    fs::write(&file_path, buffer).map_err(|e| e.to_string())?;
+
+    Ok(XlsxExportResult::success(file_path, suppliers.len()))
+}
+
+#[tauri::command]
+pub fn export_contracts_xlsx(
+    state: State<AppState>,
+    file_path: String,
+    unit_id: Option<String>,
+    supplier_id: Option<String>,
+    fiscal_year: Option<i32>,
+) -> Result<XlsxExportResult, String> {
+    let (_session, _settings) =
+        authorize_command(&state, Action::ExportContracts, None).map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(|e| e.to_string())?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(|e| e.to_string())?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    let contracts = ContractService::new(db.executor())
+        .list_contracts(unit_id.as_deref(), supplier_id.as_deref(), fiscal_year)
+        .map_err(into_command_error)?;
+
+    use crate::domain::ports::export::ExcelPort;
+    use crate::infrastructure::export::XlsxAdapter;
+    use std::fs;
+
+    let adapter = XlsxAdapter::new();
+    let buffer = adapter
+        .export_contracts(&contracts)
+        .map_err(|e| e.to_string())?;
+    fs::write(&file_path, buffer).map_err(|e| e.to_string())?;
+
+    Ok(XlsxExportResult::success(file_path, contracts.len()))
+}
+
+#[tauri::command]
+pub fn export_contract_allocations_xlsx(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<XlsxExportResult, String> {
+    let (_session, _settings) = authorize_command(&state, Action::ExportContractAllocations, None)
+        .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(|e| e.to_string())?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(|e| e.to_string())?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    let allocations = ContractService::new(db.executor())
+        .list_all_allocation_views()
+        .map_err(into_command_error)?;
+
+    use crate::domain::ports::export::ExcelPort;
+    use crate::infrastructure::export::XlsxAdapter;
+    use std::fs;
+
+    let adapter = XlsxAdapter::new();
+    let buffer = adapter
+        .export_contract_allocations(&allocations)
+        .map_err(|e| e.to_string())?;
+    fs::write(&file_path, buffer).map_err(|e| e.to_string())?;
+
+    Ok(XlsxExportResult::success(file_path, allocations.len()))
 }

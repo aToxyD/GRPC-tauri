@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { showAsk } from '../lib/tauri';
+  import { saveFile, showAsk } from '../lib/tauri';
   import {
     listContracts,
     listUnitSuppliers,
@@ -16,6 +16,8 @@
     cancelContract,
     releaseContractAllocation,
     revokeContractAllocationRelease,
+    exportContractsExcel,
+    exportContractAllocationsExcel,
     listUnits,
     listSuppliers,
     listProducts,
@@ -184,6 +186,25 @@
     unitSuppliers = [];
     showCreateModal = true;
     contractsOp.error.set(null);
+  }
+
+  async function handleExport(kind: 'contracts' | 'allocations') {
+    const filterName = 'Excel';
+    const extension = 'xlsx';
+    const defaultFilename = kind === 'contracts' ? 'العقود.xlsx' : 'استحقاقات_العقود.xlsx';
+    const filePath = await saveFile({
+      filters: [{ name: filterName, extensions: [extension] }],
+      defaultPath: defaultFilename,
+    });
+    if (!filePath) return;
+    await contractsOp.run(async () => {
+      const result = kind === 'contracts'
+        ? await exportContractsExcel(filePath, selectedContract?.unit_id ?? null, null, selectedContract?.fiscal_year ?? null)
+        : await exportContractAllocationsExcel(filePath);
+      if (result.success) {
+        setSuccessWithTimeout(`تم التصدير بنجاح (${result.record_count})`);
+      }
+    });
   }
 
   async function saveContract() {
@@ -359,6 +380,8 @@
   <div dir="rtl" class="mb-8">
     <AppPageHeader title="إدارة العقود" subtitle="إسناد الموردين والكميات والأسعار لكل وحدة وسنة مالية">
       <svelte:fragment slot="actions">
+        <AppButton variant="secondary" on:click={() => handleExport('allocations')}>تصدير الاستحقاقات</AppButton>
+        <AppButton variant="secondary" on:click={() => handleExport('contracts')}>تصدير العقود</AppButton>
         <AppButton on:click={openCreate} ariaLabel="إنشاء عقد جديد">إنشاء عقد</AppButton>
       </svelte:fragment>
     </AppPageHeader>

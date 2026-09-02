@@ -965,6 +965,15 @@
         },
         {
           "name": "listAllocationExceptions"
+        },
+        {
+          "name": "exportSuppliersExcel"
+        },
+        {
+          "name": "exportContractsExcel"
+        },
+        {
+          "name": "exportContractAllocationsExcel"
         }
       ],
       "commands": [
@@ -1042,11 +1051,20 @@
         },
         {
           "command": "list_allocation_exceptions"
+        },
+        {
+          "command": "export_suppliers_xlsx"
+        },
+        {
+          "command": "export_contracts_xlsx"
+        },
+        {
+          "command": "export_contract_allocations_xlsx"
         }
       ],
-      "loc": 178,
-      "exportCount": 25,
-      "commandCount": 25
+      "loc": 204,
+      "exportCount": 28,
+      "commandCount": 28
     }
   ]
 }

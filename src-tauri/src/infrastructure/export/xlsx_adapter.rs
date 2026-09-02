@@ -1,7 +1,9 @@
 use crate::domain::audit::AuditEntry;
 use crate::domain::ports::export::ExcelPort;
+use crate::models::contract::{Contract, ContractAllocationView};
 use crate::models::inventory::StockMovement;
 use crate::models::report::{DailyReport, MonthlySummary, WilayaReportSummary};
+use crate::models::supplier::Supplier;
 use crate::models::UnitInventoryView;
 use crate::models::*;
 use rust_xlsxwriter::*;
@@ -385,6 +387,190 @@ impl ExcelPort for XlsxAdapter {
                 .map_err(io::Error::other)?;
             worksheet
                 .write_with_format(row, 5, e.status.as_str(), &fmt)
+                .map_err(io::Error::other)?;
+        }
+
+        workbook.save_to_buffer().map_err(io::Error::other)
+    }
+
+    fn export_suppliers(&self, suppliers: &[Supplier]) -> io::Result<Vec<u8>> {
+        let mut workbook = Workbook::new();
+        let worksheet = workbook.add_worksheet();
+        worksheet.set_right_to_left(true);
+
+        let header_fmt = self.header_format();
+        let headers = ["الاسم", "بيانات الاتصال", "الحالة"];
+
+        for (col, h) in headers.iter().enumerate() {
+            worksheet
+                .write_with_format(0, col as u16, *h, &header_fmt)
+                .map_err(io::Error::other)?;
+        }
+
+        for (idx, s) in suppliers.iter().enumerate() {
+            let row = (idx + 1) as u32;
+            let fmt = if idx % 2 == 0 {
+                self.data_format()
+            } else {
+                self.alt_row_format()
+            };
+
+            worksheet
+                .write_with_format(row, 0, s.name.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 1, s.contact_info.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 2, if s.active { "نشط" } else { "موقوف" }, &fmt)
+                .map_err(io::Error::other)?;
+        }
+
+        workbook.save_to_buffer().map_err(io::Error::other)
+    }
+
+    fn export_contracts(&self, contracts: &[Contract]) -> io::Result<Vec<u8>> {
+        let mut workbook = Workbook::new();
+        let worksheet = workbook.add_worksheet();
+        worksheet.set_right_to_left(true);
+
+        let header_fmt = self.header_format();
+        let headers = [
+            "مرجع العقد",
+            "الوحدة",
+            "المورد",
+            "السنة المالية",
+            "الحالة",
+            "تاريخ الاقتراح",
+            "تاريخ القبول",
+            "تاريخ التفعيل",
+            "تاريخ الإنهاء",
+            "تاريخ الإلغاء",
+            "ملاحظات",
+        ];
+
+        for (col, h) in headers.iter().enumerate() {
+            worksheet
+                .write_with_format(0, col as u16, *h, &header_fmt)
+                .map_err(io::Error::other)?;
+        }
+
+        for (idx, c) in contracts.iter().enumerate() {
+            let row = (idx + 1) as u32;
+            let fmt = if idx % 2 == 0 {
+                self.data_format()
+            } else {
+                self.alt_row_format()
+            };
+
+            worksheet
+                .write_with_format(row, 0, c.contract_reference.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 1, c.unit_id.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 2, c.supplier_id.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 3, c.fiscal_year, &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 4, c.status.to_string(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 5, c.proposed_at.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 6, c.accepted_at.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 7, c.activated_at.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 8, c.ended_at.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 9, c.cancelled_at.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 10, c.notes.as_deref().unwrap_or(""), &fmt)
+                .map_err(io::Error::other)?;
+        }
+
+        workbook.save_to_buffer().map_err(io::Error::other)
+    }
+
+    fn export_contract_allocations(
+        &self,
+        allocations: &[ContractAllocationView],
+    ) -> io::Result<Vec<u8>> {
+        let mut workbook = Workbook::new();
+        let worksheet = workbook.add_worksheet();
+        worksheet.set_right_to_left(true);
+
+        let header_fmt = self.header_format();
+        let num_fmt = self.number_format();
+        let headers = [
+            "العقد",
+            "المنتج",
+            "الوحدة",
+            "السنة المالية",
+            "الكمية المقررة",
+            "الكمية المسلمة",
+            "الكمية المحررة",
+            "الكمية المحجوزة",
+            "الكمية المتبقية",
+            "حالة الاستحقاق",
+            "النسخة",
+        ];
+
+        for (col, h) in headers.iter().enumerate() {
+            worksheet
+                .write_with_format(0, col as u16, *h, &header_fmt)
+                .map_err(io::Error::other)?;
+        }
+
+        for (idx, a) in allocations.iter().enumerate() {
+            let row = (idx + 1) as u32;
+            let fmt = if idx % 2 == 0 {
+                self.data_format()
+            } else {
+                self.alt_row_format()
+            };
+
+            worksheet
+                .write_with_format(row, 0, a.contract_id.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 1, a.product_id.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 2, a.unit_id.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 3, a.fiscal_year, &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 4, a.contracted_quantity, &num_fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 5, a.fulfilled_quantity, &num_fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 6, a.released_quantity, &num_fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 7, a.reserved_quantity, &num_fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 8, a.effective_remaining, &num_fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 9, a.entitlement_state.clone(), &fmt)
+                .map_err(io::Error::other)?;
+            worksheet
+                .write_with_format(row, 10, a.version, &fmt)
                 .map_err(io::Error::other)?;
         }
 
