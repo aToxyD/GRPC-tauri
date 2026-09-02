@@ -1,0 +1,577 @@
+<script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import { showAsk } from '../lib/tauri';
+  import {
+    listContracts,
+    listUnitSuppliers,
+    getContractProducts,
+    listContractAllocations,
+    listAllocationExceptions,
+    createContract,
+    addContractProduct,
+    setContractProductAgreedPrice,
+    acceptContract,
+    activateContract,
+    endContract,
+    cancelContract,
+    releaseContractAllocation,
+    revokeContractAllocationRelease,
+    listUnits,
+    listSuppliers,
+    listProducts,
+    getSettings,
+  } from '../lib/contracts';
+  import type {
+    Supplier, Unit, Product, Settings, Contract, ContractProduct,
+    ContractAllocation, ContractAllocationException, CreateContractRequest,
+    AddContractProductRequest, ReleaseContractAllocationRequest, ReleaseReasonCode,
+  } from '../lib/types';
+  import Layout from '../components/Layout.svelte';
+  import { createOperation } from '../lib/operationGuard';
+  import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
+
+  import AppButton from '../lib/components/ui/AppButton.svelte';
+  import AppTable from '../lib/components/ui/AppTable.svelte';
+  import AppDialog from '../lib/components/ui/AppDialog.svelte';
+  import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
+  import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
+  import AppBadge from '../lib/components/ui/AppBadge.svelte';
+  import AppCard from '../lib/components/ui/AppCard.svelte';
+  import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppAlert from '../lib/components/ui/AppAlert.svelte';
+
+  const scope = createRuntimeScope();
+  const contractsOp = createOperation({ scope });
+  const loading = contractsOp.loading;
+  const error = contractsOp.error;
+
+  // @category ProjectionState
+  let contracts = $state<Contract[]>([]);
+  // @category ProjectionState
+  let units = $state<Unit[]>([]);
+  // @category ProjectionState
+  let suppliers = $state<Supplier[]>([]);
+  // @category ProjectionState
+  let products = $state<Product[]>([]);
+  // @category ProjectionState
+  let settings = $state<Settings | null>(null);
+  // @category ProjectionState
+  let unitSuppliers = $state<Supplier[]>([]);
+  // @category ProjectionState
+  let selectedContract = $state<Contract | null>(null);
+  // @category ProjectionState
+  let selectedProducts = $state<ContractProduct[]>([]);
+  // @category ProjectionState
+  let selectedAllocations = $state<ContractAllocation[]>([]);
+  // @category ProjectionState
+  let allocationExceptions = $state<Record<string, ContractAllocationException[]>>({});
+  // @category TransientState
+  let success = $state('');
+  const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
+  onDestroy(() => scope.dispose());
+
+  // Create-contract form
+  // @category TransientState
+  let showCreateModal = $state(false);
+  // @category TransientState
+  let newUnitId = $state('');
+  // @category TransientState
+  let newSupplierId = $state('');
+  // @category TransientState
+  let newFiscalYear = $state<number>(new Date().getFullYear());
+  // @category TransientState
+  let newReference = $state('');
+  // @category TransientState
+  let newNotes = $state('');
+
+  // Add-product form
+  // @category TransientState
+  let showAddProductModal = $state(false);
+  // @category TransientState
+  let newProductId = $state('');
+  // @category TransientState
+  let newProposedPrice = $state('');
+  // @category TransientState
+  let newAgreedPrice = $state('');
+  // @category TransientState
+  let newQuantity = $state('');
+
+  // Set-agreed-price form
+  // @category TransientState
+  let agreedPriceTarget = $state<ContractProduct | null>(null);
+
+  // Release form
+  // @category TransientState
+  let releaseTarget = $state<ContractAllocation | null>(null);
+  // @category TransientState
+  let releaseQty = $state('');
+  // @category TransientState
+  let releaseReason: ReleaseReasonCode = $state('SupplierDelay');
+  // @category TransientState
+  let releaseNote = $state('');
+
+  const REASON_OPTIONS: { value: ReleaseReasonCode; label: string }[] = [
+    { value: 'SupplierNonPerformance', label: 'عدم تنفيذ التموين' },
+    { value: 'SupplierDelay', label: 'تأخير في التموين' },
+    { value: 'ServiceContinuity', label: 'استمرارية الخدمة' },
+    { value: 'OtherAuthorized', label: 'أخرى (بترخيص)' },
+  ];
+
+  onMount(async () => {
+    await loadAll();
+  });
+
+  async function loadAll() {
+    await contractsOp.run(async () => {
+      const [nextContracts, nextUnits, nextSuppliers, nextProducts, nextSettings] =
+        await Promise.all([
+          listContracts(),
+          listUnits(''),
+          listSuppliers(),
+          listProducts(),
+          getSettings(),
+        ]);
+      contracts = nextContracts;
+      units = nextUnits;
+      suppliers = nextSuppliers;
+      products = nextProducts;
+      settings = nextSettings;
+      if (nextSettings) {
+        newFiscalYear = nextSettings.current_year;
+      }
+      if (selectedContract) {
+        await refreshDetail(selectedContract.id);
+      }
+    });
+  }
+
+  async function refreshDetail(contractId: string) {
+    const [productRows, allocationRows] = await Promise.all([
+      getContractProducts(contractId),
+      listContractAllocations(contractId),
+    ]);
+    selectedProducts = productRows;
+    selectedAllocations = allocationRows;
+    const exceptions: Record<string, ContractAllocationException[]> = {};
+    for (const allocation of allocationRows) {
+      exceptions[allocation.id] = await listAllocationExceptions(allocation.id);
+    }
+    allocationExceptions = exceptions;
+  }
+
+  async function selectContract(contract: Contract) {
+    selectedContract = contract;
+    selectedProducts = [];
+    selectedAllocations = [];
+    allocationExceptions = {};
+    const unitSuppliersResult = await listUnitSuppliers(contract.unit_id);
+    unitSuppliers = unitSuppliersResult;
+    await refreshDetail(contract.id);
+  }
+
+  async function handleUnitChange() {
+    unitSuppliers = newUnitId ? await listUnitSuppliers(newUnitId) : [];
+    newSupplierId = '';
+  }
+
+  function openCreate() {
+    newUnitId = '';
+    newSupplierId = '';
+    newFiscalYear = settings?.current_year ?? new Date().getFullYear();
+    newReference = '';
+    newNotes = '';
+    unitSuppliers = [];
+    showCreateModal = true;
+    contractsOp.error.set(null);
+  }
+
+  async function saveContract() {
+    if (!newUnitId || !newSupplierId || !newReference || !newFiscalYear) {
+      contractsOp.error.set('يرجى ملء الحقول الإلزامية');
+      return;
+    }
+    await contractsOp.run(async () => {
+      const request: CreateContractRequest = {
+        unit_id: newUnitId,
+        supplier_id: newSupplierId,
+        fiscal_year: newFiscalYear,
+        contract_reference: newReference.trim(),
+        notes: newNotes.trim() || null,
+      };
+      const created = await createContract(request);
+      setSuccessWithTimeout('تم إنشاء العقد بنجاح');
+      showCreateModal = false;
+      await loadAll();
+      await selectContract(created);
+    });
+  }
+
+  function openAddProduct() {
+    newProductId = '';
+    newProposedPrice = '';
+    newAgreedPrice = '';
+    newQuantity = '';
+    showAddProductModal = true;
+    contractsOp.error.set(null);
+  }
+
+  async function saveContractProduct() {
+    const contract = selectedContract;
+    if (!contract || !newProductId || !newProposedPrice || !newQuantity) {
+      contractsOp.error.set('يرجى ملء الحقول الإلزامية');
+      return;
+    }
+    await contractsOp.run(async () => {
+      const agreed = newAgreedPrice.trim() === '' ? null : parseFloat(newAgreedPrice);
+      const request: AddContractProductRequest = {
+        contract_id: contract.id,
+        product_id: newProductId,
+        proposed_price: parseFloat(newProposedPrice),
+        agreed_price: agreed,
+        contracted_quantity: parseFloat(newQuantity),
+      };
+      await addContractProduct(request);
+      setSuccessWithTimeout('تمت إضافة المنتج إلى العقد');
+      showAddProductModal = false;
+      await refreshDetail(contract.id);
+    });
+  }
+
+  function openSetAgreedPrice(product: ContractProduct) {
+    agreedPriceTarget = product;
+    contractsOp.error.set(null);
+  }
+
+  async function saveAgreedPrice() {
+    const target = agreedPriceTarget;
+    if (!target) return;
+    const value = parseFloat(newAgreedPrice);
+    if (Number.isNaN(value) || value < 0) {
+      contractsOp.error.set('يرجى إدخال سعر اتفاق صحيح');
+      return;
+    }
+    await contractsOp.run(async () => {
+      await setContractProductAgreedPrice({
+        contract_product_id: target.id,
+        agreed_price: value,
+      });
+      setSuccessWithTimeout('تم تثبيت سعر الاتفاق');
+      agreedPriceTarget = null;
+      if (selectedContract) await refreshDetail(selectedContract.id);
+    });
+  }
+
+  async function transition(action: 'accept' | 'activate' | 'end' | 'cancel') {
+    const contract = selectedContract;
+    if (!contract) return;
+    await contractsOp.run(async () => {
+      if (action === 'accept') await acceptContract({ contract_id: contract.id });
+      if (action === 'activate') await activateContract({ contract_id: contract.id });
+      if (action === 'end') await endContract({ contract_id: contract.id });
+      if (action === 'cancel') await cancelContract({ contract_id: contract.id });
+      setSuccessWithTimeout('تم تحديث حالة العقد');
+      await loadAll();
+      if (selectedContract) await selectContract(selectedContract);
+    });
+  }
+
+  async function handleCancelConfirm() {
+    const confirmed = await showAsk('تأكيد إلغاء العقد', {
+      title: 'تأكيد الإلغاء',
+      kind: 'warning',
+      okLabel: 'نعم، ألغِ العقد',
+      cancelLabel: 'رجوع',
+    });
+    if (confirmed) await transition('cancel');
+  }
+
+  function openRelease(allocation: ContractAllocation) {
+    releaseTarget = allocation;
+    releaseQty = '';
+    releaseReason = 'SupplierDelay';
+    releaseNote = '';
+    contractsOp.error.set(null);
+  }
+
+  async function saveRelease() {
+    const target = releaseTarget;
+    if (!target) return;
+    const qty = parseFloat(releaseQty);
+    if (Number.isNaN(qty) || qty <= 0) {
+      contractsOp.error.set('يرجى إدخال كمية إفراج صحيحة');
+      return;
+    }
+    await contractsOp.run(async () => {
+      const request: ReleaseContractAllocationRequest = {
+        allocation_id: target.id,
+        released_quantity: qty,
+        reason_code: releaseReason,
+        reason_note: releaseNote.trim() || null,
+      };
+      await releaseContractAllocation(request);
+      setSuccessWithTimeout('تم تسجيل إفراج الالتزام');
+      releaseTarget = null;
+      if (selectedContract) await refreshDetail(selectedContract.id);
+    });
+  }
+
+  async function handleRevoke(exception: ContractAllocationException) {
+    await contractsOp.run(async () => {
+      await revokeContractAllocationRelease({ exception_id: exception.id });
+      setSuccessWithTimeout('تم إبطال الإفراج');
+      if (selectedContract) await refreshDetail(selectedContract.id);
+    });
+  }
+
+  function statusIntent(status: Contract['status']): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
+    switch (status) {
+      case 'Active': return 'success';
+      case 'Proposed': return 'info';
+      case 'Accepted': return 'warning';
+      case 'Ended': return 'neutral';
+      case 'Cancelled': return 'danger';
+    }
+  }
+
+  function statusLabel(status: Contract['status']): string {
+    switch (status) {
+      case 'Proposed': return 'مقترح';
+      case 'Accepted': return 'مقبول';
+      case 'Active': return 'نشط';
+      case 'Ended': return 'منتهي';
+      case 'Cancelled': return 'ملغى';
+    }
+  }
+
+  function entState(state: string): string {
+    switch (state) {
+      case 'available': return 'متاح';
+      case 'fulfilled': return 'مؤدى';
+      case 'released': return 'مفرج عنه';
+      case 'reserved': return 'محجوز';
+      default: return state;
+    }
+  }
+</script>
+
+<Layout nodeType="WILAYA" title="العقود" subtitle="عقود التموين والأذونات للوحدات">
+  <div dir="rtl" class="mb-8">
+    <AppPageHeader title="إدارة العقود" subtitle="إسناد الموردين والكميات والأسعار لكل وحدة وسنة مالية">
+      <svelte:fragment slot="actions">
+        <AppButton on:click={openCreate} ariaLabel="إنشاء عقد جديد">إنشاء عقد</AppButton>
+      </svelte:fragment>
+    </AppPageHeader>
+
+    {#if success}
+      <div class="mt-4 p-3 rounded-lg bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm" role="status">
+        {success}
+      </div>
+    {/if}
+
+    <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <AppCard>
+        <h2 class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3">قائمة العقود</h2>
+        <AppTable loading={$loading} empty={contracts.length === 0} error={$error} emptyMessage="لا توجد عقود بعد" caption="قائمة العقود">
+          <svelte:fragment slot="head">
+            <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المرجع</th>
+            <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المورد</th>
+            <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السنة</th>
+            <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الحالة</th>
+          </svelte:fragment>
+          {#each contracts as contract (contract.id)}
+            <tr
+              class="border-t border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 {selectedContract?.id === contract.id ? 'bg-civil-blue/10 dark:bg-civil-blue/20' : ''}"
+              onclick={() => selectContract(contract)}
+            >
+              <td class="px-4 py-3 text-sm text-gray-800 dark:text-gray-100">{contract.contract_reference}</td>
+              <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                {suppliers.find((s) => s.id === contract.supplier_id)?.name || contract.supplier_id}
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{contract.fiscal_year}</td>
+              <td class="px-4 py-3"><AppBadge intent={statusIntent(contract.status)}>{statusLabel(contract.status)}</AppBadge></td>
+            </tr>
+          {/each}
+          <svelte:fragment slot="empty">
+            <AppEmptyState title="لا توجد عقود" description="أنشئ عقدًا لإسناد مورد وكمية لوحدة.">
+              <svelte:fragment slot="action">
+                <AppButton on:click={openCreate}>إنشاء أول عقد</AppButton>
+              </svelte:fragment>
+            </AppEmptyState>
+          </svelte:fragment>
+        </AppTable>
+      </AppCard>
+
+      <AppCard>
+        <h2 class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3">{selectedContract ? `تفاصيل: ${selectedContract.contract_reference}` : 'تفاصيل العقد'}</h2>
+        {#if selectedContract}
+          {#if $error}
+            <div class="mb-4"><AppAlert intent="danger" dismissible on:dismiss={() => contractsOp.error.set(null)}>{$error}</AppAlert></div>
+          {/if}
+          <div class="flex flex-wrap items-center gap-2 mb-4">
+            <AppBadge intent={statusIntent(selectedContract.status)}>{statusLabel(selectedContract.status)}</AppBadge>
+            {#if selectedContract.status === 'Proposed'}
+              <AppButton size="sm" variant="secondary" on:click={() => transition('accept')}>قبول</AppButton>
+            {/if}
+            {#if selectedContract.status === 'Accepted'}
+              <AppButton size="sm" variant="primary" on:click={() => transition('activate')}>تفعيل</AppButton>
+            {:else if selectedContract.status === 'Active'}
+              <AppButton size="sm" variant="primary" on:click={() => transition('end')}>إنهاء</AppButton>
+            {/if}
+            {#if selectedContract.status === 'Proposed' || selectedContract.status === 'Accepted' || selectedContract.status === 'Active'}
+              <AppButton size="sm" variant="danger" on:click={handleCancelConfirm}>إلغاء</AppButton>
+            {/if}
+          </div>
+
+          <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">منتجات العقد</h3>
+          <AppTable empty={selectedProducts.length === 0} emptyMessage="لم تُضف منتجات بعد">
+            <svelte:fragment slot="head">
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السعر المقترح</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">التسعير المتفق عليه</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">إجراءات</th>
+            </svelte:fragment>
+            {#each selectedProducts as product (product.id)}
+              <tr class="border-t border-gray-100 dark:border-gray-700">
+                <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">{product.product_name}</td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{product.proposed_price.toFixed(2)} دج</td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                  {#if product.agreed_price !== null}
+                    {product.agreed_price.toFixed(2)} دج
+                  {:else}
+                    <AppButton size="sm" variant="secondary" on:click={() => { newAgreedPrice = ''; openSetAgreedPrice(product); }}>تثبيت السعر</AppButton>
+                  {/if}
+                </td>
+                <td class="px-3 py-2 text-sm">
+                  {#if product.agreed_price === null && selectedContract.status === 'Proposed'}
+                    <AppButton size="sm" variant="ghost" on:click={() => { newAgreedPrice = product.proposed_price.toString(); openSetAgreedPrice(product); }}>اعتماد المقترح</AppButton>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </AppTable>
+          {#if selectedContract.status === 'Proposed' || selectedContract.status === 'Accepted'}
+            <div class="mt-3">
+              <AppButton size="sm" variant="secondary" on:click={openAddProduct}>إضافة منتج</AppButton>
+            </div>
+          {/if}
+
+          <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200 mt-6 mb-2">أذونات الوحدات (الالتزامات)</h3>
+          <AppTable empty={selectedAllocations.length === 0} emptyMessage="لا توجد أذونات بعد">
+            <svelte:fragment slot="head">
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الكمية المتفق عليها</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المتبقي الفعّال</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الحالة</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">إجراءات</th>
+            </svelte:fragment>
+            {#each selectedAllocations as allocation (allocation.id)}
+              <tr class="border-t border-gray-100 dark:border-gray-700">
+                <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
+                  {products.find((p) => p.id === allocation.product_id)?.name || allocation.product_id}
+                </td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{allocation.contracted_quantity}</td>
+                <td class="px-3 py-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                  {allocation.effective_remaining.toFixed(2)}
+                </td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{entState(allocation.entitlement_state)}</td>
+                <td class="px-3 py-2">
+                  {#if selectedContract.status === 'Active' || selectedContract.status === 'Ended'}
+                    <AppButton size="sm" variant="secondary" on:click={() => openRelease(allocation)}>إفراج</AppButton>
+                  {/if}
+                </td>
+              </tr>
+              {#if (allocationExceptions[allocation.id] ?? []).length > 0}
+                <tr class="border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                  <td colspan="5" class="px-3 py-2">
+                    <ul class="space-y-1">
+                      {#each (allocationExceptions[allocation.id] ?? []) as exception (exception.id)}
+                        <li class="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+                          <span>
+                            إفراج {exception.released_quantity} — {exception.reason_code}
+                            {exception.reason_note ? ` — ${exception.reason_note}` : ''} ({new Date(exception.created_at).toLocaleString('fr-FR')})
+                          </span>
+                          <AppButton size="sm" variant="ghost" on:click={() => handleRevoke(exception)}>إبطال</AppButton>
+                        </li>
+                      {/each}
+                    </ul>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </AppTable>
+        {:else}
+          <AppEmptyState title="اختر عقدًا" description="حدد عقدًا من القائمة لعرض تفاصيله وأذوناته." />
+        {/if}
+      </AppCard>
+    </div>
+  </div>
+
+  <AppDialog open={showCreateModal} title="إنشاء عقد جديد" description="إسناد مورد لوحدة لسنة مالية (عقد واحد نشط لكل وحدة ومنتج وسنة)" on:close={() => (showCreateModal = false)}>
+    <div dir="rtl" class="space-y-4">
+      <AppSelect id="contract-unit" label="الوحدة *" bind:value={newUnitId} required on:change={handleUnitChange}>
+        <option value="">— اختر الوحدة —</option>
+        {#each units as unit (unit.id)}
+          <option value={unit.id}>{unit.name} ({unit.code})</option>
+        {/each}
+      </AppSelect>
+      <AppSelect id="contract-supplier" label="المورد *" bind:value={newSupplierId} required>
+        <option value="">{unitSuppliers.length > 0 ? '— اختر المورد —' : '— لا يوجد مورد مرتبط بهذه الوحدة —'}</option>
+        {#each unitSuppliers as supplier (supplier.id)}
+          <option value={supplier.id}>{supplier.name}</option>
+        {/each}
+      </AppSelect>
+      <AppInput id="contract-ref" label="المرجع *" bind:value={newReference} required placeholder="مثال: C-2026-001" />
+      <AppInput id="contract-year" label="السنة المالية *" type="number" bind:value={newFiscalYear} required min={2020} max={2100} />
+      <AppInput id="contract-notes" label="ملاحظات" bind:value={newNotes} placeholder="ملاحظات اختيارية" />
+    </div>
+    <svelte:fragment slot="actions">
+      <AppButton variant="secondary" on:click={() => (showCreateModal = false)}>إلغاء</AppButton>
+      <AppButton on:click={saveContract} loading={$loading}>إنشاء</AppButton>
+    </svelte:fragment>
+  </AppDialog>
+
+  <AppDialog open={showAddProductModal} title="إضافة منتج للعقد" on:close={() => (showAddProductModal = false)}>
+    <div dir="rtl" class="space-y-4">
+      <AppSelect id="add-product-id" label="المنتج *" bind:value={newProductId} required>
+        <option value="">— اختر المنتج —</option>
+        {#each products as product (product.id)}
+          <option value={product.id}>{product.name}</option>
+        {/each}
+      </AppSelect>
+      <AppInput id="add-proposed-price" label="السعر المقترح (دج) *" type="number" bind:value={newProposedPrice} required min={0} placeholder="0.00" />
+      <AppInput id="add-agreed-price" label="سعر الاتفاق (دج، اختياري)" type="number" bind:value={newAgreedPrice} min={0} placeholder="0.00" />
+      <AppInput id="add-quantity" label="الكمية المتفق عليها *" type="number" bind:value={newQuantity} required min={0} placeholder="0" />
+    </div>
+    <svelte:fragment slot="actions">
+      <AppButton variant="secondary" on:click={() => (showAddProductModal = false)}>إلغاء</AppButton>
+      <AppButton on:click={saveContractProduct} loading={$loading}>إضافة</AppButton>
+    </svelte:fragment>
+  </AppDialog>
+
+  <AppDialog open={agreedPriceTarget !== null} title="تثبيت سعر الاتفاق" on:close={() => (agreedPriceTarget = null)}>
+    <div dir="rtl" class="space-y-4">
+      <AppInput id="agreed-price" label="سعر الاتفاق (دج) *" type="number" bind:value={newAgreedPrice} required min={0} placeholder="0.00" />
+    </div>
+    <svelte:fragment slot="actions">
+      <AppButton variant="secondary" on:click={() => (agreedPriceTarget = null)}>إلغاء</AppButton>
+      <AppButton on:click={saveAgreedPrice} loading={$loading}>تثبيت</AppButton>
+    </svelte:fragment>
+  </AppDialog>
+
+  <AppDialog open={releaseTarget !== null} title="إفراج التزام" description="تحرير كمية من الالتزام بسبب استثناء (ولاية فقط — مسجّل تدقيقيًا)" on:close={() => (releaseTarget = null)}>
+    <div dir="rtl" class="space-y-4">
+      <AppInput id="release-qty" label="الكمية المفرج عنها *" type="number" bind:value={releaseQty} required min={0} placeholder="0" />
+      <AppSelect id="release-reason" label="سبب الإفراج *" bind:value={releaseReason} required>
+        {#each REASON_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </AppSelect>
+      <AppInput id="release-note" label="ملاحظة" bind:value={releaseNote} placeholder="تفاصيل الاستثناء (اختياري)" />
+    </div>
+    <svelte:fragment slot="actions">
+      <AppButton variant="secondary" on:click={() => (releaseTarget = null)}>إلغاء</AppButton>
+      <AppButton on:click={saveRelease} loading={$loading}>تسجيل الإفراج</AppButton>
+    </svelte:fragment>
+  </AppDialog>
+</Layout>

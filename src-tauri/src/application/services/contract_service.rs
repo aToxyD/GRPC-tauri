@@ -14,8 +14,8 @@ use crate::domain::validation::{
 use crate::errors::{AppError, BusinessLogicError};
 use crate::models::{
     AddContractProductRequest, Contract, ContractAllocation, ContractAllocationException,
-    ContractProduct, ContractStatus, CreateContractRequest, ReleaseContractAllocationRequest,
-    SetAgreedPriceRequest,
+    ContractAllocationView, ContractProduct, ContractStatus, CreateContractRequest,
+    ReleaseContractAllocationRequest, SetAgreedPriceRequest,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
@@ -517,6 +517,20 @@ impl<'a> ContractService<'a> {
         self.executor
             .contracts()
             .list_allocations_for_contract(contract_id)
+    }
+
+    /// Backend-derived obligation projection (A5/P2): `effective_remaining` is
+    /// computed in the domain model (`ContractAllocationView`) — frontends and
+    /// sync consumers must never re-derive obligations.
+    pub fn list_allocation_views(
+        &self,
+        contract_id: &str,
+    ) -> Result<Vec<ContractAllocationView>, AppError> {
+        let rows = self
+            .executor
+            .contracts()
+            .list_allocations_for_contract(contract_id)?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     pub fn list_active_allocations_for_unit_year(

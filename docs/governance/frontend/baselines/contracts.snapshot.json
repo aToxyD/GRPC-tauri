@@ -887,6 +887,166 @@
       "loc": 34,
       "exportCount": 7,
       "commandCount": 7
+    },
+    {
+      "name": "procurement",
+      "exports": [
+        {
+          "name": "createSupplier"
+        },
+        {
+          "name": "updateSupplier"
+        },
+        {
+          "name": "setSupplierActive"
+        },
+        {
+          "name": "associateSupplierWithUnit"
+        },
+        {
+          "name": "disassociateSupplierFromUnit"
+        },
+        {
+          "name": "createContract"
+        },
+        {
+          "name": "addContractProduct"
+        },
+        {
+          "name": "setContractProductAgreedPrice"
+        },
+        {
+          "name": "acceptContract"
+        },
+        {
+          "name": "activateContract"
+        },
+        {
+          "name": "endContract"
+        },
+        {
+          "name": "cancelContract"
+        },
+        {
+          "name": "releaseContractAllocation"
+        },
+        {
+          "name": "revokeContractAllocationRelease"
+        },
+        {
+          "name": "setFiscalTaxPolicy"
+        },
+        {
+          "name": "getFiscalTaxPolicy"
+        },
+        {
+          "name": "listFiscalTaxPolicies"
+        },
+        {
+          "name": "getSupplier"
+        },
+        {
+          "name": "listSuppliers"
+        },
+        {
+          "name": "listUnitSuppliers"
+        },
+        {
+          "name": "getContract"
+        },
+        {
+          "name": "listContracts"
+        },
+        {
+          "name": "getContractProducts"
+        },
+        {
+          "name": "listContractAllocations"
+        },
+        {
+          "name": "listAllocationExceptions"
+        }
+      ],
+      "commands": [
+        {
+          "command": "create_supplier"
+        },
+        {
+          "command": "update_supplier"
+        },
+        {
+          "command": "set_supplier_active"
+        },
+        {
+          "command": "associate_supplier_with_unit"
+        },
+        {
+          "command": "disassociate_supplier_from_unit"
+        },
+        {
+          "command": "create_contract"
+        },
+        {
+          "command": "add_contract_product"
+        },
+        {
+          "command": "set_contract_product_agreed_price"
+        },
+        {
+          "command": "accept_contract"
+        },
+        {
+          "command": "activate_contract"
+        },
+        {
+          "command": "end_contract"
+        },
+        {
+          "command": "cancel_contract"
+        },
+        {
+          "command": "release_contract_allocation"
+        },
+        {
+          "command": "revoke_contract_allocation_release"
+        },
+        {
+          "command": "set_fiscal_tax_policy"
+        },
+        {
+          "command": "get_fiscal_tax_policy"
+        },
+        {
+          "command": "list_fiscal_tax_policies"
+        },
+        {
+          "command": "get_supplier"
+        },
+        {
+          "command": "list_suppliers"
+        },
+        {
+          "command": "list_unit_suppliers"
+        },
+        {
+          "command": "get_contract"
+        },
+        {
+          "command": "list_contracts"
+        },
+        {
+          "command": "get_contract_products"
+        },
+        {
+          "command": "list_contract_allocations"
+        },
+        {
+          "command": "list_allocation_exceptions"
+        }
+      ],
+      "loc": 178,
+      "exportCount": 25,
+      "commandCount": 25
     }
   ]
 }

@@ -119,6 +119,48 @@ impl ContractAllocation {
     }
 }
 
+/// Backend-derived obligation projection consumed by the frontend.
+///
+/// `effective_remaining` is computed in the domain model (single owner, A5/P2)
+/// and serialized so presentation layers never re-derive business arithmetic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractAllocationView {
+    pub id: String,
+    pub contract_id: String,
+    pub contract_product_id: String,
+    pub unit_id: String,
+    pub product_id: String,
+    pub fiscal_year: i32,
+    pub contracted_quantity: f64,
+    pub fulfilled_quantity: f64,
+    pub released_quantity: f64,
+    pub reserved_quantity: f64,
+    pub entitlement_state: String,
+    pub version: i64,
+    pub effective_remaining: f64,
+}
+
+impl From<ContractAllocation> for ContractAllocationView {
+    fn from(allocation: ContractAllocation) -> Self {
+        let effective_remaining = allocation.effective_remaining();
+        Self {
+            id: allocation.id,
+            contract_id: allocation.contract_id,
+            contract_product_id: allocation.contract_product_id,
+            unit_id: allocation.unit_id,
+            product_id: allocation.product_id,
+            fiscal_year: allocation.fiscal_year,
+            contracted_quantity: allocation.contracted_quantity,
+            fulfilled_quantity: allocation.fulfilled_quantity,
+            released_quantity: allocation.released_quantity,
+            reserved_quantity: allocation.reserved_quantity,
+            entitlement_state: allocation.entitlement_state,
+            version: allocation.version,
+            effective_remaining,
+        }
+    }
+}
+
 /// Reason codes for the WILAYA-only obligation release exception.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ReleaseReasonCode {

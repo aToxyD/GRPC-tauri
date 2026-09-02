@@ -164,6 +164,8 @@
     makeLink("/admin/fiscal", "تسيير السنة المالية", ICONS.fiscal),
     makeLink("/wilaya/products", "المنتجات", ICONS.products),
     makeLink("/wilaya/units", "الوحدات", ICONS.units),
+    makeLink("/wilaya/suppliers", "الموردون", ICONS.orders),
+    makeLink("/wilaya/contracts", "العقود", ICONS.orders),
     makeLink("/wilaya/unit-inventory", "مخزون الوحدات", ICONS.stock),
     makeLink("/wilaya/reports", "التقارير", ICONS.reports),
     makeLink("/wilaya/sync", "المزامنة", ICONS.sync),

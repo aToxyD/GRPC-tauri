@@ -1,6 +1,32 @@
 {
-  "generated": "2026-06-01T19:15:05.187Z",
+  "generated": "2026-09-02T00:00:00.000Z",
   "pages": {
+    "SuppliersPage": [
+      "listSuppliers",
+      "createSupplier",
+      "updateSupplier",
+      "setSupplierActive"
+    ],
+    "ContractsPage": [
+      "listContracts",
+      "listUnitSuppliers",
+      "getContractProducts",
+      "listContractAllocations",
+      "listAllocationExceptions",
+      "createContract",
+      "addContractProduct",
+      "setContractProductAgreedPrice",
+      "acceptContract",
+      "activateContract",
+      "endContract",
+      "cancelContract",
+      "releaseContractAllocation",
+      "revokeContractAllocationRelease",
+      "listUnits",
+      "listSuppliers",
+      "listProducts",
+      "getSettings"
+    ],
     "ProductsPage": [
       "listProducts",
       "getSettings",

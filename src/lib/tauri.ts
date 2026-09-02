@@ -241,10 +241,6 @@ export async function calculateMealRate(
   });
 }
 
-export async function calculateProductPriceWithTva(basePrice: number, tva: number): Promise<number> {
-  return await safeInvoke('calculate_product_price_with_tva', { basePrice, tva });
-}
-
 export async function getMonthlySummary(year: number, month?: number): Promise<MonthlySummary> {
   return await safeInvoke('get_monthly_summary', { year, month });
 }

@@ -139,6 +139,151 @@ export interface OrderItemInput {
   unit_price: number;
 }
 
+// Procurement Types (SEC-087-F / ADR-0055 — WILAYA-administered)
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_info: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface CreateSupplierRequest {
+  name: string;
+  contact_info: string | null;
+}
+
+export interface UpdateSupplierRequest {
+  id: string;
+  name: string;
+  contact_info: string | null;
+}
+
+export interface SetSupplierActiveRequest {
+  supplier_id: string;
+  active: boolean;
+}
+
+export interface AssociateUnitSupplierRequest {
+  unit_id: string;
+  supplier_id: string;
+}
+
+export type ContractStatus =
+  | 'Proposed'
+  | 'Accepted'
+  | 'Active'
+  | 'Ended'
+  | 'Cancelled';
+
+export interface Contract {
+  id: string;
+  contract_reference: string;
+  unit_id: string;
+  supplier_id: string;
+  fiscal_year: number;
+  status: ContractStatus;
+  proposed_at: string | null;
+  accepted_at: string | null;
+  activated_at: string | null;
+  ended_at: string | null;
+  cancelled_at: string | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface ContractProduct {
+  id: string;
+  contract_id: string;
+  product_id: string;
+  product_name: string;
+  proposed_price: number;
+  agreed_price: number | null;
+}
+
+export interface ContractAllocation {
+  id: string;
+  contract_id: string;
+  contract_product_id: string;
+  unit_id: string;
+  product_id: string;
+  fiscal_year: number;
+  contracted_quantity: number;
+  fulfilled_quantity: number;
+  released_quantity: number;
+  reserved_quantity: number;
+  entitlement_state: string;
+  version: number;
+  /** Backend-derived projection (A5) — never re-derived in the frontend. */
+  effective_remaining: number;
+}
+
+export type ReleaseReasonCode =
+  | 'SupplierNonPerformance'
+  | 'SupplierDelay'
+  | 'ServiceContinuity'
+  | 'OtherAuthorized';
+
+export interface ContractAllocationException {
+  id: string;
+  allocation_id: string;
+  released_quantity: number;
+  reason_code: string;
+  reason_note: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CreateContractRequest {
+  unit_id: string;
+  supplier_id: string;
+  fiscal_year: number;
+  contract_reference: string;
+  notes: string | null;
+}
+
+export interface AddContractProductRequest {
+  contract_id: string;
+  product_id: string;
+  proposed_price: number;
+  agreed_price: number | null;
+  contracted_quantity: number;
+}
+
+export interface SetAgreedPriceRequest {
+  contract_product_id: string;
+  agreed_price: number;
+}
+
+export interface ContractTransitionRequest {
+  contract_id: string;
+}
+
+export interface ReleaseContractAllocationRequest {
+  allocation_id: string;
+  released_quantity: number;
+  reason_code: ReleaseReasonCode;
+  reason_note: string | null;
+}
+
+export interface RevokeContractAllocationReleaseRequest {
+  exception_id: string;
+}
+
+// Fiscal-year TVA policy (single rate per fiscal year, WILAYA-owned)
+export interface FiscalYearTaxPolicy {
+  fiscal_year: number;
+  tva_rate: number;
+  frozen: boolean;
+  set_by: string;
+  created_at: string;
+}
+
+export interface SetTaxPolicyRequest {
+  fiscal_year: number;
+  tva_rate: number;
+}
+
 // Daily consumption report (one per date + unit, three meal sections)
 export type MealType = 'breakfast' | 'lunch' | 'dinner';
 

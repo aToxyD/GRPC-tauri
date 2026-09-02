@@ -128,6 +128,18 @@ export const DOMAIN_REGISTRY: Record<string, {
     functions: ["getSecurityStatus", "initializeAppKey", "unlockAppKey", "exportAppKeyBackupToPath"],
     crossDomainExceptions: ["login"],
   },
+  procurement: {
+    contract: "procurement.contract.ts",
+    pages: ["SuppliersPage", "ContractsPage"],
+    functions: [
+      "createSupplier", "updateSupplier", "setSupplierActive", "associateSupplierWithUnit", "disassociateSupplierFromUnit",
+      "createContract", "addContractProduct", "setContractProductAgreedPrice", "acceptContract", "activateContract", "endContract", "cancelContract",
+      "releaseContractAllocation", "revokeContractAllocationRelease",
+      "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies",
+      "getSupplier", "listSuppliers", "listUnitSuppliers", "getContract", "listContracts", "getContractProducts", "listContractAllocations", "listAllocationExceptions",
+    ],
+    crossDomainExceptions: ["listProducts", "listUnits"],
+  },
 };
 
 export const UNIVERSAL_ALLOWED = ["getSettings"];

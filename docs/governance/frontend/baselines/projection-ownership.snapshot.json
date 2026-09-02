@@ -1,6 +1,6 @@
 {
-  "generated": "2026-08-18T00:00:00.000Z",
-  "totalTypes": 104,
+  "generated": "2026-09-02T00:00:00.000Z",
+  "totalTypes": 123,
   "types": [
     {
       "name": "LoginRequest",
@@ -2698,6 +2698,390 @@
         },
         {
           "name": "schema_version",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Supplier",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "contact_info",
+          "type": "string | null"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "CreateSupplierRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "contact_info",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "UpdateSupplierRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "contact_info",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "SetSupplierActiveRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "supplier_id",
+          "type": "string"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "AssociateUnitSupplierRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "supplier_id",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ContractStatus",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "Contract",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "contract_reference",
+          "type": "string"
+        },
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "supplier_id",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "ContractStatus"
+        },
+        {
+          "name": "proposed_at",
+          "type": "string | null"
+        },
+        {
+          "name": "accepted_at",
+          "type": "string | null"
+        },
+        {
+          "name": "activated_at",
+          "type": "string | null"
+        },
+        {
+          "name": "ended_at",
+          "type": "string | null"
+        },
+        {
+          "name": "cancelled_at",
+          "type": "string | null"
+        },
+        {
+          "name": "notes",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "ContractProduct",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "contract_id",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "proposed_price",
+          "type": "number"
+        },
+        {
+          "name": "agreed_price",
+          "type": "number | null"
+        }
+      ]
+    },
+    {
+      "name": "ContractAllocation",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "contract_id",
+          "type": "string"
+        },
+        {
+          "name": "contract_product_id",
+          "type": "string"
+        },
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "contracted_quantity",
+          "type": "number"
+        },
+        {
+          "name": "fulfilled_quantity",
+          "type": "number"
+        },
+        {
+          "name": "released_quantity",
+          "type": "number"
+        },
+        {
+          "name": "reserved_quantity",
+          "type": "number"
+        },
+        {
+          "name": "entitlement_state",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "number"
+        },
+        {
+          "name": "effective_remaining",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "ReleaseReasonCode",
+      "kind": "type",
+      "fields": []
+    },
+    {
+      "name": "ContractAllocationException",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "allocation_id",
+          "type": "string"
+        },
+        {
+          "name": "released_quantity",
+          "type": "number"
+        },
+        {
+          "name": "reason_code",
+          "type": "string"
+        },
+        {
+          "name": "reason_note",
+          "type": "string | null"
+        },
+        {
+          "name": "created_by",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "CreateContractRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "supplier_id",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "contract_reference",
+          "type": "string"
+        },
+        {
+          "name": "notes",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "AddContractProductRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "contract_id",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "proposed_price",
+          "type": "number"
+        },
+        {
+          "name": "agreed_price",
+          "type": "number | null"
+        },
+        {
+          "name": "contracted_quantity",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "SetAgreedPriceRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "contract_product_id",
+          "type": "string"
+        },
+        {
+          "name": "agreed_price",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "ContractTransitionRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "contract_id",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ReleaseContractAllocationRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "allocation_id",
+          "type": "string"
+        },
+        {
+          "name": "released_quantity",
+          "type": "number"
+        },
+        {
+          "name": "reason_code",
+          "type": "ReleaseReasonCode"
+        },
+        {
+          "name": "reason_note",
+          "type": "string | null"
+        }
+      ]
+    },
+    {
+      "name": "RevokeContractAllocationReleaseRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "exception_id",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "FiscalYearTaxPolicy",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "tva_rate",
+          "type": "number"
+        },
+        {
+          "name": "frozen",
+          "type": "boolean"
+        },
+        {
+          "name": "set_by",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "SetTaxPolicyRequest",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "tva_rate",
           "type": "number"
         }
       ]

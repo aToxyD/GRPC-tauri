@@ -19,8 +19,8 @@ use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::into_command_error;
 use crate::models::{
-    AddContractProductRequest, AssociateUnitSupplierRequest, Contract, ContractAllocation,
-    ContractAllocationException, ContractProduct, ContractTransitionRequest, CreateContractRequest,
+    AddContractProductRequest, AssociateUnitSupplierRequest, Contract, ContractAllocationException,
+    ContractAllocationView, ContractProduct, ContractTransitionRequest, CreateContractRequest,
     CreateSupplierRequest, FiscalYearTaxPolicy, ReleaseContractAllocationRequest,
     RevokeContractAllocationReleaseRequest, SetAgreedPriceRequest, SetSupplierActiveRequest,
     SetTaxPolicyRequest, Supplier, UpdateSupplierRequest,
@@ -439,7 +439,7 @@ pub fn get_contract_products(
 pub fn list_contract_allocations(
     state: State<AppState>,
     contract_id: String,
-) -> Result<Vec<ContractAllocation>, String> {
+) -> Result<Vec<ContractAllocationView>, String> {
     let _ = authorize_command(&state, Action::ReadContractProjection, None)
         .map_err(into_command_error)?;
     state.touch_session();
@@ -447,7 +447,7 @@ pub fn list_contract_allocations(
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;
     ContractService::new(db.executor())
-        .list_allocations_for_contract(&contract_id)
+        .list_allocation_views(&contract_id)
         .map_err(into_command_error)
 }
 

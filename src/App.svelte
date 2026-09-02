@@ -32,6 +32,8 @@
   import ConflictCenterPage from './pages/ConflictCenterPage.svelte';
   import FiscalManagementPage from './pages/FiscalManagementPage.svelte';
   import FiscalDiagnosticsPage from './pages/FiscalDiagnosticsPage.svelte';
+  import SuppliersPage from './pages/SuppliersPage.svelte';
+  import ContractsPage from './pages/ContractsPage.svelte';
   import NotFoundPage from './pages/NotFoundPage.svelte';
   import AppSecurityPage from './pages/AppSecurityPage.svelte';
   
@@ -66,6 +68,8 @@
     '/wilaya/dashboard': WilayaDashboard,
     '/wilaya/products': ProductsPage,
     '/wilaya/units': UnitsPage,
+    '/wilaya/suppliers': SuppliersPage,
+    '/wilaya/contracts': ContractsPage,
     '/wilaya/sync': SyncPage,
     '/unit': UnitDashboard,
     '/unit/dashboard': UnitDashboard,
