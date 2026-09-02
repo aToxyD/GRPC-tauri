@@ -88,6 +88,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_orders,
         // Sync Package Export
         commands::export_products_package,
+        commands::export_contract_catalog_package,
         commands::export_daily_report_package,
         commands::export_monthly_summary_package,
         commands::export_unit_node_package,
@@ -98,6 +99,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::export_all_units_monthly_status_excel,
         // Sync Package Import (SECURE - with file hash verification)
         commands::import_products_package,
+        commands::import_contract_catalog_package,
         commands::import_daily_report_package,
         commands::import_unit_node_package,
         commands::import_monthly_summary_package,

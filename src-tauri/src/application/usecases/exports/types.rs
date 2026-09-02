@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::models::{
-    DailyDetailSyncSnapshot, DailyReportSyncSnapshot, MonthlySummary, ProductExportRow,
+    Contract, ContractAllocation, ContractAllocationException, DailyDetailSyncSnapshot,
+    DailyReportSyncSnapshot, FiscalYearTaxPolicy, MonthlySummary, ProductExportRow, Supplier,
 };
 
 // --- Products ----------------------------------------------------------------
@@ -56,4 +57,56 @@ pub struct StockMovementsExportDataset {
 pub struct StockMovementsExportInput {
     pub start_date: String,
     pub end_date: String,
+}
+
+// --- Contract catalog (ADR-0055 / SEC-087-F; ContractCatalog V2, WILAYA → UNIT) ---
+//
+// A WILAYA-authoritative read-only projection: suppliers, UNIT↔supplier
+// associations, contracts (with product lines + per-UNIT allocations and their
+// release exceptions), and the fiscal-year TVA policies. UNIT nodes apply ONLY
+// the rows scoped to their own unit id; WILAYA applies the full catalog.
+
+#[derive(Debug, Clone, Default)]
+pub struct ExportContractCatalogInput;
+
+/// A contract product line carrying its authoritative `created_at` (needed by
+/// the import upsert — the `ContractProduct` model does not expose it).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractCatalogProductLine {
+    pub id: String,
+    pub contract_id: String,
+    pub product_id: String,
+    pub proposed_price: f64,
+    pub agreed_price: Option<f64>,
+    pub created_at: String,
+}
+
+/// An allocation carrying its authoritative `created_at` (needed by the import
+/// upsert — the `ContractAllocation` model does not expose it).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractCatalogAllocationRow {
+    pub allocation: ContractAllocation,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractCatalogContractRow {
+    pub contract: Contract,
+    pub product_lines: Vec<ContractCatalogProductLine>,
+    pub allocations: Vec<ContractCatalogAllocationRow>,
+    pub exceptions: Vec<ContractAllocationException>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractCatalogUnitSupplierLink {
+    pub unit_id: String,
+    pub supplier_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractCatalogExportDataset {
+    pub suppliers: Vec<Supplier>,
+    pub unit_supplier_links: Vec<ContractCatalogUnitSupplierLink>,
+    pub contracts: Vec<ContractCatalogContractRow>,
+    pub tax_policies: Vec<FiscalYearTaxPolicy>,
 }

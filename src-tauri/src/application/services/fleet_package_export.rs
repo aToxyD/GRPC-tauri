@@ -20,8 +20,12 @@
 
 use super::transport_target;
 use super::IdentitySignedExportService;
+use crate::application::usecases::exports::export_contract_catalog_dataset;
 use crate::application::usecases::exports::export_products_dataset;
-use crate::application::usecases::exports::types::ExportProductsInput;
+use crate::application::usecases::exports::types::{
+    ExportContractCatalogInput, ExportProductsInput,
+};
+use crate::application::usecases::sync::import_contract_catalog_package::CONTRACT_CATALOG_PACKAGE_KIND;
 use crate::application::usecases::sync::import_products_package::PRODUCTS_PACKAGE_KIND;
 use crate::db::Database;
 use crate::domain::identity::SubjectType;
@@ -78,6 +82,46 @@ pub fn export_products_fleet(
         targets,
         artifact_paths,
         record_count: dataset.product_rows.len(),
+    })
+}
+
+/// Export the WILAYA-authoritative ContractCatalog projection (ADR-0055 /
+/// SEC-087-F) to EVERY authoritative UNIT target. The projection covers
+/// suppliers, unit–supplier associations, contract headers/lines,
+/// allocations (+ exceptions) and fiscal-year tax policies; UNIT-owned
+/// runtime state is never serialized.
+pub fn export_contract_catalog_fleet(
+    db: &mut Database,
+    node_key_store: &NodeKeyStore,
+    crypto_port: &AgeFileEncryptionProvider,
+    source_node_id: &str,
+    subject_type: SubjectType,
+    requested_path: &Path,
+) -> AppResult<FleetExportOutcome> {
+    let dataset =
+        export_contract_catalog_dataset::execute(db.executor(), ExportContractCatalogInput)?;
+    let targets = transport_target::resolve_fleet_unit_targets(db.executor())?;
+    emit_per_target(
+        db,
+        node_key_store,
+        |exporter, target, path| {
+            exporter.export_v2_package(
+                dataset.clone(),
+                source_node_id,
+                CONTRACT_CATALOG_PACKAGE_KIND,
+                target,
+                path,
+                subject_type,
+                crypto_port,
+            )
+        },
+        &targets,
+        requested_path,
+    )
+    .map(|artifact_paths| FleetExportOutcome {
+        targets,
+        artifact_paths,
+        record_count: dataset.contracts.len(),
     })
 }
 

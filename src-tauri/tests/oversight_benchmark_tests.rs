@@ -64,7 +64,7 @@ fn seed_test_db() -> ReportsContext<'static> {
     let now = "2025-06-15T00:00:00Z";
     executor
         .execute(
-            "INSERT OR IGNORE INTO products (id, name, base_price, tva, year, created_at, updated_at) VALUES ('prod-1', 'Test Product', 10.0, 0.0, 2025, ?1, ?1)",
+            "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at, updated_at) VALUES ('prod-1', 'Test Product', 10.0, 2025, ?1, ?1)",
             rusqlite::params![now],
         )
         .expect("seed product");

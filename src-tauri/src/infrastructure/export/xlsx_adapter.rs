@@ -58,7 +58,7 @@ impl ExcelPort for XlsxAdapter {
         worksheet.set_right_to_left(true);
 
         let header_fmt = self.header_format();
-        let headers = ["#", "الاسم", "السعر الأساسي", "TVA %", "المورد", "السنة"];
+        let headers = ["#", "الاسم", "السعر الأساسي", "السنة"];
 
         for (col, h) in headers.iter().enumerate() {
             worksheet
@@ -85,13 +85,7 @@ impl ExcelPort for XlsxAdapter {
                 .write_with_format(row, 2, p.base_price, &num_fmt)
                 .map_err(io::Error::other)?;
             worksheet
-                .write_with_format(row, 3, p.tva, &num_fmt)
-                .map_err(io::Error::other)?;
-            worksheet
-                .write_with_format(row, 4, p.supplier_name.as_deref().unwrap_or(""), &fmt)
-                .map_err(io::Error::other)?;
-            worksheet
-                .write_with_format(row, 5, p.year as f64, &fmt)
+                .write_with_format(row, 3, p.year as f64, &fmt)
                 .map_err(io::Error::other)?;
         }
 

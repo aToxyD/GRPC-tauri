@@ -22,11 +22,11 @@ fn init_db() -> grpc_lib::db::Database {
     // Insert products
     let now = "2025-01-01T00:00:00Z";
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, tva, year, created_at) VALUES ('p1', 'Farine', 100.0, 0.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p1', 'Farine', 100.0, 2025, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, tva, year, created_at) VALUES ('p2', 'Huile', 200.0, 0.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p2', 'Huile', 200.0, 2025, ?1)",
         rusqlite::params![now],
     ).unwrap();
 

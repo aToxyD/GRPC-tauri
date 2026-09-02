@@ -6,11 +6,13 @@
 
 pub mod anomaly;
 pub mod audit;
+pub mod contracts;
 pub mod domain_events;
 pub mod executor;
 pub mod fifo_layers;
 pub mod fiscal_package_registry;
 pub mod fiscal_snapshots;
+pub mod fiscal_tax_policy;
 pub mod fiscal_transitions;
 pub mod fiscal_year_status;
 pub mod identity_store;
@@ -18,6 +20,7 @@ pub mod import_audit_events;
 pub mod integrity;
 pub mod inventory;
 pub mod opening_balances;
+pub mod order_allocations;
 pub mod orders;
 pub mod products;
 pub mod rate_limiter;
@@ -26,6 +29,7 @@ pub mod reports;
 pub mod sessions;
 pub mod settings;
 pub mod stock_movements;
+pub mod suppliers;
 pub mod sync_applied_packages;
 pub mod sync_conflicts;
 pub mod system;
@@ -36,11 +40,13 @@ pub mod users;
 
 pub use anomaly::AnomalyRepository;
 pub use audit::AuditRepository;
+pub use contracts::ContractRepository;
 pub use domain_events::{DomainEventRepository, EventSequenceGap};
 pub use executor::{DbExecutor, ExecutorProvider};
 pub use fifo_layers::FifoLayerRepository;
 pub use fiscal_package_registry::{FiscalPackageRegistryEntry, FiscalPackageRegistryRepository};
 pub use fiscal_snapshots::FiscalSnapshotRepository;
+pub use fiscal_tax_policy::FiscalYearTaxPolicyRepository;
 pub use fiscal_transitions::FiscalTransitionRepository;
 pub use fiscal_year_status::FiscalYearStatusRepository;
 pub use identity_store::IdentityStoreRepository;
@@ -48,6 +54,7 @@ pub use import_audit_events::ImportAuditEventsRepository;
 pub use integrity::IntegrityRepository;
 pub use inventory::InventoryRepository;
 pub use opening_balances::OpeningBalanceRepository;
+pub use order_allocations::OrderAllocationRepository;
 pub use orders::OrderRepository;
 pub use products::ProductRepository;
 pub use rate_limiter::RateLimiterRepository;
@@ -56,6 +63,7 @@ pub use reports::ReportRepository;
 pub use sessions::SessionRepository;
 pub use settings::SettingsRepository;
 pub use stock_movements::StockMovementRepository;
+pub use suppliers::SupplierRepository;
 pub use sync_applied_packages::SyncAppliedPackagesRepository;
 pub use sync_conflicts::SyncConflictRepository;
 pub use system::SystemRepository;
@@ -89,19 +97,27 @@ impl crate::architecture::Repository for FiscalPackageRegistryRepository<'_> {}
 impl crate::architecture::Repository for RateLimiterRepository {}
 impl crate::architecture::Repository for RegistrySnapshotsRepository<'_> {}
 impl crate::architecture::Repository for FifoLayerRepository<'_> {}
+impl crate::architecture::Repository for SupplierRepository<'_> {}
+impl crate::architecture::Repository for ContractRepository<'_> {}
+impl crate::architecture::Repository for FiscalYearTaxPolicyRepository<'_> {}
+impl crate::architecture::Repository for OrderAllocationRepository<'_> {}
 
 /// Centralized provider for repositories to avoid manual construction in the service layer.
 /// This satisfies Rule 17 of the architectural integrity check.
 pub trait RepositoryProvider<'a> {
     fn anomaly(&self) -> AnomalyRepository<'a>;
     fn audit(&self) -> AuditRepository<'a>;
+    fn contracts(&self) -> ContractRepository<'a>;
     fn domain_events(&self) -> DomainEventRepository<'a>;
     fn fiscal_year_status(&self) -> FiscalYearStatusRepository<'a>;
+    fn fiscal_tax_policy(&self) -> FiscalYearTaxPolicyRepository<'a>;
     fn fiscal_snapshots(&self) -> FiscalSnapshotRepository<'a>;
     fn fiscal_transitions(&self) -> FiscalTransitionRepository<'a>;
     fn users(&self) -> UserRepository<'a>;
     fn products(&self) -> ProductRepository<'a>;
     fn orders(&self) -> OrderRepository<'a>;
+    fn order_allocations(&self) -> OrderAllocationRepository<'a>;
+    fn suppliers(&self) -> SupplierRepository<'a>;
     fn inventory(&self) -> InventoryRepository<'a>;
     fn reports(&self) -> ReportRepository<'a>;
     fn opening_balances(&self) -> OpeningBalanceRepository<'a>;
@@ -129,11 +145,17 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     fn audit(&self) -> AuditRepository<'a> {
         AuditRepository::new(*self)
     }
+    fn contracts(&self) -> ContractRepository<'a> {
+        ContractRepository::new(*self)
+    }
     fn domain_events(&self) -> DomainEventRepository<'a> {
         DomainEventRepository::new(*self)
     }
     fn fiscal_year_status(&self) -> FiscalYearStatusRepository<'a> {
         FiscalYearStatusRepository::new(*self)
+    }
+    fn fiscal_tax_policy(&self) -> FiscalYearTaxPolicyRepository<'a> {
+        FiscalYearTaxPolicyRepository::new(*self)
     }
     fn fiscal_snapshots(&self) -> FiscalSnapshotRepository<'a> {
         FiscalSnapshotRepository::new(*self)
@@ -149,6 +171,12 @@ impl<'a> RepositoryProvider<'a> for DbExecutor<'a> {
     }
     fn orders(&self) -> OrderRepository<'a> {
         OrderRepository::new(*self)
+    }
+    fn order_allocations(&self) -> OrderAllocationRepository<'a> {
+        OrderAllocationRepository::new(*self)
+    }
+    fn suppliers(&self) -> SupplierRepository<'a> {
+        SupplierRepository::new(*self)
     }
     fn inventory(&self) -> InventoryRepository<'a> {
         InventoryRepository::new(*self)

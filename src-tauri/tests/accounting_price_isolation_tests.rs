@@ -39,7 +39,7 @@ fn setup_unit_product_layers(
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,'P',9999.0,0.0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'P',9999.0,2025,?2)",
         rusqlite::params![product_id, now],
     )
     .unwrap();
@@ -142,7 +142,7 @@ fn setup_two_layers(db: &grpc_lib::db::Database) -> (String, String) {
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,'P',0.0,0.0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'P',0.0,2025,?2)",
         rusqlite::params![product_id, now],
     )
     .unwrap();
@@ -455,7 +455,7 @@ fn fifo_consumes_oldest_layer_first_by_received_at_then_id() {
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,'P',1.0,0.0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'P',1.0,2025,?2)",
         rusqlite::params![product_id, now],
     )
     .unwrap();

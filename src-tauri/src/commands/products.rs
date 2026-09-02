@@ -165,8 +165,6 @@ mod tests {
         let request = CreateProductRequest {
             name: "".to_string(),
             base_price: 100.0,
-            tva: 19.0,
-            supplier_name: None,
         };
 
         let result = svc.create_product(&request, 2024);
@@ -189,8 +187,6 @@ mod tests {
         let request = CreateProductRequest {
             name: "Test".to_string(),
             base_price: -10.0,
-            tva: 19.0,
-            supplier_name: None,
         };
 
         let result = svc.create_product(&request, 2024);

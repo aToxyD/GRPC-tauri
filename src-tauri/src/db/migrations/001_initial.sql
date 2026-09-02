@@ -93,6 +93,18 @@ CREATE TABLE IF NOT EXISTS fiscal_closure_package_registry (
     notes TEXT
 );
 
+-- ADR-0055 / SEC-087-F: exactly ONE TVA rate per fiscal year (WILAYA-controlled).
+-- Immutable once established for the fiscal year; frozen at fiscal close as an
+-- additional hard lifecycle boundary. Product-level TVA is removed (SEC-087-F).
+CREATE TABLE IF NOT EXISTS fiscal_year_tax_policy (
+    fiscal_year INTEGER PRIMARY KEY,
+    tva_rate REAL NOT NULL CHECK(tva_rate >= 0 AND tva_rate <= 100),
+    frozen INTEGER NOT NULL DEFAULT 0 CHECK(frozen IN (0, 1)),
+    set_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- =============================================================================
 -- 3. PRODUCT CATALOG & INVENTORY
 -- =============================================================================
@@ -101,8 +113,6 @@ CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     base_price REAL NOT NULL CHECK (base_price >= 0),
-    tva REAL NOT NULL DEFAULT 0.0 CHECK (tva >= 0 AND tva <= 100),
-    supplier_name TEXT,
     year INTEGER NOT NULL CHECK (year >= 2020 AND year <= 2100),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -244,6 +254,7 @@ CREATE TABLE IF NOT EXISTS daily_report_meal_items (
 CREATE TABLE IF NOT EXISTS supplier_orders (
     id TEXT PRIMARY KEY,
     order_date TEXT NOT NULL,
+    supplier_id TEXT NOT NULL,
     supplier_name TEXT NOT NULL,
     reference_number TEXT,
     total_amount REAL,
@@ -252,7 +263,10 @@ CREATE TABLE IF NOT EXISTS supplier_orders (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
-    fiscal_year INTEGER
+    unit_id TEXT,
+    fiscal_year INTEGER,
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
+    FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS supplier_order_items (
@@ -262,11 +276,139 @@ CREATE TABLE IF NOT EXISTS supplier_order_items (
     quantity REAL NOT NULL CHECK (quantity > 0),
     unit_price REAL NOT NULL CHECK (unit_price >= 0),
     total_cost REAL NOT NULL,
+    unit_id TEXT,
+    fiscal_year INTEGER,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
     FOREIGN KEY (order_id) REFERENCES supplier_orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT
+);
+
+-- =============================================================================
+-- 4B. PROCUREMENT — SUPPLIERS & CONTRACTS (ADR-0055 / SEC-087-F)
+--
+-- Supplier is a first-class entity. UNIT <-> Supplier is M:N via unit_suppliers
+-- (units.supplier_id is deliberately absent). A Contract is the pricing +
+-- entitlement authority for one UNIT + one Supplier + one fiscal year.
+--
+-- contract_allocations carries the per-UNIT obligation ledger. entitlement_state
+-- represents entitlement LIFECYCLE ONLY (ACTIVE/ENDED/CANCELLED); obligation
+-- fulfillment is governed by the component quantities (contracted, fulfilled,
+-- released, reserved). An ENDED allocation with remaining quantity remains a
+-- fulfillable obligation. The one-ACTIVE-per-(UNIT, Product, FY) invariant is
+-- enforced at the DATABASE level by the partial unique index
+-- idx_contract_allocations_single_active (created in section 8) using a valid
+-- SQLite partial-index predicate (no subquery).
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS suppliers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    contact_info TEXT,
+    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    node_id TEXT,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1))
+);
+
+CREATE TABLE IF NOT EXISTS unit_suppliers (
+    unit_id TEXT NOT NULL,
+    supplier_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (unit_id, supplier_id),
+    FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT,
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS contracts (
+    id TEXT PRIMARY KEY,
+    contract_reference TEXT NOT NULL,
+    unit_id TEXT NOT NULL,
+    supplier_id TEXT NOT NULL,
+    fiscal_year INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'proposed'
+        CHECK(status IN ('proposed', 'accepted', 'active', 'ended', 'cancelled')),
+    proposed_at TEXT,
+    accepted_at TEXT,
+    activated_at TEXT,
+    ended_at TEXT,
+    cancelled_at TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    node_id TEXT,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT,
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS contract_products (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    proposed_price REAL NOT NULL CHECK(proposed_price >= 0),
+    agreed_price REAL CHECK(agreed_price IS NULL OR agreed_price >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    node_id TEXT,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    UNIQUE(contract_id, product_id),
+    FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE IF NOT EXISTS contract_allocations (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    contract_product_id TEXT NOT NULL,
+    unit_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    fiscal_year INTEGER NOT NULL,
+    contracted_quantity REAL NOT NULL CHECK(contracted_quantity >= 0),
+    fulfilled_quantity REAL NOT NULL DEFAULT 0 CHECK(fulfilled_quantity >= 0),
+    released_quantity REAL NOT NULL DEFAULT 0 CHECK(released_quantity >= 0),
+    reserved_quantity REAL NOT NULL DEFAULT 0 CHECK(reserved_quantity >= 0),
+    entitlement_state TEXT NOT NULL DEFAULT 'ACTIVE'
+        CHECK(entitlement_state IN ('ACTIVE', 'ENDED', 'CANCELLED')),
+    version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    node_id TEXT,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+    FOREIGN KEY (contract_product_id) REFERENCES contract_products(id) ON DELETE RESTRICT,
+    FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    CHECK (fulfilled_quantity + released_quantity + reserved_quantity <= contracted_quantity)
+);
+
+CREATE TABLE IF NOT EXISTS contract_allocation_exceptions (
+    id TEXT PRIMARY KEY,
+    allocation_id TEXT NOT NULL,
+    released_quantity REAL NOT NULL CHECK(released_quantity > 0),
+    reason_code TEXT NOT NULL CHECK(reason_code IN
+        ('SUPPLIER_NON_PERFORMANCE', 'SUPPLIER_DELAY', 'SERVICE_CONTINUITY', 'OTHER_AUTHORIZED')),
+    reason_note TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (allocation_id) REFERENCES contract_allocations(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS supplier_order_item_allocations (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL,
+    allocation_id TEXT NOT NULL,
+    quantity REAL NOT NULL CHECK(quantity > 0),
+    unit_price REAL NOT NULL CHECK(unit_price >= 0),
+    total_cost REAL NOT NULL CHECK(total_cost >= 0),
+    created_at TEXT NOT NULL,
+    node_id TEXT,
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    FOREIGN KEY (item_id) REFERENCES supplier_order_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (allocation_id) REFERENCES contract_allocations(id) ON DELETE RESTRICT
 );
 
 -- =============================================================================
@@ -558,10 +700,46 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_order_date ON supplier_orders(order_date);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_status ON supplier_orders(status);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_fiscal_year ON supplier_orders(fiscal_year);
+CREATE INDEX IF NOT EXISTS idx_supplier_orders_supplier_id ON supplier_orders(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_daily_report_meal_items_meal_id ON daily_report_meal_items(meal_id);
 CREATE INDEX IF NOT EXISTS idx_daily_report_meal_items_product_id ON daily_report_meal_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_order_items_order_id ON supplier_order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_order_items_product_id ON supplier_order_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_supplier_order_items_unit ON supplier_order_items(unit_id, fiscal_year);
+CREATE INDEX IF NOT EXISTS idx_supplier_order_items_fiscal_year ON supplier_order_items(fiscal_year);
+
+-- Procurement (ADR-0055 / SEC-087-F)
+CREATE INDEX IF NOT EXISTS idx_unit_suppliers_unit ON unit_suppliers(unit_id);
+CREATE INDEX IF NOT EXISTS idx_unit_suppliers_supplier ON unit_suppliers(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_unit ON contracts(unit_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_supplier ON contracts(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_fiscal_year ON contracts(fiscal_year);
+-- One non-terminal contract per UNIT per fiscal year (proposed/accepted/active);
+-- ended/cancelled contracts do not block a replacement contract for the same year.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_unit_year_live
+    ON contracts(unit_id, fiscal_year)
+    WHERE deleted = 0 AND status IN ('proposed', 'accepted', 'active');
+CREATE INDEX IF NOT EXISTS idx_contract_products_contract ON contract_products(contract_id);
+CREATE INDEX IF NOT EXISTS idx_contract_allocations_contract ON contract_allocations(contract_id);
+CREATE INDEX IF NOT EXISTS idx_contract_allocations_unit_product ON contract_allocations(unit_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_contract_allocations_resolution
+    ON contract_allocations(fiscal_year, created_at, id) WHERE deleted = 0;
+-- Old-obligation resolution scan (ADR-0055 §3.5): oldest-first ordering,
+-- excludes CANCELLED allocations from normal obligation selection.
+CREATE INDEX IF NOT EXISTS idx_contract_allocations_obligation
+    ON contract_allocations(unit_id, product_id, fiscal_year, created_at, id)
+    WHERE deleted = 0 AND entitlement_state != 'CANCELLED';
+-- One ACTIVE entitlement per (UNIT, Product, FiscalYear).
+-- SQLite-valid partial unique index (same-table predicate, no subquery).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contract_allocations_single_active
+    ON contract_allocations(unit_id, product_id, fiscal_year)
+    WHERE entitlement_state = 'ACTIVE' AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_contract_allocation_exceptions_alloc
+    ON contract_allocation_exceptions(allocation_id);
+CREATE INDEX IF NOT EXISTS idx_supplier_order_item_allocations_item
+    ON supplier_order_item_allocations(item_id);
+CREATE INDEX IF NOT EXISTS idx_supplier_order_item_allocations_alloc
+    ON supplier_order_item_allocations(allocation_id);
 
 -- Audit
 CREATE INDEX IF NOT EXISTS idx_audit_user_id ON audit_log(user_id);
@@ -670,6 +848,11 @@ CREATE TRIGGER IF NOT EXISTS trg_inventory_stocks_updated_at AFTER UPDATE ON inv
 CREATE TRIGGER IF NOT EXISTS trg_daily_reports_updated_at AFTER UPDATE ON daily_reports FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE daily_reports SET updated_at = datetime('now') WHERE id = NEW.id; END;
 CREATE TRIGGER IF NOT EXISTS trg_supplier_orders_updated_at AFTER UPDATE ON supplier_orders FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE supplier_orders SET updated_at = datetime('now') WHERE id = NEW.id; END;
 CREATE TRIGGER IF NOT EXISTS trg_stock_movements_updated_at AFTER UPDATE ON stock_movements FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE stock_movements SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS trg_suppliers_updated_at AFTER UPDATE ON suppliers FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE suppliers SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS trg_contracts_updated_at AFTER UPDATE ON contracts FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE contracts SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS trg_contract_products_updated_at AFTER UPDATE ON contract_products FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE contract_products SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS trg_contract_allocations_updated_at AFTER UPDATE ON contract_allocations FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE contract_allocations SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS trg_fiscal_year_tax_policy_updated_at AFTER UPDATE ON fiscal_year_tax_policy FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL BEGIN UPDATE fiscal_year_tax_policy SET updated_at = datetime('now') WHERE fiscal_year = NEW.fiscal_year; END;
 
 -- =============================================================================
 -- 10. BASELINE SEED DATA

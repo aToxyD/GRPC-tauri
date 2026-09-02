@@ -55,8 +55,6 @@ pub struct ProductSyncRecord {
     pub id: String,
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
     pub year: i32,
     pub created_at: String,
     pub updated_at: String,

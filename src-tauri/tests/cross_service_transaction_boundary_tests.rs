@@ -16,8 +16,8 @@ fn seed_open_year(db: &grpc_lib::db::Database, year: i32) {
         .unwrap();
     ex.settings().set_current_year(year).unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at)
-         VALUES ('p-tx', 'Tx Product', 10.0, 0.0, NULL, ?1, datetime('now'), datetime('now'))",
+        "INSERT INTO products (id, name, base_price, year, created_at, updated_at)
+         VALUES ('p-tx', 'Tx Product', 10.0, ?1, datetime('now'), datetime('now'))",
         [year],
     )
     .unwrap();

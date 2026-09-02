@@ -21,8 +21,6 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
         id: "p1".into(),
         name: "Prod 1".into(),
         base_price: 10.0,
-        tva: 0.0,
-        supplier_name: None,
         year: 2026,
         created_at: Utc::now(),
     };

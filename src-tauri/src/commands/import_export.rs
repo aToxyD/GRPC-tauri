@@ -30,6 +30,10 @@ use crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCES
 use crate::application::usecases::sync::import_admin_access_package::{
     execute as apply_admin_access_package, ImportAdminAccessPackageInput,
 };
+use crate::application::usecases::sync::import_contract_catalog_package::CONTRACT_CATALOG_PACKAGE_KIND;
+use crate::application::usecases::sync::import_contract_catalog_package::{
+    execute as apply_contract_catalog_package, ImportContractCatalogPackageInput,
+};
 use crate::application::usecases::sync::import_daily_report_package::DAILY_REPORT_PACKAGE_KIND;
 use crate::application::usecases::sync::import_daily_report_package::{
     execute as apply_daily_report_package, ImportDailyReportPackageInput,
@@ -74,10 +78,11 @@ use crate::infrastructure::db::sync_import::{
     SqliteImportAuditLogger, SqliteImportedPackageRegistry,
 };
 use crate::infrastructure::sync::{
-    read_admin_access_package_from_file, read_daily_report_package_from_file,
-    read_monthly_summary_package_from_file, read_products_package_from_file,
-    read_registry_package_from_file, read_stock_movements_package_from_file,
-    read_trust_package_from_file, read_unit_node_package_from_file, resolve_export_source_node_id,
+    read_admin_access_package_from_file, read_contract_catalog_package_from_file,
+    read_daily_report_package_from_file, read_monthly_summary_package_from_file,
+    read_products_package_from_file, read_registry_package_from_file,
+    read_stock_movements_package_from_file, read_trust_package_from_file,
+    read_unit_node_package_from_file, resolve_export_source_node_id,
 };
 
 use crate::models::{
@@ -127,6 +132,7 @@ const DATA_PACKAGE_KINDS: &[&str] = &[
     DAILY_REPORT_PACKAGE_KIND,
     MONTHLY_SUMMARY_PACKAGE_KIND,
     STOCK_MOVEMENTS_PACKAGE_KIND,
+    CONTRACT_CATALOG_PACKAGE_KIND,
 ];
 
 /// V2-only security requirements for the `.unit` setup-mode import (ADR-0044,
@@ -318,6 +324,142 @@ pub fn import_products_package_impl(
                 imported_by: session.username.clone(),
             };
             let outcome = apply_products_package(executor, registry, input)?;
+            Ok(crate::models::PackageImportResult {
+                added: outcome.imported,
+                updated: outcome.updated,
+                deleted: outcome.skipped,
+            })
+        },
+        None,
+        None,
+    )
+}
+
+/// Export the WILAYA-authoritative ContractCatalog sync package (`.sync`,
+/// ADR-0055 / SEC-087-F) — fleet-level: one signed artifact per UNIT target.
+///
+/// Authz: `Action::ExportContractCatalogPackage` → WILAYA Admin only. The
+/// renderer only carries fleet intent; the authoritative UNIT target set is
+/// enumerated server-side (SEC-033), mirroring `export_products_package`.
+#[tauri::command]
+pub fn export_contract_catalog_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    export_contract_catalog_package_impl(&state, file_path)
+}
+
+/// Implementation of `export_contract_catalog_package` (testable without a
+/// Tauri runtime).
+pub fn export_contract_catalog_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    let (session, settings) = authorize_command(state, Action::ExportContractCatalogPackage, None)
+        .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+    let start_time = std::time::Instant::now();
+
+    let source_node_id =
+        resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
+
+    let outcome = crate::application::services::export_contract_catalog_fleet(
+        db,
+        &node_key_store(),
+        &state.crypto_port,
+        &source_node_id,
+        export_subject_type(settings.node_type),
+        std::path::Path::new(&file_path),
+    )
+    .map_err(into_command_error)?;
+
+    log::info!(
+        target: "grpc::import_export",
+        "export_contract_catalog_package: success targets={} base_path={}",
+        outcome.targets.join(","),
+        file_path
+    );
+
+    let export_hash = Uuid::new_v4().to_string();
+    let result = PackageExportResult::success(
+        file_path.clone(),
+        outcome.record_count,
+        "encrypted".to_string(),
+    );
+
+    let signing_key_id =
+        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
+    let _ = db.with_transaction(|tx| {
+        record_export_with_reproducibility(
+            tx,
+            signing_key_id.clone(),
+            ExportReproducibilityContext {
+                export_hash,
+                fiscal_year: settings.current_year,
+                generated_by: session.username.clone(),
+                movement_count: 0,
+                report_count: 0,
+                inventory_total_value: 0.0,
+                export_reason: "contract_catalog_sync_package".to_string(),
+            },
+        )
+    });
+
+    let duration = start_time.elapsed().as_millis() as i64;
+    let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
+        crate::application::services::TelemetryEventType::SyncExport,
+        crate::application::services::TelemetryOutcome::Success,
+        Some(duration),
+        Some(serde_json::json!({
+            "path": file_path,
+            "kind": CONTRACT_CATALOG_PACKAGE_KIND,
+            "targets": outcome.targets,
+            "artifact_count": outcome.artifact_paths.len(),
+        })),
+        Some(&session.user_id),
+    );
+
+    Ok(result)
+}
+
+/// Import a ContractCatalog sync package (`.sync`, ADR-0055 / SEC-087-F).
+///
+/// On a UNIT node the WILAYA projection is applied scoped to the node's own
+/// unit (contracts FK the local `units` table); on a WILAYA node the full
+/// catalog is applied (restore path). Authz: operational on UNIT, Admin-only
+/// on WILAYA (mirrors `ImportProductsPackage`).
+#[tauri::command]
+pub fn import_contract_catalog_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<crate::models::PackageImportResult, String> {
+    import_contract_catalog_package_impl(&state, file_path)
+}
+
+/// Testable implementation of `import_contract_catalog_package` (without a
+/// Tauri runtime).
+pub fn import_contract_catalog_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<crate::models::PackageImportResult, String> {
+    run_import_pipeline(
+        state,
+        Action::ImportContractCatalogPackage,
+        file_path,
+        CONTRACT_CATALOG_PACKAGE_KIND,
+        AuditAction::ImportNodePackage,
+        read_contract_catalog_package_from_file,
+        |executor, registry, package, session, importer_wilaya: &str| {
+            let input = ImportContractCatalogPackageInput {
+                package,
+                importer_wilaya_code: importer_wilaya.to_string(),
+                imported_by: session.username.clone(),
+            };
+            let outcome = apply_contract_catalog_package(executor, registry, input)?;
             Ok(crate::models::PackageImportResult {
                 added: outcome.imported,
                 updated: outcome.updated,

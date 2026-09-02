@@ -56,8 +56,6 @@ pub fn create_test_product(db: &Database, id: &str, name: &str) -> String {
                 id: id.to_string(),
                 name: name.to_string(),
                 base_price: 100.0,
-                tva: 0.0,
-                supplier_name: Some("Test Supplier".to_string()),
                 year: 2024,
                 created_at: Utc::now(),
             },
@@ -1066,23 +1064,82 @@ fn test_confirm_order_sets_unit_id() {
         )
         .expect("Failed to create user");
 
-    // Create order
+    // Set up entitlement: supplier + contract + product line + allocation with
+    // agreed price (ADR-0055 / SEC-087-F). Orders require contract coverage.
+    let now = Utc::now().to_rfc3339();
+    let suppliers = grpc_lib::repositories::SupplierRepository::new(db.executor());
+    let contracts = grpc_lib::repositories::ContractRepository::new(db.executor());
+    let supplier_id = Uuid::new_v4().to_string();
+    suppliers
+        .insert_supplier(
+            &supplier_id,
+            &grpc_lib::models::CreateSupplierRequest {
+                name: "مورد للتأكيد".to_string(),
+                contact_info: None,
+            },
+            &now,
+        )
+        .unwrap();
+    let contract_id = Uuid::new_v4().to_string();
+    contracts
+        .insert_contract(
+            &contract_id,
+            &grpc_lib::models::CreateContractRequest {
+                unit_id: unit_id.clone(),
+                supplier_id: supplier_id.clone(),
+                fiscal_year: 2024,
+                contract_reference: "CTR-CONF-2024".to_string(),
+                notes: None,
+            },
+            &now,
+        )
+        .unwrap();
+    let contract_product_id = Uuid::new_v4().to_string();
+    contracts
+        .insert_contract_product(
+            &contract_product_id,
+            &grpc_lib::models::AddContractProductRequest {
+                contract_id: contract_id.clone(),
+                product_id: product_id.clone(),
+                proposed_price: 40.0,
+                agreed_price: Some(40.0),
+                contracted_quantity: 1000.0,
+            },
+            &now,
+        )
+        .unwrap();
+    contracts
+        .set_agreed_price(&contract_product_id, 40.0)
+        .unwrap();
+    let allocation_id = Uuid::new_v4().to_string();
+    contracts
+        .insert_allocation(
+            &allocation_id,
+            &contract_id,
+            &contract_product_id,
+            &unit_id,
+            &product_id,
+            2024,
+            1000.0,
+            &now,
+        )
+        .unwrap();
+
+    // Create order (unit context + fiscal year are backend-provided)
     let order_req = CreateOrderRequest {
-        supplier_name: "مورد للتأكيد".to_string(),
         reference_number: Some("CONF-001".to_string()),
         items: vec![OrderItemInput {
             product_id: product_id.clone(),
             quantity: 50.0,
-            unit_price: 40.0,
         }],
     };
     let (order_id, _) = grpc_lib::application::services::OrderService::new(db.executor())
-        .create_supplier_order(&order_req)
+        .create_supplier_order(&order_req, &unit_id, 2024)
         .expect("Failed to create order");
 
-    // Confirm order with unit_id
+    // Confirm order (unit context derives from the order itself)
     grpc_lib::application::services::OrderService::new(db.executor())
-        .confirm_order_atomic(&order_id, "system", "test_admin", Some(&unit_id))
+        .confirm_order_atomic(&order_id, "system", "test_admin")
         .expect("Failed to confirm order");
 
     // Verify the IN movement has unit_id set

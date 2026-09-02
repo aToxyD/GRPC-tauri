@@ -30,8 +30,8 @@ impl<'a> ProductRepository<'a> {
         created_at: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, &req.name, &req.base_price, &req.tva, &req.supplier_name, &year, created_at],
+            "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, &req.name, &req.base_price, &year, created_at],
         )?;
         Ok(())
     }
@@ -47,8 +47,8 @@ impl<'a> ProductRepository<'a> {
 
     pub fn insert_raw_product(&self, product: &Product, now: &str) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![&product.id, &product.name, &product.base_price, &product.tva, &product.supplier_name, &product.year, now],
+            "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![&product.id, &product.name, &product.base_price, &product.year, now],
         )?;
         Ok(())
     }
@@ -73,14 +73,12 @@ impl<'a> ProductRepository<'a> {
         // This will delete the old row if it exists, which may fail with FK constraints
         // If that fails, try UPDATE instead
         let result = self.executor.execute(
-            "INSERT OR REPLACE INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at, node_id, deleted) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO products (id, name, base_price, year, created_at, updated_at, node_id, deleted) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 &record.id,
                 &record.name,
                 &record.base_price,
-                &record.tva,
-                &record.supplier_name,
                 &record.year,
                 &record.created_at,
                 &record.updated_at,
@@ -96,12 +94,10 @@ impl<'a> ProductRepository<'a> {
             {
                 // FK constraint failed, try UPDATE instead
                 self.executor.execute(
-                    "UPDATE products SET name = ?1, base_price = ?2, tva = ?3, supplier_name = ?4, year = ?5, updated_at = ?6, node_id = ?7, deleted = ?8 WHERE id = ?9",
+                    "UPDATE products SET name = ?1, base_price = ?2, year = ?3, updated_at = ?4, node_id = ?5, deleted = ?6 WHERE id = ?7",
                     rusqlite::params![
                         &record.name,
                         &record.base_price,
-                        &record.tva,
-                        &record.supplier_name,
                         &record.year,
                         &record.updated_at,
                         &record.node_id,
@@ -118,8 +114,8 @@ impl<'a> ProductRepository<'a> {
     /// Update an existing product
     pub fn update_product(&self, req: &UpdateProductRequest) -> Result<(), AppError> {
         self.executor.execute(
-            "UPDATE products SET name = ?1, base_price = ?2, tva = ?3, supplier_name = ?4 WHERE id = ?5",
-            params![&req.name, &req.base_price, &req.tva, &req.supplier_name, &req.id],
+            "UPDATE products SET name = ?1, base_price = ?2 WHERE id = ?3",
+            params![&req.name, &req.base_price, &req.id],
         )?;
         Ok(())
     }
@@ -133,45 +129,51 @@ impl<'a> ProductRepository<'a> {
 
     /// Get product by ID
     pub fn get_product(&self, product_id: &str) -> Result<Option<Product>, AppError> {
-        let result = self
-            .executor
-            .query_row_optional(
-                "SELECT id, name, base_price, tva, supplier_name, year, created_at FROM products WHERE id = ?1",
-                [product_id],
-                |row| {
-                    let created_at_str: String = row.get(6)?;
-                    let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
-                    Ok(Product {
-                        id: row.get(0)?,
-                        name: row.get(1)?,
-                        base_price: row.get(2)?,
-                        tva: row.get(3)?,
-                        supplier_name: row.get(4)?,
-                        year: row.get(5)?,
-                        created_at,
-                    })
-                },
-            )?;
+        let result = self.executor.query_row_optional(
+            "SELECT id, name, base_price, year, created_at FROM products WHERE id = ?1",
+            [product_id],
+            |row| {
+                let created_at_str: String = row.get(4)?;
+                let created_at =
+                    crate::errors::parse_datetime_rfc3339(&created_at_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+                Ok(Product {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    base_price: row.get(2)?,
+                    year: row.get(3)?,
+                    created_at,
+                })
+            },
+        )?;
         Ok(result)
     }
 
     /// List all products (across all years)
     pub fn list_products(&self) -> Result<Vec<Product>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT id, name, base_price, tva, supplier_name, year, created_at FROM products ORDER BY year DESC, name",
+            "SELECT id, name, base_price, year, created_at FROM products ORDER BY year DESC, name",
             [],
             |row| {
-                let created_at_str: String = row.get(6)?;
-                let created_at = crate::errors::parse_datetime_rfc3339(&created_at_str)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?;
+                let created_at_str: String = row.get(4)?;
+                let created_at =
+                    crate::errors::parse_datetime_rfc3339(&created_at_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
                 Ok(Product {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     base_price: row.get(2)?,
-                    tva: row.get(3)?,
-                    supplier_name: row.get(4)?,
-                    year: row.get(5)?,
+                    year: row.get(3)?,
                     created_at,
                 })
             },

@@ -373,8 +373,7 @@ fn products_package(
                     id: "prod-1".into(),
                     name: "Bread".into(),
                     base_price: 20.0,
-                    tva: 0.0,
-                    supplier_name: None,
+
                     year: 2026,
                     created_at: Utc::now(),
                 },

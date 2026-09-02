@@ -7,9 +7,9 @@
 //! path are deleted; failures are fail-closed.
 
 use crate::application::sync::{SchemaVersion, SyncPackage};
-use crate::application::usecases::exports::types::DailyReportExportDataset;
 use crate::application::usecases::exports::types::{
-    MonthlySummaryExportDataset, ProductsExportDataset, StockMovementsExportDataset,
+    ContractCatalogExportDataset, DailyReportExportDataset, MonthlySummaryExportDataset,
+    ProductsExportDataset, StockMovementsExportDataset,
 };
 use crate::application::usecases::sync::import_registry_package::RegistryPackagePayload;
 use crate::application::usecases::sync::import_trust_package::TrustPackagePayload;
@@ -137,6 +137,15 @@ impl SerdeJsonSyncPackageDeserializer {
     pub fn products_from_reader<R: std::io::Read>(
         reader: R,
     ) -> AppResult<SyncPackage<ProductsExportDataset>> {
+        let package = Self::parse_json_from_reader(reader)?;
+        Self::verify_integrity(&package)?;
+        Self::verify_signature(&package)?;
+        Ok(package)
+    }
+
+    pub fn contract_catalog_from_reader<R: std::io::Read>(
+        reader: R,
+    ) -> AppResult<SyncPackage<ContractCatalogExportDataset>> {
         let package = Self::parse_json_from_reader(reader)?;
         Self::verify_integrity(&package)?;
         Self::verify_signature(&package)?;

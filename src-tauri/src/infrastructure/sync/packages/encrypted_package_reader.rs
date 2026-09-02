@@ -11,8 +11,8 @@
 
 use crate::application::sync::SyncPackage;
 use crate::application::usecases::exports::types::{
-    DailyReportExportDataset, MonthlySummaryExportDataset, ProductsExportDataset,
-    StockMovementsExportDataset,
+    ContractCatalogExportDataset, DailyReportExportDataset, MonthlySummaryExportDataset,
+    ProductsExportDataset, StockMovementsExportDataset,
 };
 use crate::errors::{AppError, AppResult};
 use crate::models::UnitNodePackage;
@@ -107,6 +107,16 @@ pub fn read_products_package_from_file(
     let file = std::fs::File::open(temp_plaintext.path())
         .map_err(|e| AppError::Internal(format!("Failed to re-open decrypt temp: {}", e)))?;
     SerdeJsonSyncPackageDeserializer::products_from_reader(std::io::BufReader::new(file))
+}
+
+pub fn read_contract_catalog_package_from_file(
+    path: &Path,
+    crypto_port: &AgeFileEncryptionProvider,
+) -> AppResult<SyncPackage<ContractCatalogExportDataset>> {
+    let temp_plaintext = decrypt_encrypted_file_to_temp(path, crypto_port)?;
+    let file = std::fs::File::open(temp_plaintext.path())
+        .map_err(|e| AppError::Internal(format!("Failed to re-open decrypt temp: {}", e)))?;
+    SerdeJsonSyncPackageDeserializer::contract_catalog_from_reader(std::io::BufReader::new(file))
 }
 
 pub fn read_daily_report_package_from_file(

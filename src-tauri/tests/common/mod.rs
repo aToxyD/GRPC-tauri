@@ -118,7 +118,7 @@ pub fn create_test_product(
     let now = chrono::Utc::now().to_rfc3339();
     db.get_connection()
         .execute(
-            "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at)              VALUES (?1, ?2, ?3, 0.0, NULL, ?4, ?5, ?5)",
+            "INSERT INTO products (id, name, base_price, year, created_at, updated_at)              VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
             params![product_id, name, base_price, fiscal_year, now],
         )
         .expect("insert product");

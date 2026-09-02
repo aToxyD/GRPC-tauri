@@ -8,6 +8,7 @@ use crate::application::sync_integrity::replay::{
     AppliedPackages, AppliedTransitions, ReplayDetector, SeenTransactions,
 };
 use crate::application::sync_integrity::types::ConflictDetectionOutcome;
+use crate::application::usecases::exports::types::ContractCatalogExportDataset;
 use crate::db::Database;
 use crate::domain::events::{DomainEvent, EventContext};
 use crate::errors::AppError;
@@ -18,6 +19,29 @@ use std::collections::BTreeSet;
 
 pub struct SyncImportExecutionService<'a> {
     executor: DbExecutor<'a>,
+}
+
+/// Row-level apply summary for a ContractCatalog import (ADR-0055 /
+/// SEC-087-F). `*_imported` = rows newly inserted; `*_updated` = rows
+/// refreshed; `*_skipped` = rows out of the importer's unit scope.
+#[derive(Debug, Clone, Default)]
+pub struct ContractCatalogImportSummary {
+    pub suppliers_imported: usize,
+    pub suppliers_updated: usize,
+    pub suppliers_skipped: usize,
+    pub links_applied: usize,
+    pub links_skipped: usize,
+    pub contracts_imported: usize,
+    pub contracts_updated: usize,
+    pub contracts_skipped: usize,
+    pub product_lines_imported: usize,
+    pub product_lines_updated: usize,
+    pub allocations_imported: usize,
+    pub allocations_updated: usize,
+    pub allocations_skipped: usize,
+    pub exceptions_imported: usize,
+    pub exceptions_skipped: usize,
+    pub tax_policies_applied: usize,
 }
 
 impl<'a> SyncImportExecutionService<'a> {
@@ -194,6 +218,147 @@ impl<'a> SyncImportExecutionService<'a> {
         }
 
         Ok((imported_count, updated_count, skipped_count))
+    }
+
+    /// Apply a ContractCatalog projection (ADR-0055 / SEC-087-F ContractCatalog
+    /// V2, WILAYA → UNIT). WILAYA is the single source of truth for every
+    /// WILAYA-owned column (suppliers, associations, contract headers/lines,
+    /// contracted+released quantities, entitlement state, tax policies);
+    /// UNIT-owned runtime state (`fulfilled_quantity`, `reserved_quantity`) is
+    /// never touched by a sync package. On a UNIT importer (`importer_unit_id =
+    /// Some`) only the rows scoped to that unit are applied; on a WILAYA
+    /// importer the full catalog is upserted (restore path).
+    pub fn import_contract_catalog_sync(
+        &self,
+        dataset: &ContractCatalogExportDataset,
+        importer_unit_id: Option<&str>,
+    ) -> Result<ContractCatalogImportSummary, AppError> {
+        let supplier_repo = self.executor.suppliers();
+        let contract_repo = self.executor.contracts();
+        let policy_repo = self.executor.fiscal_tax_policy();
+
+        let in_scope =
+            |unit_id: &str| importer_unit_id.is_none() || Some(unit_id) == importer_unit_id;
+
+        // Supplier ids relevant to the scoped unit set.
+        let mut scoped_supplier_ids = BTreeSet::new();
+        for link in &dataset.unit_supplier_links {
+            if in_scope(&link.unit_id) {
+                scoped_supplier_ids.insert(link.supplier_id.clone());
+            }
+        }
+        for row in &dataset.contracts {
+            if in_scope(&row.contract.unit_id) {
+                scoped_supplier_ids.insert(row.contract.supplier_id.clone());
+            }
+        }
+
+        let mut summary = ContractCatalogImportSummary::default();
+
+        for supplier in &dataset.suppliers {
+            if importer_unit_id.is_some() && !scoped_supplier_ids.contains(&supplier.id) {
+                summary.suppliers_skipped += 1;
+                continue;
+            }
+            let existing = supplier_repo.get_supplier(&supplier.id)?;
+            supplier_repo.upsert_sync_supplier(supplier)?;
+            if existing.is_some() {
+                summary.suppliers_updated += 1;
+            } else {
+                summary.suppliers_imported += 1;
+            }
+        }
+
+        for link in &dataset.unit_supplier_links {
+            if !in_scope(&link.unit_id) {
+                summary.links_skipped += 1;
+                continue;
+            }
+            if !supplier_repo.supplier_associated_with_unit(&link.unit_id, &link.supplier_id)? {
+                supplier_repo.associate_with_unit(&link.unit_id, &link.supplier_id)?;
+            }
+            summary.links_applied += 1;
+        }
+
+        // Tax policies are a global dimension on both importer roles.
+        for policy in &dataset.tax_policies {
+            policy_repo.upsert_sync_tax_policy(policy)?;
+            summary.tax_policies_applied += 1;
+        }
+
+        for row in &dataset.contracts {
+            if !in_scope(&row.contract.unit_id) {
+                summary.contracts_skipped += 1;
+                continue;
+            }
+
+            let existing_contract = contract_repo.get_contract(&row.contract.id)?;
+            contract_repo.upsert_sync_contract(&row.contract)?;
+            if existing_contract.is_some() {
+                summary.contracts_updated += 1;
+            } else {
+                summary.contracts_imported += 1;
+            }
+
+            for line in &row.product_lines {
+                let existing = contract_repo.get_contract_product(&line.id)?;
+                contract_repo.upsert_sync_contract_product(
+                    &line.id,
+                    &line.contract_id,
+                    &line.product_id,
+                    line.proposed_price,
+                    line.agreed_price,
+                    &line.created_at,
+                )?;
+                if existing.is_some() {
+                    summary.product_lines_updated += 1;
+                } else {
+                    summary.product_lines_imported += 1;
+                }
+            }
+
+            let mut scoped_allocation_ids = BTreeSet::new();
+            for alloc_row in &row.allocations {
+                if !in_scope(&alloc_row.allocation.unit_id) {
+                    summary.allocations_skipped += 1;
+                    continue;
+                }
+                scoped_allocation_ids.insert(alloc_row.allocation.id.clone());
+                let existing = contract_repo.get_allocation(&alloc_row.allocation.id)?;
+                contract_repo
+                    .upsert_sync_allocation(&alloc_row.allocation, &alloc_row.created_at)?;
+                if existing.is_some() {
+                    summary.allocations_updated += 1;
+                } else {
+                    summary.allocations_imported += 1;
+                }
+            }
+
+            for exc in &row.exceptions {
+                // Exceptions are only applicable alongside their scoped
+                // allocation (the FK targets local contract_allocations).
+                if !scoped_allocation_ids.contains(&exc.allocation_id) {
+                    summary.exceptions_skipped += 1;
+                    continue;
+                }
+                if contract_repo.get_exception(&exc.id)?.is_none() {
+                    contract_repo.upsert_sync_exception(
+                        &exc.id,
+                        &exc.allocation_id,
+                        exc.released_quantity,
+                        &exc.reason_code,
+                        &exc.reason_note,
+                        &exc.created_by,
+                        &exc.created_at,
+                    )?;
+                    summary.exceptions_imported += 1;
+                } else {
+                    summary.exceptions_skipped += 1;
+                }
+            }
+        }
+
+        Ok(summary)
     }
 
     // [arch:allow-mutation-before-replay] see ADR-0014 — Reason: import_stock_movements mutation before replay check (pre-existing legacy); Date: 2026-08-09; Owner: Sync

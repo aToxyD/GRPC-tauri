@@ -64,4 +64,16 @@ pub enum Action {
     // Admin-Only B8 Account Synchronization (ADR-0051 — Accepted 2026-08-22)
     ExportAdminAccessPackage,
     ImportAdminAccessPackage,
+
+    // Contract-centric procurement (ADR-0055 / SEC-087-F)
+    ManageSuppliers,
+    ManageContracts,
+    ApproveContractPrice,
+    CloseContract,
+    ManageTaxPolicy,
+    ReadContractProjection,
+    ReleaseContractAllocation,
+    RevokeContractAllocationRelease,
+    ExportContractCatalogPackage,
+    ImportContractCatalogPackage,
 }

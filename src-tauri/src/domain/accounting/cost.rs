@@ -50,6 +50,24 @@ impl ConsumptionCost {
     }
 }
 
+/// Agreed price from a contract product line (ADR-0055 / SEC-087-F).
+///
+/// Authoritative transaction price: backend-resolved through the contract
+/// entitlement chain (ContractAgreedPrice → allocation agreed_price →
+/// `supplier_order_items.unit_price`), never `ReferencePrice`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ContractAgreedPrice(f64);
+
+impl ContractAgreedPrice {
+    pub fn new(value: f64) -> Self {
+        Self(value)
+    }
+
+    pub fn value(self) -> f64 {
+        self.0
+    }
+}
+
 /// Immutable historical cost captured at transaction time.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct HistoricalCost(f64);
@@ -64,11 +82,18 @@ impl HistoricalCost {
     }
 }
 
-// Prevent accidental mixing at compile time — no From impls between ReferencePrice and FifoUnitCost.
+// Prevent accidental mixing at compile time — no From impls between
+// ReferencePrice, ContractAgreedPrice, and FifoUnitCost.
 
 impl fmt::Display for ReferencePrice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:.2} (reference)", self.0)
+    }
+}
+
+impl fmt::Display for ContractAgreedPrice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} (agreed)", self.0)
     }
 }
 

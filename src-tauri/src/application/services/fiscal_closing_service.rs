@@ -83,6 +83,18 @@ impl<'a> FiscalClosingService<'a> {
 
         let now = chrono::Utc::now().to_rfc3339();
 
+        // ── 0. Close the fiscal-year contract lifecycle (SEC-087-F) ──────
+        // Accepted/active contracts become ENDED (remaining obligations stay
+        // fulfillable); proposed contracts become CANCELLED (never ratified).
+        // The fiscal-year TVA policy is frozen at close (ADR-0055 §3.9).
+        let ended_contracts = match _unit_id {
+            Some(unit) => crate::application::services::ContractService::new(self.executor)
+                .end_live_contracts_for_unit_year(unit, year, &now)?,
+            None => 0,
+        };
+        crate::application::services::FiscalTaxPolicyService::new(self.executor)
+            .freeze_policy(year)?;
+
         // ── 1. Snapshot ending inventory for every product ────────────────
         let products = self.executor.products().list_products()?;
         let mut snapshot_count: usize = 0;
@@ -188,6 +200,7 @@ impl<'a> FiscalClosingService<'a> {
                 "opened_year":   next_year,
                 "snapshot_count": snapshot_count,
                 "reclassified_count": reclassified,
+                "ended_contracts": ended_contracts,
                 "total_inventory_value": total_inventory_value,
                 "timestamp":     now,
             })),

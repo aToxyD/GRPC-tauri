@@ -33,7 +33,7 @@ fn seed_product(
 ) {
     let now = Utc::now().to_rfc3339();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,?2,0.0,0.0,?3,?4)",
+        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,?2,0.0,?3,?4)",
         rusqlite::params![product_id, name, year, now],
     )
     .expect("insert product");

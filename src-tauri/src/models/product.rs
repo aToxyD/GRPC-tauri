@@ -5,14 +5,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Product definition with pricing
+/// Product definition with reference pricing only (ADR-0055 / SEC-087-F).
+/// `base_price` is `ReferencePrice`: informational/default, NEVER authoritative
+/// order pricing and NEVER a fallback when no contract agreed price exists.
+/// Product-level TVA and supplier ownership are removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
     pub id: String,
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
     pub year: i32,
     pub created_at: DateTime<Utc>,
 }
@@ -33,8 +34,6 @@ pub struct InventoryStock {
 pub struct CreateProductRequest {
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
 }
 
 /// Request to update an existing product
@@ -43,8 +42,6 @@ pub struct UpdateProductRequest {
     pub id: String,
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
 }
 
 /// Stock availability check result

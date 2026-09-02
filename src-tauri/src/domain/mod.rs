@@ -8,6 +8,7 @@ pub mod identity;
 pub mod invariants;
 pub mod meal_cost_engine;
 pub mod ports;
+pub mod pricing;
 pub mod rate_limiter;
 pub mod security;
 pub mod session;

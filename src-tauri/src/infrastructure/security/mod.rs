@@ -351,12 +351,33 @@ pub fn get_sync_security_diagnostics() -> AppResult<crate::models::SyncSecurityD
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Serializes access to process-global environment variables that the
+    /// security stack reads (`GRPC_APP_KEY`, `GRPC_ENV`, `GRPC_PACKAGE_SIGNING_KEY`,
+    /// `GRPC_ACTIVE_SIGNING_KEY_ID`). `std::env` is process-global and not
+    /// thread-safe: any test that mutates these variables — or reads them and
+    /// requires a stable value across operations (e.g. age-based key store
+    /// round-trips) — MUST hold this lock for its whole critical section.
+    ///
+    /// Test isolation only: never referenced from production code.
+    pub(crate) static SECURITY_TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(crate) fn lock_security_test_env() -> MutexGuard<'static, ()> {
+        SECURITY_TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+#[cfg(test)]
 mod key_resolution_tests {
     use super::*;
     use crate::errors::AppError;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    // Shared with every test that reads/mutates the process-global security
+    // environment (e.g. node key store tests): see SECURITY_TEST_ENV_LOCK.
+    use super::test_support::SECURITY_TEST_ENV_LOCK as ENV_LOCK;
 
     const VALID_APP_KEY: &str =
         "AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ";

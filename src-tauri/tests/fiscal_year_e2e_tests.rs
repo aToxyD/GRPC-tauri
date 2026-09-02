@@ -34,9 +34,10 @@ fn seed_unit(ex: DbExecutor<'_>, id: &str, now: &str) {
 
 fn seed_product_and_stock(ex: DbExecutor<'_>, product_id: &str, name: &str, now: &str, year: i32) {
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,?2,0.0,0.0,?3,?4)",
+        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,?2,0.0,?3,?4)",
         rusqlite::params![product_id, name, year, now],
-    ).expect("insert product");
+    )
+    .expect("insert product");
     ex.execute(
         "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',?3,?3)",
         rusqlite::params![format!("stock-{}", product_id), product_id, now],

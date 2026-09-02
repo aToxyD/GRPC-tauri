@@ -3,11 +3,13 @@ pub mod audit_observability_service;
 pub mod audit_service;
 pub mod audit_tx_service;
 pub mod b8_first_import_predicates_service;
+pub mod contract_service;
 pub mod daily_report_service;
 pub mod fifo_preview_service;
 pub mod fiscal_closing_service;
 pub mod fiscal_reporting_service;
 pub mod fiscal_scope;
+pub mod fiscal_tax_policy_service;
 pub mod fiscal_validation_service;
 pub mod fleet_package_export;
 pub mod identity_authentication_policy;
@@ -30,6 +32,7 @@ pub mod session_establishment_service;
 pub mod settings_service;
 pub mod stock_level_service;
 pub mod stock_movement_service;
+pub mod supplier_service;
 pub mod sync_conflict_resolution_service;
 pub mod sync_conflict_service;
 pub mod sync_import_execution_service;
@@ -49,13 +52,16 @@ pub use audit_observability_service::AuditObservabilityService;
 pub use audit_service::AuditService;
 pub use audit_tx_service::AuditTxService;
 pub use b8_first_import_predicates_service::B8FirstImportPredicatesService;
+pub use contract_service::ContractService;
 pub use daily_report_service::DailyReportService;
 pub use fifo_preview_service::FifoPreviewService;
 pub use fiscal_closing_service::FiscalClosingService;
 pub use fiscal_reporting_service::FiscalReportingService;
+pub use fiscal_tax_policy_service::FiscalTaxPolicyService;
 pub use fiscal_validation_service::FiscalValidationService;
 pub use fleet_package_export::{
-    export_admin_access_fleet, export_products_fleet, FleetExportOutcome,
+    export_admin_access_fleet, export_contract_catalog_fleet, export_products_fleet,
+    FleetExportOutcome,
 };
 pub use identity_authentication_policy::{AdminCredentialState, IdentityAuthenticationPolicy};
 pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;
@@ -85,6 +91,7 @@ pub use session_establishment_service::{EstablishedSession, SessionEstablishment
 pub use settings_service::SettingsService;
 pub use stock_level_service::StockLevelService;
 pub use stock_movement_service::StockMovementService;
+pub use supplier_service::SupplierService;
 pub use sync_conflict_resolution_service::SyncConflictResolutionService;
 pub use sync_conflict_service::SyncConflictService;
 pub use sync_import_execution_service::SyncImportExecutionService;

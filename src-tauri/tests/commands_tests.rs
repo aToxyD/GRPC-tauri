@@ -49,8 +49,6 @@ fn test_product_validation() {
     let request = CreateProductRequest {
         name: "Test Product".to_string(),
         base_price: 100.0,
-        tva: 19.0,
-        supplier_name: Some("Supplier".to_string()),
     };
 
     assert!(validate_create_product_request(&request, 2024).is_ok());
@@ -59,8 +57,6 @@ fn test_product_validation() {
     let invalid = CreateProductRequest {
         name: "".to_string(),
         base_price: 100.0,
-        tva: 19.0,
-        supplier_name: None,
     };
     assert!(validate_create_product_request(&invalid, 2024).is_err());
 }
@@ -71,20 +67,17 @@ fn test_order_validation() {
     use grpc_lib::domain::validation::validate_create_order_request;
 
     let valid_order = CreateOrderRequest {
-        supplier_name: "Supplier".to_string(),
         reference_number: Some("REF001".to_string()),
         items: vec![OrderItemInput {
             product_id: "P001".to_string(),
             quantity: 10.0,
-            unit_price: 5.0,
         }],
     };
 
     assert!(validate_create_order_request(&valid_order).is_ok());
 
-    // Invalid - empty supplier
+    // Invalid - empty items
     let invalid = CreateOrderRequest {
-        supplier_name: "".to_string(),
         reference_number: None,
         items: vec![],
     };

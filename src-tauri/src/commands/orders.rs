@@ -17,34 +17,44 @@ use crate::models::{CreateOrderRequest, SupplierOrder, SupplierOrderItem, Update
 use tauri::State;
 
 /// Create supplier order
+///
+/// Supplier + price are backend-resolved from contract entitlement
+/// (ADR-0055 / SEC-087-F). Unit context is resolved from node settings.
 #[tauri::command]
 pub fn create_supplier_order(
     state: State<AppState>,
     request: CreateOrderRequest,
 ) -> Result<(String, f64), String> {
-    let (session, _settings) =
+    let (session, settings) =
         authorize_command(&state, Action::ManageOrders, None).map_err(into_command_error)?;
     state.touch_session();
 
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
+    // Orders are unit-scoped: resolve the ordering unit from node settings.
+    let unit_id = resolve_order_unit(&settings, db).map_err(into_command_error)?;
+    let fiscal_year = current_fiscal_year(db, &settings).map_err(into_command_error)?;
+
     let user_ctx = user_ctx_from_session(&session);
 
     // Create the order - returns (order_id, total_amount)
     let (order_id, total) =
         AuditTxService::execute_with_audit(db, AuditAction::CreateOrder, &user_ctx, |tx| {
-            OrderService::new(tx.executor).create_supplier_order(&request)
+            OrderService::new(tx.executor).create_supplier_order(&request, &unit_id, fiscal_year)
         })
         .map_err(into_command_error)?;
 
     Ok((order_id, total))
 }
 
-/// Confirm supplier order with atomic audit
+/// Confirm supplier order with atomic audit.
+///
+/// Confirmation re-resolves entitlement authoritatively; the unit context is
+/// taken from the order itself (stored at creation).
 #[tauri::command]
 pub fn confirm_order(state: State<AppState>, order_id: String) -> Result<(), String> {
-    let (session, settings) =
+    let (session, _settings) =
         authorize_command(&state, Action::ManageOrders, None).map_err(into_command_error)?;
     require_maintenance_allows(&state, MaintenanceBlockedOperation::StockWrite)
         .map_err(into_command_error)?;
@@ -53,25 +63,14 @@ pub fn confirm_order(state: State<AppState>, order_id: String) -> Result<(), Str
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    // Get unit_id for UNIT nodes - resolve canonical units.id via settings service
-    let unit_id = if matches!(settings.node_type, crate::models::NodeType::Unit) {
-        let settings_svc = crate::application::services::SettingsService::new(db.executor());
-        settings_svc
-            .get_current_unit_id()
-            .map_err(into_command_error)?
-    } else {
-        None
-    };
-
     let user_ctx = user_ctx_from_session(&session);
 
-    // Confirm the order - pass unit_id for IN movements
+    // Confirm the order - unit derives from the order itself.
     AuditTxService::execute_with_audit(db, AuditAction::ConfirmOrder, &user_ctx, |tx| {
         OrderService::new(tx.executor).confirm_order_atomic(
             &order_id,
             &session.user_id,
             &session.username,
-            unit_id.as_deref(),
         )
     })
     .map_err(into_command_error)?;
@@ -85,7 +84,7 @@ pub fn update_supplier_order(
     state: State<AppState>,
     request: UpdateOrderRequest,
 ) -> Result<f64, String> {
-    let (session, _) =
+    let (session, settings) =
         authorize_command(&state, Action::ManageOrders, None).map_err(into_command_error)?;
     state.touch_session();
 
@@ -93,8 +92,11 @@ pub fn update_supplier_order(
     let db = db_mut_or_command_error(guard.as_mut())?;
     let user_ctx = user_ctx_from_session(&session);
 
+    let unit_id = resolve_order_unit(&settings, db).map_err(into_command_error)?;
+    let fiscal_year = current_fiscal_year(db, &settings).map_err(into_command_error)?;
+
     AuditTxService::execute_with_audit(db, AuditAction::UpdateOrder, &user_ctx, |tx| {
-        OrderService::new(tx.executor).update_supplier_order(&request)
+        OrderService::new(tx.executor).update_supplier_order(&request, &unit_id, fiscal_year)
     })
     .map_err(into_command_error)
 }
@@ -188,4 +190,37 @@ pub fn create_order(
     request: CreateOrderRequest,
 ) -> Result<(String, f64), String> {
     create_supplier_order(state, request)
+}
+
+/// Resolve the ordering unit for a UNIT node. Orders are unit-scoped; a
+/// WILAYA node has no unit context and cannot create unit orders directly.
+fn resolve_order_unit(
+    settings: &crate::models::Settings,
+    db: &mut crate::db::Database,
+) -> Result<String, crate::errors::AppError> {
+    if matches!(settings.node_type, crate::models::NodeType::Unit) {
+        let settings_svc = crate::application::services::SettingsService::new(db.executor());
+        settings_svc.get_current_unit_id()?.ok_or_else(|| {
+            crate::errors::AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::OperationNotPermitted {
+                    message: "الوحدة الحالية غير محددة — لا يمكن إنشاء طلبية".to_string(),
+                },
+            )
+        })
+    } else {
+        Err(crate::errors::AppError::BusinessLogic(
+            crate::errors::BusinessLogicError::OperationNotPermitted {
+                message: "الطلبيات تُنشأ من عقدة الوحدة فقط".to_string(),
+            },
+        ))
+    }
+}
+
+/// Resolve the authoritative active fiscal year (persisted settings, not wall
+/// clock) used to anchor entitlement resolution.
+fn current_fiscal_year(
+    db: &mut crate::db::Database,
+    _settings: &crate::models::Settings,
+) -> Result<i32, crate::errors::AppError> {
+    crate::application::services::fiscal_scope::resolve_active_fiscal_year(db.executor())
 }

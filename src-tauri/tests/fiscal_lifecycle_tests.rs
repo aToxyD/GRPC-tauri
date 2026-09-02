@@ -46,8 +46,8 @@ fn test_fiscal_lifecycle_sim() {
     // 2. Create some products and stock
     let product_id = "prod-1";
     executor.execute(
-        "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-        rusqlite::params![product_id, "Product 1", 100.0, 0.0, "Test Supplier", current_year, Utc::now().to_rfc3339()],
+        "INSERT INTO products (id, name, base_price, year, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        rusqlite::params![product_id, "Product 1", 100.0, current_year, Utc::now().to_rfc3339()],
     ).unwrap();
 
     executor.execute(

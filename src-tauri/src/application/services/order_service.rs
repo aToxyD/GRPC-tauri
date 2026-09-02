@@ -1,13 +1,26 @@
 //! Order Service Module
 //!
-//! Business logic for supplier orders and order confirmation.
-//! SQL is delegated exclusively to OrderRepository (inventory movements via StockMovementService).
+//! Business logic for supplier orders and order confirmation (ADR-0055 /
+//! SEC-087-F). Supplier and price are ALWAYS backend-resolved from contract
+//! entitlement; the caller supplies products + quantities only.
+//! SQL is delegated exclusively to repositories (orders/order_allocations/
+//! contracts + StockMovementService/FIFO for confirmation).
+//!
+//! Creation reserves entitlement transactionally. Confirmation re-resolves
+//! authoritatively: supplier, recorded price, and allocation must be unchanged.
+//!
+//! On success confirmation converts the reservation into fulfillment, records
+//! stock movement + FIFO, and marks the order Confirmed. Any failure aborts the
+//! whole transaction.
 
+use crate::domain::pricing::resolver::resolve_supplier_for_item;
 use crate::domain::validation::{
     check_order_is_editable, validate_create_order_request, validate_update_order_request,
 };
 use crate::errors::{AppError, BusinessLogicError};
-use crate::models::{CreateOrderRequest, NewStockMovement, StockMovementType, UpdateOrderRequest};
+use crate::models::{
+    CreateOrderRequest, NewStockMovement, OrderStatus, StockMovementType, UpdateOrderRequest,
+};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
 /// Service for supplier order business logic
@@ -21,30 +34,170 @@ impl<'a> OrderService<'a> {
         Self { executor }
     }
 
+    /// Resolve every item against contract entitlement (pure decision phase).
+    ///
+    /// Enforces: all items of an order belong to exactly ONE supplier.
+    #[allow(clippy::type_complexity)]
+    fn resolve_items(
+        &self,
+        items: &[crate::models::OrderItemInput],
+        unit_id: &str,
+        current_fiscal_year: i32,
+    ) -> Result<
+        (
+            Vec<(crate::models::OrderItemInput, String, f64)>,
+            String,
+            String,
+            f64,
+        ),
+        AppError,
+    > {
+        let contracts = self.executor.contracts();
+
+        let mut resolutions: Vec<(
+            crate::models::OrderItemInput,
+            crate::domain::pricing::resolver::ItemResolution,
+        )> = Vec::new();
+        for item in items {
+            let candidates =
+                contracts.list_resolution_candidates_full(unit_id, &item.product_id)?;
+            let resolution = resolve_supplier_for_item(
+                unit_id,
+                &item.product_id,
+                item.quantity,
+                current_fiscal_year,
+                &candidates,
+            )?;
+            resolutions.push((item.clone(), resolution));
+        }
+
+        // Single-supplier rule: every item must resolve to the same supplier.
+        let first_supplier = &resolutions[0].1.supplier_id;
+        for (item, resolution) in &resolutions {
+            if &resolution.supplier_id != first_supplier {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceCalculation {
+                        message: format!(
+                            "أصناف الطلبية تتطلب أكثر من مورد (المنتج {} من مورد مختلف)",
+                            item.product_id
+                        ),
+                    },
+                ));
+            }
+        }
+
+        let supplier = self
+            .executor
+            .suppliers()
+            .get_supplier(first_supplier)?
+            .ok_or_else(|| {
+                AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                    resource: "مورد".to_string(),
+                    id: first_supplier.clone(),
+                })
+            })?;
+
+        let total = resolutions
+            .iter()
+            .map(|(item, res)| item.quantity * res.unit_price)
+            .sum();
+        let legs: Vec<(crate::models::OrderItemInput, String, f64)> = resolutions
+            .into_iter()
+            .map(|(item, res)| (item, res.allocation_id, res.unit_price))
+            .collect();
+
+        Ok((legs, supplier.id.clone(), supplier.name.clone(), total))
+    }
+
+    /// Reserve entitlement and write order item + reservation-leg rows.
+    ///
+    /// The order header must already exist (its FK is referenced by items).
+    /// Legs mirror the exact resolution allocation so confirmation's
+    /// re-resolution verifies an unchanged state.
+    fn reserve_and_write(
+        &self,
+        legs: &[(crate::models::OrderItemInput, String, f64)],
+        order_id: &str,
+        unit_id: &str,
+        current_fiscal_year: i32,
+        now: &str,
+    ) -> Result<(), AppError> {
+        let contracts = self.executor.contracts();
+        for (item, allocation_id, unit_price) in legs {
+            let reserved = contracts.try_increment_reserved(allocation_id, item.quantity)?;
+            if reserved == 0 {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceCalculation {
+                        message: format!(
+                            "فشل حجز الكمية المطلوبة للمنتج {} — الرصيد غير كافٍ",
+                            item.product_id
+                        ),
+                    },
+                ));
+            }
+            let item_id = uuid::Uuid::new_v4().to_string();
+            self.executor.orders().insert_order_item(
+                &item_id,
+                order_id,
+                item,
+                *unit_price,
+                item.quantity * unit_price,
+                unit_id,
+                current_fiscal_year,
+            )?;
+            self.executor.order_allocations().insert(
+                &uuid::Uuid::new_v4().to_string(),
+                &item_id,
+                allocation_id,
+                item.quantity,
+                *unit_price,
+                item.quantity * unit_price,
+                now,
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn create_supplier_order(
         &self,
         req: &CreateOrderRequest,
+        unit_id: &str,
+        current_fiscal_year: i32,
     ) -> Result<(String, f64), AppError> {
         validate_create_order_request(req)?;
-        let total_amount: f64 = req.items.iter().map(|i| i.quantity * i.unit_price).sum();
-        let repo = self.executor.orders();
 
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         let order_date = chrono::Utc::now().date_naive().to_string();
 
-        repo.create_supplier_order_header(&id, req, total_amount, &order_date, &now)?;
+        // Resolve FIRST (header needs the backend-derived supplier + total),
+        // then write the header before any item rows (items FK to it).
+        let (legs, supplier_id, supplier_name, total) =
+            self.resolve_items(&req.items, unit_id, current_fiscal_year)?;
 
-        for item in &req.items {
-            let item_cost = item.quantity * item.unit_price;
-            let item_id = uuid::Uuid::new_v4().to_string();
-            repo.insert_order_item(&item_id, &id, item, item_cost)?;
-        }
+        self.executor.orders().create_supplier_order_header(
+            &id,
+            &req.reference_number,
+            &supplier_id,
+            &supplier_name,
+            unit_id,
+            current_fiscal_year,
+            total,
+            &order_date,
+            &now,
+        )?;
 
-        Ok((id, total_amount))
+        self.reserve_and_write(&legs, &id, unit_id, current_fiscal_year, &now)?;
+
+        Ok((id, total))
     }
 
-    pub fn update_supplier_order(&self, req: &UpdateOrderRequest) -> Result<f64, AppError> {
+    pub fn update_supplier_order(
+        &self,
+        req: &UpdateOrderRequest,
+        unit_id: &str,
+        current_fiscal_year: i32,
+    ) -> Result<f64, AppError> {
         validate_update_order_request(req)?;
 
         let repo = self.executor.orders();
@@ -55,14 +208,35 @@ impl<'a> OrderService<'a> {
             })
         })?;
         check_order_is_editable(&order)?;
+        let unit_id_for_order = order.unit_id.clone().unwrap_or_else(|| unit_id.to_string());
 
-        let total_amount: f64 = req.items.iter().map(|i| i.quantity * i.unit_price).sum();
+        // Release previously reserved entitlement before rebuilding items.
+        self.release_order_reservations(&req.id)?;
 
-        let updated = repo.update_supplier_order_header(
+        // Drop the previous items (+ their allocation legs via FK cascade)
+        // BEFORE re-inserting, otherwise stale legs would double-count at
+        // confirmation. Runs inside the caller's transaction: any later
+        // failure rolls everything back.
+        repo.delete_order_items(&req.id)?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let (legs, supplier_id, supplier_name, total) =
+            self.resolve_items(&req.items, &unit_id_for_order, current_fiscal_year)?;
+
+        self.reserve_and_write(
+            &legs,
             &req.id,
-            &req.supplier_name,
+            &unit_id_for_order,
+            current_fiscal_year,
+            &now,
+        )?;
+
+        let updated = self.executor.orders().update_supplier_order_header(
+            &req.id,
+            &supplier_id,
+            &supplier_name,
             &req.reference_number,
-            total_amount,
+            total,
         )?;
         if updated == 0 {
             return Err(AppError::BusinessLogic(
@@ -71,15 +245,8 @@ impl<'a> OrderService<'a> {
                 },
             ));
         }
-        repo.delete_order_items(&req.id)?;
 
-        for item in &req.items {
-            let item_cost = item.quantity * item.unit_price;
-            let item_id = uuid::Uuid::new_v4().to_string();
-            repo.insert_order_item(&item_id, &req.id, item, item_cost)?;
-        }
-
-        Ok(total_amount)
+        Ok(total)
     }
 
     pub fn delete_supplier_order(&self, order_id: &str) -> Result<(), AppError> {
@@ -91,40 +258,58 @@ impl<'a> OrderService<'a> {
             })
         })?;
         check_order_is_editable(&order)?;
+
+        self.release_order_reservations(order_id)?;
         repo.delete_supplier_order(order_id)
     }
 
+    /// Release reservation quantities recorded for an order's items.
+    /// SQL-only: reads legs (per allocation) and decrements guarded.
+    fn release_order_reservations(&self, order_id: &str) -> Result<(), AppError> {
+        let legs = self.executor.order_allocations().list_for_order(order_id)?;
+        let contracts = self.executor.contracts();
+        for leg in &legs {
+            let n = contracts.try_release_reserved(&leg.allocation_id, leg.quantity)?;
+            if n == 0 {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::OperationNotPermitted {
+                        message: format!(
+                            "تعذر تحرير الحجز على الرصيد {} — تناقض في الكميات",
+                            leg.allocation_id
+                        ),
+                    },
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Confirm an order atomically:
-    /// - validate order is not already confirmed
-    /// - record an IN stock movement for every item
-    /// - update order status to Confirmed
+    /// - re-resolve every item authoritatively and verify unchanged state
+    /// - verify supplier is identical to the stored supplier (immutable)
+    /// - full-coverage re-verification (any failure => reject ENTIRE order)
+    /// - convert reservation into fulfillment (guarded UPDATE)
+    /// - record IN stock movement + FIFO layer
+    /// - mark order Confirmed
     ///
-    /// The caller is responsible for wrapping this in a transaction via
-    /// `db.with_transaction(|tx| OrderService::new(tx).confirm_order_atomic(...))`
+    /// The caller wraps this in a transaction via AuditTxService.
     pub fn confirm_order_atomic(
         &self,
         order_id: &str,
         user_id: &str,
         username: &str,
-        unit_id: Option<&str>,
     ) -> Result<(), AppError> {
         let repo = self.executor.orders();
+        let contracts = self.executor.contracts();
         let stock_repo = crate::application::services::StockMovementService::new(self.executor);
         let fifo_repo = self.executor.fifo_layers();
         let status_repo = self.executor.fiscal_year_status();
 
-        let unit_id_str = unit_id.ok_or_else(|| {
-            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
-                message: "unit_id is required to confirm an order".to_string(),
-            })
-        })?;
-
-        // 1. Guard: check order status
         let order = repo
             .get_supplier_order(order_id)?
-            .ok_or_else(|| AppError::Internal(format!("Order not found: {}", order_id)))?;
+            .ok_or_else(|| AppError::Internal(format!("Order not found: {order_id}")))?;
 
-        if order.status == crate::models::OrderStatus::Confirmed {
+        if order.status == OrderStatus::Confirmed {
             return Err(AppError::BusinessLogic(
                 BusinessLogicError::OrderAlreadyConfirmed {
                     order_id: order_id.to_string(),
@@ -132,42 +317,94 @@ impl<'a> OrderService<'a> {
             ));
         }
 
-        // 2. Fetch items (product_id, quantity, product_name, unit_price)
-        let items = repo.get_order_items_for_confirmation(order_id)?;
+        let unit_id = order.unit_id.as_deref().ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                message: "الطلبية لا تحمل وحدة — غير صالحة للتأكيد".to_string(),
+            })
+        })?;
 
-        // 3. Resolve active fiscal year and guard it is still open
-        let now = chrono::Utc::now().to_rfc3339();
-
-        let active_fy = match order.fiscal_year {
+        // Anchor fiscal year = order's fiscal year (fallback: open year).
+        let anchor_fy = match order.fiscal_year {
             Some(fy) => fy,
             None => status_repo.get_open_year()?.ok_or_else(|| {
                 AppError::Internal("No open fiscal year found for order confirmation".to_string())
             })?,
         };
-
         crate::application::services::FiscalValidationService::new(self.executor)
-            .assert_fiscal_year_open(active_fy)?;
+            .assert_fiscal_year_open(anchor_fy)?;
 
-        for (product_id, quantity, product_name, unit_price) in &items {
+        // Authoritative re-resolution + unchanged-state verification.
+        // Each recorded leg must still resolve to the identical allocation with
+        // the identical agreed price; the supplier must be identical to the
+        // stored (creation-time) supplier.
+        let order_supplier_id = order.supplier_id.clone();
+        let mut legs: Vec<(String, f64, f64)> = Vec::new();
+        for recorded in repo.get_order_items_for_confirmation(order_id)? {
+            let (product_id, quantity, _product_name, recorded_price, allocation_id) = recorded;
+            let candidates = contracts.list_resolution_candidates_full(unit_id, &product_id)?;
+            let resolution =
+                resolve_supplier_for_item(unit_id, &product_id, quantity, anchor_fy, &candidates)?;
+
+            if resolution.supplier_id != order_supplier_id {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceCalculation {
+                        message: format!(
+                            "المورد لم يعد مؤهلاً للمنتج {product_id} — تأكيد الطلبية مرفوض بالكامل"
+                        ),
+                    },
+                ));
+            }
+            if resolution.allocation_id != allocation_id {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceCalculation {
+                        message: format!(
+                            "رصيد العقد تحرك بعد الإنشاء للمنتج {product_id} — أعد إنشاء الطلبية"
+                        ),
+                    },
+                ));
+            }
+            if (resolution.unit_price - recorded_price).abs() > f64::EPSILON {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceCalculation {
+                        message: format!(
+                            "تم تغيير سعر العقد للمنتج {product_id} — أعد إنشاء الطلبية"
+                        ),
+                    },
+                ));
+            }
+
+            // Guarded conversion reservation -> fulfillment.
+            let n =
+                contracts.try_convert_reserved_to_fulfilled(&resolution.allocation_id, quantity)?;
+            if n == 0 {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::PriceCalculation {
+                        message: format!("فشل تحويل الحجز إلى استهلاك للمنتج {product_id}"),
+                    },
+                ));
+            }
+            legs.push((product_id, quantity, resolution.unit_price));
+        }
+
+        // Stock movement + FIFO for every item (all within the surrounding tx).
+        let now = chrono::Utc::now().to_rfc3339();
+        for (product_id, quantity, unit_price) in &legs {
             let movement = NewStockMovement {
                 product_id: product_id.clone(),
                 movement_type: StockMovementType::In,
                 quantity: *quantity,
                 reference_type: Some("Order".to_string()),
                 reference_id: Some(order_id.to_string()),
-                notes: Some(format!(
-                    "طلبية من: {} - {}",
-                    order.supplier_name, product_name
-                )),
+                notes: Some(format!("طلبية من: {}", order.supplier_name)),
                 user_id: user_id.to_string(),
                 username: username.to_string(),
-                unit_id: unit_id.map(|u| u.to_string()),
+                unit_id: Some(unit_id.to_string()),
                 unit_cost: Some(*unit_price),
             };
             stock_repo.record_stock_movement(&movement)?;
 
             fifo_repo.create_layer(
-                unit_id_str,
+                unit_id,
                 product_id,
                 "ORDER",
                 Some(order_id),
@@ -175,11 +412,10 @@ impl<'a> OrderService<'a> {
                 *quantity,
                 &now,
                 user_id,
-                active_fy,
+                anchor_fy,
             )?;
         }
 
-        // 4. Mark order confirmed
         repo.set_order_confirmed(order_id)?;
 
         Ok(())

@@ -34,7 +34,7 @@ fn setup_db_with_unit_and_product() -> (grpc_lib::db::Database, String, String) 
 
     let product_id = Uuid::new_v4().to_string();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,'Test Product',500.0,0.0,2024,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'Test Product',500.0,2024,?2)",
         rusqlite::params![product_id, now],
     ).expect("insert product");
 

@@ -70,8 +70,6 @@ pub fn execute(
             id: r.product.id,
             name: r.product.name,
             base_price: r.product.base_price,
-            tva: r.product.tva,
-            supplier_name: r.product.supplier_name,
             year: r.product.year,
             created_at: r.product.created_at.to_rfc3339(),
             updated_at: r.updated_at,
