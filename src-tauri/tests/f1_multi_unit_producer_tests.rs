@@ -625,9 +625,11 @@ fn unit_bootstrap_and_admin_export_are_distinct_artifacts() {
 fn real_producer_delivery_continuation_and_idempotent_reimport() {
     // SEC-057 semantics: no per-target transport streams exist. Each UNIT
     // receives its OWN signed artifact from the same WILAYA issuer; bootstrap
-    // and continuation flow through the real import command; re-importing an
-    // already-applied package is IDEMPOTENT (no transport sequence exists to
-    // classify it as replay).
+    // and continuation flow through the real import command. SEC-057 removed
+    // the transport sequence, but exact `package_id` dedup — the imported-
+    // package registry replay guard (ADR-0051 §6) — remains enforced: re-
+    // importing the exact same package_id is REJECTED with DuplicateSyncPackage
+    // before any mutation, preserving effective state.
 
     // WILAYA fleet: UNIT-A and UNIT-B provisioned on the WILAYA.
     let mut node = fresh_node();
@@ -780,15 +782,20 @@ fn real_producer_delivery_continuation_and_idempotent_reimport() {
         assert_eq!(count_canonical_admins(db_b), 1);
     }
 
-    // ── Re-import — an already-applied exact package re-applies idempotently ──
-    // SEC-057: admin_access has no replay ledger — the single canonical admin
-    // UPSERT preserves state instead of rejecting the exact package.
+    // ── Re-import — the exact same package_id is REJECTED as a replay ──────
+    // SEC-057 removed the old transport-sequence enforcement, but exact
+    // `package_id` dedup (the canonical replay guard) remains intentionally
+    // enforced by the imported-package registry (ADR-0051 §6 / SEC-057
+    // `e9d4394`): re-applying the same package_id returns DuplicateSyncPackage
+    // BEFORE any mutation, so the canonical Admin row is left unchanged.
     set_session(&state_a, "Admin");
-    import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
-        .expect("re-import of the applied package is idempotent");
+    let err_a = import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
+        .expect_err("re-import of the exact applied package must be rejected");
+    assert!(err_a.contains("تم استيراد هذه الحزمة مسبقاً"), "got: {err_a}");
     set_session(&state_b, "Admin");
-    import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
-        .expect("re-import of the applied package is idempotent");
+    let err_b = import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
+        .expect_err("re-import of the exact applied package must be rejected");
+    assert!(err_b.contains("تم استيراد هذه الحزمة مسبقاً"), "got: {err_b}");
     {
         let guard_a = state_a.get_db().expect("lock");
         let db_a = guard_a.as_ref().expect("db");
@@ -797,12 +804,12 @@ fn real_producer_delivery_continuation_and_idempotent_reimport() {
         assert_eq!(
             count_canonical_admins(db_a),
             1,
-            "Admin count stays one after idempotent re-import"
+            "Admin count stays one after rejected replay re-import"
         );
         assert_eq!(
             count_canonical_admins(db_b),
             1,
-            "Admin count stays one after idempotent re-import"
+            "Admin count stays one after rejected replay re-import"
         );
     }
 }
