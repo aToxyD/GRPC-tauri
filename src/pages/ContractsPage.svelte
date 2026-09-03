@@ -367,10 +367,9 @@
 
   function entState(state: string): string {
     switch (state) {
-      case 'available': return 'متاح';
-      case 'fulfilled': return 'مؤدى';
-      case 'released': return 'مفرج عنه';
-      case 'reserved': return 'محجوز';
+      case 'ACTIVE': return 'نشط';
+      case 'ENDED': return 'منتهي';
+      case 'CANCELLED': return 'ملغى';
       default: return state;
     }
   }

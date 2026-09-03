@@ -43,8 +43,6 @@ export interface Product {
   id: string;
   name: string;
   base_price: number;
-  tva: number;
-  supplier_name: string | null;
   year: number;
   created_at: string;
 }
@@ -52,16 +50,12 @@ export interface Product {
 export interface CreateProductRequest {
   name: string;
   base_price: number;
-  tva: number;
-  supplier_name: string | null;
 }
 
 export interface UpdateProductRequest {
   id: string;
   name: string;
   base_price: number;
-  tva: number;
-  supplier_name: string | null;
 }
 
 // Unit Types
@@ -103,11 +97,14 @@ export interface StockCheckResult {
 export interface SupplierOrder {
   id: string;
   order_date: string;
+  supplier_id: string;
   supplier_name: string;
   reference_number: string | null;
   total_amount: number | null;
-  status: 'Draft' | 'Confirmed' | 'Received' | 'Cancelled';
+  status: 'Draft' | 'Confirmed';
   created_at: string;
+  unit_id?: string | null;
+  fiscal_year?: number | null;
 }
 
 export interface SupplierOrderItem {
@@ -118,17 +115,17 @@ export interface SupplierOrderItem {
   quantity: number;
   unit_price: number;
   total_cost: number;
+  unit_id?: string | null;
+  fiscal_year?: number | null;
 }
 
 export interface CreateOrderRequest {
-  supplier_name: string;
   reference_number: string | null;
   items: OrderItemInput[];
 }
 
 export interface UpdateOrderRequest {
   id: string;
-  supplier_name: string;
   reference_number: string | null;
   items: OrderItemInput[];
 }
@@ -136,7 +133,6 @@ export interface UpdateOrderRequest {
 export interface OrderItemInput {
   product_id: string;
   quantity: number;
-  unit_price: number;
 }
 
 // Procurement Types (SEC-087-F / ADR-0055 — WILAYA-administered)

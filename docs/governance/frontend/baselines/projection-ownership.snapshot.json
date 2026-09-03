@@ -121,14 +121,6 @@
           "type": "number"
         },
         {
-          "name": "tva",
-          "type": "number"
-        },
-        {
-          "name": "supplier_name",
-          "type": "string | null"
-        },
-        {
           "name": "year",
           "type": "number"
         }
@@ -145,14 +137,6 @@
         {
           "name": "base_price",
           "type": "number"
-        },
-        {
-          "name": "tva",
-          "type": "number"
-        },
-        {
-          "name": "supplier_name",
-          "type": "string | null"
         }
       ]
     },
@@ -167,14 +151,6 @@
         {
           "name": "base_price",
           "type": "number"
-        },
-        {
-          "name": "tva",
-          "type": "number"
-        },
-        {
-          "name": "supplier_name",
-          "type": "string | null"
         }
       ]
     },
@@ -283,6 +259,10 @@
           "type": "string"
         },
         {
+          "name": "supplier_id",
+          "type": "string"
+        },
+        {
           "name": "supplier_name",
           "type": "string"
         },
@@ -296,7 +276,15 @@
         },
         {
           "name": "status",
-          "type": "'Draft' | 'Confirmed' | 'Received' | 'Cancelled'"
+          "type": "'Draft' | 'Confirmed'"
+        },
+        {
+          "name": "unit_id",
+          "type": "string | null"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number | null"
         }
       ]
     },
@@ -327,6 +315,14 @@
         {
           "name": "total_cost",
           "type": "number"
+        },
+        {
+          "name": "unit_id",
+          "type": "string | null"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number | null"
         }
       ]
     },
@@ -334,10 +330,6 @@
       "name": "CreateOrderRequest",
       "kind": "interface",
       "fields": [
-        {
-          "name": "supplier_name",
-          "type": "string"
-        },
         {
           "name": "reference_number",
           "type": "string | null"
@@ -352,10 +344,6 @@
       "name": "UpdateOrderRequest",
       "kind": "interface",
       "fields": [
-        {
-          "name": "supplier_name",
-          "type": "string"
-        },
         {
           "name": "reference_number",
           "type": "string | null"
@@ -376,10 +364,6 @@
         },
         {
           "name": "quantity",
-          "type": "number"
-        },
-        {
-          "name": "unit_price",
           "type": "number"
         }
       ]
