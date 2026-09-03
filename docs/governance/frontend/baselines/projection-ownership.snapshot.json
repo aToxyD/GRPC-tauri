@@ -1,6 +1,6 @@
 {
-  "generated": "2026-09-02T00:00:00.000Z",
-  "totalTypes": 123,
+  "generated": "2026-09-03T00:00:00.000Z",
+  "totalTypes": 124,
   "types": [
     {
       "name": "LoginRequest",
@@ -2892,6 +2892,64 @@
         {
           "name": "effective_remaining",
           "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "UnitContractEntitlement",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "supplier_id",
+          "type": "string"
+        },
+        {
+          "name": "supplier_name",
+          "type": "string"
+        },
+        {
+          "name": "fiscal_year",
+          "type": "number"
+        },
+        {
+          "name": "contracted_quantity",
+          "type": "number"
+        },
+        {
+          "name": "fulfilled_quantity",
+          "type": "number"
+        },
+        {
+          "name": "released_quantity",
+          "type": "number"
+        },
+        {
+          "name": "reserved_quantity",
+          "type": "number"
+        },
+        {
+          "name": "effective_remaining",
+          "type": "number"
+        },
+        {
+          "name": "entitlement_state",
+          "type": "string"
+        },
+        {
+          "name": "contract_status",
+          "type": "string"
+        },
+        {
+          "name": "agreed_price",
+          "type": "number | null"
         }
       ]
     },
