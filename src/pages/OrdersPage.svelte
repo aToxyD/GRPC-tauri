@@ -44,8 +44,6 @@
 
   // Form fields
   // @category TransientState
-  let supplierName = $state('');
-  // @category TransientState
   let referenceNumber = $state('');
   // @category TransientState
   let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
@@ -70,7 +68,6 @@
 
   function openCreateModal() {
     editingOrderId = null;
-    supplierName = '';
     referenceNumber = '';
     orderProducts = products.map((p) => ({ product: p, quantity: '' }));
     showModal = true;
@@ -79,7 +76,6 @@
 
   async function openEditModal(order: SupplierOrder) {
     editingOrderId = order.id;
-    supplierName = order.supplier_name;
     referenceNumber = order.reference_number || '';
     showModal = true;
     ordersOp.error.set(null);
@@ -105,17 +101,11 @@
   }
 
   async function saveOrder() {
-    if (!supplierName) {
-      ordersOp.error.set('الرجاء إدخال اسم المورد');
-      return;
-    }
-
     const items: OrderItemInput[] = orderProducts
       .filter((op) => op.quantity && parseFloat(op.quantity) > 0)
       .map((op) => ({
         product_id: op.product.id,
         quantity: parseFloat(op.quantity),
-        unit_price: op.product.base_price,
       }));
 
     if (items.length === 0) {
@@ -127,18 +117,16 @@
       if (editingOrderId) {
         await updateSupplierOrder({
           id: editingOrderId,
-          supplier_name: supplierName,
           reference_number: referenceNumber || null,
           items,
         });
         setSuccessWithTimeout('تم تحديث الطلبية بنجاح');
       } else {
         await createSupplierOrder({
-          supplier_name: supplierName,
           reference_number: referenceNumber || null,
           items,
         });
-        setSuccessWithTimeout('تم إنشاء الطلبية بنجاح');
+        setSuccessWithTimeout('تم إنشاء الطلبية بنجاح — سيتم تحديد المورد والسعر تلقائياً حسب كتالوج العقود والالتزامات الجارية');
       }
       closeModal();
       await refreshList();
@@ -190,8 +178,6 @@
 
   function getStatusIntent(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
     if (status === 'Confirmed') return 'success';
-    if (status === 'Received') return 'info';
-    if (status === 'Cancelled') return 'danger';
     if (status === 'Draft') return 'warning';
     return 'neutral';
   }
@@ -199,8 +185,6 @@
   function getStatusLabel(status: string): string {
     if (status === 'Draft') return 'مسودة';
     if (status === 'Confirmed') return 'مؤكدة';
-    if (status === 'Received') return 'مستلمة';
-    if (status === 'Cancelled') return 'ملغاة';
     return status;
   }
 </script>
@@ -308,49 +292,35 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-2 gap-4 mb-6">
-      <AppInput
-        id="supplierName"
-        label="المورد *"
-        placeholder="اسم المورد"
-        bind:value={supplierName}
-      />
+    <div class="space-y-4">
+      <AppAlert intent="info">
+        <strong>تُحدَّد بشكل تلقائي:</strong> هوية المورّد وسعر الوحدة محسومان من كتالوج العقود والالتزامات الجارية من الجانب الخلفي. لا يُقبل تحديد المُورِّد أو السعر يدوياً عند إنشاء أو تعديل الطلبية — سيُعرض المورد المحدد بعد الحفظ.
+      </AppAlert>
+
       <AppInput
         id="referenceNumber"
         label="المرجع"
         placeholder="رقم الفاتورة أو أمر الشراء"
         bind:value={referenceNumber}
       />
-    </div>
 
-    <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-4">المنتجات</h3>
-    <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
-      {#each orderProducts as op (op.product.id)}
-        {@const qty = parseFloat(op.quantity) || 0}
-        {@const lineTotal = qty * op.product.base_price}
-        <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
-          <span class="flex-1 font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
-          <div class="w-24">
-            <AppInput
-              id="qty-{op.product.id}"
-              label=""
-              type="number"
-              placeholder="الكمية"
-              bind:value={op.quantity}
-            />
+      <h3 class="font-semibold text-gray-800 dark:text-gray-100 pt-2">المنتجات والكميات</h3>
+      <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
+        {#each orderProducts as op (op.product.id)}
+          <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
+            <span class="flex-1 font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
+            <div class="w-24">
+              <AppInput
+                id="qty-{op.product.id}"
+                label=""
+                type="number"
+                placeholder="الكمية"
+                bind:value={op.quantity}
+              />
+            </div>
           </div>
-          <div class="w-28 text-left text-sm text-gray-600 dark:text-gray-400 tabular-nums">
-            <span class="block text-xs text-gray-500 dark:text-gray-500 mb-0.5">سعر الوحدة</span>
-            <span class="font-medium">{op.product.base_price.toFixed(2)} دج</span>
-          </div>
-          <div class="w-28 text-left text-sm tabular-nums">
-            <span class="block text-xs text-gray-500 dark:text-gray-500 mb-0.5">الإجمالي</span>
-            <span class="font-medium text-gray-800 dark:text-gray-200">
-              {lineTotal > 0 ? `${lineTotal.toFixed(2)} دج` : '—'}
-            </span>
-          </div>
-        </div>
-      {/each}
+        {/each}
+      </div>
     </div>
   </div>
 
