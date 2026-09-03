@@ -4,7 +4,7 @@
   import { createOperation } from "../lib/operationGuard";
   import { formatErrorMessage } from "../lib/errors";
   import { openFile, saveFile } from "../lib/tauri";
-  import { importProductsPackage, exportStockMovementsPackage, importStockMovementsPackage } from "../lib/contracts";
+  import { importProductsPackage, exportStockMovementsPackage, importStockMovementsPackage, importContractCatalogPackage } from "../lib/contracts";
   import { getAllStocks, getStockSummary, getStockMovements, exportStockMovementsExcel, getSettings, getInventoryFifoView } from "../lib/contracts";
   import { showSuccess, showError } from "../lib/notifications";
   import type {
@@ -239,6 +239,32 @@
     }
   }
 
+  async function handleImportContractCatalog() {
+    try {
+      importError = "";
+      importSuccess = "";
+
+      const selected = await openFile({
+        multiple: false,
+        filters: [
+          {
+            name: "حزمة المزامنة",
+            extensions: ["sync"],
+          },
+        ],
+      });
+
+      if (selected) {
+        const result = await importContractCatalogPackage(selected as string);
+        setImportSuccessTransient(
+          `تم استيراد كتالوج العقود بنجاح (${result.added} إضافة / ${result.updated} تحديث)`,
+        );
+      }
+    } catch (e) {
+      importError = "خطأ في استيراد كتالوج العقود: " + formatErrorMessage(e);
+    }
+  }
+
 
   async function handleExportMovementsPackage() {
     try {
@@ -351,6 +377,13 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
               </svg>
               استيراد منتجات الولاية
+            </AppButton>
+
+            <AppButton variant="secondary" on:click={handleImportContractCatalog} ariaLabel="استيراد كتالوج عقود التموين الرسمي من الولاية">
+              <svg class="w-4 h-4 mr-2 inline-block text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04a11.367 11.367 0 01-1.091 5.496c.002.314.05.628.143.933a11.503 11.503 0 001.371 3.513c.176.326.362.641.551.944A12.026 12.026 0 0011.962 21.01a12.02 12.02 0 008.474-5.991c.401-.736.745-1.515 1.022-2.322a10.107 10.107 0 00.395-1.842 11.233 11.233 0 00-1.091-5.496z"/>
+              </svg>
+              استيراد كتالوج العقود
             </AppButton>
           </div>
         </svelte:fragment>

@@ -18,6 +18,8 @@ import type {
   SetTaxPolicyRequest,
   Supplier,
   UpdateSupplierRequest,
+  SyncExportResult,
+  SyncImportResult,
   XlsxExportResult,
 } from '../types';
 
@@ -200,6 +202,17 @@ export async function exportContractAllocationsExcel(
   filePath: string,
 ): Promise<XlsxExportResult> {
   return await safeInvoke('export_contract_allocations_xlsx', { filePath });
+}
+
+// ContractCatalog sync packages (ADR-0055 / SEC-087-F): the system path by
+// which WILAYA-administered ContractCatalog reaches UNIT nodes. Fleet-level
+// export mirrors `export_products_package` (SEC-033); import is UNIT-scoped.
+export async function exportContractCatalogPackage(filePath: string): Promise<SyncExportResult> {
+  return await safeInvoke('export_contract_catalog_package', { filePath });
+}
+
+export async function importContractCatalogPackage(filePath: string): Promise<SyncImportResult> {
+  return await safeInvoke('import_contract_catalog_package', { filePath });
 }
 
 export type { ContractStatus };
