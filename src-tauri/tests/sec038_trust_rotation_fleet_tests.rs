@@ -263,7 +263,7 @@ fn trust_rotation_then_products_export_emit_readable_packages() {
     let exporter = IdentitySignedExportService::new(&node.db, &node.node_key_store);
     exporter
         .export_v2_package(
-            serde_json::json!({ "items": [] }),
+            serde_json::json!({ "product_rows": [] }),
             "wilaya-test-node",
             "products",
             "UNIT-X",
