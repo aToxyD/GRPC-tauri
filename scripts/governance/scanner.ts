@@ -72,7 +72,7 @@ export const DOMAIN_REGISTRY: Record<string, {
     contract: "fiscal.contract.ts",
     pages: ["FiscalManagementPage", "FiscalDiagnosticsPage"],
     functions: ["closeFiscalYear", "getFiscalYearStatus", "exportFiscalClosurePackage", "previewFiscalClosurePackage", "applyFiscalClosurePackage", "getFiscalTransitionHistory", "listFiscalPackageRegistry", "updateFiscalPackageRetentionStatus", "getAdvancedDiagnosticsBundle", "verifyInventoryIntegrity", "createFiscalOperationalSnapshot"],
-    crossDomainExceptions: ["listProducts", "getSystemHealth"],
+    crossDomainExceptions: ["listProducts", "getSystemHealth", "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies"],
   },
   sync: {
     contract: "sync.contract.ts",
