@@ -24,7 +24,8 @@ use crate::models::{
     ContractAllocationView, ContractProduct, ContractTransitionRequest, CreateContractRequest,
     CreateSupplierRequest, FiscalYearTaxPolicy, ReleaseContractAllocationRequest,
     RevokeContractAllocationReleaseRequest, SetAgreedPriceRequest, SetSupplierActiveRequest,
-    SetTaxPolicyRequest, Supplier, UpdateSupplierRequest, XlsxExportResult,
+    SetTaxPolicyRequest, Supplier, UnitContractEntitlement, UpdateSupplierRequest,
+    XlsxExportResult,
 };
 use tauri::State;
 
@@ -496,6 +497,46 @@ pub fn list_fiscal_tax_policies(
     let db = db_ref_or_command_error(guard.as_ref())?;
     FiscalTaxPolicyService::new(db.executor())
         .list_policies()
+        .map_err(into_command_error)
+}
+
+// ---------------------------------------------------------------------------
+// UNIT local read-only ContractCatalog entitlement projection (Phase 4)
+// ---------------------------------------------------------------------------
+
+/// Read the UNIT's OWN locally imported ContractCatalog entitlement projection.
+///
+/// Read-only: the caller UNIT identity is derived server-side from node
+/// settings (`get_current_unit_id()`); NO frontend-supplied `unit_id` is
+/// accepted, so a caller can never select another UNIT's rows. Authorized via
+/// `Action::ReadUnitEntitlements` (UNIT-node scoped). This does NOT expose the
+/// WILAYA `ReadContractProjection` authority.
+#[tauri::command]
+pub fn list_unit_contract_entitlements(
+    state: State<AppState>,
+) -> Result<Vec<UnitContractEntitlement>, String> {
+    let _ = authorize_command(&state, Action::ReadUnitEntitlements, None)
+        .map_err(into_command_error)?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+
+    // Derive the canonical unit identity server-side (no client input).
+    let unit_id = crate::application::services::SettingsService::new(db.executor())
+        .get_current_unit_id()
+        .map_err(into_command_error)?
+        .ok_or_else(|| {
+            crate::errors::AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::OperationNotPermitted {
+                    message: "الوحدة الحالية غير محددة — لا يمكن عرض الاستحقاقات".to_string(),
+                },
+            )
+        })
+        .map_err(into_command_error)?;
+
+    ContractService::new(db.executor())
+        .list_unit_entitlements(&unit_id)
         .map_err(into_command_error)
 }
 

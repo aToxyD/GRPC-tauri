@@ -77,6 +77,11 @@ pub enum Action {
     ExportContractCatalogPackage,
     ImportContractCatalogPackage,
 
+    // UNIT local read of its own offline ContractCatalog entitlement projection.
+    // Distinct from `ReadContractProjection` (WILAYA-only projection owner): this
+    // is a UNIT-node-scoped, read-only consumer read over locally imported rows.
+    ReadUnitEntitlements,
+
     // Contract-centric procurement Excel exports (ADR-0055 / SEC-087-F)
     ExportSuppliers,
     ExportContracts,

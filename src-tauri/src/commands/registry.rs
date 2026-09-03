@@ -89,6 +89,8 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_contract_products,
         commands::list_contract_allocations,
         commands::list_allocation_exceptions,
+        // Procurement — UNIT local read-only entitlement projection (Phase 4)
+        commands::list_unit_contract_entitlements,
         // Procurement — Fiscal-year TVA policy (ADR-0055 / SEC-087-F)
         commands::set_fiscal_tax_policy,
         commands::get_fiscal_tax_policy,

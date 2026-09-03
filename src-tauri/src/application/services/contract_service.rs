@@ -15,7 +15,7 @@ use crate::errors::{AppError, BusinessLogicError};
 use crate::models::{
     AddContractProductRequest, Contract, ContractAllocation, ContractAllocationException,
     ContractAllocationView, ContractProduct, ContractStatus, CreateContractRequest,
-    ReleaseContractAllocationRequest, SetAgreedPriceRequest,
+    ReleaseContractAllocationRequest, SetAgreedPriceRequest, UnitContractEntitlement,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
@@ -547,6 +547,18 @@ impl<'a> ContractService<'a> {
         self.executor
             .contracts()
             .list_active_allocations_for_unit_year(unit_id, fiscal_year)
+    }
+
+    /// Read-only UNIT projection of the locally imported ContractCatalog
+    /// allocations (Phase 4). `effective_remaining` is derived in the service
+    /// via the single-source domain helper (`From<UnitEntitlementRow>`); the
+    /// frontend and the repository perform no obligation arithmetic (A5/P2).
+    pub fn list_unit_entitlements(
+        &self,
+        unit_id: &str,
+    ) -> Result<Vec<UnitContractEntitlement>, AppError> {
+        let rows = self.executor.contracts().list_unit_entitlements(unit_id)?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     pub fn list_exceptions_for_allocation(

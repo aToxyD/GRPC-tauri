@@ -109,13 +109,22 @@ pub struct ContractAllocation {
     pub version: i64,
 }
 
+/// Single-source derivation of the component-based remaining quantity
+/// (A5/P2). Not stored authoritatively; owned and computed only here so
+/// no layer re-derives obligation arithmetic.
+pub fn effective_remaining(contracted: f64, fulfilled: f64, released: f64, reserved: f64) -> f64 {
+    contracted - fulfilled - released - reserved
+}
+
 impl ContractAllocation {
     /// Derived component-based remaining (not stored authoritatively).
     pub fn effective_remaining(&self) -> f64 {
-        self.contracted_quantity
-            - self.fulfilled_quantity
-            - self.released_quantity
-            - self.reserved_quantity
+        effective_remaining(
+            self.contracted_quantity,
+            self.fulfilled_quantity,
+            self.released_quantity,
+            self.reserved_quantity,
+        )
     }
 }
 
@@ -157,6 +166,72 @@ impl From<ContractAllocation> for ContractAllocationView {
             entitlement_state: allocation.entitlement_state,
             version: allocation.version,
             effective_remaining,
+        }
+    }
+}
+
+/// Raw row projection of a local ContractCatalog allocation that the UNIT
+/// consumes. `effective_remaining` is intentionally NOT carried here: it is
+/// computed in the application service via the single-source domain helper
+/// (`effective_remaining`), so the repository performs no arithmetic.
+#[derive(Debug, Clone)]
+pub struct UnitEntitlementRow {
+    pub product_id: String,
+    pub product_name: String,
+    pub supplier_id: String,
+    pub supplier_name: String,
+    pub fiscal_year: i32,
+    pub contracted_quantity: f64,
+    pub fulfilled_quantity: f64,
+    pub released_quantity: f64,
+    pub reserved_quantity: f64,
+    pub entitlement_state: String,
+    pub contract_status: String,
+    pub agreed_price: Option<f64>,
+}
+
+/// Read-only UNIT entitlement projection DTO (Phase 4). Backend-derived:
+/// `effective_remaining` is computed from the domain helper and serialized so
+/// the frontend never re-derives obligation arithmetic (A5/P2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnitContractEntitlement {
+    pub product_id: String,
+    pub product_name: String,
+    pub supplier_id: String,
+    pub supplier_name: String,
+    pub fiscal_year: i32,
+    pub contracted_quantity: f64,
+    pub fulfilled_quantity: f64,
+    pub released_quantity: f64,
+    pub reserved_quantity: f64,
+    pub effective_remaining: f64,
+    pub entitlement_state: String,
+    pub contract_status: String,
+    pub agreed_price: Option<f64>,
+}
+
+impl From<UnitEntitlementRow> for UnitContractEntitlement {
+    fn from(row: UnitEntitlementRow) -> Self {
+        let effective_remaining = effective_remaining(
+            row.contracted_quantity,
+            row.fulfilled_quantity,
+            row.released_quantity,
+            row.reserved_quantity,
+        );
+        Self {
+            product_id: row.product_id,
+            product_name: row.product_name,
+            supplier_id: row.supplier_id,
+            supplier_name: row.supplier_name,
+            fiscal_year: row.fiscal_year,
+            contracted_quantity: row.contracted_quantity,
+            fulfilled_quantity: row.fulfilled_quantity,
+            released_quantity: row.released_quantity,
+            reserved_quantity: row.reserved_quantity,
+            effective_remaining,
+            entitlement_state: row.entitlement_state,
+            contract_status: row.contract_status,
+            agreed_price: row.agreed_price,
         }
     }
 }

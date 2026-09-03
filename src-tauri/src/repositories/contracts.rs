@@ -9,7 +9,7 @@
 use crate::errors::AppError;
 use crate::models::{
     AddContractProductRequest, Contract, ContractAllocation, ContractAllocationException,
-    ContractProduct, CreateContractRequest, ReleaseReasonCode,
+    ContractProduct, CreateContractRequest, ReleaseReasonCode, UnitEntitlementRow,
 };
 use crate::repositories::executor::DbExecutor;
 use rusqlite::{params, Row};
@@ -509,6 +509,53 @@ impl<'a> ContractRepository<'a> {
                     released_quantity: row.get(7)?,
                     reserved_quantity: row.get(8)?,
                     entitlement_state: row.get(9)?,
+                })
+            },
+        )?)
+    }
+
+    /// Read-only UNIT projection of the locally imported ContractCatalog
+    /// allocations (Phase 4). Scoped to a single server-derived `unit_id`.
+    ///
+    /// Central to the design: `ca.fiscal_year ASC, c.created_at ASC, ca.id ASC`
+    /// is DISPLAY ordering only — it is NOT resolver/priority ordering and must
+    /// never be interpreted as supplier-selection logic. CANCELLED rows are
+    /// kept (they are part of the lifecycle projection, unlike the order
+    /// resolver which excludes them). Repository performs no arithmetic:
+    /// `effective_remaining` is derived by the application service via the
+    /// single-source domain helper.
+    pub fn list_unit_entitlements(
+        &self,
+        unit_id: &str,
+    ) -> Result<Vec<UnitEntitlementRow>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT cp.product_id, p.name, c.supplier_id, s.name,
+                    ca.fiscal_year,
+                    ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
+                    ca.reserved_quantity, ca.entitlement_state, c.status,
+                    cp.agreed_price
+             FROM contract_allocations ca
+             JOIN contracts c ON c.id = ca.contract_id
+             JOIN suppliers s ON s.id = c.supplier_id
+             JOIN contract_products cp ON cp.id = ca.contract_product_id
+             JOIN products p ON p.id = cp.product_id
+             WHERE ca.unit_id = ?1 AND ca.deleted = 0
+             ORDER BY ca.fiscal_year ASC, c.created_at ASC, ca.id ASC",
+            params![unit_id],
+            |row| {
+                Ok(UnitEntitlementRow {
+                    product_id: row.get(0)?,
+                    product_name: row.get(1)?,
+                    supplier_id: row.get(2)?,
+                    supplier_name: row.get(3)?,
+                    fiscal_year: row.get(4)?,
+                    contracted_quantity: row.get(5)?,
+                    fulfilled_quantity: row.get(6)?,
+                    released_quantity: row.get(7)?,
+                    reserved_quantity: row.get(8)?,
+                    entitlement_state: row.get(9)?,
+                    contract_status: row.get(10)?,
+                    agreed_price: row.get(11)?,
                 })
             },
         )?)

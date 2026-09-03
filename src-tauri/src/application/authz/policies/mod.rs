@@ -106,6 +106,19 @@ pub fn authorize(
             }
         }
 
+        // ── UNIT local read of its own ContractCatalog entitlement projection ─
+        // Read-only UNIT consumer read. Requires the caller to be on its own
+        // UNIT node (identity derived server-side in the command; see
+        // `list_unit_contract_entitlements`). This is NOT the WILAYA projection
+        // owner read (`ReadContractProjection`), which remains WILAYA-only.
+        Action::ReadUnitEntitlements => {
+            if let ResourceContext::UnitNode { .. } = resource {
+                Ok(())
+            } else {
+                Err(AuthorizationError::RequiresUnitNode)
+            }
+        }
+
         // ── Actions requiring authentication (any valid session) ──────────
         // These must still require a valid session — enforced by the command
         // dispatcher (`authorize_command`) before this function is reached.
@@ -491,6 +504,50 @@ mod tests {
                 &ResourceContext::WilayaNode,
             ),
             Err(AuthorizationError::RequiresAdmin)
+        ));
+    }
+
+    #[test]
+    fn read_unit_entitlements_is_unit_node_scoped() {
+        // Phase 4: the UNIT local ContractCatalog entitlement read is a
+        // UNIT-node-scoped, read-only consumer projection. Allowed for any
+        // authenticated role on its own UNIT node; denied on WILAYA nodes and
+        // on the WILAYA projection owner read.
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ReadUnitEntitlements,
+            &unit_node,
+        )
+        .is_ok());
+        assert!(authorize(
+            &principal(UserRole::User),
+            Action::ReadUnitEntitlements,
+            &unit_node,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ReadUnitEntitlements,
+                &ResourceContext::WilayaNode,
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
+
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ReadUnitEntitlements,
+                &ResourceContext::UnitScope {
+                    unit_id: "unit-a".to_string(),
+                },
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
         ));
     }
 }
