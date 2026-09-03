@@ -38,7 +38,7 @@
   });
 
   // @category UiState
-  $: confirmedOrders = orders.filter(o => o.status === 'Confirmed' || o.status === 'Received');
+  $: confirmedOrders = orders.filter(o => o.status === 'Confirmed');
   // @category UiState
   $: lowStockItems = stocks.filter(s => s.quantity < 10);
   // @category UiState
@@ -47,8 +47,7 @@
   function getOrderStatusIntent(status: string): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
     switch (status) {
       case 'Confirmed': return 'success';
-      case 'Received': return 'info';
-      case 'Cancelled': return 'danger';
+      case 'Draft': return 'warning';
       default: return 'neutral';
     }
   }

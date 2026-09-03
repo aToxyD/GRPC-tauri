@@ -44,10 +44,6 @@
   let productName = $state('');
   // @category TransientState
   let basePrice = $state('');
-  // @category TransientState
-  let tva = $state('');
-  // @category TransientState
-  let supplierName = $state('');
 
   onMount(async () => {
     await loadData();
@@ -71,8 +67,6 @@
     editingProduct = null;
     productName = '';
     basePrice = '';
-    tva = '0';
-    supplierName = '';
     showModal = true;
     productsOp.error.set(null);
   }
@@ -81,8 +75,6 @@
     editingProduct = product;
     productName = product.name;
     basePrice = product.base_price.toString();
-    tva = product.tva.toString();
-    supplierName = product.supplier_name || '';
     showModal = true;
     productsOp.error.set(null);
   }
@@ -101,15 +93,12 @@
 
     await productsOp.run(async () => {
       const price = parseFloat(basePrice);
-      const tvaValue = parseFloat(tva) || 0;
 
       if (editingProduct) {
         const request: UpdateProductRequest = {
           id: editingProduct.id,
           name: productName,
           base_price: price,
-          tva: tvaValue,
-          supplier_name: supplierName || null
         };
         await updateProduct(request);
         setSuccessWithTimeout('تم تحديث المنتج بنجاح');
@@ -117,8 +106,6 @@
         const request: CreateProductRequest = {
           name: productName,
           base_price: price,
-          tva: tvaValue,
-          supplier_name: supplierName || null
         };
         await createProduct(request);
         setSuccessWithTimeout('تم إنشاء المنتج بنجاح');
@@ -268,9 +255,7 @@
 
         <svelte:fragment slot="head">
           <th class="table-header">الاسم</th>
-          <th class="table-header">السعر الأساسي</th>
-          <th class="table-header">الضريبة %</th>
-          <th class="table-header">المورد</th>
+          <th class="table-header">السعر المرجعي</th>
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
 
@@ -278,8 +263,6 @@
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{product.name}</td>
             <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
-            <td class="table-cell">{product.tva}%</td>
-            <td class="table-cell">{product.supplier_name || '-'}</td>
             <td class="table-cell text-left space-x-2 space-x-reverse">
               <AppButton variant="ghost" size="sm" on:click={() => openEditModal(product)} ariaLabel="تعديل">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -316,29 +299,16 @@
         bind:value={productName}
       />
 
-      <div class="grid grid-cols-2 gap-4">
-        <AppInput
-          id="basePrice"
-          label="السعر الأساسي (دج) *"
-          type="number"
-          placeholder="0.00"
-          bind:value={basePrice}
-        />
-        <AppInput
-          id="tva"
-          label="الضريبة (%)"
-          type="number"
-          placeholder="0"
-          bind:value={tva}
-        />
-      </div>
-
       <AppInput
-        id="supplierName"
-        label="المورد"
-        placeholder="اسم المورد (اختياري)"
-        bind:value={supplierName}
+        id="basePrice"
+        label="السعر المرجعي (دج) *"
+        type="number"
+        placeholder="0.00"
+        bind:value={basePrice}
       />
+      <AppAlert intent="info">
+        السعر المرجعي أساس قياسي فقط ولا يمثل سعر الشراء. أسعار الشراء الفعلية محددة في عقود التموين (agreed price) ضمن كتالوج العقود.
+      </AppAlert>
     </div>
   </div>
 
