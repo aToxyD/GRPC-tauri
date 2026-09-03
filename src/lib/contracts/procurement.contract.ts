@@ -17,6 +17,7 @@ import type {
   SetSupplierActiveRequest,
   SetTaxPolicyRequest,
   Supplier,
+  UnitContractEntitlement,
   UpdateSupplierRequest,
   SyncExportResult,
   SyncImportResult,
@@ -213,6 +214,13 @@ export async function exportContractCatalogPackage(filePath: string): Promise<Sy
 
 export async function importContractCatalogPackage(filePath: string): Promise<SyncImportResult> {
   return await safeInvoke('import_contract_catalog_package', { filePath });
+}
+
+// UNIT local read-only ContractCatalog entitlement projection (Phase 4).
+// Read-only: the caller UNIT identity is derived server-side; no `unit_id` is
+// accepted from the frontend, so a caller can never select another UNIT's rows.
+export async function listUnitContractEntitlements(): Promise<UnitContractEntitlement[]> {
+  return await safeInvoke('list_unit_contract_entitlements');
 }
 
 export type { ContractStatus };

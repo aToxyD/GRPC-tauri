@@ -185,6 +185,7 @@
     makeLink("/admin/fiscal", "تسيير السنة المالية", ICONS.fiscal),
     makeLink("/unit/stock", "المخزون", ICONS.stock),
     makeLink("/unit/orders", "الطلبيات", ICONS.orders),
+    makeLink("/unit/entitlements", "الاستحقاقات", ICONS.orders),
     makeLink("/unit/consumption", "الاستهلاك", ICONS.consumption),
     makeLink("/unit/reports", "التقارير", ICONS.reports),
     makeLink("/backup", "النسخ الاحتياطية", ICONS.backup),

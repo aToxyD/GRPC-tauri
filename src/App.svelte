@@ -16,6 +16,7 @@
   import SyncPage from './pages/SyncPage.svelte';
   import UnitDashboard from './pages/UnitDashboard.svelte';
   import OrdersPage from './pages/OrdersPage.svelte';
+  import UnitEntitlementsPage from './pages/UnitEntitlementsPage.svelte';
   import ConsumptionPage from './pages/ConsumptionPage.svelte';
   import WilayaReportsPage from './pages/WilayaReportsPage.svelte';
   import UnitReportsPage from './pages/UnitReportsPage.svelte';
@@ -75,6 +76,7 @@
     '/unit/dashboard': UnitDashboard,
     '/unit/stock': StockPage,
     '/unit/orders': OrdersPage,
+    '/unit/entitlements': UnitEntitlementsPage,
     '/unit/consumption': ConsumptionPage,
     '/unit/reports': UnitReportsPage,
     '/wilaya/reports': WilayaReportsPage,

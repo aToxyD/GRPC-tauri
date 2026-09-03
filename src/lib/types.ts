@@ -214,6 +214,25 @@ export interface ContractAllocation {
   effective_remaining: number;
 }
 
+/** Read-only UNIT ContractCatalog entitlement projection (Phase 4).
+ *  All values (including `effective_remaining`) are returned authoritative from
+ *  the backend and MUST NOT be recomputed in the frontend (A5/P2). */
+export interface UnitContractEntitlement {
+  product_id: string;
+  product_name: string;
+  supplier_id: string;
+  supplier_name: string;
+  fiscal_year: number;
+  contracted_quantity: number;
+  fulfilled_quantity: number;
+  released_quantity: number;
+  reserved_quantity: number;
+  effective_remaining: number;
+  entitlement_state: string;
+  contract_status: string;
+  agreed_price: number | null;
+}
+
 export type ReleaseReasonCode =
   | 'SupplierNonPerformance'
   | 'SupplierDelay'
