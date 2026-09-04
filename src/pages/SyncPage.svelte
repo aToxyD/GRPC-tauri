@@ -4,7 +4,6 @@
     importDailyReportPackage,
     importMonthlySummaryPackage,
     importStockMovementsPackage,
-    exportContractCatalogPackage,
     listUnits,
     getSettings,
   } from '../lib/contracts';
@@ -146,31 +145,6 @@
           success = `تم استيراد ${result.movement_count} حركة مخزون بنجاح (المعرف الفريد للحزمة: ${result.file_hash.substring(0, 8)}...)`;
           importProgress = '';
         }
-      } catch (e) {
-        error = formatErrorMessage(e);
-        importProgress = '';
-      }
-    });
-  }
-
-  async function exportContractCatalogSync() {
-    const year = settings?.current_year ?? new Date().getFullYear();
-
-    const filePath = await saveFile({
-      defaultPath: `contract_catalog_${year}.sync`,
-      filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }]
-    });
-
-    if (!filePath) return;
-
-    await guard(async () => {
-      try {
-        error = '';
-        success = '';
-        importProgress = 'تصدير كتالوج العقود...';
-        const result = await exportContractCatalogPackage(filePath);
-        success = `تم تصدير كتالوج العقود: ${result.record_count} سجل — حزمة .sync موقعة رقمياً (Artifact لكل وحدة مرتبطة)`;
-        importProgress = '';
       } catch (e) {
         error = formatErrorMessage(e);
         importProgress = '';
@@ -325,35 +299,6 @@
             </AppButton>
           </div>
         </AppCard>
-
-        <!-- Export ContractCatalog (WILAYA → UNIT) -->
-        <div class="md:col-span-2">
-          <AppCard>
-            <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
-              <div class="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-lg flex items-center justify-center">
-                <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04a11.367 11.367 0 01-1.091 5.496c.002.314.05.628.143.933a11.503 11.503 0 001.371 3.513c.176.326.362.641.551.944A12.026 12.026 0 0011.962 21.01a12.02 12.02 0 008.474-5.991c.401-.736.745-1.515 1.022-2.322a10.107 10.107 0 00.395-1.842 11.233 11.233 0 00-1.091-5.496z"/>
-                </svg>
-              </div>
-              <div>
-                <h3 class="font-semibold text-gray-800 dark:text-gray-100">كتالوج العقود (ContractCatalog)</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400">تصدير كتالوج عقود التموين الرسمي للوحدات المرتبطة (أداة لكل وحدة، موقعة رقمياً)</p>
-              </div>
-            </div>
-            <div class="space-y-2">
-              <AppButton
-                variant="primary"
-                fullWidth
-                disabled={!!importProgress || $operationLoading}
-                loading={importProgress === 'تصدير كتالوج العقود...'}
-                on:click={exportContractCatalogSync}
-                ariaLabel="تصدير كتالوج العقود كحزمة مزامنة موقعة للوحدات المرتبطة"
-              >
-                تصدير كتالوج العقود (.sync)
-              </AppButton>
-            </div>
-          </AppCard>
-        </div>
       </div>
 
       <div class="mt-8">
@@ -367,7 +312,7 @@
               </ul>
             </li>
             <li><strong>من عقدة الولاية:</strong> اختر الوحدة المناسبة ثم استورد كل ملف</li>
-            <li><strong>كتالوج العقود:</strong> صدّره من هذه الصفحة (.sync) وسيستورده كل منشأة من صفحة "المخزون" ← استيراد كتالوج العقود. حزم العقود مبنية من المصدر الرسمي (WILAYA) وموقعة رقمياً.</li>
+            <li><strong>كتالوج العقود:</strong> صدّره من صفحة "العقود" (.sync) وسيستورده كل منشأة من صفحة "المخزون" ← استيراد كتالوج العقود. حزم العقود مبنية من المصدر الرسمي (WILAYA) وموقعة رقمياً.</li>
           </ol>
         </AppAlert>
       </div>

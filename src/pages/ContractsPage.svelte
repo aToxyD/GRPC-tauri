@@ -18,6 +18,7 @@
     revokeContractAllocationRelease,
     exportContractsExcel,
     exportContractAllocationsExcel,
+    exportContractCatalogPackage,
     listUnits,
     listSuppliers,
     listProducts,
@@ -207,6 +208,21 @@
     });
   }
 
+  async function handleExportCatalog() {
+    const year = settings?.current_year ?? new Date().getFullYear();
+    const filePath = await saveFile({
+      defaultPath: `contract_catalog_${year}.sync`,
+      filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
+    });
+    if (!filePath) return;
+    await contractsOp.run(async () => {
+      const result = await exportContractCatalogPackage(filePath);
+      setSuccessWithTimeout(
+        `تم تصدير كتالوج العقود: ${result.record_count} سجل (حزمة .sync موقعة رقمياً)`
+      );
+    });
+  }
+
   async function saveContract() {
     if (!newUnitId || !newSupplierId || !newReference || !newFiscalYear) {
       contractsOp.error.set('يرجى ملء الحقول الإلزامية');
@@ -384,6 +400,13 @@
       <svelte:fragment slot="actions">
         <AppButton variant="secondary" on:click={() => handleExport('allocations')}>تصدير الاستحقاقات</AppButton>
         <AppButton variant="secondary" on:click={() => handleExport('contracts')}>تصدير العقود</AppButton>
+        <AppButton
+          variant="secondary"
+          on:click={handleExportCatalog}
+          ariaLabel="تصدير كتالوج العقود كحزمة مزامنة موقعة للوحدات المرتبطة"
+        >
+          تصدير كتالوج العقود
+        </AppButton>
         <AppButton on:click={openCreate} ariaLabel="إنشاء عقد جديد">إنشاء عقد</AppButton>
       </svelte:fragment>
     </AppPageHeader>
