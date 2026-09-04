@@ -244,7 +244,10 @@
       return;
     }
     await contractsOp.run(async () => {
-      const agreed = newAgreedPrice.trim() === '' ? null : parseFloat(newAgreedPrice);
+      const agreed =
+          newAgreedPrice === '' || newAgreedPrice === null
+              ? null
+              : parseFloat(newAgreedPrice);
       const request: AddContractProductRequest = {
         contract_id: contract.id,
         product_id: newProductId,
