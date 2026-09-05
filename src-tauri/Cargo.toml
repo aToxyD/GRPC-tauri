@@ -37,6 +37,10 @@ hex = "0.4.3"
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 tauri-plugin-single-instance = "2.0.0"
 base64 = "0.22.1"
+# Exact decimal arithmetic for accounting values (ADR-0048, Phase 2).
+# Features: std + serde only. The float/arbitrary_precision features are
+# intentionally NOT enabled: f64 pathways are forbidden in the numeric domain.
+rust_decimal = { version = "1.43.0", features = ["serde", "std"] }
 
 # ADR-0041 §11.4 (SEC-013 Phase 2): OS secret storage for the post-provisioning
 # App-Key source. Target-specific features keep the dependency surface minimal:

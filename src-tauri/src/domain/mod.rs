@@ -7,6 +7,7 @@ pub mod fifo_engine;
 pub mod identity;
 pub mod invariants;
 pub mod meal_cost_engine;
+pub mod numeric;
 pub mod ports;
 pub mod pricing;
 pub mod rate_limiter;
