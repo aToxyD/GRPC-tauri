@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::domain::numeric::legacy_float::{
+    money_from_f64, money_to_f64, quantity_from_f64, quantity_to_f64,
+};
+use crate::domain::numeric::Money;
 use crate::repositories::DbExecutor;
 
 use super::{Report, ReportEnvelope, ReportMetadata};
@@ -85,23 +89,40 @@ impl Report for InventoryValuationReport {
             .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
 
         let mut products = Vec::with_capacity(rows.len());
-        let mut total_value = 0.0_f64;
+        let mut total_value = Money::zero();
         let mut total_layers: usize = 0;
 
-        for (product_id, product_name, qty, value, layer_count) in rows {
-            let weighted_cost = if qty > 0.0 {
-                super::round_money(value / qty)
+        for (product_id, product_name, qty_wire, value_wire, layer_count) in rows {
+            // ADR-0048: SQL aggregates over REAL columns are boundary values.
+            // All valuation arithmetic below is exact Money/Quantity.
+            let qty = quantity_from_f64(qty_wire)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
+            let value = money_from_f64(value_wire)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
+
+            // Weighted average unit cost = FIFO value ÷ remaining quantity
+            // (dedicated Money÷Quantity operation). Zero/empty quantity → zero.
+            let weighted_avg_unit_cost = if qty.is_positive() {
+                value
+                    .checked_div_quantity(&qty)
+                    .and_then(|cost| money_to_f64(&cost))
+                    .map_err(|e| InventoryValuationError::Internal(e.to_string()))?
             } else {
                 0.0
             };
-            let row_value = super::round_money(value);
-            total_value = super::round_money(total_value + row_value);
+
+            let row_value = money_to_f64(&value)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
+            total_value = total_value
+                .checked_add(value)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
             total_layers += layer_count as usize;
             products.push(ProductValuationRow {
                 product_id,
                 product_name,
-                total_quantity: super::round_money(qty),
-                weighted_avg_unit_cost: weighted_cost,
+                total_quantity: quantity_to_f64(&qty)
+                    .map_err(|e| InventoryValuationError::Internal(e.to_string()))?,
+                weighted_avg_unit_cost,
                 total_value: row_value,
                 layer_count: layer_count as usize,
             });
@@ -113,7 +134,8 @@ impl Report for InventoryValuationReport {
         Ok(ReportEnvelope {
             metadata,
             data: InventoryValuationOutput {
-                total_inventory_value: super::round_money(total_value),
+                total_inventory_value: money_to_f64(&total_value)
+                    .map_err(|e| InventoryValuationError::Internal(e.to_string()))?,
                 product_count: products.len(),
                 active_layer_count: total_layers,
                 products,

@@ -430,7 +430,8 @@ fn per_line_agreed_prices_isolate_fifo_layers() {
 #[test]
 fn contract_agreed_price_domain_type_roundtrips() {
     use grpc_lib::domain::accounting::cost::ContractAgreedPrice;
+    use grpc_lib::domain::numeric::Money;
 
-    let p = ContractAgreedPrice::new(42.5);
-    assert!((p.value() - 42.5).abs() < f64::EPSILON);
+    let p = ContractAgreedPrice::new(Money::from_centimes(4250).unwrap());
+    assert_eq!(p.value(), Money::from_centimes(4250).unwrap());
 }

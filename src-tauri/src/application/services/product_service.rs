@@ -56,8 +56,14 @@ impl<'a> ProductService<'a> {
             })
         })?;
 
-        // Check if price is being modified
-        if (current_product.base_price - req.base_price).abs() > f64::EPSILON {
+        // Check if price is being modified. `base_price` is Money-dimension
+        // (`ReferencePrice`); ADR-0048: exact equality on the boundary-scaled
+        // values, never an epsilon comparison on floats.
+        let current_base_price =
+            crate::domain::numeric::legacy_float::money_from_f64(current_product.base_price)?;
+        let requested_base_price =
+            crate::domain::numeric::legacy_float::money_from_f64(req.base_price)?;
+        if current_base_price != requested_base_price {
             // Price change detected - validate against fiscal year locking
             self.validate_price_modification_allowed(&current_product.year)?;
         }

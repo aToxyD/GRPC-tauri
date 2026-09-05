@@ -646,6 +646,117 @@ fn test_property_computed_closing_never_negative() {
 }
 
 #[test]
+fn test_computed_closing_exact_fractional_arithmetic() {
+    // ADR-0048: computed_closing is exact Quantity reconciliation:
+    // opening + IN - OUT in scale-3 units, floored at zero.
+    let (db, unit_id) = setup_test_db_with_unit();
+    let product_id = create_test_product(&db, "prod_frac", "Fractional Test");
+
+    let dr_feb = create_test_daily_report(&db, &unit_id, "2024-02-15");
+
+    let report_repo = ReportRepository::new(db.executor());
+    report_repo
+        .insert_raw_meal_item(&grpc_lib::models::DailyReportMealItem {
+            id: Uuid::new_v4().to_string(),
+            meal_id: test_breakfast_meal_id(&dr_feb),
+            product_id: product_id.clone(),
+            product_name: "Test Product".to_string(),
+            quantity: 0.5,
+            unit_price: 100.0,
+            total_cost: 50.0,
+            fifo_layer_id: None,
+        })
+        .unwrap();
+
+    // دخول 1.234 and خروج 0.500 في فبراير → closing = 1.234 - 0.500 = 0.734
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::In,
+        1.234,
+        0.0,
+        1.234,
+        Some("Order"),
+        Some(&dr_feb),
+        "2024-02-10T10:00:00Z",
+        Some(&unit_id),
+    );
+    create_stock_movement(
+        &db,
+        &product_id,
+        StockMovementType::Out,
+        0.5,
+        1.234,
+        0.734,
+        Some("Consumption"),
+        Some(&dr_feb),
+        "2024-02-15T12:00:00Z",
+        Some(&unit_id),
+    );
+
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 2, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 2)
+        .unwrap()
+        .unwrap();
+    let item = view
+        .items
+        .iter()
+        .find(|i| i.product_id == product_id)
+        .unwrap();
+
+    assert_eq!(item.total_in, 1.234);
+    assert_eq!(item.total_out, 0.5);
+    assert_eq!(
+        item.computed_closing, 0.734,
+        "Closing must be exact scale-3 arithmetic (1.234 - 0.500), got {}",
+        item.computed_closing
+    );
+}
+
+#[test]
+fn test_product_base_price_change_detection_is_exact_money() {
+    // ADR-0048: `base_price` change detection compares exact boundary-scaled
+    // Money values (no float epsilon). Identical price → no fiscal lock check
+    // (update succeeds in an open year); different price → PriceLocked error.
+    use grpc_lib::application::services::ProductService;
+    use grpc_lib::errors::BusinessLogicError;
+
+    let (db, unit_id) = setup_test_db_with_unit();
+    let _ = unit_id;
+    let product_id = create_test_product(&db, "prod_price", "Price Test");
+
+    let service = ProductService::new(db.executor());
+
+    // Same price → no change → update allowed even with fiscal year open.
+    service
+        .update_product(&grpc_lib::models::UpdateProductRequest {
+            id: product_id.clone(),
+            name: "Price Test".into(),
+            base_price: 100.0,
+        })
+        .expect("identical base_price must not be treated as a change");
+
+    // Different price → change detected → open fiscal year blocks it.
+    let err = service
+        .update_product(&grpc_lib::models::UpdateProductRequest {
+            id: product_id.clone(),
+            name: "Price Test".into(),
+            base_price: 101.0,
+        })
+        .expect_err("price change in an open fiscal year must be rejected");
+    assert!(matches!(
+        err,
+        grpc_lib::errors::AppError::BusinessLogic(
+            BusinessLogicError::PriceLockedForActiveFiscalYear { .. }
+        )
+    ));
+}
+
+#[test]
 fn test_property_formula_is_deterministic() {
     let (db, unit_id) = setup_test_db_with_unit();
     let product_id = create_test_product(&db, "prod_determ", "Deterministic Test");

@@ -45,7 +45,8 @@ impl<'a> FifoPreviewService<'a> {
         Ok(DailyFifoConsumptionPreview {
             predicted_fifo_cost,
             predicted_consumption_layers: product_previews,
-            predicted_remaining_inventory_value: remaining_value.value(),
+            predicted_remaining_inventory_value:
+                crate::domain::numeric::legacy_float::money_to_f64(&remaining_value.value())?,
             meal_previews: vec![],
             daily_summary: DailyConsumptionSummary::default(),
         })
@@ -215,7 +216,8 @@ impl<'a> FifoPreviewService<'a> {
         Ok(DailyFifoConsumptionPreview {
             predicted_fifo_cost: computation.total_cost,
             predicted_consumption_layers: product_previews,
-            predicted_remaining_inventory_value: remaining_value.value(),
+            predicted_remaining_inventory_value:
+                crate::domain::numeric::legacy_float::money_to_f64(&remaining_value.value())?,
             meal_previews,
             daily_summary,
         })
@@ -257,8 +259,12 @@ impl<'a> FifoPreviewService<'a> {
         let fifo_repo = self.executor.fifo_layers();
         let current_value = fifo_repo.get_inventory_value_fifo(unit_id)?;
         let consumed_total: f64 = product_previews.iter().map(|p| p.predicted_fifo_cost).sum();
+        // Presentation preview: the remaining-value estimate is bounded at zero
+        // for display; the Money newtype receives it at this boundary only.
         Ok(InventoryValue::new(
-            (current_value - consumed_total).max(0.0),
+            crate::domain::numeric::legacy_float::money_from_f64(
+                (current_value - consumed_total).max(0.0),
+            )?,
         ))
     }
 }

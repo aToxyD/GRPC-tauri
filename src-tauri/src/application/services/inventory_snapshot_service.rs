@@ -2,6 +2,7 @@
 //!
 //! Handles computing and storing monthly inventory snapshots, staleness, and views.
 
+use crate::domain::numeric::legacy_float;
 use crate::errors::AppError;
 use crate::models::ComputeSnapshotResult;
 use crate::repositories::{DbExecutor, RepositoryProvider};
@@ -113,8 +114,28 @@ impl<'a> InventorySnapshotService<'a> {
             let total_out =
                 inv_repo.get_total_out(product_id, unit_id, &month_start, &month_end)?;
 
-            // المعادلة: Closing = Opening + IN - OUT
-            let computed_closing = (opening_stock + total_in - total_out).max(0.0);
+            // ADR-0048: `computed_closing = opening + IN - OUT` is Quantity
+            // reconciliation arithmetic. The delta is genuinely signed: OUT may
+            // exceed IN when the movement ledger already floored `balance_after`
+            // at zero, so `Opening + IN - OUT` can be negative. The signed delta
+            // is carried in scale-3 scaled units (a token domain-appropriate
+            // signed intermediate), then floored at zero because stock can never
+            // be negative — mirroring the ledger's own invariant.
+            let opening_scaled = legacy_float::quantity_from_f64(opening_stock)?.to_scaled_i64()?;
+            let in_scaled = legacy_float::quantity_from_f64(total_in)?.to_scaled_i64()?;
+            let out_scaled = legacy_float::quantity_from_f64(total_out)?.to_scaled_i64()?;
+            let signed_delta = opening_scaled
+                .checked_add(in_scaled)
+                .and_then(|v| v.checked_sub(out_scaled))
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Snapshot closing overflow for product {}",
+                        product_id
+                    ))
+                })?;
+            let computed_closing = legacy_float::quantity_to_f64(
+                &crate::domain::numeric::Quantity::from_scaled_i64(signed_delta.max(0))?,
+            )?;
 
             // Reported closing = balance_after of last consumption movement
             let reported_closing = inv_repo.get_reported_closing(

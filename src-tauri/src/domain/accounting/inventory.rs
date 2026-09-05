@@ -1,26 +1,27 @@
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::domain::numeric::Money;
+
 /// Inventory valuation from remaining FIFO layers only.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct InventoryValue(f64);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InventoryValue(Money);
 
 impl InventoryValue {
-    pub fn new(value: f64) -> Self {
+    pub fn new(value: Money) -> Self {
         Self(value)
     }
 
-    pub fn value(self) -> f64 {
+    pub fn value(self) -> Money {
         self.0
     }
 
     pub fn zero() -> Self {
-        Self(0.0)
+        Self(Money::zero())
     }
 }
 
 impl fmt::Display for InventoryValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.2}", self.0)
+        write!(f, "{}", self.0)
     }
 }

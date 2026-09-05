@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::domain::numeric::legacy_float::{money_from_f64, money_to_f64, quantity_from_f64};
+use crate::domain::numeric::Money;
 use crate::repositories::DbExecutor;
 use crate::repositories::RepositoryProvider;
 
@@ -82,8 +84,8 @@ impl Report for FiscalYearSummaryReport {
 
         let mut total_movements_in: i64 = 0;
         let mut total_movements_out: i64 = 0;
-        let mut total_consumption_value: f64 = 0.0;
-        let mut total_opening_value: f64 = 0.0;
+        let mut total_consumption_value = Money::zero();
+        let mut total_opening_value = Money::zero();
 
         let all_movements = movements.fetch_stock_movements(&stock_movements_query)?;
 
@@ -96,14 +98,32 @@ impl Report for FiscalYearSummaryReport {
                     "OUT" => {
                         total_movements_out += 1;
                         if let Some(cost) = row.unit_cost {
+                            // ADR-0048: OUT value = unit cost (Money) × quantity,
+                            // summed exactly and rounded exactly once at output.
+                            let unit = money_from_f64(cost)
+                                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+                            let qty = quantity_from_f64(row.quantity)
+                                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
                             total_consumption_value =
-                                super::round_money(total_consumption_value + cost * row.quantity);
+                                total_consumption_value
+                                    .checked_add(unit.checked_mul_quantity(&qty).map_err(|e| {
+                                        FiscalYearSummaryError::Internal(e.to_string())
+                                    })?)
+                                    .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
                         }
                     }
                     "OPENING" => {
                         if let Some(cost) = row.unit_cost {
+                            let unit = money_from_f64(cost)
+                                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+                            let qty = quantity_from_f64(row.quantity)
+                                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
                             total_opening_value =
-                                super::round_money(total_opening_value + cost * row.quantity);
+                                total_opening_value
+                                    .checked_add(unit.checked_mul_quantity(&qty).map_err(|e| {
+                                        FiscalYearSummaryError::Internal(e.to_string())
+                                    })?)
+                                    .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
                         }
                     }
                     _ => {}
@@ -169,11 +189,20 @@ impl Report for FiscalYearSummaryReport {
                 status: status.status,
                 total_movements_in,
                 total_movements_out,
-                total_consumption_value,
-                total_opening_value,
+                // Money sums rounded exactly once at the scale-2 wire boundary.
+                total_consumption_value: money_to_f64(&total_consumption_value)
+                    .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
+                total_opening_value: money_to_f64(&total_opening_value)
+                    .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
                 daily_report_count,
                 total_beneficiaries,
-                ending_inventory_value: super::round_money(ending_inventory_value),
+                // SQL aggregate over REAL columns is a boundary value; the
+                // scale-2 normalization happens here, not mid-arithmetic.
+                ending_inventory_value: money_to_f64(
+                    &money_from_f64(ending_inventory_value)
+                        .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
+                )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
                 layer_count,
             },
         })
