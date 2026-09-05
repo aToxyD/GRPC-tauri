@@ -1,4 +1,8 @@
-use crate::domain::fifo_engine::{simulate_fifo_consumption, FifoLayerRow};
+use crate::domain::fifo_engine::{
+    simulate_fifo_consumption, simulate_fifo_consumption_typed, FifoLayerRow, TypedConsumedPortion,
+    TypedFifoLayer,
+};
+use crate::domain::numeric::{legacy_float, Quantity};
 use crate::errors::{AppError, AppResult};
 use crate::models::{ConsumedLayerPortion, FifoStockLayer, InventoryLayerConsumption};
 use crate::repositories::executor::DbExecutor;
@@ -85,14 +89,41 @@ impl<'a> FifoLayerRepository<'a> {
 
     /// Consume `quantity` units from the oldest available FIFO layers for a given
     /// unit+product pair. Returns the list of layer portions consumed.
+    ///
+    /// Wire facade (ADR-0048): converts at the boundary and delegates to the
+    /// exact typed path.
     pub fn consume_fifo(
         &self,
         unit_id: &str,
         product_id: &str,
         quantity: f64,
     ) -> AppResult<Vec<ConsumedLayerPortion>> {
-        // Fetch all active layers ordered by received_at ASC, id ASC (stable FIFO)
-        let layer_iter = self
+        let requested = legacy_float::quantity_from_f64(quantity)?;
+        let consumed = self.consume_fifo_typed(unit_id, product_id, requested)?;
+        consumed
+            .into_iter()
+            .map(|p| {
+                Ok(ConsumedLayerPortion {
+                    layer_id: p.layer_id,
+                    quantity: legacy_float::quantity_to_f64(&p.quantity)?,
+                    unit_cost: legacy_float::money_to_f64(&p.unit_cost)?,
+                    total_cost: legacy_float::money_to_f64(&p.total_cost)?,
+                })
+            })
+            .collect()
+    }
+
+    /// Exact-typed consume path (ADR-0048): the row mapping converts REAL `f64`
+    /// columns to exact `Money`/`Quantity`, the engine computes exact portions,
+    /// and quantity is written back via the single boundary conversion. No
+    /// float arithmetic exists in the decision/consumption path.
+    pub fn consume_fifo_typed(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+        quantity: Quantity,
+    ) -> AppResult<Vec<TypedConsumedPortion>> {
+        let rows = self
             .executor
             .query_all(
                 r#"
@@ -112,9 +143,18 @@ impl<'a> FifoLayerRepository<'a> {
             )
             .map_err(AppError::from)?;
 
-        let available_layers: Vec<FifoLayerRow> = layer_iter;
+        let layers = rows
+            .into_iter()
+            .map(|(id, cost, qty)| {
+                Ok(TypedFifoLayer {
+                    layer_id: id,
+                    unit_cost: legacy_float::money_from_f64(cost)?,
+                    qty_remaining: legacy_float::quantity_from_f64(qty)?,
+                })
+            })
+            .collect::<AppResult<Vec<TypedFifoLayer>>>()?;
 
-        let consumed_portions = simulate_fifo_consumption(product_id, &available_layers, quantity)?;
+        let consumed_portions = simulate_fifo_consumption_typed(product_id, &layers, quantity)?;
 
         for portion in &consumed_portions {
             self.executor
@@ -124,7 +164,10 @@ impl<'a> FifoLayerRepository<'a> {
                 SET qty_remaining = qty_remaining - ?1
                 WHERE id = ?2
                 "#,
-                    params![portion.quantity, portion.layer_id],
+                    params![
+                        legacy_float::quantity_to_f64(&portion.quantity)?,
+                        portion.layer_id
+                    ],
                 )
                 .map_err(AppError::from)?;
         }
@@ -132,6 +175,11 @@ impl<'a> FifoLayerRepository<'a> {
         Ok(consumed_portions)
     }
 
+    /// Insert a persisted layer-consumption ledger row.
+    ///
+    /// ADR-0048: `total_cost` is a caller-computed boundary value so that no
+    /// money arithmetic ever lives in the repository (SQL is row mapping only).
+    #[allow(clippy::too_many_arguments)]
     pub fn create_consumption_record(
         &self,
         unit_id: &str,
@@ -139,10 +187,10 @@ impl<'a> FifoLayerRepository<'a> {
         layer_id: &str,
         quantity: f64,
         unit_cost: f64,
+        total_cost: f64,
         consumed_at: &str,
     ) -> AppResult<()> {
         let id = Uuid::new_v4().to_string();
-        let total_cost = quantity * unit_cost;
 
         log::info!(
             target: "grpc::fifo",

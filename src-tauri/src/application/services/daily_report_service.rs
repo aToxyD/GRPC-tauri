@@ -5,7 +5,8 @@
 //! Each meal item's cost reflects authentic FIFO layer portions.
 
 use crate::domain::events::DomainEvent;
-use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
+use crate::domain::meal_cost_engine::compute_meal_fifo_costs_typed;
+use crate::domain::numeric::{legacy_float, Money};
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
 use crate::models::{
@@ -89,20 +90,22 @@ impl<'a> DailyReportService<'a> {
         let now = chrono::Utc::now().to_rfc3339();
         let report_id = Uuid::new_v4().to_string();
 
-        // ── Phase 1: FIFO consumption via shared engine ─────────────────────
+        // ── Phase 1: FIFO consumption via shared typed engine ──────────────
         // The engine handles meal ordering (Breakfast → Lunch → Dinner)
         // and delegates actual consumption to the injected callback.
         // No ratio-based redistribution. No weighted-average across meals.
+        // ADR-0048: all cost arithmetic is exact `Decimal`; `f64` conversions
+        // happen only at the repo/ledger write boundaries below.
 
-        let computation = compute_meal_fifo_costs(&input.meals, |pid, qty| {
-            fifo_repo.consume_fifo(unit_id_str, pid, qty)
+        let computation = compute_meal_fifo_costs_typed(&input.meals, |pid, qty| {
+            fifo_repo.consume_fifo_typed(unit_id_str, pid, qty)
         })?;
 
         // ── Phase 2: create movements and consumption records ────────────
         struct MealComputed {
             section: MealSectionInput,
             beneficiaries: i32,
-            total_cost: f64,
+            total_cost: Money,
             average: f64,
             item_costs: Vec<(String, f64, f64, f64, Option<String>)>,
         }
@@ -126,16 +129,19 @@ impl<'a> DailyReportService<'a> {
                     .map(|p| p.name)
                     .unwrap_or_default();
 
-                let weighted_unit_cost = if product.quantity > 0.0 {
-                    product.total_cost / product.quantity
+                // Exact weighted unit cost: total_cost ÷ quantity, guarded by an
+                // exact `is_positive` check (no NaN, no silent zero from a float
+                // dust remainder).
+                let weighted_unit_cost = if product.quantity.is_positive() {
+                    product.total_cost.checked_div_quantity(&product.quantity)?
                 } else {
-                    0.0
+                    Money::zero()
                 };
 
                 let movement = NewStockMovement {
                     product_id: product.product_id.clone(),
                     movement_type: StockMovementType::Out,
-                    quantity: product.quantity,
+                    quantity: legacy_float::quantity_to_f64(&product.quantity)?,
                     reference_type: Some("Consumption".to_string()),
                     reference_id: Some(report_id.clone()),
                     notes: Some(format!(
@@ -145,7 +151,7 @@ impl<'a> DailyReportService<'a> {
                     user_id: user_id.to_string(),
                     username: username.to_string(),
                     unit_id: Some(unit_id_str.to_string()),
-                    unit_cost: Some(weighted_unit_cost),
+                    unit_cost: Some(legacy_float::money_to_f64(&weighted_unit_cost)?),
                 };
                 let movement_id = stock_repo.record_stock_movement(&movement)?;
                 on_event(DomainEvent::StockMovementRecorded {
@@ -159,20 +165,21 @@ impl<'a> DailyReportService<'a> {
                         unit_id_str,
                         &movement_id,
                         &portion.layer_id,
-                        portion.quantity,
-                        portion.unit_cost,
+                        legacy_float::quantity_to_f64(&portion.quantity)?,
+                        legacy_float::money_to_f64(&portion.unit_cost)?,
+                        legacy_float::money_to_f64(&portion.total_cost)?,
                         &now,
                     )?;
                     on_event(DomainEvent::FifoLayerConsumed {
                         layer_id: portion.layer_id.clone(),
-                        quantity: portion.quantity,
-                        unit_cost: portion.unit_cost,
+                        quantity: legacy_float::quantity_to_f64(&portion.quantity)?,
+                        unit_cost: legacy_float::money_to_f64(&portion.unit_cost)?,
                     });
                     item_costs.push((
                         product.product_id.clone(),
-                        portion.quantity,
-                        portion.unit_cost,
-                        portion.total_cost,
+                        legacy_float::quantity_to_f64(&portion.quantity)?,
+                        legacy_float::money_to_f64(&portion.unit_cost)?,
+                        legacy_float::money_to_f64(&portion.total_cost)?,
                         Some(portion.layer_id.clone()),
                     ));
                 }
@@ -185,8 +192,10 @@ impl<'a> DailyReportService<'a> {
                 section.mission_count,
                 section.guest_count,
             );
-            let average =
-                DailyReportMeal::compute_meal_average(computed_meal.total_cost, beneficiaries);
+            // Average is computed by the single-owner model helper on the
+            // boundary-rounded total cost (no duplicated formula here).
+            let total_cost_wire = legacy_float::money_to_f64(&computed_meal.total_cost)?;
+            let average = DailyReportMeal::compute_meal_average(total_cost_wire, beneficiaries);
 
             computed_meals.push(MealComputed {
                 section: section.clone(),
@@ -198,7 +207,11 @@ impl<'a> DailyReportService<'a> {
         }
 
         // ── Phase 2: persist report header + meals + items ──────────────────
-        let total_daily_cost: f64 = computed_meals.iter().map(|m| m.total_cost).sum();
+        let mut daily_total = Money::zero();
+        for meal in &computed_meals {
+            daily_total = daily_total.checked_add(meal.total_cost)?;
+        }
+        let total_daily_cost = legacy_float::money_to_f64(&daily_total)?;
         let total_daily_beneficiaries: i32 = computed_meals.iter().map(|m| m.beneficiaries).sum();
         let total_daily_average: f64 = computed_meals.iter().map(|m| m.average).sum();
 
@@ -220,7 +233,7 @@ impl<'a> DailyReportService<'a> {
                 &report_id,
                 &meal.section,
                 meal.beneficiaries,
-                meal.total_cost,
+                legacy_float::money_to_f64(&meal.total_cost)?,
                 meal.average,
             )?;
 

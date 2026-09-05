@@ -13,6 +13,7 @@
 //! stock movement + FIFO, and marks the order Confirmed. Any failure aborts the
 //! whole transaction.
 
+use crate::domain::numeric::{legacy_float, Money, Quantity};
 use crate::domain::pricing::resolver::resolve_supplier_for_item;
 use crate::domain::validation::{
     check_order_is_editable, validate_create_order_request, validate_update_order_request,
@@ -37,6 +38,8 @@ impl<'a> OrderService<'a> {
     /// Resolve every item against contract entitlement (pure decision phase).
     ///
     /// Enforces: all items of an order belong to exactly ONE supplier.
+    /// Quantities/prices are exact `Decimal` (ADR-0048); `f64` appears only at
+    /// the repo/wire boundary via `legacy_float`.
     #[allow(clippy::type_complexity)]
     fn resolve_items(
         &self,
@@ -45,7 +48,7 @@ impl<'a> OrderService<'a> {
         current_fiscal_year: i32,
     ) -> Result<
         (
-            Vec<(crate::models::OrderItemInput, String, f64)>,
+            Vec<(crate::models::OrderItemInput, String, Money)>,
             String,
             String,
             f64,
@@ -61,10 +64,11 @@ impl<'a> OrderService<'a> {
         for item in items {
             let candidates =
                 contracts.list_resolution_candidates_full(unit_id, &item.product_id)?;
+            let requested = legacy_float::quantity_from_f64(item.quantity)?;
             let resolution = resolve_supplier_for_item(
                 unit_id,
                 &item.product_id,
-                item.quantity,
+                requested,
                 current_fiscal_year,
                 &candidates,
             )?;
@@ -97,26 +101,38 @@ impl<'a> OrderService<'a> {
                 })
             })?;
 
-        let total = resolutions
-            .iter()
-            .map(|(item, res)| item.quantity * res.unit_price)
-            .sum();
-        let legs: Vec<(crate::models::OrderItemInput, String, f64)> = resolutions
+        // Exact total: unit_price (Money) × quantity (Quantity) per item; the
+        // `f64` total is produced only at the header-write boundary.
+        let weight = |item: &crate::models::OrderItemInput| -> Result<_, AppError> {
+            Ok(legacy_float::quantity_from_f64(item.quantity)?)
+        };
+        let mut total = Money::zero();
+        for (item, res) in &resolutions {
+            let line = res.unit_price.checked_mul_quantity(&weight(item)?)?;
+            total = total.checked_add(line)?;
+        }
+        let legs: Vec<(crate::models::OrderItemInput, String, Money)> = resolutions
             .into_iter()
             .map(|(item, res)| (item, res.allocation_id, res.unit_price))
             .collect();
 
-        Ok((legs, supplier.id.clone(), supplier.name.clone(), total))
+        Ok((
+            legs,
+            supplier.id.clone(),
+            supplier.name.clone(),
+            legacy_float::money_to_f64(&total)?,
+        ))
     }
 
     /// Reserve entitlement and write order item + reservation-leg rows.
     ///
     /// The order header must already exist (its FK is referenced by items).
     /// Legs mirror the exact resolution allocation so confirmation's
-    /// re-resolution verifies an unchanged state.
+    /// re-resolution verifies an unchanged state. `f64` conversion happens only
+    /// at the repo write boundary.
     fn reserve_and_write(
         &self,
-        legs: &[(crate::models::OrderItemInput, String, f64)],
+        legs: &[(crate::models::OrderItemInput, String, Money)],
         order_id: &str,
         unit_id: &str,
         current_fiscal_year: i32,
@@ -136,12 +152,14 @@ impl<'a> OrderService<'a> {
                 ));
             }
             let item_id = uuid::Uuid::new_v4().to_string();
+            let quantity = legacy_float::quantity_from_f64(item.quantity)?;
+            let total_cost = unit_price.checked_mul_quantity(&quantity)?;
             self.executor.orders().insert_order_item(
                 &item_id,
                 order_id,
                 item,
-                *unit_price,
-                item.quantity * unit_price,
+                legacy_float::money_to_f64(unit_price)?,
+                legacy_float::money_to_f64(&total_cost)?,
                 unit_id,
                 current_fiscal_year,
             )?;
@@ -150,8 +168,8 @@ impl<'a> OrderService<'a> {
                 &item_id,
                 allocation_id,
                 item.quantity,
-                *unit_price,
-                item.quantity * unit_price,
+                legacy_float::money_to_f64(unit_price)?,
+                legacy_float::money_to_f64(&total_cost)?,
                 now,
             )?;
         }
@@ -338,12 +356,13 @@ impl<'a> OrderService<'a> {
         // the identical agreed price; the supplier must be identical to the
         // stored (creation-time) supplier.
         let order_supplier_id = order.supplier_id.clone();
-        let mut legs: Vec<(String, f64, f64)> = Vec::new();
+        let mut legs: Vec<(String, Quantity, Money)> = Vec::new();
         for recorded in repo.get_order_items_for_confirmation(order_id)? {
             let (product_id, quantity, _product_name, recorded_price, allocation_id) = recorded;
             let candidates = contracts.list_resolution_candidates_full(unit_id, &product_id)?;
+            let requested = legacy_float::quantity_from_f64(quantity)?;
             let resolution =
-                resolve_supplier_for_item(unit_id, &product_id, quantity, anchor_fy, &candidates)?;
+                resolve_supplier_for_item(unit_id, &product_id, requested, anchor_fy, &candidates)?;
 
             if resolution.supplier_id != order_supplier_id {
                 return Err(AppError::BusinessLogic(
@@ -363,7 +382,11 @@ impl<'a> OrderService<'a> {
                     },
                 ));
             }
-            if (resolution.unit_price - recorded_price).abs() > f64::EPSILON {
+            // Exact price compare (no float epsilon): the recorded price is a
+            // serialized copy of the same decimal, so disagreement means the
+            // contract moved after creation.
+            let recorded_money = legacy_float::money_from_f64(recorded_price)?;
+            if resolution.unit_price != recorded_money {
                 return Err(AppError::BusinessLogic(
                     BusinessLogicError::PriceCalculation {
                         message: format!(
@@ -383,7 +406,7 @@ impl<'a> OrderService<'a> {
                     },
                 ));
             }
-            legs.push((product_id, quantity, resolution.unit_price));
+            legs.push((product_id, requested, resolution.unit_price));
         }
 
         // Stock movement + FIFO for every item (all within the surrounding tx).
@@ -392,14 +415,14 @@ impl<'a> OrderService<'a> {
             let movement = NewStockMovement {
                 product_id: product_id.clone(),
                 movement_type: StockMovementType::In,
-                quantity: *quantity,
+                quantity: legacy_float::quantity_to_f64(quantity)?,
                 reference_type: Some("Order".to_string()),
                 reference_id: Some(order_id.to_string()),
                 notes: Some(format!("طلبية من: {}", order.supplier_name)),
                 user_id: user_id.to_string(),
                 username: username.to_string(),
                 unit_id: Some(unit_id.to_string()),
-                unit_cost: Some(*unit_price),
+                unit_cost: Some(legacy_float::money_to_f64(unit_price)?),
             };
             stock_repo.record_stock_movement(&movement)?;
 
@@ -408,8 +431,8 @@ impl<'a> OrderService<'a> {
                 product_id,
                 "ORDER",
                 Some(order_id),
-                *unit_price,
-                *quantity,
+                legacy_float::money_to_f64(unit_price)?,
+                legacy_float::quantity_to_f64(quantity)?,
                 &now,
                 user_id,
                 anchor_fy,

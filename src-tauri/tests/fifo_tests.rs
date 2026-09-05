@@ -360,6 +360,7 @@ fn test_consumption_history_recorded() {
                 &portion.layer_id,
                 portion.quantity,
                 portion.unit_cost,
+                portion.total_cost,
                 &now,
             )
             .unwrap();
@@ -408,6 +409,7 @@ fn test_two_movements_have_independent_histories() {
                 &portion.layer_id,
                 portion.quantity,
                 portion.unit_cost,
+                portion.total_cost,
                 &now,
             )
             .unwrap();
@@ -420,6 +422,7 @@ fn test_two_movements_have_independent_histories() {
                 &portion.layer_id,
                 portion.quantity,
                 portion.unit_cost,
+                portion.total_cost,
                 &now,
             )
             .unwrap();

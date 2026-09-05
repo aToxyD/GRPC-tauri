@@ -10,13 +10,18 @@
 use rust_decimal::Decimal;
 
 use super::rounding::{from_scaled_i64, to_scaled_i64, MONEY_SCALE};
-use super::NumericError;
+use super::{NumericError, Quantity, Rate};
 
 /// Exact-decimal money, non-negative, boundary scale 2 (centimes).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Money(Decimal);
 
 impl Money {
+    /// The zero value.
+    pub fn zero() -> Self {
+        Self(Decimal::ZERO)
+    }
+
     /// Construct from centimes (boundary-scaled integer at scale 2).
     pub fn from_centimes(centimes: i64) -> Result<Self, NumericError> {
         if centimes < 0 {
@@ -97,6 +102,61 @@ impl Money {
             .checked_mul(Decimal::from(factor))
             .ok_or(NumericError::Overflow)?;
         Self::from_decimal(value)
+    }
+
+    /// Divide by an integer divisor (e.g. beneficiary count for a per-head
+    /// average). Exact; the quotient keeps full `Decimal` precision and is
+    /// rounded only at a boundary conversion. Fails closed on zero.
+    pub fn checked_div_scalar(self, divisor: i64) -> Result<Self, NumericError> {
+        if divisor == 0 {
+            return Err(NumericError::DivisionByZero);
+        }
+        let value = self
+            .0
+            .checked_div(Decimal::from(divisor))
+            .ok_or(NumericError::Overflow)?;
+        Self::from_decimal(value)
+    }
+
+    /// Exact `money × quantity` (line cost). Fails closed on overflow and on
+    /// a negative product.
+    pub fn checked_mul_quantity(&self, rhs: &Quantity) -> Result<Self, NumericError> {
+        let value = self
+            .0
+            .checked_mul(rhs.raw())
+            .ok_or(NumericError::Overflow)?;
+        Self::from_decimal(value)
+    }
+
+    /// Exact `money ÷ quantity` (weighted or unit cost). Fails closed on
+    /// division by zero and on overflow.
+    pub fn checked_div_quantity(&self, rhs: &Quantity) -> Result<Self, NumericError> {
+        if rhs.raw().is_zero() {
+            return Err(NumericError::DivisionByZero);
+        }
+        let value = self
+            .0
+            .checked_div(rhs.raw())
+            .ok_or(NumericError::Overflow)?;
+        Self::from_decimal(value)
+    }
+
+    /// Apply a percent-domain rate (TVA): `self × (1 + rate/100)`. Exact
+    /// decimal arithmetic; the multiplier is never a float.
+    pub fn checked_apply_rate(&self, rate: &Rate) -> Result<Self, NumericError> {
+        // rate ∈ [0, 100] by invariant, so 100 is never a zero divisor.
+        let multiplier = Decimal::ONE + rate.raw() / Decimal::from(100);
+        let value = self
+            .0
+            .checked_mul(multiplier)
+            .ok_or(NumericError::Overflow)?;
+        Self::from_decimal(value)
+    }
+}
+
+impl core::fmt::Display for Money {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -300,5 +360,97 @@ mod tests {
                 .unwrap(),
             i64::MAX
         );
+    }
+
+    #[test]
+    fn division_by_scalar_is_exact() {
+        // 133.00 / 4 = 33.25 exactly; boundary conversion truncates nothing.
+        let q = money("133.00").checked_div_scalar(4).unwrap();
+        assert_eq!(q, money("33.25"));
+        // 10.00 / 3 keeps full precision and rounds only at the boundary.
+        let r = money("10.00").checked_div_scalar(3).unwrap();
+        assert_eq!(r.to_scaled_i64().unwrap(), 333);
+        assert_eq!(
+            money("10.00").checked_div_scalar(0),
+            Err(NumericError::DivisionByZero)
+        );
+    }
+
+    #[test]
+    fn mul_quantity_produces_exact_line_cost() {
+        use crate::domain::numeric::Quantity;
+        let unit_price = money("150.50");
+        let qty = Quantity::parse_str("10.000").unwrap();
+        let line = unit_price.checked_mul_quantity(&qty).unwrap();
+        assert_eq!(line.to_scaled_i64().unwrap(), 150_500);
+        let cost = unit_price.checked_mul_quantity(&Quantity::zero()).unwrap();
+        assert!(cost.is_zero());
+    }
+
+    #[test]
+    fn div_quantity_produces_exact_unit_cost() {
+        use crate::domain::numeric::Quantity;
+        // 100.000 DZD over 3333.000 kg → 0.030 per kg (recurring mixed-radix
+        // fraction must be exact to full precision).
+        let total = money("100.00");
+        let qty = Quantity::parse_str("3333.000").unwrap();
+        let unit = total.checked_div_quantity(&qty).unwrap();
+        assert!(unit.is_positive());
+        assert_eq!(
+            total.checked_div_quantity(&Quantity::zero()),
+            Err(NumericError::DivisionByZero)
+        );
+    }
+
+    #[test]
+    fn apply_rate_matches_percent_domain_semantics() {
+        use crate::domain::numeric::Rate;
+        let rd = |s: &str| Rate::parse_str(s).unwrap();
+        // 200.00 @ 19% → exactly 238.00 (not 237.999...).
+        assert_eq!(
+            money("200.00")
+                .checked_apply_rate(&rd("19"))
+                .unwrap()
+                .to_scaled_i64()
+                .unwrap(),
+            23800
+        );
+        // Zero rate is the identity.
+        assert_eq!(
+            money("100.00").checked_apply_rate(&rd("0")).unwrap(),
+            money("100.00")
+        );
+        // Fractional rate keeps exact cents at the boundary: 133.00 @ 7.5% →
+        // 142.975 → 142.98 (MidpointAwayFromZero at scale 2).
+        assert_eq!(
+            money("133.00")
+                .checked_apply_rate(&rd("7.5"))
+                .unwrap()
+                .to_scaled_i64()
+                .unwrap(),
+            14298
+        );
+        assert_eq!(
+            money("19.99")
+                .checked_apply_rate(&rd("19"))
+                .unwrap()
+                .to_scaled_i64()
+                .unwrap(),
+            2379
+        );
+    }
+
+    #[test]
+    fn ordering_is_exact() {
+        assert!(money("10.00") < money("10.01"));
+        assert!(money("0.00100") < money("0.01"));
+        assert_eq!(money("0.10000"), money("0.10"));
+        assert!(money("100.00") > money("99.99999"));
+    }
+
+    #[test]
+    fn display_renders_exact_value() {
+        assert_eq!(money("19.99").to_string(), "19.99");
+        assert_eq!(money("0.00").to_string(), "0.00");
     }
 }

@@ -480,11 +480,16 @@ impl<'a> ContractRepository<'a> {
     /// Full resolution candidates for (unit, product): allocation + owning
     /// contract's supplier + agreed price, ordered oldest obligations first
     /// (fiscal_year ASC, created_at ASC, id ASC). CANCELLED excluded.
+    ///
+    /// ADR-0048: row mapping only — raw REAL/`f64` columns are converted to
+    /// exact `Decimal` at this boundary via the legacy adapter; no arithmetic
+    /// happens here.
     pub fn list_resolution_candidates_full(
         &self,
         unit_id: &str,
         product_id: &str,
     ) -> Result<Vec<crate::domain::pricing::resolver::ResolutionCandidate>, AppError> {
+        use crate::domain::numeric::legacy_float;
         Ok(self.executor.query_all(
             "SELECT ca.id, ca.fiscal_year, c.supplier_id, s.name, cp.agreed_price,
                     ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
@@ -498,16 +503,40 @@ impl<'a> ContractRepository<'a> {
              ORDER BY ca.fiscal_year ASC, ca.created_at ASC, ca.id ASC",
             params![unit_id, product_id],
             |row| {
+                let money_of =
+                    |idx: usize, v: f64| -> rusqlite::Result<crate::domain::numeric::Money> {
+                        legacy_float::money_from_f64(v).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                idx,
+                                rusqlite::types::Type::Real,
+                                Box::new(crate::errors::AppError::from(e)),
+                            )
+                        })
+                    };
+                let quantity_of =
+                    |idx: usize, v: f64| -> rusqlite::Result<crate::domain::numeric::Quantity> {
+                        legacy_float::quantity_from_f64(v).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                idx,
+                                rusqlite::types::Type::Real,
+                                Box::new(crate::errors::AppError::from(e)),
+                            )
+                        })
+                    };
+                let agreed_price: Option<f64> = row.get(4)?;
                 Ok(crate::domain::pricing::resolver::ResolutionCandidate {
                     allocation_id: row.get(0)?,
                     allocation_fiscal_year: row.get(1)?,
                     supplier_id: row.get(2)?,
                     supplier_name: row.get(3)?,
-                    agreed_price: row.get(4)?,
-                    contracted_quantity: row.get(5)?,
-                    fulfilled_quantity: row.get(6)?,
-                    released_quantity: row.get(7)?,
-                    reserved_quantity: row.get(8)?,
+                    agreed_price: match agreed_price {
+                        Some(v) => Some(money_of(4, v)?),
+                        None => None,
+                    },
+                    contracted_quantity: quantity_of(5, row.get(5)?)?,
+                    fulfilled_quantity: quantity_of(6, row.get(6)?)?,
+                    released_quantity: quantity_of(7, row.get(7)?)?,
+                    reserved_quantity: quantity_of(8, row.get(8)?)?,
                     entitlement_state: row.get(9)?,
                 })
             },

@@ -25,6 +25,7 @@
 //! (`NegativeNotAllowed`) and overflow/division-by-zero; there is no
 //! saturation, no `f64` pathway, and no NaN/Infinity representation.
 
+pub(crate) mod legacy_float;
 mod money;
 mod quantity;
 mod rate;

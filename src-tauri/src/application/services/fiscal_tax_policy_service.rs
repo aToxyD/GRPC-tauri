@@ -62,7 +62,12 @@ impl<'a> FiscalTaxPolicyService<'a> {
                     },
                 ));
             }
-            if (policy.tva_rate - req.tva_rate).abs() > f64::EPSILON {
+            // ADR-0048: exact rate comparison (no float epsilon) — both wire
+            // values convert to exact percent `Rate` and must be identical.
+            let existing_rate =
+                crate::domain::numeric::legacy_float::rate_from_f64(policy.tva_rate)?;
+            let requested_rate = crate::domain::numeric::legacy_float::rate_from_f64(req.tva_rate)?;
+            if existing_rate != requested_rate {
                 return Err(AppError::BusinessLogic(
                     BusinessLogicError::OperationNotPermitted {
                         message: format!(

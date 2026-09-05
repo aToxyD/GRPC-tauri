@@ -335,6 +335,16 @@ impl From<uuid::Error> for AppError {
     }
 }
 
+impl From<crate::domain::numeric::NumericError> for AppError {
+    fn from(e: crate::domain::numeric::NumericError) -> Self {
+        // ADR-0048: a NumericError surfacing at runtime is an invariant/
+        // overflow/data-corruption signal, not a user-input error (validation
+        // happens earlier at the wire boundary). It maps to Internal so the
+        // ADR-0012 exposure policy hides details in production.
+        AppError::Internal(format!("Numeric arithmetic error: {}", e))
+    }
+}
+
 impl From<argon2::password_hash::Error> for AppError {
     fn from(e: argon2::password_hash::Error) -> Self {
         map_argon2_error(e)

@@ -18,7 +18,7 @@ const RATE_MAX: i64 = 100;
 
 /// Exact-decimal percentage rate in the closed interval `[0, 100]`,
 /// boundary scale 4 (ten-thousandths of a percent).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Rate(Decimal);
 
 impl Rate {
@@ -102,6 +102,18 @@ impl Rate {
             return Err(NumericError::NegativeNotAllowed);
         }
         Self::enforce_range(value)
+    }
+
+    /// Internal exact-`Decimal` accessor — reserved for the numeric module and
+    /// the legacy wire adapter; never exposed outside the crate.
+    pub(crate) fn raw(&self) -> Decimal {
+        self.0
+    }
+}
+
+impl core::fmt::Display for Rate {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -233,5 +245,19 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn ordering_is_exact() {
+        assert!(rate("0.0001") < rate("0.0002"));
+        assert!(rate("19.0") < rate("19.00001"));
+        assert!(rate("99.9999") < rate("100"));
+        assert_eq!(rate("19.000"), rate("19.0"));
+    }
+
+    #[test]
+    fn display_renders_exact_value() {
+        assert_eq!(rate("19.0").to_string(), "19.0");
+        assert_eq!(rate("100").to_string(), "100");
     }
 }

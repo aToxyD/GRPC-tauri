@@ -205,13 +205,23 @@ fn full_procurement_lifecycle_via_services() {
 
 #[test]
 fn price_has_single_owner_domain_arithmetic() {
-    // The TVA arithmetic is owned by domain/pricing; both report services
-    // and the IPC command delegate to it (P2 / A5).
-    let got = grpc_lib::domain::pricing::price::price_with_tva(200.0, 19.0);
-    assert!((got - 238.0).abs() < f64::EPSILON);
+    // ADR-0048: TVA arithmetic is owned by domain/pricing and is exact
+    // `Decimal` on the `Money`/`Rate` newtypes (P2 / A5). Both report
+    // services and the IPC command delegate to it.
+    let base = grpc_lib::domain::numeric::Money::from_centimes(20_000).unwrap();
+    let rate = grpc_lib::domain::numeric::Rate::parse_str("19.0").unwrap();
+    let got = grpc_lib::domain::pricing::price::price_with_tva(&base, &rate)
+        .expect("exact tva arithmetic");
+    assert_eq!(
+        got,
+        grpc_lib::domain::numeric::Money::from_centimes(23_800).unwrap()
+    );
     let via_service =
         grpc_lib::application::services::ReportCalculationService::calculate_product_price_with_tva(
             200.0, 19.0,
-        );
-    assert!((via_service - got).abs() < f64::EPSILON);
+        )
+        .expect("delegated tva arithmetic");
+    // 238.00 is exactly representable in f64, so the boundary conversion is
+    // exact (no epsilon needed).
+    assert_eq!(via_service, 238.0);
 }

@@ -43,7 +43,7 @@ pub(crate) fn build_report_scope(
 /// Calculate meal cost for a given day
 #[tauri::command]
 pub fn calculate_meal_cost(items: Vec<(f64, f64)>) -> Result<f64, String> {
-    Ok(ReportCalculationService::calculate_meal_cost(items))
+    ReportCalculationService::calculate_meal_cost(items).map_err(|e| e.to_string())
 }
 
 /// Calculate meal rate from total cost and beneficiary counts
@@ -67,11 +67,13 @@ pub fn calculate_meal_rate(
 }
 
 /// Calculate product price with TVA
+///
+/// ADR-0048: the `f64` inputs are wire values; the arithmetic happens on exact
+/// `Decimal` inside the domain and the result is rounded once at this boundary.
 #[tauri::command]
 pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> Result<f64, String> {
-    Ok(ReportCalculationService::calculate_product_price_with_tva(
-        base_price, tva,
-    ))
+    ReportCalculationService::calculate_product_price_with_tva(base_price, tva)
+        .map_err(|e| e.to_string())
 }
 
 /// Get monthly summary (or full fiscal-year aggregate when month is None).

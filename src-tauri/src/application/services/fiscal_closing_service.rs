@@ -6,6 +6,7 @@
 //! transaction — that is the caller's responsibility, keeping the boundary clean.
 
 use crate::domain::audit::{AuditAction, EntityType};
+use crate::domain::numeric::legacy_float;
 use crate::errors::AppError;
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
@@ -105,8 +106,15 @@ impl<'a> FiscalClosingService<'a> {
                 .fifo_layers()
                 .get_global_quantity_and_value_for_product(&product.id)?;
 
-            let unit_cost = if quantity > 0.0 {
-                total_value / quantity
+            // ADR-0048: exact weighted cost — total ÷ quantity on `Decimal`,
+            // guarded by an exact `is_positive` check; converted to `f64` only
+            // for the snapshot REAL-column write.
+            let quantity_exact = legacy_float::quantity_from_f64(quantity)?;
+            let total_value_exact = legacy_float::money_from_f64(total_value)?;
+            let unit_cost = if quantity_exact.is_positive() {
+                legacy_float::money_to_f64(
+                    &total_value_exact.checked_div_quantity(&quantity_exact)?,
+                )?
             } else {
                 0.0
             };

@@ -12,10 +12,15 @@ use super::rounding::{from_scaled_i64, to_scaled_i64, QUANTITY_SCALE};
 use super::NumericError;
 
 /// Exact-decimal quantity, non-negative, boundary scale 3 (thousandths).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Quantity(Decimal);
 
 impl Quantity {
+    /// The zero value.
+    pub fn zero() -> Self {
+        Self(Decimal::ZERO)
+    }
+
     /// Construct from a boundary-scaled integer at scale 3 (thousandths).
     pub fn from_scaled_i64(scaled: i64) -> Result<Self, NumericError> {
         if scaled < 0 {
@@ -86,6 +91,28 @@ impl Quantity {
         }
         let value = self.0.checked_div(rhs.0).ok_or(NumericError::Overflow)?;
         Self::from_decimal(value)
+    }
+
+    /// Exact multiplication by an integer scalar. Fails closed on overflow and
+    /// on a negative product.
+    pub fn checked_mul_scalar(self, factor: i64) -> Result<Self, NumericError> {
+        let value = self
+            .0
+            .checked_mul(Decimal::from(factor))
+            .ok_or(NumericError::Overflow)?;
+        Self::from_decimal(value)
+    }
+
+    /// Internal exact-`Decimal` accessor — reserved for the numeric module and
+    /// the legacy wire adapter; never exposed outside the crate.
+    pub(crate) fn raw(&self) -> Decimal {
+        self.0
+    }
+}
+
+impl core::fmt::Display for Quantity {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -243,5 +270,32 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn scalar_multiply_is_exact() {
+        let q = quantity("0.333").checked_mul_scalar(3).unwrap();
+        assert_eq!(q, quantity("0.999"));
+        assert_eq!(q.to_scaled_i64().unwrap(), 999);
+        let zero = quantity("10.000").checked_mul_scalar(0).unwrap();
+        assert!(zero.is_zero());
+        assert_eq!(
+            quantity("0.333").checked_mul_scalar(-1),
+            Err(NumericError::NegativeNotAllowed)
+        );
+    }
+
+    #[test]
+    fn ordering_is_exact() {
+        assert!(quantity("0.333") < quantity("0.334"));
+        assert!(quantity("0.001") < quantity("0.01"));
+        assert_eq!(quantity("0.1000"), quantity("0.10"));
+        assert!(quantity("1000.000") > quantity("999.999"));
+    }
+
+    #[test]
+    fn display_renders_exact_value() {
+        assert_eq!(quantity("0.333").to_string(), "0.333");
+        assert_eq!(quantity("0.00").to_string(), "0.00");
     }
 }
