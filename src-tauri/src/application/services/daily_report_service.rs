@@ -207,9 +207,15 @@ impl<'a> DailyReportService<'a> {
         }
 
         // ── Phase 2: persist report header + meals + items ──────────────────
+        // The header must equal the strict INTEGER sum of the meal values as
+        // persisted (each already rounded to the cent by the boundary), so the
+        // exact integrity check ABS(total_daily_cost - SUM(meal_cost)) > 0 can
+        // never false-positive on sub-cent meal costs (round(Σ) vs Σ round).
         let mut daily_total = Money::zero();
         for meal in &computed_meals {
-            daily_total = daily_total.checked_add(meal.total_cost)?;
+            let meal_total_rounded =
+                legacy_float::money_from_f64(legacy_float::money_to_f64(&meal.total_cost)?)?;
+            daily_total = daily_total.checked_add(meal_total_rounded)?;
         }
         let total_daily_cost = legacy_float::money_to_f64(&daily_total)?;
         let total_daily_beneficiaries: i32 = computed_meals.iter().map(|m| m.beneficiaries).sum();
@@ -341,28 +347,5 @@ impl<'a> DailyReportService<'a> {
         self.executor
             .reports()
             .list_daily_reports_by_month(year, month, unit_id)
-    }
-
-    pub fn calculate_meal_cost(&self, items: Vec<(f64, f64)>) -> f64 {
-        items.into_iter().map(|(qty, price)| qty * price).sum()
-    }
-
-    pub fn calculate_meal_rate(
-        &self,
-        total_cost: f64,
-        staff_24h: i32,
-        staff_8h: i32,
-        reservation: i32,
-        mission: i32,
-        guest: i32,
-    ) -> f64 {
-        let total_beneficiaries = DailyReportMeal::compute_total_beneficiaries(
-            staff_24h,
-            staff_8h,
-            reservation,
-            mission,
-            guest,
-        );
-        DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
 }

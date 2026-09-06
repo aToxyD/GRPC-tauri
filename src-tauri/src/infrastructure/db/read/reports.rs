@@ -2,6 +2,8 @@
 
 use chrono::{Datelike, NaiveDate};
 
+use crate::domain::numeric::legacy_float;
+use crate::domain::numeric::Money;
 use crate::errors::{AppError, ValidationError};
 use crate::models::{DailyReport, DailyReportMeal, MealType};
 use crate::repositories::numeric_row;
@@ -217,7 +219,15 @@ pub fn load_monthly_summary_projection(
         map_report_row,
     )?;
 
-    let total_cost: f64 = reports.iter().map(|r| r.total_daily_cost).sum();
+    // Authoritative monthly consumption value: aggregate the per-day Money
+    // values exactly (no accounting arithmetic in f64), convert once at the
+    // wire boundary. Each per-day value is already a cent-scale wire f64.
+    let mut total_cost = Money::zero();
+    for r in &reports {
+        let daily = legacy_float::money_from_f64(r.total_daily_cost)?;
+        total_cost = total_cost.checked_add(daily)?;
+    }
+    let total_cost = legacy_float::money_to_f64(&total_cost)?;
     let total_beneficiaries: i32 = reports.iter().map(|r| r.total_daily_beneficiaries).sum();
 
     let mut breakfast_avgs: Vec<f64> = Vec::new();

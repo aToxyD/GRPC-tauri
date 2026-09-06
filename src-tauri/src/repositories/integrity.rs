@@ -75,17 +75,20 @@ impl<'a> IntegrityRepository<'a> {
 
     /// Rows: (id, quantity, unit_cost, total_cost)
     ///
-    /// Exact scaled money/quantity integrity: `total_cost` must equal
-    /// `quantity * unit_cost`. In scaled integers this is
-    /// `qty_scaled * unit_cost_scaled == total_scaled * 1000` (see Phase 4
-    /// boundary contract). Performed entirely in INTEGER arithmetic; the
-    /// product is bounded by the quantity/price CHECK constraints and
-    /// realistic magnitudes, far below 2^63.
+    /// Exact scaled money/quantity integrity: `total_cost` (scale-2 centimes)
+    /// must equal the writer's boundary rounding of `quantity * unit_cost`
+    /// (scale-3 × scale-2 = value × 10^-5). The writer stores the exact
+    /// product rounded to the cent with MidpointAwayFromZero (numeric_row
+    /// `money_scaled`), so the satisfiable invariant is
+    /// `total_cost == (quantity * unit_cost + 500) / 1000` — entirely in
+    /// INTEGER arithmetic; the product is bounded by the quantity/price CHECK
+    /// constraints and realistic magnitudes, far below 2^63. Any genuine
+    /// deviation (one cent, one unit of cost) still fails.
     pub fn fetch_invalid_consumption_costs(&self) -> AppResult<Vec<(String, f64, f64, f64)>> {
         Ok(self.executor.query_all(
             r#"SELECT id, quantity, unit_cost, total_cost
                FROM inventory_layer_consumptions
-               WHERE ABS(quantity * unit_cost - total_cost * 1000) > 0"#,
+               WHERE total_cost <> (quantity * unit_cost + 500) / 1000"#,
             [],
             |r| {
                 Ok((

@@ -181,18 +181,9 @@ impl<'a> FiscalClosingService<'a> {
             year, next_year, user_id
         );
 
-        let total_inventory_value: f64 = self
-            .executor
-            .inventory()
-            .get_total_inventory_value()
-            .unwrap_or_else(|e| {
-                log::error!(
-                    target: "grpc::fiscal",
-                    "Failed to compute FIFO inventory value for audit: {}",
-                    e
-                );
-                0.0
-            });
+        // Fail closed: a FIFO valuation error must abort the fiscal close rather
+        // than persist a plausible-but-wrong zero in the audit record.
+        let total_inventory_value: f64 = self.executor.inventory().get_total_inventory_value()?;
 
         // ── 4. Audit record ───────────────────────────────────────────────
         crate::application::services::AuditService::new(self.executor).log_success(

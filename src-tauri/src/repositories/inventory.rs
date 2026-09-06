@@ -472,7 +472,7 @@ impl<'a> InventoryRepository<'a> {
                 [],
                 |r| r.get(0),
             )
-            .unwrap_or(0);
+            .map_err(AppError::from)?;
         Ok(numeric_row::money_sum_col(sum)?)
     }
 }
