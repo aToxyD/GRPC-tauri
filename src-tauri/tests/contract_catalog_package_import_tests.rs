@@ -186,7 +186,7 @@ fn full_catalog() -> ContractCatalogExportDataset {
         ],
         tax_policies: vec![FiscalYearTaxPolicy {
             fiscal_year: 2026,
-            tva_rate: 0.19,
+            tva_rate: 19.0,
             frozen: false,
             set_by: "wilaya-admin".into(),
             created_at: stamped(),
@@ -243,7 +243,7 @@ fn mixed_catalog() -> ContractCatalogExportDataset {
         ],
         tax_policies: vec![FiscalYearTaxPolicy {
             fiscal_year: 2026,
-            tva_rate: 0.19,
+            tva_rate: 19.0,
             frozen: false,
             set_by: "wilaya-admin".into(),
             created_at: stamped(),
@@ -404,7 +404,7 @@ fn wilaya_full_catalog_restore_import_persists_everything() {
         .get_policy(2026)
         .expect("read")
         .expect("policy present");
-    assert_eq!(policy.tva_rate, 0.19);
+    assert_eq!(policy.tva_rate, 19.0);
 }
 
 #[test]

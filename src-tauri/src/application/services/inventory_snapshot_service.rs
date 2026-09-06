@@ -121,9 +121,12 @@ impl<'a> InventorySnapshotService<'a> {
             // is carried in scale-3 scaled units (a token domain-appropriate
             // signed intermediate), then floored at zero because stock can never
             // be negative — mirroring the ledger's own invariant.
-            let opening_scaled = legacy_float::quantity_from_f64(opening_stock)?.to_scaled_i64()?;
-            let in_scaled = legacy_float::quantity_from_f64(total_in)?.to_scaled_i64()?;
-            let out_scaled = legacy_float::quantity_from_f64(total_out)?.to_scaled_i64()?;
+            let opening_qty = legacy_float::quantity_from_f64(opening_stock)?;
+            let in_qty = legacy_float::quantity_from_f64(total_in)?;
+            let out_qty = legacy_float::quantity_from_f64(total_out)?;
+            let opening_scaled = opening_qty.to_scaled_i64()?;
+            let in_scaled = in_qty.to_scaled_i64()?;
+            let out_scaled = out_qty.to_scaled_i64()?;
             let signed_delta = opening_scaled
                 .checked_add(in_scaled)
                 .and_then(|v| v.checked_sub(out_scaled))
@@ -148,9 +151,14 @@ impl<'a> InventorySnapshotService<'a> {
 
             let variance = reported_closing - computed_closing;
 
-            // منتج جديد في أول شهر
-            let is_new_product_first_month =
-                opening_stock.abs() < f64::EPSILON && total_in > f64::EPSILON;
+            // First-month detection is an exact quantity zero/inflow test
+            // (ADR-0048, Target A): opening must be exactly zero and inflow
+            // strictly positive. No float epsilon — the typed comparison is
+            // exact at scale 3. The variance/consumption anomaly thresholds
+            // below remain KPI heuristics and are intentionally untouched.
+            let is_new_product_first_month = opening_qty
+                == crate::domain::numeric::Quantity::zero()
+                && in_qty > crate::domain::numeric::Quantity::zero();
 
             let has_balance_anomaly = if is_new_product_first_month {
                 false

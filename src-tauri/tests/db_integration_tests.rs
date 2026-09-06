@@ -718,6 +718,93 @@ fn test_computed_closing_exact_fractional_arithmetic() {
 }
 
 #[test]
+fn test_snapshot_first_month_detection_is_exact_quantity() {
+    // ADR-0048 (Target A): first-month detection is an exact Quantity
+    // zero/inflow test. Opening exactly 0.000 with inflow > 0 is first-month;
+    // opening exactly 0.001 (> 0) is not. No epsilon.
+    let (db, unit_id) = setup_test_db_with_unit();
+    let prod_first = create_test_product(&db, "prod_fm", "First Month");
+    let prod_nfm = create_test_product(&db, "prod_nfm", "Not First Month");
+
+    // prod_nfm gets an exact 0.001 opening for February via a January move;
+    // prod_first has no prior movements → opening exactly 0.000.
+    create_stock_movement(
+        &db,
+        &prod_nfm,
+        StockMovementType::In,
+        0.001,
+        0.0,
+        0.001,
+        Some("Order"),
+        None,
+        "2024-01-20T08:00:00Z",
+        Some(&unit_id),
+    );
+
+    let dr = create_test_daily_report(&db, &unit_id, "2024-02-15");
+
+    for pid in [prod_first.clone(), prod_nfm.clone()] {
+        create_stock_movement(
+            &db,
+            &pid,
+            StockMovementType::In,
+            0.5,
+            0.0,
+            0.5,
+            Some("Order"),
+            Some(&dr),
+            "2024-02-05T08:00:00Z",
+            Some(&unit_id),
+        );
+        create_stock_movement(
+            &db,
+            &pid,
+            StockMovementType::Out,
+            0.5,
+            0.5,
+            0.5,
+            Some("Consumption"),
+            Some(&dr),
+            "2024-02-15T12:00:00Z",
+            Some(&unit_id),
+        );
+    }
+
+    grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .compute_and_store_unit_snapshot(&unit_id, 2024, 2, false)
+        .unwrap();
+
+    let view = grpc_lib::application::services::InventorySnapshotService::new(db.executor())
+        .get_unit_inventory_view(&unit_id, 2024, 2)
+        .unwrap()
+        .unwrap();
+
+    let fm = view
+        .items
+        .iter()
+        .find(|i| i.product_id == prod_first)
+        .unwrap();
+    let nfm = view
+        .items
+        .iter()
+        .find(|i| i.product_id == prod_nfm)
+        .unwrap();
+
+    // prod_first: opening 0.000, inflow 0.500 → first month → reported 0.5 vs
+    // computed 0.000 yields variance 0.5 but the anomaly is suppressed.
+    assert!(
+        !fm.has_balance_anomaly,
+        "exact-zero opening must be detected as first month"
+    );
+    // prod_nfm: opening 0.001 (> 0) → NOT first month → variance 0.499 > 0.01
+    // is flagged exactly.
+    assert!(
+        nfm.has_balance_anomaly,
+        "nonzero opening must not be treated as first month"
+    );
+}
+
+#[test]
 fn test_product_base_price_change_detection_is_exact_money() {
     // ADR-0048: `base_price` change detection compares exact boundary-scaled
     // Money values (no float epsilon). Identical price → no fiscal lock check

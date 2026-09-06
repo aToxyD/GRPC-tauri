@@ -146,6 +146,22 @@ mod tests {
     }
 
     #[test]
+    fn adapter_passes_percent_verbatim_no_fraction_conversion() {
+        use crate::domain::numeric::legacy_float::rate_from_f64;
+        // 19.0f64 → 19% (scale-4 190_000), never the fraction 0.19.
+        assert_eq!(rate_from_f64(19.0).unwrap(), rate("19.0"));
+        assert_eq!(
+            rate_from_f64(19.0).unwrap().to_scaled_i64().unwrap(),
+            190_000
+        );
+        // 0.19f64 → 0.19% (scale-4 1_900) verbatim: Rate performs no implicit
+        // fraction-to-percent conversion.
+        assert_eq!(rate_from_f64(0.19).unwrap(), rate("0.19"));
+        assert_eq!(rate_from_f64(0.19).unwrap().to_scaled_i64().unwrap(), 1_900);
+        assert_ne!(rate_from_f64(0.19).unwrap(), rate("19.0"));
+    }
+
+    #[test]
     fn values_outside_zero_to_hundred_are_rejected() {
         assert_eq!(Rate::parse_str("-0.0001"), Err(NumericError::OutOfRange));
         assert_eq!(Rate::parse_str("-19"), Err(NumericError::OutOfRange));

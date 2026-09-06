@@ -226,7 +226,8 @@ mod tests {
         let portions = simulate_fifo_consumption("p1", &layers, 3.0).unwrap();
         assert_eq!(portions.len(), 1);
         assert_eq!(portions[0].layer_id, "a");
-        assert!((portions[0].unit_cost - 10.0).abs() < 1e-9);
+        // Facade results are boundary-converted exactly (Money 10.00 → 10.0).
+        assert_eq!(portions[0].unit_cost, 10.0);
     }
 
     #[test]
@@ -234,8 +235,8 @@ mod tests {
         let layers = vec![layer("a", 10.0, 5.0), layer("b", 20.0, 10.0)];
         let portions = simulate_fifo_consumption("p1", &layers, 8.0).unwrap();
         assert_eq!(portions.len(), 2);
-        assert!((portions[0].quantity - 5.0).abs() < 1e-9);
-        assert!((portions[1].quantity - 3.0).abs() < 1e-9);
+        assert_eq!(portions[0].quantity, 5.0);
+        assert_eq!(portions[1].quantity, 3.0);
     }
 
     #[test]

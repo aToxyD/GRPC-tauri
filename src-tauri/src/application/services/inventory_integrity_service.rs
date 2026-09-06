@@ -1,3 +1,4 @@
+use crate::domain::numeric::legacy_float;
 use crate::errors::AppError;
 use crate::repositories::executor::DbExecutor;
 use crate::repositories::RepositoryProvider;
@@ -37,9 +38,39 @@ impl<'a> InventoryIntegrityService<'a> {
             .verify_consistency_for_year(fiscal_year)?;
         let mut issues = Vec::new();
         for (product_id, opening, inbound, outbound, actual) in rows.iter() {
-            let expected = opening + inbound - outbound;
-            let delta = expected - actual;
-            if delta.abs() > 0.0001 {
+            // ADR-0048 (Target C): expected = opening + IN − OUT is Quantity
+            // reconciliation. The delta is genuinely signed — the ledger floors
+            // balance at zero, so OUT may exceed opening + IN — and is carried
+            // in scale-3 scaled units, mirroring the snapshot service.
+            let opening_scaled = legacy_float::quantity_from_f64(*opening)?.to_scaled_i64()?;
+            let inbound_scaled = legacy_float::quantity_from_f64(*inbound)?.to_scaled_i64()?;
+            let outbound_scaled = legacy_float::quantity_from_f64(*outbound)?.to_scaled_i64()?;
+            let expected_scaled = opening_scaled
+                .checked_add(inbound_scaled)
+                .and_then(|v| v.checked_sub(outbound_scaled))
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Inventory reconciliation overflow for product {}",
+                        product_id
+                    ))
+                })?;
+            let actual_scaled = legacy_float::quantity_from_f64(*actual)?.to_scaled_i64()?;
+            let delta_scaled = expected_scaled.checked_sub(actual_scaled).ok_or_else(|| {
+                AppError::Internal(format!(
+                    "Inventory reconciliation overflow for product {}",
+                    product_id
+                ))
+            })?;
+            // Exact comparison: a drift of at least one scale-3 unit (0.001)
+            // is a genuine mismatch. The legacy 0.0001 tolerance (roughly
+            // one-tenth of a unit) could only mask sub-unit float residue;
+            // exact decimals remove it deterministically.
+            if delta_scaled.abs() > 0 {
+                // Signed wire boundary: Quantity forbids negatives, so the
+                // report fields are materialized as scaled units at exact
+                // scale-3 precision (same formula as quantity_to_f64).
+                let expected = expected_scaled as f64 / 1000.0;
+                let delta = delta_scaled as f64 / 1000.0;
                 log::warn!(target:"grpc::inventory","[INVENTORY_VERIFY_PRODUCT_MISMATCH] product_id={} fiscal_year={} expected={} actual={} delta={}",product_id,fiscal_year,expected,actual,delta);
                 issues.push(InventoryIntegrityIssue {
                     product_id: product_id.clone(),

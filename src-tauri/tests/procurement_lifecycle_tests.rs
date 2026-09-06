@@ -89,7 +89,7 @@ fn full_procurement_lifecycle_via_services() {
             "wilaya-admin",
         )
         .expect("set tax policy");
-    assert!((policy.tva_rate - 19.0).abs() < f64::EPSILON);
+    assert_eq!(policy.tva_rate, 19.0);
 
     // ---- Contract lifecycle ------------------------------------------------
     let contract = ContractService::new(db_ref.executor())
