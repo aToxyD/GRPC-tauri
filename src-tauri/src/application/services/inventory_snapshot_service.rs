@@ -140,16 +140,31 @@ impl<'a> InventorySnapshotService<'a> {
                 &crate::domain::numeric::Quantity::from_scaled_i64(signed_delta.max(0))?,
             )?;
 
-            // Reported closing = balance_after of last consumption movement
+            // Reported closing = balance_after of last consumption movement.
+            // The default is the exact scale-3 computed closing, kept as INTEGER
+            // so COALESCE never degrades an INTEGER column to a stored REAL.
             let reported_closing = inv_repo.get_reported_closing(
                 product_id,
                 unit_id,
                 &month_start,
                 &month_end,
-                computed_closing,
+                signed_delta.max(0),
             )?;
 
             let variance = reported_closing - computed_closing;
+
+            // Persist exactly (scale-3 signed INTEGER): reported − computed,
+            // both fully inside i64, so the check is overflow-free.
+            let reported_scaled =
+                legacy_float::quantity_from_f64(reported_closing)?.to_scaled_i64()?;
+            let variance_scaled = reported_scaled
+                .checked_sub(signed_delta.max(0))
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Snapshot variance overflow for product {}",
+                        product_id
+                    ))
+                })?;
 
             // First-month detection is an exact quantity zero/inflow test
             // (ADR-0048, Target A): opening must be exactly zero and inflow
@@ -208,7 +223,7 @@ impl<'a> InventorySnapshotService<'a> {
                 total_out,
                 computed_closing,
                 reported_closing,
-                variance,
+                variance_scaled,
                 has_balance_anomaly,
                 avg_consumption_3months,
                 has_consumption_anomaly,

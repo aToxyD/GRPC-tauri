@@ -173,7 +173,7 @@ fn run_and_capture(
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, f64>(2)?,
+                    row.get::<_, i64>(2)? as f64 / 100.0,
                 ))
             },
         )
@@ -203,9 +203,9 @@ fn run_and_capture(
                 rusqlite::params![meal_id],
                 |row| {
                     Ok(MealItemSnapshot {
-                        quantity: row.get(0)?,
-                        unit_price: row.get(1)?,
-                        total_cost: row.get(2)?,
+                        quantity: row.get::<_, i64>(0)? as f64 / 1000.0,
+                        unit_price: row.get::<_, i64>(1)? as f64 / 100.0,
+                        total_cost: row.get::<_, i64>(2)? as f64 / 100.0,
                         fifo_layer_id: row.get(3)?,
                     })
                 },

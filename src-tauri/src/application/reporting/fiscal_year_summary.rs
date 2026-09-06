@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::domain::numeric::legacy_float::{money_from_f64, money_to_f64, quantity_from_f64};
 use crate::domain::numeric::Money;
+use crate::repositories::numeric_row;
 use crate::repositories::DbExecutor;
 use crate::repositories::RepositoryProvider;
 
@@ -146,12 +147,14 @@ impl Report for FiscalYearSummaryReport {
         }
 
         let (ending_inventory_value, layer_count) = if let Some(ref uid) = unit_id {
-            let inv: f64 = executor
+            let inv_sum: i64 = executor
                 .query_row(
-                    "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0.0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0 AND unit_id = ?2",
+                    "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0 AND unit_id = ?2",
                     rusqlite::params![year, uid],
-                    |row| row.get::<_, f64>(0),
+                    |row| row.get::<_, i64>(0),
                 )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+            let inv = numeric_row::money_sum_col(inv_sum)
                 .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
             let cnt: i64 = executor
                 .query_row(
@@ -162,12 +165,14 @@ impl Report for FiscalYearSummaryReport {
                 .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
             (inv, cnt)
         } else {
-            let inv: f64 = executor
+            let inv_sum: i64 = executor
                 .query_row(
-                    "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0.0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0",
+                    "SELECT COALESCE(SUM(qty_remaining * unit_cost), 0) FROM fifo_stock_layers WHERE origin_fiscal_year = ?1 AND qty_remaining > 0",
                     rusqlite::params![year],
-                    |row| row.get::<_, f64>(0),
+                    |row| row.get::<_, i64>(0),
                 )
+                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
+            let inv = numeric_row::money_sum_col(inv_sum)
                 .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?;
             let cnt: i64 = executor
                 .query_row(

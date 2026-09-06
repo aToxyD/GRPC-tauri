@@ -467,7 +467,7 @@ fn unit_reimport_refreshes_wilaya_owned_and_preserves_local_runtime() {
     // Local UNIT runtime state (deliveries consumed from the entitlement).
     db.executor()
         .execute(
-            "UPDATE contract_allocations SET fulfilled_quantity = 25 WHERE id = 'alloc-local'",
+            "UPDATE contract_allocations SET fulfilled_quantity = 25000 WHERE id = 'alloc-local'",
             [],
         )
         .expect("mark local fulfillment");

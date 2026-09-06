@@ -2,10 +2,11 @@ use crate::domain::fifo_engine::{
     simulate_fifo_consumption, simulate_fifo_consumption_typed, FifoLayerRow, TypedConsumedPortion,
     TypedFifoLayer,
 };
-use crate::domain::numeric::{legacy_float, Quantity};
+use crate::domain::numeric::{legacy_float, Money, Quantity};
 use crate::errors::{AppError, AppResult};
 use crate::models::{ConsumedLayerPortion, FifoStockLayer, InventoryLayerConsumption};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 use uuid::Uuid;
 
@@ -44,6 +45,9 @@ impl<'a> FifoLayerRepository<'a> {
     ) -> AppResult<String> {
         let id = Uuid::new_v4().to_string();
 
+        let unit_cost_scaled = numeric_row::money_scaled(unit_cost)?;
+        let qty_original_scaled = numeric_row::qty_scaled(qty_original)?;
+
         self.executor
             .execute(
                 r#"
@@ -59,9 +63,9 @@ impl<'a> FifoLayerRepository<'a> {
                     product_id,
                     source_type,
                     source_id,
-                    unit_cost,
-                    qty_original,
-                    qty_original, // qty_remaining starts equal to qty_original
+                    unit_cost_scaled,
+                    qty_original_scaled,
+                    qty_original_scaled, // qty_remaining starts equal to qty_original
                     received_at,
                     created_by,
                     origin_fiscal_year
@@ -136,8 +140,8 @@ impl<'a> FifoLayerRepository<'a> {
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, f64>(1)?,
-                        row.get::<_, f64>(2)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
                     ))
                 },
             )
@@ -145,11 +149,11 @@ impl<'a> FifoLayerRepository<'a> {
 
         let layers = rows
             .into_iter()
-            .map(|(id, cost, qty)| {
+            .map(|(id, cost_scaled, qty_scaled)| {
                 Ok(TypedFifoLayer {
                     layer_id: id,
-                    unit_cost: legacy_float::money_from_f64(cost)?,
-                    qty_remaining: legacy_float::quantity_from_f64(qty)?,
+                    unit_cost: Money::from_centimes(cost_scaled)?,
+                    qty_remaining: Quantity::from_scaled_i64(qty_scaled)?,
                 })
             })
             .collect::<AppResult<Vec<TypedFifoLayer>>>()?;
@@ -164,10 +168,7 @@ impl<'a> FifoLayerRepository<'a> {
                 SET qty_remaining = qty_remaining - ?1
                 WHERE id = ?2
                 "#,
-                    params![
-                        legacy_float::quantity_to_f64(&portion.quantity)?,
-                        portion.layer_id
-                    ],
+                    params![portion.quantity.to_scaled_i64()?, portion.layer_id],
                 )
                 .map_err(AppError::from)?;
         }
@@ -192,6 +193,10 @@ impl<'a> FifoLayerRepository<'a> {
     ) -> AppResult<()> {
         let id = Uuid::new_v4().to_string();
 
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
+        let unit_cost_scaled = numeric_row::money_scaled(unit_cost)?;
+        let total_cost_scaled = numeric_row::money_scaled(total_cost)?;
+
         log::info!(
             target: "grpc::fifo",
             "Creating consumption record: unit_id={}, movement_id={}, layer_id={}",
@@ -210,9 +215,9 @@ impl<'a> FifoLayerRepository<'a> {
                     unit_id,
                     movement_id,
                     layer_id,
-                    quantity,
-                    unit_cost,
-                    total_cost,
+                    quantity_scaled,
+                    unit_cost_scaled,
+                    total_cost_scaled,
                     consumed_at
                 ],
             )
@@ -245,9 +250,9 @@ impl<'a> FifoLayerRepository<'a> {
                         product_id: row.get(2)?,
                         source_type: row.get(3)?,
                         source_id: row.get(4)?,
-                        unit_cost: row.get(5)?,
-                        qty_original: row.get(6)?,
-                        qty_remaining: row.get(7)?,
+                        unit_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
+                        qty_original: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+                        qty_remaining: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
                         received_at: row.get(8)?,
                         created_by: row.get(9)?,
                         origin_fiscal_year: row.get(10)?,
@@ -259,11 +264,11 @@ impl<'a> FifoLayerRepository<'a> {
 
     /// Returns the total remaining quantity for a unit+product pair.
     pub fn get_total_available(&self, unit_id: &str, product_id: &str) -> AppResult<f64> {
-        let total: f64 = self
+        let total: i64 = self
             .executor
             .query_row(
                 r#"
-            SELECT COALESCE(SUM(qty_remaining), 0.0)
+            SELECT COALESCE(SUM(qty_remaining), 0)
             FROM fifo_stock_layers
             WHERE unit_id = ?1 AND product_id = ?2 AND qty_remaining > 0
             "#,
@@ -271,7 +276,7 @@ impl<'a> FifoLayerRepository<'a> {
                 |row| row.get(0),
             )
             .map_err(AppError::from)?;
-        Ok(total)
+        Ok(numeric_row::qty_scaled_i64_to_f64(total)?)
     }
 
     /// Returns the global total remaining quantity and total value for a specific product across all units.
@@ -279,11 +284,11 @@ impl<'a> FifoLayerRepository<'a> {
         &self,
         product_id: &str,
     ) -> AppResult<(f64, f64)> {
-        let result: (f64, f64) = self
+        let (qty_scaled, value_times_1000): (i64, i64) = self
             .executor
             .query_row(
                 r#"
-            SELECT COALESCE(SUM(qty_remaining), 0.0), COALESCE(SUM(qty_remaining * unit_cost), 0.0)
+            SELECT COALESCE(SUM(qty_remaining), 0), COALESCE(SUM(qty_remaining * unit_cost), 0)
             FROM fifo_stock_layers
             WHERE product_id = ?1 AND qty_remaining > 0
             "#,
@@ -291,7 +296,10 @@ impl<'a> FifoLayerRepository<'a> {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(AppError::from)?;
-        Ok(result)
+        Ok((
+            numeric_row::qty_scaled_i64_to_f64(qty_scaled)?,
+            numeric_row::money_sum_col(value_times_1000)?,
+        ))
     }
 
     /// Fetch active layers for simulation (read-only, ordered FIFO).
@@ -313,8 +321,8 @@ impl<'a> FifoLayerRepository<'a> {
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, f64>(1)?,
-                        row.get::<_, f64>(2)?,
+                        numeric_row::money_col(1, row.get::<_, i64>(1)?)?,
+                        numeric_row::qty_col(2, row.get::<_, i64>(2)?)?,
                     ))
                 },
             )
@@ -335,11 +343,11 @@ impl<'a> FifoLayerRepository<'a> {
 
     /// Returns the FIFO inventory value for a unit (remaining qty * unit cost).
     pub fn get_inventory_value_fifo(&self, unit_id: &str) -> AppResult<f64> {
-        let total: f64 = self
+        let value_times_1000: i64 = self
             .executor
             .query_row(
                 r#"
-            SELECT COALESCE(SUM(qty_remaining * unit_cost), 0.0)
+            SELECT COALESCE(SUM(qty_remaining * unit_cost), 0)
             FROM fifo_stock_layers
             WHERE unit_id = ?1 AND qty_remaining > 0
             "#,
@@ -347,7 +355,7 @@ impl<'a> FifoLayerRepository<'a> {
                 |row| row.get(0),
             )
             .map_err(AppError::from)?;
-        Ok(total)
+        Ok(numeric_row::money_sum_col(value_times_1000)?)
     }
 
     /// Returns only the active (non-exhausted) layers for a unit+product pair.
@@ -374,9 +382,9 @@ impl<'a> FifoLayerRepository<'a> {
                         product_id: row.get(2)?,
                         source_type: row.get(3)?,
                         source_id: row.get(4)?,
-                        unit_cost: row.get(5)?,
-                        qty_original: row.get(6)?,
-                        qty_remaining: row.get(7)?,
+                        unit_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
+                        qty_original: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+                        qty_remaining: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
                         received_at: row.get(8)?,
                         created_by: row.get(9)?,
                         origin_fiscal_year: row.get(10)?,
@@ -409,8 +417,8 @@ impl<'a> FifoLayerRepository<'a> {
                         product_name: row.get(2)?,
                         source_type: row.get(3)?,
                         received_at: row.get(4)?,
-                        qty_remaining: row.get(5)?,
-                        unit_cost: row.get(6)?,
+                        qty_remaining: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                        unit_cost: numeric_row::money_col(6, row.get::<_, i64>(6)?)?,
                     })
                 },
             )
@@ -436,9 +444,9 @@ impl<'a> FifoLayerRepository<'a> {
                         unit_id: row.get(1)?,
                         movement_id: row.get(2)?,
                         layer_id: row.get(3)?,
-                        quantity: row.get(4)?,
-                        unit_cost: row.get(5)?,
-                        total_cost: row.get(6)?,
+                        quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                        unit_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
+                        total_cost: numeric_row::money_col(6, row.get::<_, i64>(6)?)?,
                         consumed_at: row.get(7)?,
                     })
                 },

@@ -5,6 +5,7 @@ use crate::models::{
     DailyReport, DailyReportMeal, DailyReportMealItem, MealSectionInput, MealType, MonthlyReport,
 };
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use chrono::NaiveDate;
 use rusqlite::params;
 
@@ -25,7 +26,7 @@ fn map_report_row(row: &rusqlite::Row<'_>) -> Result<DailyReport, rusqlite::Erro
         id: row.get(0)?,
         date,
         unit_id: row.get(2)?,
-        total_daily_cost: row.get(3)?,
+        total_daily_cost: numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
         total_daily_average: row.get(4)?,
         total_daily_beneficiaries: row.get(5)?,
         created_at,
@@ -55,7 +56,7 @@ fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Er
         mission_count: row.get(6)?,
         guest_count: row.get(7)?,
         total_beneficiaries: row.get(8)?,
-        total_meal_cost: row.get(9)?,
+        total_meal_cost: numeric_row::money_col(9, row.get::<_, i64>(9)?)?,
         meal_average: row.get(10)?,
     })
 }
@@ -70,6 +71,8 @@ impl<'a> ReportRepository<'a> {
     }
 
     pub fn upsert_monthly_report_summary(&self, report: &MonthlyReport) -> Result<(), AppError> {
+        let total_consumption_value_scaled =
+            numeric_row::money_scaled(report.total_consumption_value)?;
         self.executor.execute(
             "INSERT INTO monthly_reports (id, unit_id, report_year, report_month, total_beneficiaries, total_consumption_value, breakfast_average, lunch_average, dinner_average, daily_average, report_count, imported_at, imported_by, file_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(unit_id, report_year, report_month) DO UPDATE SET
@@ -89,7 +92,7 @@ impl<'a> ReportRepository<'a> {
                 report.report_year,
                 report.report_month,
                 report.total_beneficiaries,
-                report.total_consumption_value,
+                total_consumption_value_scaled,
                 report.breakfast_average,
                 report.lunch_average,
                 report.dinner_average,
@@ -125,7 +128,7 @@ impl<'a> ReportRepository<'a> {
                     report_year: row.get(2)?,
                     report_month: row.get(3)?,
                     total_beneficiaries: row.get(4)?,
-                    total_consumption_value: row.get(5)?,
+                    total_consumption_value: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
                     breakfast_average: row.get(6)?,
                     lunch_average: row.get(7)?,
                     dinner_average: row.get(8)?,
@@ -158,7 +161,7 @@ impl<'a> ReportRepository<'a> {
                     report_year: row.get(2)?,
                     report_month: row.get(3)?,
                     total_beneficiaries: row.get(4)?,
-                    total_consumption_value: row.get(5)?,
+                    total_consumption_value: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
                     breakfast_average: row.get(6)?,
                     lunch_average: row.get(7)?,
                     dinner_average: row.get(8)?,
@@ -207,9 +210,10 @@ impl<'a> ReportRepository<'a> {
         fiscal_year: i32,
         now: &str,
     ) -> Result<(), AppError> {
+        let total_daily_cost_scaled = numeric_row::money_scaled(total_daily_cost)?;
         self.executor.execute(
             "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, date_str, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, now, fiscal_year],
+            params![id, date_str, unit_id, total_daily_cost_scaled, total_daily_average, total_daily_beneficiaries, now, fiscal_year],
         )?;
         Ok(())
     }
@@ -223,6 +227,7 @@ impl<'a> ReportRepository<'a> {
         total_meal_cost: f64,
         meal_average: f64,
     ) -> Result<(), AppError> {
+        let total_meal_cost_scaled = numeric_row::money_scaled(total_meal_cost)?;
         self.executor.execute(
             "INSERT INTO daily_report_meals (id, daily_report_id, meal_type, staff_24h_count, staff_8h_count, reservation_count, mission_count, guest_count, total_beneficiaries, total_meal_cost, meal_average) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
@@ -235,7 +240,7 @@ impl<'a> ReportRepository<'a> {
                 section.mission_count,
                 section.guest_count,
                 total_beneficiaries,
-                total_meal_cost,
+                total_meal_cost_scaled,
                 meal_average,
             ],
         )?;
@@ -253,9 +258,12 @@ impl<'a> ReportRepository<'a> {
         total_cost: f64,
         fifo_layer_id: Option<&str>,
     ) -> Result<(), AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
+        let unit_price_scaled = numeric_row::money_scaled(unit_price)?;
+        let total_cost_scaled = numeric_row::money_scaled(total_cost)?;
         self.executor.execute(
             "INSERT INTO daily_report_meal_items (id, meal_id, product_id, quantity, unit_price, total_cost, fifo_layer_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![item_id, meal_id, product_id, quantity, unit_price, total_cost, fifo_layer_id],
+            params![item_id, meal_id, product_id, quantity_scaled, unit_price_scaled, total_cost_scaled, fifo_layer_id],
         )?;
         Ok(())
     }
@@ -319,9 +327,9 @@ impl<'a> ReportRepository<'a> {
                     meal_id: row.get(1)?,
                     product_id: row.get(2)?,
                     product_name: row.get(3)?,
-                    quantity: row.get(4)?,
-                    unit_price: row.get(5)?,
-                    total_cost: row.get(6)?,
+                    quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                    unit_price: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
+                    total_cost: numeric_row::money_col(6, row.get::<_, i64>(6)?)?,
                     fifo_layer_id: row.get(7)?,
                 })
             },
@@ -503,6 +511,7 @@ impl<'a> ReportRepository<'a> {
     }
 
     pub fn insert_raw_meal(&self, meal: &DailyReportMeal) -> Result<(), AppError> {
+        let total_meal_cost_scaled = numeric_row::money_scaled(meal.total_meal_cost)?;
         self.executor.execute(
             "INSERT INTO daily_report_meals (id, daily_report_id, meal_type, staff_24h_count, staff_8h_count, reservation_count, mission_count, guest_count, total_beneficiaries, total_meal_cost, meal_average) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
@@ -515,7 +524,7 @@ impl<'a> ReportRepository<'a> {
                 meal.mission_count,
                 meal.guest_count,
                 meal.total_beneficiaries,
-                meal.total_meal_cost,
+                total_meal_cost_scaled,
                 meal.meal_average,
             ],
         )?;
@@ -541,13 +550,14 @@ impl<'a> ReportRepository<'a> {
         report: &DailyReport,
         now: &str,
     ) -> Result<(), AppError> {
+        let total_daily_cost_scaled = numeric_row::money_scaled(report.total_daily_cost)?;
         self.executor.execute(
             "INSERT OR REPLACE INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id,
                 report.date.to_string(),
                 report.unit_id,
-                report.total_daily_cost,
+                total_daily_cost_scaled,
                 report.total_daily_average,
                 report.total_daily_beneficiaries,
                 now,

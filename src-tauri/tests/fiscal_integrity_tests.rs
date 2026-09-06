@@ -44,13 +44,13 @@ fn inventory_reconciliation_is_exact_quantity() {
     // product prod-majo: opening 1.000 + IN 2.000 − OUT 0.500 = stock 2.500
     executor
         .execute(
-            "INSERT INTO opening_balance_snapshots (product_id, fiscal_year, opening_quantity, created_at, created_by) VALUES ('prod-majo', 2024, 1.0, ?1, 'test_user')",
+            "INSERT INTO opening_balance_snapshots (product_id, fiscal_year, opening_quantity, created_at, created_by) VALUES ('prod-majo', 2024, 1000, ?1, 'test_user')",
             rusqlite::params![now.clone()],
         )
         .unwrap();
     executor
         .execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, 'prod-majo', 2.5, 'unit', ?2)",
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, 'prod-majo', 2500, 'unit', ?2)",
             rusqlite::params![Uuid::new_v4().to_string(), now],
         )
         .unwrap();
@@ -58,7 +58,7 @@ fn inventory_reconciliation_is_exact_quantity() {
     // product prod-drift: opening 0 + IN 1.000 − OUT 0 = stock 2.000 → 1.000 drift
     executor
         .execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, 'prod-drift', 2.0, 'unit', ?2)",
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, 'prod-drift', 2000, 'unit', ?2)",
             rusqlite::params![Uuid::new_v4().to_string(), now],
         )
         .unwrap();

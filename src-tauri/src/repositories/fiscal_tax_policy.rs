@@ -8,12 +8,13 @@
 use crate::errors::AppError;
 use crate::models::{FiscalYearTaxPolicy, SetTaxPolicyRequest};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 
 fn map_tax_policy_row(row: &rusqlite::Row<'_>) -> Result<FiscalYearTaxPolicy, rusqlite::Error> {
     Ok(FiscalYearTaxPolicy {
         fiscal_year: row.get(0)?,
-        tva_rate: row.get(1)?,
+        tva_rate: numeric_row::rate_col(1, row.get::<_, i64>(1)?)?,
         frozen: row.get(2)?,
         set_by: row.get(3)?,
         created_at: row.get(4)?,
@@ -37,9 +38,10 @@ impl<'a> FiscalYearTaxPolicyRepository<'a> {
         set_by: &str,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let tva_rate_scaled = numeric_row::rate_scaled(req.tva_rate)?;
         self.executor.execute(
             "INSERT INTO fiscal_year_tax_policy (fiscal_year, tva_rate, frozen, set_by, created_at) VALUES (?1, ?2, 0, ?3, ?4)",
-            params![req.fiscal_year, req.tva_rate, set_by, created_at],
+            params![req.fiscal_year, tva_rate_scaled, set_by, created_at],
         )?;
         Ok(())
     }
@@ -85,6 +87,7 @@ impl<'a> FiscalYearTaxPolicyRepository<'a> {
     /// `set_by` / `created_at` are kept from whichever writer established the
     /// year (they are provenance-only on a UNIT).
     pub fn upsert_sync_tax_policy(&self, policy: &FiscalYearTaxPolicy) -> Result<(), AppError> {
+        let tva_rate_scaled = numeric_row::rate_scaled(policy.tva_rate)?;
         self.executor.execute(
             "INSERT INTO fiscal_year_tax_policy (fiscal_year, tva_rate, frozen, set_by, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -93,7 +96,7 @@ impl<'a> FiscalYearTaxPolicyRepository<'a> {
                 frozen = excluded.frozen",
             params![
                 policy.fiscal_year,
-                policy.tva_rate,
+                tva_rate_scaled,
                 policy.frozen as i64,
                 policy.set_by,
                 policy.created_at,

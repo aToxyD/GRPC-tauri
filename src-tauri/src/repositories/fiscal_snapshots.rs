@@ -1,5 +1,6 @@
 use crate::errors::AppResult;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +44,8 @@ impl<'a> FiscalSnapshotRepository<'a> {
     }
 
     pub fn record_export_snapshot(&self, snapshot: &FiscalExportSnapshot) -> AppResult<i64> {
+        let inventory_total_value_scaled =
+            numeric_row::money_scaled(snapshot.inventory_total_value)?;
         self.executor.execute(
             r#"
             INSERT INTO fiscal_export_snapshots
@@ -59,7 +62,7 @@ impl<'a> FiscalSnapshotRepository<'a> {
                 snapshot.fiscal_year,
                 snapshot.movement_count,
                 snapshot.report_count,
-                snapshot.inventory_total_value,
+                inventory_total_value_scaled,
                 snapshot.integrity_state,
                 snapshot.archived_years_count,
                 snapshot.active_anomalies_count,
@@ -83,6 +86,7 @@ impl<'a> FiscalSnapshotRepository<'a> {
         created_by: &str,
         created_at: &str,
     ) -> AppResult<i64> {
+        let total_inventory_value_scaled = numeric_row::money_scaled(total_inventory_value)?;
         self.executor.execute(
             r#"
             INSERT INTO fiscal_operational_snapshots
@@ -94,7 +98,7 @@ impl<'a> FiscalSnapshotRepository<'a> {
             params![
                 snapshot_date,
                 fiscal_year,
-                total_inventory_value,
+                total_inventory_value_scaled,
                 product_count,
                 movement_count,
                 report_count,
@@ -151,7 +155,7 @@ fn map_snapshot_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<FiscalOperational
         id: r.get(0)?,
         snapshot_date: r.get(1)?,
         fiscal_year: r.get(2)?,
-        total_inventory_value: r.get(3)?,
+        total_inventory_value: numeric_row::money_col(3, r.get::<_, i64>(3)?)?,
         product_count: r.get(4)?,
         movement_count: r.get(5)?,
         report_count: r.get(6)?,

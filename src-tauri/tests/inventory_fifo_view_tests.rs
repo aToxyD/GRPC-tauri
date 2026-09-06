@@ -20,15 +20,15 @@ fn init_db() -> grpc_lib::db::Database {
     // Insert products
     let now = "2025-01-01T00:00:00Z";
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p1', 'Farine', 100.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p1', 'Farine', 10000.0, 2025, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p2', 'Huile', 200.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p2', 'Huile', 20000.0, 2025, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p3', 'Sucre', 150.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p3', 'Sucre', 15000.0, 2025, ?1)",
         rusqlite::params![now],
     ).unwrap();
 
@@ -52,7 +52,7 @@ fn create_layer(
         .execute(
             "INSERT INTO fifo_stock_layers (id, unit_id, product_id, source_type, source_id, unit_cost, qty_original, qty_remaining, received_at, created_by, origin_fiscal_year)
              VALUES (?1, 'test_unit', ?2, ?3, NULL, ?4, ?5, ?5, ?6, 'test_user', ?7)",
-            rusqlite::params![id, product_id, source_type, unit_cost, qty, received_at_str, 2025],
+            rusqlite::params![id, product_id, source_type, unit_cost * 100.0, qty * 1000.0, received_at_str, 2025],
         )
         .unwrap_or_else(|e| panic!("insert layer failed: {}", e));
 }

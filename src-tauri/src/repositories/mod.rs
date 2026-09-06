@@ -19,6 +19,7 @@ pub mod identity_store;
 pub mod import_audit_events;
 pub mod integrity;
 pub mod inventory;
+pub mod numeric_row;
 pub mod opening_balances;
 pub mod order_allocations;
 pub mod orders;

@@ -235,7 +235,7 @@ fn fixture_contract_catalog_package() -> SyncPackage<ContractCatalogExportDatase
             }],
             tax_policies: vec![FiscalYearTaxPolicy {
                 fiscal_year: 2026,
-                tva_rate: 0.19,
+                tva_rate: 19.0,
                 frozen: false,
                 set_by: "wilaya-admin".into(),
                 created_at: created_at.to_rfc3339(),

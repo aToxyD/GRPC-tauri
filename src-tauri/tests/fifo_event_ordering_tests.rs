@@ -422,18 +422,18 @@ fn fifo_consumption_events_rollback_on_insufficient_stock() {
     );
 
     // Verify FIFO layers are unchanged
-    let fifo_qty: f64 = db
+    let fifo_qty: i64 = db
         .executor()
         .query_row(
-            "SELECT COALESCE(SUM(qty_remaining), 0.0) FROM fifo_stock_layers WHERE unit_id = ?1 AND product_id = ?2",
+            "SELECT COALESCE(SUM(qty_remaining), 0) FROM fifo_stock_layers WHERE unit_id = ?1 AND product_id = ?2",
             rusqlite::params![unit_id, product_id],
             |row| row.get(0),
         )
-        .unwrap_or(-1.0);
+        .unwrap_or(-1);
     assert!(
-        (fifo_qty - 10.0).abs() < 0.01,
+        ((fifo_qty as f64) / 1000.0 - 10.0).abs() < 0.01,
         "FIFO remaining should be unchanged (10.0), got {}",
-        fifo_qty
+        fifo_qty as f64 / 1000.0
     );
 }
 

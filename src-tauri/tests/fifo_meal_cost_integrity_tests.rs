@@ -36,7 +36,7 @@ fn seed_product_and_stock(
 ) {
     ex.execute(
         "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,?2,?3,?4,?5)",
-        rusqlite::params![product_id, name, unit_cost, year, now],
+        rusqlite::params![product_id, name, unit_cost * 100.0, year, now],
     )
     .expect("insert product");
 
@@ -90,12 +90,14 @@ fn meal(meal_type: MealType, items: Vec<(&str, f64)>) -> MealSectionInput {
 
 /// Get the sum of total_cost from inventory_layer_consumptions for a movement
 fn get_layer_consumption_sum(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(total_cost), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get(0),
-    )
-    .unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(total_cost), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 /// Get the sum of total_cost from inventory_layer_consumptions across ALL movements
@@ -105,28 +107,32 @@ fn get_layer_consumption_sum_for_report(
     report_id: &str,
     product_id: &str,
 ) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(ilc.total_cost), 0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(ilc.total_cost), 0)
          FROM inventory_layer_consumptions ilc
          JOIN stock_movements sm ON ilc.movement_id = sm.id
          WHERE sm.reference_id = ?1 AND sm.product_id = ?2",
-        rusqlite::params![report_id, product_id],
-        |row| row.get(0),
-    )
-    .unwrap_or(0.0)
+            rusqlite::params![report_id, product_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 /// Get the sum of total_cost from daily_report_meal_items for a report and product
 fn get_meal_item_sum(ex: DbExecutor<'_>, report_id: &str, product_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(drmi.total_cost), 0.0) 
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(drmi.total_cost), 0)
          FROM daily_report_meal_items drmi
          INNER JOIN daily_report_meals drm ON drmi.meal_id = drm.id
          WHERE drm.daily_report_id = ?1 AND drmi.product_id = ?2",
-        rusqlite::params![report_id, product_id],
-        |row| row.get(0),
-    )
-    .unwrap_or(0.0)
+            rusqlite::params![report_id, product_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 /// Get movement_id for a product from stock_movements by reference_id

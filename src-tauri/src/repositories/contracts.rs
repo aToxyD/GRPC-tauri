@@ -12,6 +12,7 @@ use crate::models::{
     ContractProduct, CreateContractRequest, ReleaseReasonCode, UnitEntitlementRow,
 };
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::{params, Row};
 
 fn map_contract_row(row: &Row<'_>) -> Result<Contract, rusqlite::Error> {
@@ -53,8 +54,11 @@ fn map_contract_product_row(row: &Row<'_>) -> Result<ContractProduct, rusqlite::
         contract_id: row.get(1)?,
         product_id: row.get(2)?,
         product_name: row.get(3)?,
-        proposed_price: row.get(4)?,
-        agreed_price: row.get(5)?,
+        proposed_price: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
+        agreed_price: match row.get::<_, Option<i64>>(5)? {
+            Some(v) => Some(numeric_row::money_col(5, v)?),
+            None => None,
+        },
     })
 }
 
@@ -69,10 +73,10 @@ fn map_allocation_row(row: &Row<'_>) -> Result<ContractAllocation, rusqlite::Err
         unit_id: row.get(3)?,
         product_id: row.get(4)?,
         fiscal_year: row.get(5)?,
-        contracted_quantity: row.get(6)?,
-        fulfilled_quantity: row.get(7)?,
-        released_quantity: row.get(8)?,
-        reserved_quantity: row.get(9)?,
+        contracted_quantity: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+        fulfilled_quantity: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
+        released_quantity: numeric_row::qty_col(8, row.get::<_, i64>(8)?)?,
+        reserved_quantity: numeric_row::qty_col(9, row.get::<_, i64>(9)?)?,
         entitlement_state: row.get(10)?,
         version: row.get(11)?,
     })
@@ -84,7 +88,7 @@ fn map_exception_row(row: &Row<'_>) -> Result<ContractAllocationException, rusql
     Ok(ContractAllocationException {
         id: row.get(0)?,
         allocation_id: row.get(1)?,
-        released_quantity: row.get(2)?,
+        released_quantity: numeric_row::qty_col(2, row.get::<_, i64>(2)?)?,
         reason_code: row.get(3)?,
         reason_note: row.get(4)?,
         created_by: row.get(5)?,
@@ -231,14 +235,19 @@ impl<'a> ContractRepository<'a> {
         req: &AddContractProductRequest,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let proposed_price_scaled = numeric_row::money_scaled(req.proposed_price)?;
+        let agreed_price_scaled = match req.agreed_price {
+            Some(v) => Some(numeric_row::money_scaled(v)?),
+            None => None,
+        };
         self.executor.execute(
             "INSERT INTO contract_products (id, contract_id, product_id, proposed_price, agreed_price, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 id,
                 &req.contract_id,
                 &req.product_id,
-                &req.proposed_price,
-                &req.agreed_price,
+                proposed_price_scaled,
+                agreed_price_scaled,
                 created_at
             ],
         )?;
@@ -292,8 +301,11 @@ impl<'a> ContractRepository<'a> {
                         contract_id: row.get(1)?,
                         product_id: row.get(2)?,
                         product_name: row.get(3)?,
-                        proposed_price: row.get(4)?,
-                        agreed_price: row.get(5)?,
+                        proposed_price: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
+                        agreed_price: match row.get::<_, Option<i64>>(5)? {
+                            Some(v) => Some(numeric_row::money_col(5, v)?),
+                            None => None,
+                        },
                     },
                     row.get::<_, String>(6)?,
                 ))
@@ -308,9 +320,10 @@ impl<'a> ContractRepository<'a> {
         contract_product_id: &str,
         agreed_price: f64,
     ) -> Result<usize, AppError> {
+        let agreed_price_scaled = numeric_row::money_scaled(agreed_price)?;
         let n = self.executor.execute(
             "UPDATE contract_products SET agreed_price = ?1 WHERE id = ?2 AND contract_id IN (SELECT id FROM contracts WHERE status = 'proposed' AND deleted = 0)",
-            params![agreed_price, contract_product_id],
+            params![agreed_price_scaled, contract_product_id],
         )?;
         Ok(n)
     }
@@ -344,6 +357,7 @@ impl<'a> ContractRepository<'a> {
         contracted_quantity: f64,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let contracted_quantity_scaled = numeric_row::qty_scaled(contracted_quantity)?;
         self.executor.execute(
             "INSERT INTO contract_allocations (id, contract_id, contract_product_id, unit_id, product_id, fiscal_year, contracted_quantity, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
@@ -353,7 +367,7 @@ impl<'a> ContractRepository<'a> {
                 unit_id,
                 product_id,
                 fiscal_year,
-                contracted_quantity,
+                contracted_quantity_scaled,
                 created_at
             ],
         )?;
@@ -414,10 +428,10 @@ impl<'a> ContractRepository<'a> {
                         unit_id: row.get(3)?,
                         product_id: row.get(4)?,
                         fiscal_year: row.get(5)?,
-                        contracted_quantity: row.get(6)?,
-                        fulfilled_quantity: row.get(7)?,
-                        released_quantity: row.get(8)?,
-                        reserved_quantity: row.get(9)?,
+                        contracted_quantity: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+                        fulfilled_quantity: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
+                        released_quantity: numeric_row::qty_col(8, row.get::<_, i64>(8)?)?,
+                        reserved_quantity: numeric_row::qty_col(9, row.get::<_, i64>(9)?)?,
                         entitlement_state: row.get(10)?,
                         version: row.get(11)?,
                     },
@@ -489,7 +503,6 @@ impl<'a> ContractRepository<'a> {
         unit_id: &str,
         product_id: &str,
     ) -> Result<Vec<crate::domain::pricing::resolver::ResolutionCandidate>, AppError> {
-        use crate::domain::numeric::legacy_float;
         Ok(self.executor.query_all(
             "SELECT ca.id, ca.fiscal_year, c.supplier_id, s.name, cp.agreed_price,
                     ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
@@ -504,26 +517,26 @@ impl<'a> ContractRepository<'a> {
             params![unit_id, product_id],
             |row| {
                 let money_of =
-                    |idx: usize, v: f64| -> rusqlite::Result<crate::domain::numeric::Money> {
-                        legacy_float::money_from_f64(v).map_err(|e| {
+                    |idx: usize, v: i64| -> rusqlite::Result<crate::domain::numeric::Money> {
+                        crate::domain::numeric::Money::from_centimes(v).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 idx,
-                                rusqlite::types::Type::Real,
+                                rusqlite::types::Type::Integer,
                                 Box::new(crate::errors::AppError::from(e)),
                             )
                         })
                     };
                 let quantity_of =
-                    |idx: usize, v: f64| -> rusqlite::Result<crate::domain::numeric::Quantity> {
-                        legacy_float::quantity_from_f64(v).map_err(|e| {
+                    |idx: usize, v: i64| -> rusqlite::Result<crate::domain::numeric::Quantity> {
+                        crate::domain::numeric::Quantity::from_scaled_i64(v).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 idx,
-                                rusqlite::types::Type::Real,
+                                rusqlite::types::Type::Integer,
                                 Box::new(crate::errors::AppError::from(e)),
                             )
                         })
                     };
-                let agreed_price: Option<f64> = row.get(4)?;
+                let agreed_price: Option<i64> = row.get(4)?;
                 Ok(crate::domain::pricing::resolver::ResolutionCandidate {
                     allocation_id: row.get(0)?,
                     allocation_fiscal_year: row.get(1)?,
@@ -533,10 +546,10 @@ impl<'a> ContractRepository<'a> {
                         Some(v) => Some(money_of(4, v)?),
                         None => None,
                     },
-                    contracted_quantity: quantity_of(5, row.get(5)?)?,
-                    fulfilled_quantity: quantity_of(6, row.get(6)?)?,
-                    released_quantity: quantity_of(7, row.get(7)?)?,
-                    reserved_quantity: quantity_of(8, row.get(8)?)?,
+                    contracted_quantity: quantity_of(5, row.get::<_, i64>(5)?)?,
+                    fulfilled_quantity: quantity_of(6, row.get::<_, i64>(6)?)?,
+                    released_quantity: quantity_of(7, row.get::<_, i64>(7)?)?,
+                    reserved_quantity: quantity_of(8, row.get::<_, i64>(8)?)?,
                     entitlement_state: row.get(9)?,
                 })
             },
@@ -578,13 +591,16 @@ impl<'a> ContractRepository<'a> {
                     supplier_id: row.get(2)?,
                     supplier_name: row.get(3)?,
                     fiscal_year: row.get(4)?,
-                    contracted_quantity: row.get(5)?,
-                    fulfilled_quantity: row.get(6)?,
-                    released_quantity: row.get(7)?,
-                    reserved_quantity: row.get(8)?,
+                    contracted_quantity: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                    fulfilled_quantity: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+                    released_quantity: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
+                    reserved_quantity: numeric_row::qty_col(8, row.get::<_, i64>(8)?)?,
                     entitlement_state: row.get(9)?,
                     contract_status: row.get(10)?,
-                    agreed_price: row.get(11)?,
+                    agreed_price: match row.get::<_, Option<i64>>(11)? {
+                        Some(v) => Some(numeric_row::money_col(11, v)?),
+                        None => None,
+                    },
                 })
             },
         )?)
@@ -601,13 +617,14 @@ impl<'a> ContractRepository<'a> {
         allocation_id: &str,
         quantity: f64,
     ) -> Result<usize, AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
         let n = self.executor.execute(
             "UPDATE contract_allocations
              SET fulfilled_quantity = fulfilled_quantity + ?1,
                  version = version + 1
              WHERE id = ?2 AND deleted = 0
                AND fulfilled_quantity + ?1 + released_quantity + reserved_quantity <= contracted_quantity",
-            params![quantity, allocation_id],
+            params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
     }
@@ -620,13 +637,14 @@ impl<'a> ContractRepository<'a> {
         allocation_id: &str,
         quantity: f64,
     ) -> Result<usize, AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
         let n = self.executor.execute(
             "UPDATE contract_allocations
              SET reserved_quantity = reserved_quantity + ?1,
                  version = version + 1
              WHERE id = ?2 AND deleted = 0
                AND fulfilled_quantity + ?1 + released_quantity + reserved_quantity <= contracted_quantity",
-            params![quantity, allocation_id],
+            params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
     }
@@ -638,6 +656,7 @@ impl<'a> ContractRepository<'a> {
         allocation_id: &str,
         quantity: f64,
     ) -> Result<usize, AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
         let n = self.executor.execute(
             "UPDATE contract_allocations
              SET fulfilled_quantity = fulfilled_quantity + ?1,
@@ -646,7 +665,7 @@ impl<'a> ContractRepository<'a> {
              WHERE id = ?2 AND deleted = 0
                AND reserved_quantity >= ?1
                AND fulfilled_quantity + ?1 + released_quantity + reserved_quantity <= contracted_quantity",
-            params![quantity, allocation_id],
+            params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
     }
@@ -657,12 +676,13 @@ impl<'a> ContractRepository<'a> {
         allocation_id: &str,
         quantity: f64,
     ) -> Result<usize, AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
         let n = self.executor.execute(
             "UPDATE contract_allocations
              SET reserved_quantity = reserved_quantity - ?1,
                  version = version + 1
              WHERE id = ?2 AND deleted = 0 AND reserved_quantity >= ?1",
-            params![quantity, allocation_id],
+            params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
     }
@@ -673,13 +693,14 @@ impl<'a> ContractRepository<'a> {
         allocation_id: &str,
         quantity: f64,
     ) -> Result<usize, AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
         let n = self.executor.execute(
             "UPDATE contract_allocations
              SET released_quantity = released_quantity + ?1,
                  version = version + 1
              WHERE id = ?2 AND deleted = 0
                AND fulfilled_quantity + released_quantity + reserved_quantity + ?1 <= contracted_quantity",
-            params![quantity, allocation_id],
+            params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
     }
@@ -691,12 +712,13 @@ impl<'a> ContractRepository<'a> {
         allocation_id: &str,
         quantity: f64,
     ) -> Result<usize, AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
         let n = self.executor.execute(
             "UPDATE contract_allocations
              SET released_quantity = released_quantity - ?1,
                  version = version + 1
              WHERE id = ?2 AND deleted = 0 AND released_quantity >= ?1",
-            params![quantity, allocation_id],
+            params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
     }
@@ -730,12 +752,13 @@ impl<'a> ContractRepository<'a> {
         created_by: &str,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let released_quantity_scaled = numeric_row::qty_scaled(released_quantity)?;
         self.executor.execute(
             "INSERT INTO contract_allocation_exceptions (id, allocation_id, released_quantity, reason_code, reason_note, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 id,
                 allocation_id,
-                released_quantity,
+                released_quantity_scaled,
                 reason_code.to_string(),
                 reason_note,
                 created_by,
@@ -843,13 +866,18 @@ impl<'a> ContractRepository<'a> {
         agreed_price: Option<f64>,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let proposed_price_scaled = numeric_row::money_scaled(proposed_price)?;
+        let agreed_price_scaled = match agreed_price {
+            Some(v) => Some(numeric_row::money_scaled(v)?),
+            None => None,
+        };
         self.executor.execute(
             "INSERT INTO contract_products (id, contract_id, product_id, proposed_price, agreed_price, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(id) DO UPDATE SET
                 proposed_price = excluded.proposed_price,
                 agreed_price = excluded.agreed_price",
-            params![id, contract_id, product_id, proposed_price, agreed_price, created_at],
+            params![id, contract_id, product_id, proposed_price_scaled, agreed_price_scaled, created_at],
         )?;
         Ok(())
     }
@@ -859,6 +887,10 @@ impl<'a> ContractRepository<'a> {
         allocation: &ContractAllocation,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let contracted_scaled = numeric_row::qty_scaled(allocation.contracted_quantity)?;
+        let fulfilled_scaled = numeric_row::qty_scaled(allocation.fulfilled_quantity)?;
+        let released_scaled = numeric_row::qty_scaled(allocation.released_quantity)?;
+        let reserved_scaled = numeric_row::qty_scaled(allocation.reserved_quantity)?;
         self.executor.execute(
             "INSERT INTO contract_allocations (id, contract_id, contract_product_id, unit_id, product_id,
                                                 fiscal_year, contracted_quantity, fulfilled_quantity,
@@ -878,10 +910,10 @@ impl<'a> ContractRepository<'a> {
                 allocation.unit_id,
                 allocation.product_id,
                 allocation.fiscal_year,
-                allocation.contracted_quantity,
-                allocation.fulfilled_quantity,
-                allocation.released_quantity,
-                allocation.reserved_quantity,
+                contracted_scaled,
+                fulfilled_scaled,
+                released_scaled,
+                reserved_scaled,
                 allocation.entitlement_state,
                 allocation.version,
                 created_at,
@@ -901,6 +933,7 @@ impl<'a> ContractRepository<'a> {
         created_by: &str,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let released_quantity_scaled = numeric_row::qty_scaled(released_quantity)?;
         self.executor.execute(
             "INSERT INTO contract_allocation_exceptions (id, allocation_id, released_quantity, reason_code, reason_note, created_by, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -908,7 +941,7 @@ impl<'a> ContractRepository<'a> {
             params![
                 id,
                 allocation_id,
-                released_quantity,
+                released_quantity_scaled,
                 reason_code,
                 reason_note,
                 created_by,

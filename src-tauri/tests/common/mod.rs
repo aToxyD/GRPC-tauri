@@ -119,7 +119,7 @@ pub fn create_test_product(
     db.get_connection()
         .execute(
             "INSERT INTO products (id, name, base_price, year, created_at, updated_at)              VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-            params![product_id, name, base_price, fiscal_year, now],
+            params![product_id, name, base_price * 100.0, fiscal_year, now],
         )
         .expect("insert product");
     db.get_connection()
@@ -141,7 +141,7 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
     db.get_connection()
         .execute(
             "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2 WHERE product_id = ?3",
-            params![quantity, now, product_id],
+            params![quantity * 1000.0, now, product_id],
         )
         .expect("update inventory_stocks quantity");
 
@@ -167,7 +167,7 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
             .execute(
                 "INSERT INTO fifo_stock_layers (id, unit_id, product_id, source_type, source_id, unit_cost, qty_original, qty_remaining, received_at, created_by, origin_fiscal_year)
                  VALUES (?1, 'test-unit', ?2, 'ORDER', 'test-source', ?3, ?4, ?4, ?5, 'system', ?6)",
-                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity, now, 2025],
+                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity * 1000.0, now, 2025],
             )
             .expect("insert fifo stock layer");
     }

@@ -5,6 +5,7 @@
 use crate::errors::AppError;
 use crate::models::{CreateProductRequest, Product, UpdateProductRequest};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 
 /// Type alias for the product sync metadata tuple returned by `get_sync_info`.
@@ -29,9 +30,10 @@ impl<'a> ProductRepository<'a> {
         year: i32,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let base_price_scaled = numeric_row::money_scaled(req.base_price)?;
         self.executor.execute(
             "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, &req.name, &req.base_price, &year, created_at],
+            params![id, &req.name, base_price_scaled, &year, created_at],
         )?;
         Ok(())
     }
@@ -46,9 +48,10 @@ impl<'a> ProductRepository<'a> {
     }
 
     pub fn insert_raw_product(&self, product: &Product, now: &str) -> Result<(), AppError> {
+        let base_price_scaled = numeric_row::money_scaled(product.base_price)?;
         self.executor.execute(
             "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![&product.id, &product.name, &product.base_price, &product.year, now],
+            rusqlite::params![&product.id, &product.name, base_price_scaled, &product.year, now],
         )?;
         Ok(())
     }
@@ -69,6 +72,7 @@ impl<'a> ProductRepository<'a> {
         &self,
         record: &crate::models::ProductSyncRecord,
     ) -> Result<(), AppError> {
+        let base_price_scaled = numeric_row::money_scaled(record.base_price)?;
         // Use INSERT OR REPLACE to handle both new and existing products
         // This will delete the old row if it exists, which may fail with FK constraints
         // If that fails, try UPDATE instead
@@ -78,7 +82,7 @@ impl<'a> ProductRepository<'a> {
             rusqlite::params![
                 &record.id,
                 &record.name,
-                &record.base_price,
+                base_price_scaled,
                 &record.year,
                 &record.created_at,
                 &record.updated_at,
@@ -97,7 +101,7 @@ impl<'a> ProductRepository<'a> {
                     "UPDATE products SET name = ?1, base_price = ?2, year = ?3, updated_at = ?4, node_id = ?5, deleted = ?6 WHERE id = ?7",
                     rusqlite::params![
                         &record.name,
-                        &record.base_price,
+                        base_price_scaled,
                         &record.year,
                         &record.updated_at,
                         &record.node_id,
@@ -113,9 +117,10 @@ impl<'a> ProductRepository<'a> {
 
     /// Update an existing product
     pub fn update_product(&self, req: &UpdateProductRequest) -> Result<(), AppError> {
+        let base_price_scaled = numeric_row::money_scaled(req.base_price)?;
         self.executor.execute(
             "UPDATE products SET name = ?1, base_price = ?2 WHERE id = ?3",
-            params![&req.name, &req.base_price, &req.id],
+            params![&req.name, base_price_scaled, &req.id],
         )?;
         Ok(())
     }
@@ -145,7 +150,7 @@ impl<'a> ProductRepository<'a> {
                 Ok(Product {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    base_price: row.get(2)?,
+                    base_price: numeric_row::money_col(2, row.get::<_, i64>(2)?)?,
                     year: row.get(3)?,
                     created_at,
                 })
@@ -172,7 +177,7 @@ impl<'a> ProductRepository<'a> {
                 Ok(Product {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    base_price: row.get(2)?,
+                    base_price: numeric_row::money_col(2, row.get::<_, i64>(2)?)?,
                     year: row.get(3)?,
                     created_at,
                 })

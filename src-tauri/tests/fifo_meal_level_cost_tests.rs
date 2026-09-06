@@ -91,6 +91,17 @@ fn current_date_and_year() -> (NaiveDate, i32) {
     (date, year)
 }
 
+fn meal_cost(ex: DbExecutor<'_>, meal_type: &str) -> f64 {
+    let cost: i64 = ex
+        .query_row(
+            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = ?1",
+            rusqlite::params![meal_type],
+            |row| row.get(0),
+        )
+        .unwrap_or(-1);
+    cost as f64 / 100.0
+}
+
 // ── Scenario 1: Single layer, breakfast only ───────────────────────────────
 // Layer: 100@500
 // Breakfast: 10
@@ -139,13 +150,7 @@ fn test_scenario_1_single_layer_breakfast_only() {
 
     // Verify breakfast cost = 10 * 500 = 5000
     let ex = db.executor();
-    let breakfast_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'breakfast'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
+    let breakfast_cost = meal_cost(ex, "breakfast");
     assert!(
         (breakfast_cost - 5000.0).abs() < 0.01,
         "Expected breakfast cost 5000, got {}",
@@ -213,20 +218,8 @@ fn test_scenario_2_breakfast_gets_oldest_layer() {
     .expect("create daily report");
 
     let ex = db.executor();
-    let breakfast_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'breakfast'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
-    let lunch_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'lunch'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
+    let breakfast_cost = meal_cost(ex, "breakfast");
+    let lunch_cost = meal_cost(ex, "lunch");
 
     assert!(
         (breakfast_cost - 5000.0).abs() < 0.01,
@@ -310,27 +303,9 @@ fn test_scenario_3_three_meals_three_layers() {
     .expect("create daily report");
 
     let ex = db.executor();
-    let breakfast_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'breakfast'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
-    let lunch_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'lunch'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
-    let dinner_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'dinner'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
+    let breakfast_cost = meal_cost(ex, "breakfast");
+    let lunch_cost = meal_cost(ex, "lunch");
+    let dinner_cost = meal_cost(ex, "dinner");
 
     assert!(
         (breakfast_cost - 4000.0).abs() < 0.01,
@@ -397,13 +372,7 @@ fn test_scenario_4_multiple_products_independent() {
 
     // Total breakfast cost = 5*500 + 10*300 = 2500 + 3000 = 5500
     let ex = db.executor();
-    let breakfast_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'breakfast'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
+    let breakfast_cost = meal_cost(ex, "breakfast");
     assert!(
         (breakfast_cost - 5500.0).abs() < 0.01,
         "Expected breakfast cost 5500, got {}",
@@ -463,20 +432,8 @@ fn test_scenario_5_fractional_quantities() {
     .expect("create daily report");
 
     let ex = db.executor();
-    let breakfast_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'breakfast'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
-    let lunch_cost: f64 = ex
-        .query_row(
-            "SELECT total_meal_cost FROM daily_report_meals WHERE meal_type = 'lunch'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(-1.0);
+    let breakfast_cost = meal_cost(ex, "breakfast");
+    let lunch_cost = meal_cost(ex, "lunch");
 
     assert!(
         (breakfast_cost - 5166.50).abs() < 1.0,
@@ -545,27 +502,30 @@ fn test_scenario_6_meal_sum_equals_daily_total() {
     .expect("create daily report");
 
     let ex = db.executor();
-    let total_daily_cost: f64 = ex
+    let total_daily_cost_raw: i64 = ex
         .query_row(
             "SELECT total_daily_cost FROM daily_reports WHERE id = ?1",
             rusqlite::params![report_id],
             |row| row.get(0),
         )
-        .unwrap_or(-1.0);
-    let sum_meal_costs: f64 = ex.query_row(
-        "SELECT COALESCE(SUM(total_meal_cost), 0.0) FROM daily_report_meals WHERE daily_report_id = ?1",
+        .unwrap_or(-1);
+    let total_daily_cost = total_daily_cost_raw as f64 / 100.0;
+    let sum_meal_costs_raw: i64 = ex.query_row(
+        "SELECT COALESCE(SUM(total_meal_cost), 0) FROM daily_report_meals WHERE daily_report_id = ?1",
         rusqlite::params![report_id], |row| row.get(0),
-    ).unwrap_or(-1.0);
-    let sum_item_costs: f64 = ex
+    ).unwrap_or(-1);
+    let sum_meal_costs = sum_meal_costs_raw as f64 / 100.0;
+    let sum_item_costs_raw: i64 = ex
         .query_row(
-            "SELECT COALESCE(SUM(drmi.total_cost), 0.0)
+            "SELECT COALESCE(SUM(drmi.total_cost), 0)
          FROM daily_report_meal_items drmi
          JOIN daily_report_meals drm ON drmi.meal_id = drm.id
          WHERE drm.daily_report_id = ?1",
             rusqlite::params![report_id],
             |row| row.get(0),
         )
-        .unwrap_or(-1.0);
+        .unwrap_or(-1);
+    let sum_item_costs = sum_item_costs_raw as f64 / 100.0;
 
     assert!(
         (total_daily_cost - 15000.0).abs() < 0.01,
@@ -637,22 +597,24 @@ fn test_scenario_7_inventory_fifo_consistency_after_report() {
     .expect("create daily report");
 
     let ex = db.executor();
-    let fifo_qty: f64 = ex
+    let fifo_qty_raw: i64 = ex
         .query_row(
-            "SELECT COALESCE(SUM(qty_remaining), 0.0)
+            "SELECT COALESCE(SUM(qty_remaining), 0)
          FROM fifo_stock_layers
          WHERE unit_id = ?1 AND product_id = ?2",
             rusqlite::params![unit_id, product_id],
             |row| row.get(0),
         )
-        .unwrap_or(-1.0);
-    let stock_qty: f64 = ex
+        .unwrap_or(-1);
+    let fifo_qty = fifo_qty_raw as f64 / 1000.0;
+    let stock_qty_raw: i64 = ex
         .query_row(
-            "SELECT COALESCE(quantity, 0.0) FROM inventory_stocks WHERE product_id = ?1",
+            "SELECT COALESCE(quantity, 0) FROM inventory_stocks WHERE product_id = ?1",
             rusqlite::params![product_id],
             |row| row.get(0),
         )
-        .unwrap_or(-1.0);
+        .unwrap_or(-1);
+    let stock_qty = stock_qty_raw as f64 / 1000.0;
 
     assert!(
         (fifo_qty - 70.0).abs() < 0.01,

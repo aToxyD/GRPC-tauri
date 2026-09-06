@@ -50,7 +50,7 @@ fn seed_product(db: &Database, id: &str, name: &str, year: i32) {
     db.get_connection()
         .execute(
             "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, name, 100.0f64, year, NOW],
+            params![id, name, 10000.0f64, year, NOW],
         )
         .expect("seed product");
 }
@@ -102,8 +102,8 @@ fn seed_contract_product(
     db.get_connection()
         .execute(
             "INSERT INTO contract_products (id, contract_id, product_id, proposed_price, agreed_price, created_at)
-             VALUES (?1, ?2, ?3, 120.0, ?4, ?5)",
-            params![cp_id, contract_id, product_id, agreed_price, NOW],
+             VALUES (?1, ?2, ?3, 12000.0, ?4, ?5)",
+            params![cp_id, contract_id, product_id, agreed_price.map(|p| p * 100.0), NOW],
         )
         .expect("seed contract_product");
     cp_id.to_string()
@@ -140,10 +140,10 @@ fn seed_allocation(
                 unit_id,
                 product_id,
                 fiscal_year,
-                contracted,
-                fulfilled,
-                released,
-                reserved,
+                contracted * 1000.0,
+                fulfilled * 1000.0,
+                released * 1000.0,
+                reserved * 1000.0,
                 state,
                 created_at,
             ],
@@ -531,7 +531,7 @@ fn stale_local_state_unchanged_until_import() {
     // Simulate the next catalog import: WILAYA releases the 200 outstanding.
     db.get_connection()
         .execute(
-            "UPDATE contract_allocations SET released_quantity = 200.0 WHERE id = 'alloc-1'",
+            "UPDATE contract_allocations SET released_quantity = 200000 WHERE id = 'alloc-1'",
             [],
         )
         .expect("update local released");

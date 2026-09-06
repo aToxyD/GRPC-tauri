@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::domain::numeric::legacy_float::{
-    money_from_f64, money_to_f64, quantity_from_f64, quantity_to_f64,
-};
-use crate::domain::numeric::Money;
+use crate::domain::numeric::legacy_float::{money_to_f64, quantity_to_f64};
+use crate::domain::numeric::{Money, Quantity};
+use crate::repositories::numeric_row;
 use crate::repositories::DbExecutor;
 
 use super::{Report, ReportEnvelope, ReportMetadata};
@@ -64,7 +63,10 @@ impl Report for InventoryValuationReport {
         executor: DbExecutor<'_>,
         input: Self::Input,
     ) -> Result<ReportEnvelope<Self::Output>, Self::Error> {
-        let rows: Vec<(String, String, f64, f64, i64)> = executor
+        // INTEGER boundary: `SUM(f.qty_remaining)` is scale-3 quantity, and
+        // `SUM(f.qty_remaining * f.unit_cost)` equals value_DA × 100000.
+        // All valuation arithmetic below is exact Money/Quantity.
+        let rows: Vec<(String, String, i64, i64, i64)> = executor
             .query_all(
                 r#"SELECT f.product_id, p.name,
                           SUM(f.qty_remaining), SUM(f.qty_remaining * f.unit_cost), COUNT(*)
@@ -80,8 +82,8 @@ impl Report for InventoryValuationReport {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
-                        row.get::<_, f64>(2)?,
-                        row.get::<_, f64>(3)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
                         row.get::<_, i64>(4)?,
                     ))
                 },
@@ -92,12 +94,10 @@ impl Report for InventoryValuationReport {
         let mut total_value = Money::zero();
         let mut total_layers: usize = 0;
 
-        for (product_id, product_name, qty_wire, value_wire, layer_count) in rows {
-            // ADR-0048: SQL aggregates over REAL columns are boundary values.
-            // All valuation arithmetic below is exact Money/Quantity.
-            let qty = quantity_from_f64(qty_wire)
+        for (product_id, product_name, qty_scaled, value_times_100000, layer_count) in rows {
+            let qty = Quantity::from_scaled_i64(qty_scaled)
                 .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
-            let value = money_from_f64(value_wire)
+            let value = numeric_row::money_sum(value_times_100000)
                 .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
 
             // Weighted average unit cost = FIFO value ÷ remaining quantity

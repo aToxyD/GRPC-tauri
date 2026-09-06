@@ -134,19 +134,25 @@ fn get_movement_id_for_product(ex: DbExecutor<'_>, reference_id: &str, product_i
 }
 
 fn get_layer_consumption_sum(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(quantity), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get::<_, f64>(0),
-    ).unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(quantity), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 1000.0
 }
 
 fn get_layer_consumption_cost(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(total_cost), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get(0),
-    ).unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(total_cost), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 fn close_year(db: &mut grpc_lib::db::Database, year: i32, next_year: i32) {
@@ -176,12 +182,14 @@ fn get_layer_origin_fy(ex: DbExecutor<'_>, layer_id: &str) -> i32 {
 }
 
 fn get_layer_qty(ex: DbExecutor<'_>, layer_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT qty_remaining FROM fifo_stock_layers WHERE id = ?1",
-        rusqlite::params![layer_id],
-        |row| row.get(0),
-    )
-    .expect("get qty_remaining")
+    let qty: i64 = ex
+        .query_row(
+            "SELECT qty_remaining FROM fifo_stock_layers WHERE id = ?1",
+            rusqlite::params![layer_id],
+            |row| row.get(0),
+        )
+        .expect("get qty_remaining");
+    qty as f64 / 1000.0
 }
 
 fn count_active_layers(ex: DbExecutor<'_>, product_id: &str) -> usize {

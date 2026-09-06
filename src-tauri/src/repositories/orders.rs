@@ -6,6 +6,7 @@
 use crate::errors::AppError;
 use crate::models::{OrderStatus, SupplierOrder, SupplierOrderItem};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::{params, Row};
 
 fn map_supplier_order_row(row: &Row<'_>) -> Result<SupplierOrder, rusqlite::Error> {
@@ -24,7 +25,10 @@ fn map_supplier_order_row(row: &Row<'_>) -> Result<SupplierOrder, rusqlite::Erro
         supplier_id: row.get(2)?,
         supplier_name: row.get(3)?,
         reference_number: row.get(4)?,
-        total_amount: row.get(5)?,
+        total_amount: match row.get::<_, Option<i64>>(5)? {
+            Some(v) => Some(numeric_row::money_col(5, v)?),
+            None => None,
+        },
         status: OrderStatus::from(row.get::<_, String>(6)?),
         created_at,
         unit_id: row.get(9)?,
@@ -55,9 +59,10 @@ impl<'a> OrderRepository<'a> {
         order_date: &str,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let total_amount_scaled = numeric_row::money_scaled(total_amount)?;
         self.executor.execute(
             "INSERT INTO supplier_orders (id, order_date, supplier_id, supplier_name, reference_number, total_amount, status, created_at, fiscal_year, unit_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![id, order_date, supplier_id, supplier_name, reference_number, &total_amount, "Draft", created_at, fiscal_year, unit_id],
+            params![id, order_date, supplier_id, supplier_name, reference_number, total_amount_scaled, "Draft", created_at, fiscal_year, unit_id],
         )?;
         Ok(())
     }
@@ -73,9 +78,12 @@ impl<'a> OrderRepository<'a> {
         unit_id: &str,
         fiscal_year: i32,
     ) -> Result<(), AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(item.quantity)?;
+        let unit_price_scaled = numeric_row::money_scaled(unit_price)?;
+        let item_cost_scaled = numeric_row::money_scaled(item_cost)?;
         self.executor.execute(
             "INSERT INTO supplier_order_items (id, order_id, product_id, quantity, unit_price, total_cost, unit_id, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![item_id, order_id, &item.product_id, &item.quantity, &unit_price, &item_cost, unit_id, &fiscal_year],
+            params![item_id, order_id, &item.product_id, quantity_scaled, unit_price_scaled, item_cost_scaled, unit_id, &fiscal_year],
         )?;
         Ok(())
     }
@@ -98,9 +106,9 @@ impl<'a> OrderRepository<'a> {
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, f64>(1)?,
+                    numeric_row::qty_col(1, row.get::<_, i64>(1)?)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, f64>(3)?,
+                    numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
                     row.get::<_, String>(4)?,
                 ))
             },
@@ -117,9 +125,10 @@ impl<'a> OrderRepository<'a> {
         reference_number: &Option<String>,
         total_amount: f64,
     ) -> Result<usize, AppError> {
+        let total_amount_scaled = numeric_row::money_scaled(total_amount)?;
         let n = self.executor.execute(
             "UPDATE supplier_orders SET supplier_id = ?1, supplier_name = ?2, reference_number = ?3, total_amount = ?4 WHERE id = ?5 AND status = 'Draft'",
-            params![supplier_id, supplier_name, reference_number, total_amount, id],
+            params![supplier_id, supplier_name, reference_number, total_amount_scaled, id],
         )?;
         Ok(n)
     }
@@ -186,9 +195,9 @@ impl<'a> OrderRepository<'a> {
                     order_id: row.get(1)?,
                     product_id: row.get(2)?,
                     product_name: row.get(3)?,
-                    quantity: row.get(4)?,
-                    unit_price: row.get(5)?,
-                    total_cost: row.get(6)?,
+                    quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                    unit_price: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
+                    total_cost: numeric_row::money_col(6, row.get::<_, i64>(6)?)?,
                     unit_id: row.get(7)?,
                     fiscal_year: row.get(8)?,
                 })

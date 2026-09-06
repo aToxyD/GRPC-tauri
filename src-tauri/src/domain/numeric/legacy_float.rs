@@ -44,6 +44,11 @@ pub(crate) fn quantity_to_f64(quantity: &Quantity) -> Result<f64, NumericError> 
     Ok(quantity.to_scaled_i64()? as f64 / 1000.0)
 }
 
+/// Rate → wire `f64` percent-domain, rounded exactly once at the scale-4 boundary.
+pub(crate) fn rate_to_f64(rate: &Rate) -> Result<f64, NumericError> {
+    Ok(rate.to_scaled_i64()? as f64 / 10_000.0)
+}
+
 fn decimal_from_f64(value: f64) -> Result<Decimal, NumericError> {
     Decimal::from_f64(value).ok_or(NumericError::Parse)
 }

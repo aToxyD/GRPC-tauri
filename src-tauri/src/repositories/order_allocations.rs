@@ -7,6 +7,7 @@
 
 use crate::errors::AppError;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::{params, Row};
 
 /// Recorded allocation leg of an order item.
@@ -25,9 +26,9 @@ fn map_row(row: &Row<'_>) -> Result<SupplierOrderItemAllocation, rusqlite::Error
         id: row.get(0)?,
         item_id: row.get(1)?,
         allocation_id: row.get(2)?,
-        quantity: row.get(3)?,
-        unit_price: row.get(4)?,
-        total_cost: row.get(5)?,
+        quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
+        unit_price: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
+        total_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
     })
 }
 
@@ -53,9 +54,12 @@ impl<'a> OrderAllocationRepository<'a> {
         total_cost: f64,
         created_at: &str,
     ) -> Result<(), AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
+        let unit_price_scaled = numeric_row::money_scaled(unit_price)?;
+        let total_cost_scaled = numeric_row::money_scaled(total_cost)?;
         self.executor.execute(
             "INSERT INTO supplier_order_item_allocations (id, item_id, allocation_id, quantity, unit_price, total_cost, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, item_id, allocation_id, quantity, unit_price, total_cost, created_at],
+            params![id, item_id, allocation_id, quantity_scaled, unit_price_scaled, total_cost_scaled, created_at],
         )?;
         Ok(())
     }

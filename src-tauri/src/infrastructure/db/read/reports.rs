@@ -4,6 +4,7 @@ use chrono::{Datelike, NaiveDate};
 
 use crate::errors::{AppError, ValidationError};
 use crate::models::{DailyReport, DailyReportMeal, MealType};
+use crate::repositories::numeric_row;
 use crate::repositories::DbExecutor;
 
 #[derive(Clone, Copy, Debug)]
@@ -103,7 +104,7 @@ fn map_report_row(row: &rusqlite::Row<'_>) -> Result<DailyReport, rusqlite::Erro
         id: row.get(0)?,
         date,
         unit_id: row.get(2)?,
-        total_daily_cost: row.get(3)?,
+        total_daily_cost: numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
         total_daily_average: row.get(4)?,
         total_daily_beneficiaries: row.get(5)?,
         created_at,
@@ -135,7 +136,7 @@ fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Er
         mission_count: row.get(6)?,
         guest_count: row.get(7)?,
         total_beneficiaries: row.get(8)?,
-        total_meal_cost: row.get(9)?,
+        total_meal_cost: numeric_row::money_col(9, row.get::<_, i64>(9)?)?,
         meal_average: row.get(10)?,
     })
 }
@@ -294,7 +295,7 @@ pub fn load_wilaya_reports_projection(
     Ok(executor.query_all(
         r#"SELECT u.id, u.name,
                   COALESCE(mr.total_beneficiaries, 0),
-                  COALESCE(mr.total_consumption_value, 0.0),
+                  COALESCE(mr.total_consumption_value, 0),
                   COALESCE(mr.daily_average, 0.0),
                   CASE WHEN mr.id IS NOT NULL THEN 1 ELSE 0 END as is_imported
            FROM units u
@@ -307,7 +308,7 @@ pub fn load_wilaya_reports_projection(
                 unit_id: row.get(0)?,
                 unit_name: row.get(1)?,
                 total_beneficiaries: row.get(2)?,
-                total_cost: row.get(3)?,
+                total_cost: numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
                 daily_average: row.get(4)?,
                 is_imported: row.get::<_, i32>(5)? != 0,
             })

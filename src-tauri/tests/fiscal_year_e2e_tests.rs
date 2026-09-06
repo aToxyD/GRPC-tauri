@@ -114,23 +114,28 @@ fn get_movement_id_for_product(ex: DbExecutor<'_>, reference_id: &str, product_i
 }
 
 fn get_layer_consumption_sum(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(total_cost), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get(0),
-    ).unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(total_cost), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 fn get_meal_item_sum(ex: DbExecutor<'_>, report_id: &str, product_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(drmi.total_cost), 0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(drmi.total_cost), 0)
          FROM daily_report_meal_items drmi
          INNER JOIN daily_report_meals drm ON drmi.meal_id = drm.id
          WHERE drm.daily_report_id = ?1 AND drmi.product_id = ?2",
-        rusqlite::params![report_id, product_id],
-        |row| row.get(0),
-    )
-    .unwrap_or(0.0)
+            rusqlite::params![report_id, product_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 fn sync_inventory_from_fifo(ex: DbExecutor<'_>, unit_id: &str, product_id: &str) {
