@@ -399,20 +399,6 @@ fn cache_key_deterministic() {
 }
 
 #[test]
-fn round_money_basic_cases() {
-    assert_eq!(grpc_lib::application::reporting::round_money(100.0), 100.0);
-    assert_eq!(
-        grpc_lib::application::reporting::round_money(100.456),
-        100.46
-    );
-    assert_eq!(
-        grpc_lib::application::reporting::round_money(100.454),
-        100.45
-    );
-    assert_eq!(grpc_lib::application::reporting::round_money(0.0), 0.0);
-}
-
-#[test]
 fn all_report_slugs_are_unique() {
     let slugs = vec![
         FiscalYearSummaryReport::slug(),

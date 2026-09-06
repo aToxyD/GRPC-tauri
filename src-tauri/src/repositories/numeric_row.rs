@@ -74,7 +74,9 @@ pub(crate) fn qty_scaled_i64_to_f64(scaled: i64) -> Result<f64, NumericError> {
 /// `/1000` with MidpointAwayFromZero (for non-negative aggregates) yields exact
 /// centimes at the money boundary — no f64 ever enters the accounting path.
 pub(crate) fn money_sum(sum: i64) -> Result<Money, NumericError> {
-    let sum = sum.max(0);
+    if sum < 0 {
+        return Err(NumericError::NegativeNotAllowed);
+    }
     let centimes = sum.checked_add(500).ok_or(NumericError::Overflow)? / 1000;
     Money::from_centimes(centimes)
 }
@@ -82,4 +84,41 @@ pub(crate) fn money_sum(sum: i64) -> Result<Money, NumericError> {
 /// Wire f64 of [`money_sum`], for repositories returning DTO mantissas.
 pub(crate) fn money_sum_col(sum: i64) -> Result<f64, NumericError> {
     legacy_float::money_to_f64(&money_sum(sum)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn money_sum_zero_is_zero() {
+        assert_eq!(money_sum(0).unwrap(), Money::from_centimes(0).unwrap());
+    }
+
+    #[test]
+    fn money_sum_rounds_boundary_values_to_centimes() {
+        assert_eq!(
+            money_sum(100_000).unwrap(),
+            Money::from_centimes(100).unwrap()
+        );
+        assert_eq!(
+            money_sum(100_499).unwrap(),
+            Money::from_centimes(100).unwrap()
+        );
+        assert_eq!(
+            money_sum(100_500).unwrap(),
+            Money::from_centimes(101).unwrap()
+        );
+    }
+
+    #[test]
+    fn money_sum_fails_closed_on_negative_aggregate() {
+        assert_eq!(money_sum(-1), Err(NumericError::NegativeNotAllowed));
+        assert_eq!(money_sum(i64::MIN), Err(NumericError::NegativeNotAllowed));
+    }
+
+    #[test]
+    fn money_sum_fails_closed_on_overflow() {
+        assert_eq!(money_sum(i64::MAX), Err(NumericError::Overflow));
+    }
 }

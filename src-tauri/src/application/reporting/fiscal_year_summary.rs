@@ -201,13 +201,7 @@ impl Report for FiscalYearSummaryReport {
                     .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
                 daily_report_count,
                 total_beneficiaries,
-                // SQL aggregate over REAL columns is a boundary value; the
-                // scale-2 normalization happens here, not mid-arithmetic.
-                ending_inventory_value: money_to_f64(
-                    &money_from_f64(ending_inventory_value)
-                        .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
-                )
-                .map_err(|e| FiscalYearSummaryError::Internal(e.to_string()))?,
+                ending_inventory_value,
                 layer_count,
             },
         })
