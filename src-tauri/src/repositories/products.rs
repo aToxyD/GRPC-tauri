@@ -22,18 +22,30 @@ impl<'a> ProductRepository<'a> {
         Self { executor }
     }
 
-    /// Insert a new product row (SQL only).
+    /// Insert a new product row (SQL only). The SEC-087 unit/TVA configuration
+    /// arrives already validated by the application layer.
     pub fn insert_product(
         &self,
         id: &str,
         req: &CreateProductRequest,
         year: i32,
+        config: &crate::domain::units::ProductUnitConfig,
         created_at: &str,
     ) -> Result<(), AppError> {
         let base_price_scaled = numeric_row::money_scaled(req.base_price)?;
         self.executor.execute(
-            "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, &req.name, base_price_scaled, &year, created_at],
+            "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                id,
+                &req.name,
+                base_price_scaled,
+                &year,
+                config.purchase_unit.code(),
+                config.consumption_unit.code(),
+                config.conversion_factor,
+                config.tva_classification.code(),
+                created_at,
+            ],
         )?;
         Ok(())
     }

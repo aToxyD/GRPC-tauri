@@ -64,6 +64,12 @@ impl Money {
         self.0.is_sign_positive() && !self.0.is_zero()
     }
 
+    /// Internal exact-`Decimal` accessor — reserved for the numeric module and
+    /// the pricing domain; never exposed outside the crate.
+    pub(crate) fn raw(&self) -> Decimal {
+        self.0
+    }
+
     /// Exact addition. Fails closed on `Decimal` overflow.
     pub fn checked_add(self, rhs: Self) -> Result<Self, NumericError> {
         let value = self.0.checked_add(rhs.0).ok_or(NumericError::Overflow)?;

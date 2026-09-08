@@ -10,7 +10,7 @@
 use chrono::Utc;
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::domain::numeric::{Money, NumericError, Quantity, Rate};
-use grpc_lib::domain::pricing::price::price_with_tva;
+use grpc_lib::domain::pricing::price::compute_contract_fiscal;
 use grpc_lib::repositories::{executor::DbExecutor, FifoLayerRepository, IntegrityRepository};
 use rusqlite::params;
 use uuid::Uuid;
@@ -427,13 +427,18 @@ fn tva_rate_is_percent_domain_and_exact() {
     assert_ne!(fraction.to_scaled_i64().unwrap(), 190_000);
 
     let base = Money::parse_str("200.00").unwrap();
-    let with_tva = price_with_tva(&base, &rate).expect("price with 19%");
+    let breakdown = compute_contract_fiscal(&base, &rate).expect("price with 19%");
+    let with_tva = breakdown.price_ttc;
     assert_eq!(with_tva, Money::parse_str("238.00").unwrap());
     assert_eq!(with_tva.to_scaled_i64().unwrap(), 23_800);
+    assert_eq!(breakdown.tva_amount, Money::parse_str("38.00").unwrap());
 
     // The fraction form must NOT silently produce the 19% outcome.
-    let with_fraction = price_with_tva(&base, &fraction).expect("price with 0.19%");
-    assert_ne!(with_fraction.to_scaled_i64().unwrap(), 23_800);
+    let fraction_breakdown = compute_contract_fiscal(&base, &fraction).expect("price with 0.19%");
+    assert_ne!(
+        fraction_breakdown.price_ttc.to_scaled_i64().unwrap(),
+        23_800
+    );
 
     // Rate range enforcement: > 100% fails closed.
     assert!(matches!(

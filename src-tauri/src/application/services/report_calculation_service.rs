@@ -45,14 +45,16 @@ impl<'a> ReportCalculationService<'a> {
         DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
 
-    /// IPC-facing TVA calculation (ADR-0048): the `f64` inputs are wire
+    /// IPC-facing TVA calculation (SEC-087 / ADR-0048): the `f64` inputs are wire
     /// values, converted to exact `Decimal` at this boundary; the arithmetic is
-    /// typed and the result is rounded exactly once back to `f64`.
+    /// the canonical tax-term chain owned by `domain::pricing::price` and the
+    /// TTC result is rounded exactly once back to `f64`. Transitional legacy
+    /// display helper — NOT an authoritative pricing source.
     pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> Result<f64, AppError> {
         let base = crate::domain::numeric::legacy_float::money_from_f64(base_price)?;
         let rate = crate::domain::numeric::legacy_float::rate_from_f64(tva)?;
-        let result = crate::domain::pricing::price::price_with_tva(&base, &rate)?;
-        crate::domain::numeric::legacy_float::money_to_f64(&result).map_err(Into::into)
+        let breakdown = crate::domain::pricing::price::compute_contract_fiscal(&base, &rate)?;
+        crate::domain::numeric::legacy_float::money_to_f64(&breakdown.price_ttc).map_err(Into::into)
     }
 
     pub fn build_wilaya_reports(

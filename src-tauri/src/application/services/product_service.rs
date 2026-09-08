@@ -19,23 +19,21 @@ impl<'a> ProductService<'a> {
         req: &CreateProductRequest,
         year: i32,
     ) -> Result<String, AppError> {
-        // Validation
-        if req.name.trim().is_empty() {
-            return Err(AppError::Validation(ValidationError::Required {
-                field: "name".to_string(),
-            }));
-        }
-        if req.base_price <= 0.0 {
-            return Err(AppError::Validation(ValidationError::InvalidPrice {
-                value: req.base_price,
-            }));
-        }
+        // Validation: name, price, year, and the SEC-087 unit/TVA/factor set
+        // (single authoritative validator in `domain::validation`).
+        crate::domain::validation::validate_create_product_request(req, year)?;
+        let config = crate::domain::validation::validate_product_units(
+            req.purchase_unit,
+            req.consumption_unit,
+            req.conversion_factor,
+            req.tva_classification,
+        )?;
 
         let now = Utc::now().to_rfc3339();
         let id = Uuid::new_v4().to_string();
 
         let repo = self.executor.products();
-        repo.insert_product(&id, req, year, &now)?;
+        repo.insert_product(&id, req, year, &config, &now)?;
 
         // Initialize stock record (orchestration belongs to service).
         let stock_id = Uuid::new_v4().to_string();

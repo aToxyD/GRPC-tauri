@@ -34,6 +34,15 @@ pub struct InventoryStock {
 pub struct CreateProductRequest {
     pub name: String,
     pub base_price: f64,
+    /// SEC-087: purchase/consumption unit split, conversion factor and TVA
+    /// classification (wire integer codes; see `domain::units`). Absent codes
+    /// (`None`) are rejected fail-closed by the application validation layer
+    /// so no invalid product can be created. `UnitMeasure` codes `1..=10`,
+    /// `TvaClassification` codes `0..=2`.
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
+    pub tva_classification: Option<i32>,
 }
 
 /// Request to update an existing product

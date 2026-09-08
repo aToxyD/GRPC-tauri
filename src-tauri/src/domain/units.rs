@@ -10,6 +10,8 @@
 
 use std::fmt;
 
+use crate::domain::numeric::Rate;
+
 /// Canonical measurement units (SEC-087). Codes `1..=10` are persisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UnitMeasure {
@@ -147,6 +149,15 @@ impl TvaClassification {
         self as i32
     }
 
+    /// Exact percent-domain [`Rate`] for this class. The **only** place the
+    /// monetary rate-permyriad is mapped to an arithmetic rate (P2 / single
+    /// source of truth): contract pricing always sources its rate from the
+    /// product's classification, never from the legacy fiscal-year policy.
+    pub fn rate(self) -> Rate {
+        Rate::from_scaled_i64(self.rate_permyriad())
+            .expect("TVA class rates are the closed set 0/90_000/190_000 ≤ 100%")
+    }
+
     /// Rate in permyriad-of-percent on the monetary scale-4 convention
     /// (19 % -> `190_000`).
     pub fn rate_permyriad(self) -> i64 {
@@ -190,6 +201,23 @@ impl TryFrom<i32> for TvaClassification {
             _ => Err(UnknownTvaClassification(code)),
         }
     }
+}
+
+/// A validated product unit/TVA configuration (SEC-087): closed-set unit codes
+/// plus the positive integer purchase→consumption conversion factor. Produced
+/// **only** by `domain::validation::validate_product_units`; never hand-built by
+/// callers, so an invalid combination cannot reach a write path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductUnitConfig {
+    /// Unit in which HT price and contract quantities are expressed.
+    pub purchase_unit: UnitMeasure,
+    /// Unit in which consumption/inventory is expressed.
+    pub consumption_unit: UnitMeasure,
+    /// Positive integer purchase→consumption factor; must be `1` when the two
+    /// units are identical.
+    pub conversion_factor: i32,
+    /// Current classification; its `rate()` sources all contract TVA math.
+    pub tva_classification: TvaClassification,
 }
 
 #[cfg(test)]
@@ -237,5 +265,46 @@ mod tests {
         assert_eq!(TvaClassification::NineteenPercent.rate_permyriad(), 190_000);
         assert_eq!(TvaClassification::Exonere.label(), "EXONÉRÉ");
         assert_eq!(TvaClassification::NineteenPercent.label(), "19 %");
+    }
+
+    #[test]
+    fn tva_classification_rates_are_percent_domain() {
+        assert_eq!(
+            TvaClassification::Exonere.rate(),
+            Rate::parse_str("0").unwrap()
+        );
+        assert_eq!(
+            TvaClassification::NinePercent.rate(),
+            Rate::parse_str("9").unwrap()
+        );
+        assert_eq!(
+            TvaClassification::NineteenPercent.rate(),
+            Rate::parse_str("19").unwrap()
+        );
+        assert_eq!(
+            TvaClassification::NineteenPercent
+                .rate()
+                .to_scaled_i64()
+                .unwrap(),
+            190_000
+        );
+    }
+
+    #[test]
+    fn product_unit_config_is_the_validated_value_set() {
+        let config = crate::domain::validation::validate_product_units(
+            Some(UnitMeasure::Kilogram.code()),
+            Some(UnitMeasure::Kilogram.code()),
+            Some(1),
+            Some(TvaClassification::NineteenPercent.code()),
+        )
+        .unwrap();
+        assert_eq!(config.purchase_unit, UnitMeasure::Kilogram);
+        assert_eq!(config.consumption_unit, UnitMeasure::Kilogram);
+        assert_eq!(config.conversion_factor, 1);
+        assert_eq!(
+            config.tva_classification,
+            TvaClassification::NineteenPercent
+        );
     }
 }

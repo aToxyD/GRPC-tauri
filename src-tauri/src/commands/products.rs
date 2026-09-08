@@ -165,6 +165,10 @@ mod tests {
         let request = CreateProductRequest {
             name: "".to_string(),
             base_price: 100.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
 
         let result = svc.create_product(&request, 2024);
@@ -187,6 +191,10 @@ mod tests {
         let request = CreateProductRequest {
             name: "Test".to_string(),
             base_price: -10.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
 
         let result = svc.create_product(&request, 2024);

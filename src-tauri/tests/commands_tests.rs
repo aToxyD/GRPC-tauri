@@ -49,6 +49,10 @@ fn test_product_validation() {
     let request = CreateProductRequest {
         name: "Test Product".to_string(),
         base_price: 100.0,
+        purchase_unit: Some(1),
+        consumption_unit: Some(1),
+        conversion_factor: Some(1),
+        tva_classification: Some(2),
     };
 
     assert!(validate_create_product_request(&request, 2024).is_ok());
@@ -57,8 +61,23 @@ fn test_product_validation() {
     let invalid = CreateProductRequest {
         name: "".to_string(),
         base_price: 100.0,
+        purchase_unit: Some(1),
+        consumption_unit: Some(1),
+        conversion_factor: Some(1),
+        tva_classification: Some(2),
     };
     assert!(validate_create_product_request(&invalid, 2024).is_err());
+
+    // Invalid - SEC-087: missing unit/TVA configuration fails closed.
+    let no_units = CreateProductRequest {
+        name: "Test Product".to_string(),
+        base_price: 100.0,
+        purchase_unit: None,
+        consumption_unit: None,
+        conversion_factor: None,
+        tva_classification: None,
+    };
+    assert!(validate_create_product_request(&no_units, 2024).is_err());
 }
 
 /// Test order validation

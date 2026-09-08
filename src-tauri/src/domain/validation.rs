@@ -1,3 +1,4 @@
+use crate::domain::units::{ProductUnitConfig, TvaClassification, UnitMeasure};
 use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::*;
 use chrono::{NaiveDate, Utc};
@@ -73,6 +74,78 @@ pub fn is_sql_safe(input: &str) -> bool {
 /// Validation result type
 pub type ValidationResult = Result<(), AppError>;
 
+/// Map a wire `Option<i32>` unit code to the closed-set [`UnitMeasure`], fail
+/// closed on absence or an unknown code.
+fn unit_from_option(field: &str, code: Option<i32>) -> Result<UnitMeasure, AppError> {
+    let code = code.ok_or_else(|| {
+        AppError::Validation(ValidationError::Required {
+            field: field.to_string(),
+        })
+    })?;
+    UnitMeasure::try_from(code).map_err(|_| {
+        AppError::Validation(ValidationError::InvalidFormat {
+            field: field.to_string(),
+            message: format!("كود وحدة غير صالح: {code}"),
+        })
+    })
+}
+
+/// Map a wire `Option<i32>` TVA code to the closed-set [`TvaClassification`],
+/// fail closed on absence or an unknown code.
+fn tva_from_option(code: Option<i32>) -> Result<TvaClassification, AppError> {
+    let code = code.ok_or_else(|| {
+        AppError::Validation(ValidationError::Required {
+            field: "tva_classification".to_string(),
+        })
+    })?;
+    TvaClassification::try_from(code).map_err(|_| {
+        AppError::Validation(ValidationError::InvalidFormat {
+            field: "tva_classification".to_string(),
+            message: format!("تصنيف TVA غير صالح: {code}"),
+        })
+    })
+}
+
+/// Validate the product unit/TVA configuration (SEC-087) and return the typed
+/// value set. **Single authoritative** unit/factor/TVA validation: the domain
+/// validator, `ProductService`, and any future write path must source their
+/// enforcement here so an invalid combination cannot reach a write path.
+pub fn validate_product_units(
+    purchase_unit: Option<i32>,
+    consumption_unit: Option<i32>,
+    conversion_factor: Option<i32>,
+    tva_classification: Option<i32>,
+) -> Result<ProductUnitConfig, AppError> {
+    let purchase_unit = unit_from_option("purchase_unit", purchase_unit)?;
+    let consumption_unit = unit_from_option("consumption_unit", consumption_unit)?;
+    let tva_classification = tva_from_option(tva_classification)?;
+    let conversion_factor = conversion_factor.ok_or_else(|| {
+        AppError::Validation(ValidationError::Required {
+            field: "conversion_factor".to_string(),
+        })
+    })?;
+    if conversion_factor <= 0 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "conversion_factor".to_string(),
+            value: conversion_factor.to_string(),
+        }));
+    }
+    // SEC-087 rule G: identical units require factor == 1.
+    if purchase_unit == consumption_unit && conversion_factor != 1 {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "conversion_factor".to_string(),
+            message: "عندما تتطابق وحدة الشراء ووحدة الاستهلاك يجب أن يكون معامل التحويل 1"
+                .to_string(),
+        }));
+    }
+    Ok(ProductUnitConfig {
+        purchase_unit,
+        consumption_unit,
+        conversion_factor,
+        tva_classification,
+    })
+}
+
 /// Validate product creation request
 pub fn validate_create_product_request(req: &CreateProductRequest, year: i32) -> ValidationResult {
     // Validate name
@@ -115,6 +188,16 @@ pub fn validate_create_product_request(req: &CreateProductRequest, year: i32) ->
             value: year.to_string(),
         }));
     }
+
+    // SEC-087: units, conversion factor and TVA classification are required and
+    // must be a valid closed-set combination; fail closed so no invalid product
+    // can be created.
+    validate_product_units(
+        req.purchase_unit,
+        req.consumption_unit,
+        req.conversion_factor,
+        req.tva_classification,
+    )?;
 
     Ok(())
 }
@@ -899,6 +982,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج صالح".to_string(),
             base_price: 100.0,
+            purchase_unit: Some(2),
+            consumption_unit: Some(1),
+            conversion_factor: Some(2),
+            tva_classification: Some(2),
         };
         assert!(validate_create_product_request(&req, 2024).is_ok());
     }
@@ -908,6 +995,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "".to_string(),
             base_price: 100.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
@@ -918,21 +1009,44 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: -10.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_validate_create_product_request_invalid_tva() {
-        // TVA is no longer a product property (SEC-087-F); this test verifies
-        // product creation succeeds without TVA validation.
+    fn test_validate_create_product_request_unknown_tva_fails_closed() {
+        // SEC-087: TVA classification is again a product property; an unknown
+        // code must fail closed (never default, never fall back).
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: 100.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(99),
         };
         let result = validate_create_product_request(&req, 2024);
-        assert!(result.is_ok());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_product_units_fail_closed_invariants() {
+        // Missing unit codes are rejected.
+        assert!(validate_product_units(None, Some(1), Some(1), Some(2)).is_err());
+        // Unknown unit codes are rejected.
+        assert!(validate_product_units(Some(0), Some(1), Some(1), Some(2)).is_err());
+        // Factor 0 / negative is rejected.
+        assert!(validate_product_units(Some(1), Some(1), Some(0), Some(2)).is_err());
+        assert!(validate_product_units(Some(1), Some(1), Some(-1), Some(2)).is_err());
+        // Identical units require factor == 1 (SEC-087 rule G).
+        assert!(validate_product_units(Some(1), Some(1), Some(2), Some(2)).is_err());
+        // Distinct units with a positive factor pass.
+        assert!(validate_product_units(Some(2), Some(1), Some(2), Some(2)).is_ok());
     }
 
     #[test]
@@ -1044,6 +1158,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: -1_000_000.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
@@ -1052,6 +1170,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: 10_000_000.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
@@ -1060,6 +1182,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: 100.0,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         assert!(validate_create_product_request(&req, 2024).is_ok());
     }

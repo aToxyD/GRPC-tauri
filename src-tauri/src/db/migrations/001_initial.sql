@@ -132,7 +132,10 @@ CREATE TABLE IF NOT EXISTS products (
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
     -- SEC-087: purchase/consumption unit split + integer conversion factor +
     -- current TVA classification. Nullable during the SEC-087 phased rollout;
-    -- populated and enforced from SEC-087 Phase 2 (tracked by ADR-0056).
+    -- Phase 2 enforces the full combination in the application layer
+    -- (domain/validation.rs validate_product_units, ProductService::create).
+    -- Schema NOT NULL is deferred until sync-import product writes carry the
+    -- codes (SEC-087 Phase 6); tracked by ADR-0056.
     purchase_unit INTEGER CHECK(purchase_unit IS NULL OR (purchase_unit >= 1 AND purchase_unit <= 10)),
     consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
     conversion_factor INTEGER CHECK(conversion_factor IS NULL OR conversion_factor > 0),

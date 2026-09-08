@@ -210,11 +210,15 @@ fn price_has_single_owner_domain_arithmetic() {
     // services and the IPC command delegate to it.
     let base = grpc_lib::domain::numeric::Money::from_centimes(20_000).unwrap();
     let rate = grpc_lib::domain::numeric::Rate::parse_str("19.0").unwrap();
-    let got = grpc_lib::domain::pricing::price::price_with_tva(&base, &rate)
+    let got = grpc_lib::domain::pricing::price::compute_contract_fiscal(&base, &rate)
         .expect("exact tva arithmetic");
     assert_eq!(
-        got,
+        got.price_ttc,
         grpc_lib::domain::numeric::Money::from_centimes(23_800).unwrap()
+    );
+    assert_eq!(
+        got.tva_amount,
+        grpc_lib::domain::numeric::Money::from_centimes(3_800).unwrap()
     );
     let via_service =
         grpc_lib::application::services::ReportCalculationService::calculate_product_price_with_tva(
