@@ -93,9 +93,11 @@ CREATE TABLE IF NOT EXISTS fiscal_closure_package_registry (
     notes TEXT
 );
 
--- ADR-0055 / SEC-087-F: exactly ONE TVA rate per fiscal year (WILAYA-controlled).
--- Immutable once established for the fiscal year; frozen at fiscal close as an
--- additional hard lifecycle boundary. Product-level TVA is removed (SEC-087-F).
+-- ADR-0055 / SEC-087-F (retained transitionally): exactly ONE TVA rate per
+-- fiscal year (WILAYA-controlled), frozen at fiscal close. SEC-087 reintroduces
+-- PRODUCT-level TVA classification (products.tva_classification +
+-- product_tax_classifications ledger). The single-year policy above is
+-- superseded by the SEC-087 ADR (0056) when product-level TVA pricing lands.
 CREATE TABLE IF NOT EXISTS fiscal_year_tax_policy (
     fiscal_year INTEGER PRIMARY KEY,
     -- Rate scale-4 INTEGER: permyriad of percent (19% -> 190_000, 100% -> 1_000_000).
@@ -109,6 +111,15 @@ CREATE TABLE IF NOT EXISTS fiscal_year_tax_policy (
 -- =============================================================================
 -- 3. PRODUCT CATALOG & INVENTORY
 -- =============================================================================
+--
+-- SEC-087 (Phase 1 foundation): pricing authority moves from base_price to an
+-- exact HT/TVA/TTC model settled at contract level (see contract_products).
+-- Measurement units are INTEGER codes 1..=10 matching the domain enum
+-- UnitMeasure (src-tauri/src/domain/units.rs):
+--   1 كلغ (kg), 2 لتر (L), 3 دلو (Seau), 4 قارورة (Bouteille),
+--   5 صفيحة (Plateau), 6 قطعة (Pièce), 7 بيضة (Œuf), 8 علبة (Boîte),
+--   9 كيس (Sac), 10 خبزة (Pain).
+-- Measure codes are NOT the organizational `units` table.
 
 CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
@@ -118,7 +129,26 @@ CREATE TABLE IF NOT EXISTS products (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
-    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1))
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    -- SEC-087: purchase/consumption unit split + integer conversion factor +
+    -- current TVA classification. Nullable during the SEC-087 phased rollout;
+    -- populated and enforced from SEC-087 Phase 2 (tracked by ADR-0056).
+    purchase_unit INTEGER CHECK(purchase_unit IS NULL OR (purchase_unit >= 1 AND purchase_unit <= 10)),
+    consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
+    conversion_factor INTEGER CHECK(conversion_factor IS NULL OR conversion_factor > 0),
+    tva_classification INTEGER CHECK(tva_classification IS NULL OR tva_classification IN (0, 1, 2))
+);
+
+-- SEC-087: immutable product-level TVA classification ledger, one row per
+-- (product, fiscal_year). Closed fiscal years are never rewritten.
+CREATE TABLE IF NOT EXISTS product_tax_classifications (
+    product_id TEXT NOT NULL,
+    fiscal_year INTEGER NOT NULL CHECK(fiscal_year >= 2020 AND fiscal_year <= 2100),
+    tva_classification INTEGER NOT NULL CHECK(tva_classification IN (0, 1, 2)),
+    applied_at TEXT NOT NULL,
+    applied_by TEXT NOT NULL,
+    PRIMARY KEY (product_id, fiscal_year),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS inventory_stocks (
@@ -126,6 +156,9 @@ CREATE TABLE IF NOT EXISTS inventory_stocks (
     product_id TEXT NOT NULL UNIQUE,
     quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
     unit TEXT DEFAULT 'unit',
+    -- SEC-087: consumption-unit key. Supersedes the free-text `unit` as the
+    -- operational stock unit (SEC-087 Phase 5); retained transitionally.
+    consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
     last_updated TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
@@ -144,6 +177,10 @@ CREATE TABLE IF NOT EXISTS opening_balance_snapshots (
     unit_cost INTEGER NOT NULL DEFAULT 0 CHECK(unit_cost >= 0),
     total_value INTEGER NOT NULL DEFAULT 0 CHECK(total_value >= 0),
     snapshot_reason TEXT NOT NULL DEFAULT 'year_close',
+    -- SEC-087: unit the carried opening_quantity is expressed in (consumption
+    -- unit). Opening balances are year-carryover roll-overs with no purchase
+    -- origin: purchase-side snapshot fields are intentionally absent.
+    consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
     UNIQUE(product_id, fiscal_year)
 );
 
@@ -183,6 +220,16 @@ CREATE TABLE IF NOT EXISTS fifo_stock_layers (
     received_at TEXT NOT NULL,
     created_by TEXT NOT NULL,
     origin_fiscal_year INTEGER NOT NULL DEFAULT 0,
+    -- SEC-087: layer valuation stays TTC in consumption units (scale-2 unit_cost,
+    -- consumption totals are qty x unit_cost). The EXACT historical purchase value
+    -- is preserved separately as purchase_quantity x purchase_unit_cost (TTC per
+    -- purchase unit); the bounded residual between the two is documented
+    -- (ADR-0056 / SEC-087). Populated from SEC-087 Phase 4/5.
+    purchase_quantity INTEGER CHECK(purchase_quantity IS NULL OR purchase_quantity > 0),
+    purchase_unit_cost INTEGER CHECK(purchase_unit_cost IS NULL OR purchase_unit_cost >= 0),
+    purchase_unit INTEGER CHECK(purchase_unit IS NULL OR (purchase_unit >= 1 AND purchase_unit <= 10)),
+    consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
+    conversion_factor INTEGER CHECK(conversion_factor IS NULL OR conversion_factor > 0),
     CHECK(qty_remaining <= qty_original)
 );
 
@@ -279,6 +326,14 @@ CREATE TABLE IF NOT EXISTS supplier_order_items (
     total_cost INTEGER NOT NULL,
     unit_id TEXT,
     fiscal_year INTEGER,
+    -- SEC-087: purchase-unit semantics. `quantity` is the purchase quantity and
+    -- `unit_price` is the TTC price per purchase unit. The unit/factor snapshot
+    -- converts purchase -> consumption on receipt (consumption_quantity).
+    -- Populated from SEC-087 Phase 4.
+    purchase_unit INTEGER CHECK(purchase_unit IS NULL OR (purchase_unit >= 1 AND purchase_unit <= 10)),
+    consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
+    conversion_factor INTEGER CHECK(conversion_factor IS NULL OR conversion_factor > 0),
+    consumption_quantity INTEGER CHECK(consumption_quantity IS NULL OR consumption_quantity > 0),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
@@ -352,10 +407,27 @@ CREATE TABLE IF NOT EXISTS contract_products (
     product_id TEXT NOT NULL,
     proposed_price INTEGER NOT NULL CHECK(proposed_price >= 0),
     agreed_price INTEGER CHECK(agreed_price IS NULL OR agreed_price >= 0),
+    -- SEC-087: authoritative ordered-price snapshot. agreed_price_ht (HT per
+    -- purchase unit) is the sole HT authority with price_ttc = agreed_price_ht
+    -- + tva_amount. `agreed_price` is retained transitionally until SEC-087
+    -- Phase 3 (tracked by ADR-0056).
+    agreed_price_ht INTEGER CHECK(agreed_price_ht IS NULL OR agreed_price_ht >= 0),
+    tva_classification INTEGER CHECK(tva_classification IS NULL OR tva_classification IN (0, 1, 2)),
+    tva_rate INTEGER CHECK(tva_rate IS NULL OR (tva_rate >= 0 AND tva_rate <= 1000000)),
+    tva_amount INTEGER CHECK(tva_amount IS NULL OR tva_amount >= 0),
+    price_ttc INTEGER CHECK(price_ttc IS NULL OR price_ttc >= 0),
+    purchase_unit INTEGER CHECK(purchase_unit IS NULL OR (purchase_unit >= 1 AND purchase_unit <= 10)),
+    consumption_unit INTEGER CHECK(consumption_unit IS NULL OR (consumption_unit >= 1 AND consumption_unit <= 10)),
+    conversion_factor INTEGER CHECK(conversion_factor IS NULL OR conversion_factor > 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    -- Identical units must map 1:1 (factor = 1); a differing unit requires a
+    -- genuine conversion factor. Table-level CHECK: placed after all columns.
+    CHECK(conversion_factor IS NULL OR purchase_unit IS NULL OR consumption_unit IS NULL OR
+          (purchase_unit = consumption_unit AND conversion_factor = 1) OR
+          (purchase_unit <> consumption_unit AND conversion_factor > 0)),
     UNIQUE(contract_id, product_id),
     FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id)
