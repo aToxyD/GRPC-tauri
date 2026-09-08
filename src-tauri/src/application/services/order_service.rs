@@ -353,7 +353,7 @@ impl<'a> OrderService<'a> {
 
         // Authoritative re-resolution + unchanged-state verification.
         // Each recorded leg must still resolve to the identical allocation with
-        // the identical agreed price; the supplier must be identical to the
+        // the identical price_ttc; the supplier must be identical to the
         // stored (creation-time) supplier.
         let order_supplier_id = order.supplier_id.clone();
         let mut legs: Vec<(String, Quantity, Money)> = Vec::new();

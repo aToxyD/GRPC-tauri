@@ -2,9 +2,9 @@
 //! catalog reference price (ADR-0055).
 //!
 //! Chain under test:
-//!   ContractAgreedPrice → allocation agreed_price → resolution unit_price
-//!   → supplier_order_items.unit_price → (confirm) FIFO layer unit_cost
-//!   → consumption/valuation cost.
+//!   ContractPriceTtc -> allocation price_ttc -> resolution unit_price
+//!   -> supplier_order_items.unit_price -> (confirm) FIFO layer unit_cost
+//!   -> consumption/valuation cost.
 //!
 //! products.base_price is a reference/price-list value only and must never
 //! influence FIFO layer cost, COGS, or inventory valuation.

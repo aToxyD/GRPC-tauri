@@ -1,7 +1,7 @@
 //! Supplier/Price Resolution Engine (ADR-0055 / SEC-087-F / ADR-0048).
 //!
 //! Pure, deterministic domain logic. The application layer feeds this engine
-//! snapshot data (contract allocations + contract supplier + agreed price);
+//! snapshot data (contract allocations + contract supplier + price_ttc);
 //! the engine never queries storage and never chooses/forges supplier, price,
 //! entitlement or TVA. It only applies the resolution rules:
 //!
@@ -11,8 +11,12 @@
 //! 4. The FIRST candidate with sufficient remaining quantity owns the item;
 //!    insufficient coverage OR mixed-supplier requirements => REJECT (no
 //!    combining, no fallback to base_price, no partial orders).
-//! 5. The authoritative unit price is the contract agreed price; an unset
-//!    agreed price is a resolution failure, never a fallback.
+//! 5. The authoritative unit price is the contract's price_ttc (TTC);
+//!    an unset price_ttc is a resolution failure, never a fallback.
+//!
+//! SEC-087 semantic boundary: `price_ttc` is the sole authoritative TTC
+//! pricing source in the resolver. The legacy `agreed_price` DB column must
+//! never be read directly as an operational TTC price.
 //!
 //! Quantities and prices are **exact `Decimal`** (ADR-0048): remaining is a
 //! component-based subtraction, comparisons are exact (no float epsilon) and
@@ -22,13 +26,19 @@ use crate::domain::numeric::{Money, NumericError, Quantity};
 use crate::errors::{AppError, BusinessLogicError};
 
 /// Candidate entitlement row fed to the resolver (data in, decisions out).
+///
+/// SEC-087: `price_ttc` is the sole authoritative TTC pricing source. The
+/// repository layer populates this field from `COALESCE(cp.price_ttc,
+/// cp.agreed_price)` during the transitional period; once all contract
+/// products carry a non-null `price_ttc` (Phase 3/6), the COALESCE fallback
+/// is removed and the legacy `agreed_price` column is deprecated.
 #[derive(Debug, Clone)]
 pub struct ResolutionCandidate {
     pub allocation_id: String,
     pub allocation_fiscal_year: i32,
     pub supplier_id: String,
     pub supplier_name: String,
-    pub agreed_price: Option<Money>,
+    pub price_ttc: Option<Money>,
     pub contracted_quantity: Quantity,
     pub fulfilled_quantity: Quantity,
     pub released_quantity: Quantity,
@@ -59,7 +69,7 @@ impl ResolutionCandidate {
 pub struct ItemResolution {
     /// Supplier owning this item (identical across all items of an order).
     pub supplier_id: String,
-    /// Authoritative unit price: contract agreed price (TTC base).
+    /// Authoritative unit price: contract price_ttc (TTC base).
     pub unit_price: Money,
     /// Allocation leg committed to fulfill/reserve this item's quantity.
     pub allocation_id: String,
@@ -125,10 +135,10 @@ pub fn resolve_supplier_for_item(
     // triggers an implicit supplier transition; it is observed above as a lower
     // remaining quantity only.
 
-    let unit_price = pick.agreed_price.ok_or_else(|| {
+    let unit_price = pick.price_ttc.ok_or_else(|| {
         AppError::BusinessLogic(BusinessLogicError::PriceCalculation {
             message: format!(
-                "السعر المتفق عليه غير محدد لمنتج {product_id} (المورد {})",
+                "سعر TTC غير محدد للمنتج {product_id} (المورد {})",
                 pick.supplier_name
             ),
         })
@@ -155,14 +165,14 @@ mod tests {
         released: &str,
         reserved: &str,
         state: &str,
-        price: Option<&str>,
+        price_ttc: Option<&str>,
     ) -> ResolutionCandidate {
         ResolutionCandidate {
             allocation_id: id.to_string(),
             allocation_fiscal_year: fy,
             supplier_id: format!("sup-{supplier}"),
             supplier_name: supplier.to_string(),
-            agreed_price: price.map(|p| Money::parse_str(p).unwrap()),
+            price_ttc: price_ttc.map(|p| Money::parse_str(p).unwrap()),
             contracted_quantity: Quantity::parse_str(contracted).unwrap(),
             fulfilled_quantity: Quantity::parse_str(fulfilled).unwrap(),
             released_quantity: Quantity::parse_str(released).unwrap(),
@@ -395,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn agreed_price_required() {
+    fn price_ttc_required() {
         let candidates = vec![candidate(
             "a1", 2026, "X", "100", "0", "0", "0", "ENDED", None,
         )];

@@ -492,8 +492,14 @@ impl<'a> ContractRepository<'a> {
     }
 
     /// Full resolution candidates for (unit, product): allocation + owning
-    /// contract's supplier + agreed price, ordered oldest obligations first
+    /// contract's supplier + price_ttc, ordered oldest obligations first
     /// (fiscal_year ASC, created_at ASC, id ASC). CANCELLED excluded.
+    ///
+    /// SEC-087: reads `price_ttc` as the authoritative TTC pricing source.
+    /// The transitional `COALESCE(cp.price_ttc, cp.agreed_price)` bridges
+    /// existing rows that carry only `agreed_price` until Phase 3/6
+    /// populates `price_ttc` for all contract products and the COALESCE is
+    /// removed.
     ///
     /// ADR-0048: row mapping only — raw REAL/`f64` columns are converted to
     /// exact `Decimal` at this boundary via the legacy adapter; no arithmetic
@@ -504,7 +510,8 @@ impl<'a> ContractRepository<'a> {
         product_id: &str,
     ) -> Result<Vec<crate::domain::pricing::resolver::ResolutionCandidate>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT ca.id, ca.fiscal_year, c.supplier_id, s.name, cp.agreed_price,
+            "SELECT ca.id, ca.fiscal_year, c.supplier_id, s.name,
+                    COALESCE(cp.price_ttc, cp.agreed_price),
                     ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
                     ca.reserved_quantity, ca.entitlement_state
              FROM contract_allocations ca
@@ -536,13 +543,13 @@ impl<'a> ContractRepository<'a> {
                             )
                         })
                     };
-                let agreed_price: Option<i64> = row.get(4)?;
+                let price_ttc: Option<i64> = row.get(4)?;
                 Ok(crate::domain::pricing::resolver::ResolutionCandidate {
                     allocation_id: row.get(0)?,
                     allocation_fiscal_year: row.get(1)?,
                     supplier_id: row.get(2)?,
                     supplier_name: row.get(3)?,
-                    agreed_price: match agreed_price {
+                    price_ttc: match price_ttc {
                         Some(v) => Some(money_of(4, v)?),
                         None => None,
                     },
