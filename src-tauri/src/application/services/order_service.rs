@@ -13,6 +13,8 @@
 //! stock movement + FIFO, and marks the order Confirmed. Any failure aborts the
 //! whole transaction.
 
+use std::collections::HashMap;
+
 use crate::domain::numeric::{legacy_float, Money, Quantity};
 use crate::domain::pricing::resolver::resolve_supplier_for_item;
 use crate::domain::validation::{
@@ -351,6 +353,27 @@ impl<'a> OrderService<'a> {
         crate::application::services::FiscalValidationService::new(self.executor)
             .assert_fiscal_year_open(anchor_fy)?;
 
+        // Phase 4A (SEC-087): the order's own reserved quantity per
+        // allocation, summed across its persisted legs. Confirmation re-resolves
+        // authoritatively, but this order's own reservation must not be counted
+        // against itself: the resolver sees `current remaining including this
+        // order` and only THIS order's own reservation is subtracted. Every
+        // other order's reservation remains counted. Fails closed on any
+        // inconsistent persisted components.
+        let mut own_reserved: HashMap<String, Quantity> = HashMap::new();
+        for leg in self.executor.order_allocations().list_for_order(order_id)? {
+            let leg_qty = legacy_float::quantity_from_f64(leg.quantity)?;
+            let acc = own_reserved
+                .entry(leg.allocation_id.clone())
+                .or_insert(Quantity::zero());
+            *acc = acc.checked_add(leg_qty)?;
+        }
+        // Tracks how much of this order's own reservation was already converted
+        // to fulfillment within this loop, so a later item drawing the same
+        // allocation nets only the still-reserved share (zero-sum transfer: the
+        // converted quantity has already left reserved_quantity in the DB).
+        let mut converted_own: HashMap<String, Quantity> = HashMap::new();
+
         // Authoritative re-resolution + unchanged-state verification.
         // Each recorded leg must still resolve to the identical allocation with
         // the identical price_ttc; the supplier must be identical to the
@@ -359,7 +382,28 @@ impl<'a> OrderService<'a> {
         let mut legs: Vec<(String, Quantity, Money)> = Vec::new();
         for recorded in repo.get_order_items_for_confirmation(order_id)? {
             let (product_id, quantity, _product_name, recorded_price, allocation_id) = recorded;
-            let candidates = contracts.list_resolution_candidates_full(unit_id, &product_id)?;
+            let mut candidates = contracts.list_resolution_candidates_full(unit_id, &product_id)?;
+
+            // Subtract THIS order's still-reserved quantity from the recorded
+            // allocation's candidate only; reservations belonging to every other
+            // order stay available to the resolver. `checked_sub` fails closed
+            // (NegativeNotAllowed) if the repository state is inconsistent.
+            if let Some(own_total) = own_reserved.get(&allocation_id).copied() {
+                let converted = match converted_own.get(&allocation_id) {
+                    Some(v) => *v,
+                    None => Quantity::zero(),
+                };
+                let still_own = own_total.checked_sub(converted)?;
+                if still_own.is_positive() {
+                    for candidate in candidates.iter_mut() {
+                        if candidate.allocation_id == allocation_id {
+                            candidate.reserved_quantity =
+                                candidate.reserved_quantity.checked_sub(still_own)?;
+                        }
+                    }
+                }
+            }
+
             let requested = legacy_float::quantity_from_f64(quantity)?;
             let resolution =
                 resolve_supplier_for_item(unit_id, &product_id, requested, anchor_fy, &candidates)?;
@@ -406,6 +450,12 @@ impl<'a> OrderService<'a> {
                     },
                 ));
             }
+            // This order's own reservation on this allocation was just converted
+            // (moved from reserved_quantity to fulfilled_quantity in the DB).
+            let converted = converted_own
+                .entry(allocation_id.clone())
+                .or_insert(Quantity::zero());
+            *converted = converted.checked_add(requested)?;
             legs.push((product_id, requested, resolution.unit_price));
         }
 

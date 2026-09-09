@@ -713,6 +713,13 @@ impl<'a> ContractRepository<'a> {
 
     /// Convert reservation to fulfillment atomically at confirmation.
     /// Returns affected row count (0 => guard failed => abort tx).
+    ///
+    /// SEC-087 Phase 4A: the transfer is zero-sum (`fulfilled += q` and
+    /// `reserved -= q` keep the component sum unchanged), so the invariant
+    /// guard must not count the transferred quantity twice. The standing
+    /// component invariant `fulfilled + released + reserved <= contracted`
+    /// is still asserted; the operational gate is that the order's own
+    /// reservation actually exists (`reserved_quantity >= ?1`).
     pub fn try_convert_reserved_to_fulfilled(
         &self,
         allocation_id: &str,
@@ -726,7 +733,7 @@ impl<'a> ContractRepository<'a> {
                  version = version + 1
              WHERE id = ?2 AND deleted = 0
                AND reserved_quantity >= ?1
-               AND fulfilled_quantity + ?1 + released_quantity + reserved_quantity <= contracted_quantity",
+               AND fulfilled_quantity + released_quantity + reserved_quantity <= contracted_quantity",
             params![quantity_scaled, allocation_id],
         )?;
         Ok(n)
