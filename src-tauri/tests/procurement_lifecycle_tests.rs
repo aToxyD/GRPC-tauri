@@ -9,9 +9,9 @@ use grpc_lib::application::services::{ContractService, FiscalTaxPolicyService, S
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::errors::AppError;
 use grpc_lib::models::{
-    AddContractProductRequest, ContractStatus, CreateContractRequest, CreateSupplierRequest,
-    NodeType, Product, ReleaseContractAllocationRequest, ReleaseReasonCode, SetAgreedPriceRequest,
-    SetTaxPolicyRequest, WilayaNodeConfiguration,
+    AddContractProductRequest, ContractStatus, CreateContractRequest, CreateProductRequest,
+    CreateSupplierRequest, NodeType, ReleaseContractAllocationRequest, ReleaseReasonCode,
+    SetAgreedPriceHtRequest, SetTaxPolicyRequest, WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::{
     ProductRepository, RepositoryProvider, SettingsRepository, UnitRepository,
@@ -34,15 +34,26 @@ fn seed_wilaya_context(db: &mut Database) {
             .expect("seed unit");
     }
     for (id, name) in [("prod-1", "Product One"), ("prod-2", "Product Two")] {
+        let config = grpc_lib::domain::validation::validate_product_units(
+            Some(1),
+            Some(1),
+            Some(1),
+            Some(0),
+        )
+        .expect("valid product config");
         ProductRepository::new(db.executor())
-            .insert_raw_product(
-                &Product {
-                    id: id.into(),
+            .insert_product(
+                id,
+                &CreateProductRequest {
                     name: name.into(),
                     base_price: 100.0,
-                    year: 2026,
-                    created_at: "2026-01-01T00:00:00Z".parse().expect("ts"),
+                    purchase_unit: Some(1),
+                    consumption_unit: Some(1),
+                    conversion_factor: Some(1),
+                    tva_classification: Some(0),
                 },
+                2026,
+                &config,
                 now,
             )
             .expect("seed product");
@@ -107,18 +118,18 @@ fn full_procurement_lifecycle_via_services() {
         .add_contract_product(&AddContractProductRequest {
             contract_id: contract.id.clone(),
             product_id: "prod-1".into(),
-            proposed_price: 120.0,
-            agreed_price: None,
+            proposed_price_ht: 120.0,
+            agreed_price_ht: None,
             contracted_quantity: 100.0,
         })
         .expect("add contract product");
 
     ContractService::new(db_ref.executor())
-        .set_agreed_price(&SetAgreedPriceRequest {
+        .set_agreed_price_ht(&SetAgreedPriceHtRequest {
             contract_product_id: cpid.clone(),
-            agreed_price: 110.0,
+            agreed_price_ht: 110.0,
         })
-        .expect("set agreed price");
+        .expect("set agreed HT price");
 
     let accepted = ContractService::new(db_ref.executor())
         .accept_contract(&contract.id, "2026-01-02T00:00:00Z")

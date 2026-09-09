@@ -9,7 +9,7 @@
     listAllocationExceptions,
     createContract,
     addContractProduct,
-    setContractProductAgreedPrice,
+    setContractProductAgreedPriceHt,
     acceptContract,
     activateContract,
     endContract,
@@ -267,8 +267,8 @@
       const request: AddContractProductRequest = {
         contract_id: contract.id,
         product_id: newProductId,
-        proposed_price: parseFloat(newProposedPrice),
-        agreed_price: agreed,
+        proposed_price_ht: parseFloat(newProposedPrice),
+        agreed_price_ht: agreed,
         contracted_quantity: parseFloat(newQuantity),
       };
       await addContractProduct(request);
@@ -292,9 +292,9 @@
       return;
     }
     await contractsOp.run(async () => {
-      await setContractProductAgreedPrice({
+      await setContractProductAgreedPriceHt({
         contract_product_id: target.id,
-        agreed_price: value,
+        agreed_price_ht: value,
       });
       setSuccessWithTimeout('تم تثبيت سعر الاتفاق');
       agreedPriceTarget = null;
@@ -482,17 +482,17 @@
             {#each selectedProducts as product (product.id)}
               <tr class="border-t border-gray-100 dark:border-gray-700">
                 <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">{product.product_name}</td>
-                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{product.proposed_price.toFixed(2)} دج</td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{product.proposed_price_ht.toFixed(2)} دج</td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                  {#if product.agreed_price !== null}
-                    {product.agreed_price.toFixed(2)} دج
+                  {#if product.agreed_price_ht !== null}
+                    {product.agreed_price_ht.toFixed(2)} دج
                   {:else}
                     <AppButton size="sm" variant="secondary" on:click={() => { newAgreedPrice = ''; openSetAgreedPrice(product); }}>تثبيت السعر</AppButton>
                   {/if}
                 </td>
                 <td class="px-3 py-2 text-sm">
-                  {#if product.agreed_price === null && selectedContract.status === 'Proposed'}
-                    <AppButton size="sm" variant="ghost" on:click={() => { newAgreedPrice = product.proposed_price.toString(); openSetAgreedPrice(product); }}>اعتماد المقترح</AppButton>
+                  {#if product.agreed_price_ht === null && selectedContract.status === 'Proposed'}
+                    <AppButton size="sm" variant="ghost" on:click={() => { newAgreedPrice = product.proposed_price_ht.toString(); openSetAgreedPrice(product); }}>اعتماد المقترح</AppButton>
                   {/if}
                 </td>
               </tr>

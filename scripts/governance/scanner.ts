@@ -133,7 +133,7 @@ export const DOMAIN_REGISTRY: Record<string, {
     pages: ["SuppliersPage", "ContractsPage"],
     functions: [
       "createSupplier", "updateSupplier", "setSupplierActive", "associateSupplierWithUnit", "disassociateSupplierFromUnit",
-      "createContract", "addContractProduct", "setContractProductAgreedPrice", "acceptContract", "activateContract", "endContract", "cancelContract",
+      "createContract", "addContractProduct", "setContractProductAgreedPriceHt", "acceptContract", "activateContract", "endContract", "cancelContract",
       "releaseContractAllocation", "revokeContractAllocationRelease",
       "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies",
       "getSupplier", "listSuppliers", "listUnitSuppliers", "getContract", "listContracts", "getContractProducts", "listContractAllocations", "listAllocationExceptions",

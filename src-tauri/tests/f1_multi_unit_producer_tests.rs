@@ -791,11 +791,17 @@ fn real_producer_delivery_continuation_and_idempotent_reimport() {
     set_session(&state_a, "Admin");
     let err_a = import_admin_access_package_impl(&state_a, a1.to_string_lossy().into_owned())
         .expect_err("re-import of the exact applied package must be rejected");
-    assert!(err_a.contains("تم استيراد هذه الحزمة مسبقاً"), "got: {err_a}");
+    assert!(
+        err_a.contains("تم استيراد هذه الحزمة مسبقاً"),
+        "got: {err_a}"
+    );
     set_session(&state_b, "Admin");
     let err_b = import_admin_access_package_impl(&state_b, b1.to_string_lossy().into_owned())
         .expect_err("re-import of the exact applied package must be rejected");
-    assert!(err_b.contains("تم استيراد هذه الحزمة مسبقاً"), "got: {err_b}");
+    assert!(
+        err_b.contains("تم استيراد هذه الحزمة مسبقاً"),
+        "got: {err_b}"
+    );
     {
         let guard_a = state_a.get_db().expect("lock");
         let db_a = guard_a.as_ref().expect("db");

@@ -9,7 +9,8 @@
 use crate::errors::AppError;
 use crate::models::{
     AddContractProductRequest, Contract, ContractAllocation, ContractAllocationException,
-    ContractProduct, CreateContractRequest, ReleaseReasonCode, UnitEntitlementRow,
+    ContractPriceSnapshot, ContractProduct, CreateContractRequest, ReleaseReasonCode,
+    UnitEntitlementRow,
 };
 use crate::repositories::executor::DbExecutor;
 use crate::repositories::numeric_row;
@@ -54,16 +55,32 @@ fn map_contract_product_row(row: &Row<'_>) -> Result<ContractProduct, rusqlite::
         contract_id: row.get(1)?,
         product_id: row.get(2)?,
         product_name: row.get(3)?,
-        proposed_price: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
-        agreed_price: match row.get::<_, Option<i64>>(5)? {
+        proposed_price_ht: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
+        agreed_price_ht: match row.get::<_, Option<i64>>(5)? {
             Some(v) => Some(numeric_row::money_col(5, v)?),
             None => None,
         },
+        tva_classification: row.get(6)?,
+        tva_rate: match row.get::<_, Option<i64>>(7)? {
+            Some(v) => Some(numeric_row::rate_col(7, v)?),
+            None => None,
+        },
+        tva_amount: match row.get::<_, Option<i64>>(8)? {
+            Some(v) => Some(numeric_row::money_col(8, v)?),
+            None => None,
+        },
+        price_ttc: match row.get::<_, Option<i64>>(9)? {
+            Some(v) => Some(numeric_row::money_col(9, v)?),
+            None => None,
+        },
+        purchase_unit: row.get(10)?,
+        consumption_unit: row.get(11)?,
+        conversion_factor: row.get(12)?,
     })
 }
 
 const CONTRACT_PRODUCT_COLUMNS: &str =
-    "cp.id, cp.contract_id, cp.product_id, p.name, cp.proposed_price, cp.agreed_price";
+    "cp.id, cp.contract_id, cp.product_id, p.name, cp.proposed_price_ht, cp.agreed_price_ht, cp.tva_classification, cp.tva_rate, cp.tva_amount, cp.price_ttc, cp.purchase_unit, cp.consumption_unit, cp.conversion_factor";
 
 fn map_allocation_row(row: &Row<'_>) -> Result<ContractAllocation, rusqlite::Error> {
     Ok(ContractAllocation {
@@ -235,19 +252,19 @@ impl<'a> ContractRepository<'a> {
         req: &AddContractProductRequest,
         created_at: &str,
     ) -> Result<(), AppError> {
-        let proposed_price_scaled = numeric_row::money_scaled(req.proposed_price)?;
-        let agreed_price_scaled = match req.agreed_price {
+        let proposed_price_ht_scaled = numeric_row::money_scaled(req.proposed_price_ht)?;
+        let agreed_price_ht_scaled = match req.agreed_price_ht {
             Some(v) => Some(numeric_row::money_scaled(v)?),
             None => None,
         };
         self.executor.execute(
-            "INSERT INTO contract_products (id, contract_id, product_id, proposed_price, agreed_price, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO contract_products (id, contract_id, product_id, proposed_price_ht, agreed_price_ht, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 id,
                 &req.contract_id,
                 &req.product_id,
-                proposed_price_scaled,
-                agreed_price_scaled,
+                proposed_price_ht_scaled,
+                agreed_price_ht_scaled,
                 created_at
             ],
         )?;
@@ -284,13 +301,16 @@ impl<'a> ContractRepository<'a> {
     }
 
     /// Contract product rows plus their authoritative `created_at` (sync
-    /// dataset export — the `ContractProduct` model does not expose it).
+    /// dataset export).
     pub fn list_sync_contract_products(
         &self,
         contract_id: &str,
     ) -> Result<Vec<(ContractProduct, String)>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT cp.id, cp.contract_id, cp.product_id, p.name, cp.proposed_price, cp.agreed_price, cp.created_at
+            "SELECT cp.id, cp.contract_id, cp.product_id, p.name, cp.proposed_price_ht,
+                    cp.agreed_price_ht, cp.tva_classification, cp.tva_rate, cp.tva_amount,
+                    cp.price_ttc, cp.purchase_unit, cp.consumption_unit, cp.conversion_factor,
+                    cp.created_at
              FROM contract_products cp JOIN products p ON p.id = cp.product_id
              WHERE cp.contract_id = ?1 AND cp.deleted = 0 ORDER BY p.name",
             [contract_id],
@@ -301,29 +321,65 @@ impl<'a> ContractRepository<'a> {
                         contract_id: row.get(1)?,
                         product_id: row.get(2)?,
                         product_name: row.get(3)?,
-                        proposed_price: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
-                        agreed_price: match row.get::<_, Option<i64>>(5)? {
+                        proposed_price_ht: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
+                        agreed_price_ht: match row.get::<_, Option<i64>>(5)? {
                             Some(v) => Some(numeric_row::money_col(5, v)?),
                             None => None,
                         },
+                        tva_classification: row.get(6)?,
+                        tva_rate: match row.get::<_, Option<i64>>(7)? {
+                            Some(v) => Some(numeric_row::rate_col(7, v)?),
+                            None => None,
+                        },
+                        tva_amount: match row.get::<_, Option<i64>>(8)? {
+                            Some(v) => Some(numeric_row::money_col(8, v)?),
+                            None => None,
+                        },
+                        price_ttc: match row.get::<_, Option<i64>>(9)? {
+                            Some(v) => Some(numeric_row::money_col(9, v)?),
+                            None => None,
+                        },
+                        purchase_unit: row.get(10)?,
+                        consumption_unit: row.get(11)?,
+                        conversion_factor: row.get(12)?,
                     },
-                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(13)?,
                 ))
             },
         )?)
     }
 
-    /// Freeze the agreed price. Only allowed while the contract is `proposed`;
-    /// after acceptance the price is immutable.
-    pub fn set_agreed_price(
+    /// Establish the authoritative ordered-price snapshot at the price-agreement
+    /// boundary (SEC-087 Phase 3). Writes agreed_price_ht, tva_classification,
+    /// tva_rate, tva_amount, price_ttc, purchase_unit, consumption_unit,
+    /// conversion_factor atomically. Only allowed while the contract is
+    /// `proposed`; after acceptance the price is immutable.
+    pub fn freeze_contract_price(
         &self,
-        contract_product_id: &str,
-        agreed_price: f64,
+        snapshot: &ContractPriceSnapshot,
     ) -> Result<usize, AppError> {
-        let agreed_price_scaled = numeric_row::money_scaled(agreed_price)?;
         let n = self.executor.execute(
-            "UPDATE contract_products SET agreed_price = ?1 WHERE id = ?2 AND contract_id IN (SELECT id FROM contracts WHERE status = 'proposed' AND deleted = 0)",
-            params![agreed_price_scaled, contract_product_id],
+            "UPDATE contract_products SET
+                 agreed_price_ht = ?1,
+                 tva_classification = ?2,
+                 tva_rate = ?3,
+                 tva_amount = ?4,
+                 price_ttc = ?5,
+                 purchase_unit = ?6,
+                 consumption_unit = ?7,
+                 conversion_factor = ?8
+             WHERE id = ?9 AND contract_id IN (SELECT id FROM contracts WHERE status = 'proposed' AND deleted = 0)",
+            params![
+                snapshot.agreed_price_ht_scaled,
+                snapshot.tva_classification_code,
+                snapshot.tva_rate_scaled,
+                snapshot.tva_amount_scaled,
+                snapshot.price_ttc_scaled,
+                snapshot.purchase_unit_code,
+                snapshot.consumption_unit_code,
+                snapshot.conversion_factor,
+                snapshot.contract_product_id,
+            ],
         )?;
         Ok(n)
     }
@@ -495,15 +551,14 @@ impl<'a> ContractRepository<'a> {
     /// contract's supplier + price_ttc, ordered oldest obligations first
     /// (fiscal_year ASC, created_at ASC, id ASC). CANCELLED excluded.
     ///
-    /// SEC-087: reads `price_ttc` as the authoritative TTC pricing source.
-    /// The transitional `COALESCE(cp.price_ttc, cp.agreed_price)` bridges
-    /// existing rows that carry only `agreed_price` until Phase 3/6
-    /// populates `price_ttc` for all contract products and the COALESCE is
-    /// removed.
+    /// SEC-087 Phase 3: `price_ttc` (the authoritative ordered-price snapshot)
+    /// is the SOLE pricing source, read strictly with no fallback. A row
+    /// without a computed `price_ttc` yields a candidate with a `None` price,
+    /// which the resolver rejects (fails closed).
     ///
-    /// ADR-0048: row mapping only — raw REAL/`f64` columns are converted to
-    /// exact `Decimal` at this boundary via the legacy adapter; no arithmetic
-    /// happens here.
+    /// ADR-0048: row mapping only — raw INTEGER columns are converted to exact
+    /// `Decimal` at this boundary via the legacy adapter; no arithmetic happens
+    /// here.
     pub fn list_resolution_candidates_full(
         &self,
         unit_id: &str,
@@ -511,7 +566,7 @@ impl<'a> ContractRepository<'a> {
     ) -> Result<Vec<crate::domain::pricing::resolver::ResolutionCandidate>, AppError> {
         Ok(self.executor.query_all(
             "SELECT ca.id, ca.fiscal_year, c.supplier_id, s.name,
-                    COALESCE(cp.price_ttc, cp.agreed_price),
+                    cp.price_ttc,
                     ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
                     ca.reserved_quantity, ca.entitlement_state
              FROM contract_allocations ca
@@ -582,7 +637,7 @@ impl<'a> ContractRepository<'a> {
                     ca.fiscal_year,
                     ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
                     ca.reserved_quantity, ca.entitlement_state, c.status,
-                    cp.agreed_price
+                    cp.price_ttc
              FROM contract_allocations ca
              JOIN contracts c ON c.id = ca.contract_id
              JOIN suppliers s ON s.id = c.supplier_id
@@ -604,7 +659,7 @@ impl<'a> ContractRepository<'a> {
                     reserved_quantity: numeric_row::qty_col(8, row.get::<_, i64>(8)?)?,
                     entitlement_state: row.get(9)?,
                     contract_status: row.get(10)?,
-                    agreed_price: match row.get::<_, Option<i64>>(11)? {
+                    price_ttc: match row.get::<_, Option<i64>>(11)? {
                         Some(v) => Some(numeric_row::money_col(11, v)?),
                         None => None,
                     },
@@ -864,27 +919,71 @@ impl<'a> ContractRepository<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_sync_contract_product(
         &self,
         id: &str,
         contract_id: &str,
         product_id: &str,
-        proposed_price: f64,
-        agreed_price: Option<f64>,
+        proposed_price_ht: f64,
+        agreed_price_ht: Option<f64>,
+        tva_classification: Option<i32>,
+        tva_rate: Option<f64>,
+        tva_amount: Option<f64>,
+        price_ttc: Option<f64>,
+        purchase_unit: Option<i32>,
+        consumption_unit: Option<i32>,
+        conversion_factor: Option<i32>,
         created_at: &str,
     ) -> Result<(), AppError> {
-        let proposed_price_scaled = numeric_row::money_scaled(proposed_price)?;
-        let agreed_price_scaled = match agreed_price {
+        let proposed_price_ht_scaled = numeric_row::money_scaled(proposed_price_ht)?;
+        let agreed_price_ht_scaled = match agreed_price_ht {
+            Some(v) => Some(numeric_row::money_scaled(v)?),
+            None => None,
+        };
+        let tva_rate_scaled = match tva_rate {
+            Some(v) => Some(numeric_row::rate_scaled(v)?),
+            None => None,
+        };
+        let tva_amount_scaled = match tva_amount {
+            Some(v) => Some(numeric_row::money_scaled(v)?),
+            None => None,
+        };
+        let price_ttc_scaled = match price_ttc {
             Some(v) => Some(numeric_row::money_scaled(v)?),
             None => None,
         };
         self.executor.execute(
-            "INSERT INTO contract_products (id, contract_id, product_id, proposed_price, agreed_price, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO contract_products (id, contract_id, product_id, proposed_price_ht, agreed_price_ht,
+                                            tva_classification, tva_rate, tva_amount,
+                                            price_ttc, purchase_unit, consumption_unit, conversion_factor,
+                                            created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
-                proposed_price = excluded.proposed_price,
-                agreed_price = excluded.agreed_price",
-            params![id, contract_id, product_id, proposed_price_scaled, agreed_price_scaled, created_at],
+                proposed_price_ht = excluded.proposed_price_ht,
+                agreed_price_ht = excluded.agreed_price_ht,
+                tva_classification = excluded.tva_classification,
+                tva_rate = excluded.tva_rate,
+                tva_amount = excluded.tva_amount,
+                price_ttc = excluded.price_ttc,
+                purchase_unit = excluded.purchase_unit,
+                consumption_unit = excluded.consumption_unit,
+                conversion_factor = excluded.conversion_factor",
+            params![
+                id,
+                contract_id,
+                product_id,
+                proposed_price_ht_scaled,
+                agreed_price_ht_scaled,
+                tva_classification,
+                tva_rate_scaled,
+                tva_amount_scaled,
+                price_ttc_scaled,
+                purchase_unit,
+                consumption_unit,
+                conversion_factor,
+                created_at,
+            ],
         )?;
         Ok(())
     }

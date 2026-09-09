@@ -69,15 +69,23 @@ pub struct StockMovementsExportInput {
 #[derive(Debug, Clone, Default)]
 pub struct ExportContractCatalogInput;
 
-/// A contract product line carrying its authoritative `created_at` (needed by
-/// the import upsert — the `ContractProduct` model does not expose it).
+/// A contract product line carrying the authoritative ordered-price snapshot
+/// plus its `created_at` (both needed by the import upsert; the `ContractProduct`
+/// model does not expose `created_at`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractCatalogProductLine {
     pub id: String,
     pub contract_id: String,
     pub product_id: String,
-    pub proposed_price: f64,
-    pub agreed_price: Option<f64>,
+    pub proposed_price_ht: f64,
+    pub agreed_price_ht: Option<f64>,
+    pub tva_classification: Option<i32>,
+    pub tva_rate: Option<f64>,
+    pub tva_amount: Option<f64>,
+    pub price_ttc: Option<f64>,
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
     pub created_at: String,
 }
 

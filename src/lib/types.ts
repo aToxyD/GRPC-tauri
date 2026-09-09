@@ -193,8 +193,8 @@ export interface ContractProduct {
   contract_id: string;
   product_id: string;
   product_name: string;
-  proposed_price: number;
-  agreed_price: number | null;
+  proposed_price_ht: number;
+  agreed_price_ht: number | null;
 }
 
 export interface ContractAllocation {
@@ -230,7 +230,7 @@ export interface UnitContractEntitlement {
   effective_remaining: number;
   entitlement_state: string;
   contract_status: string;
-  agreed_price: number | null;
+  price_ttc: number | null;
 }
 
 export type ReleaseReasonCode =
@@ -260,14 +260,14 @@ export interface CreateContractRequest {
 export interface AddContractProductRequest {
   contract_id: string;
   product_id: string;
-  proposed_price: number;
-  agreed_price: number | null;
+  proposed_price_ht: number;
+  agreed_price_ht: number | null;
   contracted_quantity: number;
 }
 
-export interface SetAgreedPriceRequest {
+export interface SetAgreedPriceHtRequest {
   contract_product_id: string;
-  agreed_price: number;
+  agreed_price_ht: number;
 }
 
 export interface ContractTransitionRequest {

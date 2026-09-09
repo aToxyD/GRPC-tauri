@@ -146,7 +146,7 @@
             <td class="table-cell text-right font-semibold {e.effective_remaining > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}">
               {e.effective_remaining.toFixed(2)}
             </td>
-            <td class="table-cell text-right">{e.agreed_price != null ? `${e.agreed_price.toFixed(2)} DA` : '—'}</td>
+            <td class="table-cell text-right">{e.price_ttc != null ? `${e.price_ttc.toFixed(2)} DA` : '—'}</td>
             <td class="table-cell">
               <AppBadge intent={contractIntent(e.contract_status)} size="sm">{e.contract_status}</AppBadge>
             </td>

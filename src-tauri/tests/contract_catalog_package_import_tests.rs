@@ -77,8 +77,15 @@ fn line(id: &str, contract_id: &str, product_id: &str) -> ContractCatalogProduct
         id: id.to_string(),
         contract_id: contract_id.to_string(),
         product_id: product_id.to_string(),
-        proposed_price: 120.0,
-        agreed_price: Some(110.0),
+        proposed_price_ht: 120.0,
+        agreed_price_ht: Some(110.0),
+        tva_classification: Some(0),
+        tva_rate: Some(0.0),
+        tva_amount: Some(0.0),
+        price_ttc: Some(110.0),
+        purchase_unit: Some(1),
+        consumption_unit: Some(1),
+        conversion_factor: Some(1),
         created_at: stamped(),
     }
 }

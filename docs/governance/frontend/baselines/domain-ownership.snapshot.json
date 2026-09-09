@@ -16,7 +16,7 @@
       "listAllocationExceptions",
       "createContract",
       "addContractProduct",
-      "setContractProductAgreedPrice",
+      "setContractProductAgreedPriceHt",
       "acceptContract",
       "activateContract",
       "endContract",

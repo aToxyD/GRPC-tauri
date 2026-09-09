@@ -2832,11 +2832,11 @@
           "type": "string"
         },
         {
-          "name": "proposed_price",
+          "name": "proposed_price_ht",
           "type": "number"
         },
         {
-          "name": "agreed_price",
+          "name": "agreed_price_ht",
           "type": "number | null"
         }
       ]
@@ -2948,7 +2948,7 @@
           "type": "string"
         },
         {
-          "name": "agreed_price",
+          "name": "price_ttc",
           "type": "number | null"
         }
       ]
@@ -3023,11 +3023,11 @@
           "type": "string"
         },
         {
-          "name": "proposed_price",
+          "name": "proposed_price_ht",
           "type": "number"
         },
         {
-          "name": "agreed_price",
+          "name": "agreed_price_ht",
           "type": "number | null"
         },
         {
@@ -3037,7 +3037,7 @@
       ]
     },
     {
-      "name": "SetAgreedPriceRequest",
+      "name": "SetAgreedPriceHtRequest",
       "kind": "interface",
       "fields": [
         {
@@ -3045,7 +3045,7 @@
           "type": "string"
         },
         {
-          "name": "agreed_price",
+          "name": "agreed_price_ht",
           "type": "number"
         }
       ]

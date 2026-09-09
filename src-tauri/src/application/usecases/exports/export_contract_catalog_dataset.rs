@@ -45,8 +45,15 @@ pub fn execute(
                     id: line.id,
                     contract_id: line.contract_id,
                     product_id: line.product_id,
-                    proposed_price: line.proposed_price,
-                    agreed_price: line.agreed_price,
+                    proposed_price_ht: line.proposed_price_ht,
+                    agreed_price_ht: line.agreed_price_ht,
+                    tva_classification: line.tva_classification,
+                    tva_rate: line.tva_rate,
+                    tva_amount: line.tva_amount,
+                    price_ttc: line.price_ttc,
+                    purchase_unit: line.purchase_unit,
+                    consumption_unit: line.consumption_unit,
+                    conversion_factor: line.conversion_factor,
                     created_at,
                 })
                 .collect();

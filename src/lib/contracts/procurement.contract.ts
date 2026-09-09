@@ -13,7 +13,7 @@ import type {
   FiscalYearTaxPolicy,
   ReleaseContractAllocationRequest,
   RevokeContractAllocationReleaseRequest,
-  SetAgreedPriceRequest,
+  SetAgreedPriceHtRequest,
   SetSupplierActiveRequest,
   SetTaxPolicyRequest,
   Supplier,
@@ -68,10 +68,10 @@ export async function addContractProduct(
   return await safeInvoke('add_contract_product', { request });
 }
 
-export async function setContractProductAgreedPrice(
-  request: SetAgreedPriceRequest,
+export async function setContractProductAgreedPriceHt(
+  request: SetAgreedPriceHtRequest,
 ): Promise<number> {
-  return await safeInvoke('set_contract_product_agreed_price', { request });
+  return await safeInvoke('set_contract_product_agreed_price_ht', { request });
 }
 
 export async function acceptContract(

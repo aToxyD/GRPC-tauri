@@ -15,8 +15,8 @@
 //!    an unset price_ttc is a resolution failure, never a fallback.
 //!
 //! SEC-087 semantic boundary: `price_ttc` is the sole authoritative TTC
-//! pricing source in the resolver. The legacy `agreed_price` DB column must
-//! never be read directly as an operational TTC price.
+//! pricing source in the resolver. It is never derived from, or substituted
+//! by, `agreed_price_ht` or any other column.
 //!
 //! Quantities and prices are **exact `Decimal`** (ADR-0048): remaining is a
 //! component-based subtraction, comparisons are exact (no float epsilon) and
@@ -27,11 +27,10 @@ use crate::errors::{AppError, BusinessLogicError};
 
 /// Candidate entitlement row fed to the resolver (data in, decisions out).
 ///
-/// SEC-087: `price_ttc` is the sole authoritative TTC pricing source. The
-/// repository layer populates this field from `COALESCE(cp.price_ttc,
-/// cp.agreed_price)` during the transitional period; once all contract
-/// products carry a non-null `price_ttc` (Phase 3/6), the COALESCE fallback
-/// is removed and the legacy `agreed_price` column is deprecated.
+/// SEC-087 Phase 3: `price_ttc` is the sole authoritative TTC pricing source.
+/// The repository reads the column strictly (`cp.price_ttc`, no fallback); a
+/// row carrying no `price_ttc` yields a candidate with `price_ttc = None`,
+/// which `resolve_item` rejects — fails closed, never a fallback.
 #[derive(Debug, Clone)]
 pub struct ResolutionCandidate {
     pub allocation_id: String,

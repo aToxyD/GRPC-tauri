@@ -97,13 +97,15 @@ fn seed_contract_product(
     cp_id: &str,
     contract_id: &str,
     product_id: &str,
-    agreed_price: Option<f64>,
+    agreed_price_ht: Option<f64>,
 ) -> String {
+    // Seed the authoritative snapshot: agreed HT + computed price_ttc.
+    let scaled = agreed_price_ht.map(|p| p * 100.0);
     db.get_connection()
         .execute(
-            "INSERT INTO contract_products (id, contract_id, product_id, proposed_price, agreed_price, created_at)
-             VALUES (?1, ?2, ?3, 12000.0, ?4, ?5)",
-            params![cp_id, contract_id, product_id, agreed_price.map(|p| p * 100.0), NOW],
+            "INSERT INTO contract_products (id, contract_id, product_id, proposed_price_ht, agreed_price_ht, price_ttc, created_at)
+             VALUES (?1, ?2, ?3, 12000.0, ?4, ?5, ?6)",
+            params![cp_id, contract_id, product_id, scaled, scaled, NOW],
         )
         .expect("seed contract_product");
     cp_id.to_string()
@@ -294,8 +296,8 @@ fn unit_sees_only_its_own_rows_no_cross_unit_leakage() {
     assert_eq!(ents[0].supplier_name, "Fournisseur A");
     assert!(
         ents.iter()
-            .all(|e| e.product_id == "prod-1" && e.agreed_price == Some(110.0)),
-        "only unit-a's row with its agreed price"
+            .all(|e| e.product_id == "prod-1" && e.price_ttc == Some(110.0)),
+        "only unit-a's row with its agreed price (price_ttc snapshot)"
     );
 }
 

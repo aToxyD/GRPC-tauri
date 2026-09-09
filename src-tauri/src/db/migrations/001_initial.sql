@@ -408,12 +408,10 @@ CREATE TABLE IF NOT EXISTS contract_products (
     id TEXT PRIMARY KEY,
     contract_id TEXT NOT NULL,
     product_id TEXT NOT NULL,
-    proposed_price INTEGER NOT NULL CHECK(proposed_price >= 0),
-    agreed_price INTEGER CHECK(agreed_price IS NULL OR agreed_price >= 0),
+    proposed_price_ht INTEGER NOT NULL CHECK(proposed_price_ht >= 0),
     -- SEC-087: authoritative ordered-price snapshot. agreed_price_ht (HT per
-    -- purchase unit) is the sole HT authority with price_ttc = agreed_price_ht
-    -- + tva_amount. `agreed_price` is retained transitionally until SEC-087
-    -- Phase 3 (tracked by ADR-0056).
+    -- purchase unit) is the sole contractual HT authority with price_ttc =
+    -- agreed_price_ht + tva_amount.
     agreed_price_ht INTEGER CHECK(agreed_price_ht IS NULL OR agreed_price_ht >= 0),
     tva_classification INTEGER CHECK(tva_classification IS NULL OR tva_classification IN (0, 1, 2)),
     tva_rate INTEGER CHECK(tva_rate IS NULL OR (tva_rate >= 0 AND tva_rate <= 1000000)),

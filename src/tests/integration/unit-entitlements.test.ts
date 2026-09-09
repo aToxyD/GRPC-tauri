@@ -39,7 +39,7 @@ function entitlement(overrides: Partial<UnitContractEntitlement> = {}): UnitCont
     effective_remaining: 50,
     entitlement_state: 'Open',
     contract_status: 'ACTIVE',
-    agreed_price: 85.5,
+    price_ttc: 85.5,
     ...overrides,
   };
 }

@@ -58,11 +58,12 @@ impl ConsumptionCost {
     }
 }
 
-/// Agreed price from a contract product line (ADR-0055 / SEC-087-F).
+/// Agreed TTC price from a contract product line (ADR-0055 / SEC-087).
 ///
 /// Authoritative transaction price: backend-resolved through the contract
-/// entitlement chain (ContractAgreedPrice → allocation agreed_price →
-/// `supplier_order_items.unit_price`), never `ReferencePrice`.
+/// entitlement chain (`contract_products.price_ttc` snapshot →
+/// `supplier_order_items.unit_price`), never `ReferencePrice` and never an
+/// HT projection (`agreed_price_ht`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContractAgreedPrice(Money);
 

@@ -1264,6 +1264,15 @@ fn test_confirm_order_sets_unit_id() {
 
     // Set up entitlement: supplier + contract + product line + allocation with
     // agreed price (ADR-0055 / SEC-087-F). Orders require contract coverage.
+    // The product must carry a SEC-087 unit/TVA configuration (fail closed) so
+    // the authoritative pricing snapshot can be frozen at the agreement
+    // boundary.
+    db.get_connection()
+        .execute(
+            "UPDATE products SET purchase_unit = 1, consumption_unit = 1, conversion_factor = 1, tva_classification = 0 WHERE id = ?1",
+            rusqlite::params![product_id],
+        )
+        .expect("configure product units");
     let now = Utc::now().to_rfc3339();
     let suppliers = grpc_lib::repositories::SupplierRepository::new(db.executor());
     let contracts = grpc_lib::repositories::ContractRepository::new(db.executor());
@@ -1299,16 +1308,19 @@ fn test_confirm_order_sets_unit_id() {
             &grpc_lib::models::AddContractProductRequest {
                 contract_id: contract_id.clone(),
                 product_id: product_id.clone(),
-                proposed_price: 40.0,
-                agreed_price: Some(40.0),
+                proposed_price_ht: 40.0,
+                agreed_price_ht: Some(40.0),
                 contracted_quantity: 1000.0,
             },
             &now,
         )
         .unwrap();
-    contracts
-        .set_agreed_price(&contract_product_id, 40.0)
-        .unwrap();
+    grpc_lib::application::services::ContractService::new(db.executor())
+        .set_agreed_price_ht(&grpc_lib::models::SetAgreedPriceHtRequest {
+            contract_product_id: contract_product_id.clone(),
+            agreed_price_ht: 40.0,
+        })
+        .expect("freeze agreed HT price snapshot");
     let allocation_id = Uuid::new_v4().to_string();
     contracts
         .insert_allocation(

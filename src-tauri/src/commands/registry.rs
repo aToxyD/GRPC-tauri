@@ -77,7 +77,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         // Procurement — Contracts (ADR-0055 / SEC-087-F)
         commands::create_contract,
         commands::add_contract_product,
-        commands::set_contract_product_agreed_price,
+        commands::set_contract_product_agreed_price_ht,
         commands::accept_contract,
         commands::activate_contract,
         commands::end_contract,

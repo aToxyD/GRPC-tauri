@@ -913,7 +913,7 @@
           "name": "addContractProduct"
         },
         {
-          "name": "setContractProductAgreedPrice"
+          "name": "setContractProductAgreedPriceHt"
         },
         {
           "name": "acceptContract"
@@ -999,7 +999,7 @@
           "command": "add_contract_product"
         },
         {
-          "command": "set_contract_product_agreed_price"
+          "command": "set_contract_product_agreed_price_ht"
         },
         {
           "command": "accept_contract"

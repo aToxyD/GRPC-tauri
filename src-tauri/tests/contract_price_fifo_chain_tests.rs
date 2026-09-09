@@ -10,14 +10,50 @@
 //! influence FIFO layer cost, COGS, or inventory valuation.
 
 use chrono::Utc;
-use grpc_lib::application::services::{OrderService, StockMovementService};
+use grpc_lib::application::services::{ContractService, OrderService, StockMovementService};
 use grpc_lib::db::ConnectionFactory;
 use grpc_lib::models::{
-    AddContractProductRequest, CreateContractRequest, CreateOrderRequest, CreateSupplierRequest,
-    OrderItemInput,
+    AddContractProductRequest, CreateContractRequest, CreateOrderRequest, CreateProductRequest,
+    CreateSupplierRequest, OrderItemInput, SetAgreedPriceHtRequest,
 };
 use grpc_lib::repositories::RepositoryProvider;
 use uuid::Uuid;
+
+/// Insert a SEC-087 configured product (purchase/consumption unit identical,
+/// factor 1, Exonere TVA) so `set_agreed_price_ht` can build its snapshot.
+fn insert_configured_product(ex: &grpc_lib::repositories::DbExecutor<'_>, name: &str) -> String {
+    let now = Utc::now().to_rfc3339();
+    let id = Uuid::new_v4().to_string();
+    let config =
+        grpc_lib::domain::validation::validate_product_units(Some(1), Some(1), Some(1), Some(0))
+            .expect("valid product config");
+    ex.products()
+        .insert_product(
+            &id,
+            &CreateProductRequest {
+                name: name.to_string(),
+                base_price: 999.0,
+                purchase_unit: Some(1),
+                consumption_unit: Some(1),
+                conversion_factor: Some(1),
+                tva_classification: Some(0),
+            },
+            2024,
+            &config,
+            &now,
+        )
+        .unwrap();
+    id
+}
+
+fn freeze_agreed_price_ht(db: &grpc_lib::db::Database, cp_id: &str, price_ht: f64) {
+    ContractService::new(db.executor())
+        .set_agreed_price_ht(&SetAgreedPriceHtRequest {
+            contract_product_id: cp_id.to_string(),
+            agreed_price_ht: price_ht,
+        })
+        .expect("freeze agreed HT price snapshot");
+}
 
 fn setup_contract_chain(db: &grpc_lib::db::Database) -> (String, String, String) {
     let ex = db.executor();
@@ -39,15 +75,22 @@ fn setup_contract_chain(db: &grpc_lib::db::Database) -> (String, String, String)
         rusqlite::params![now],
     )
     .unwrap();
+    let config =
+        grpc_lib::domain::validation::validate_product_units(Some(1), Some(1), Some(1), Some(0))
+            .unwrap();
     ex.products()
-        .insert_raw_product(
-            &grpc_lib::models::Product {
-                id: product_id.clone(),
+        .insert_product(
+            &product_id,
+            &CreateProductRequest {
                 name: "Fearina".to_string(),
                 base_price: 999.0,
-                year: 2024,
-                created_at: Utc::now(),
+                purchase_unit: Some(1),
+                consumption_unit: Some(1),
+                conversion_factor: Some(1),
+                tva_classification: Some(0),
             },
+            2024,
+            &config,
             &now,
         )
         .unwrap();
@@ -90,16 +133,14 @@ fn setup_contract_chain(db: &grpc_lib::db::Database) -> (String, String, String)
             &AddContractProductRequest {
                 contract_id: contract_id.clone(),
                 product_id: product_id.clone(),
-                proposed_price: 999.0,
-                agreed_price: Some(40.0),
+                proposed_price_ht: 999.0,
+                agreed_price_ht: Some(40.0),
                 contracted_quantity: 1000.0,
             },
             &now,
         )
         .unwrap();
-    ex.contracts()
-        .set_agreed_price(&contract_product_id, 40.0)
-        .unwrap();
+    freeze_agreed_price_ht(db, &contract_product_id, 40.0);
     ex.contracts()
         .insert_allocation(
             &allocation_id,
@@ -117,7 +158,7 @@ fn setup_contract_chain(db: &grpc_lib::db::Database) -> (String, String, String)
 }
 
 #[test]
-fn agreed_price_reaches_order_item_and_fifo_layer() {
+fn agreed_price_ht_reaches_order_item_and_fifo_layer() {
     let db = ConnectionFactory::new_for_test().unwrap();
     let (unit_id, product_id, _user_id) = setup_contract_chain(&db);
 
@@ -258,7 +299,7 @@ fn catalog_base_price_never_drives_consumption_or_valuation() {
 }
 
 #[test]
-fn per_line_agreed_prices_isolate_fifo_layers() {
+fn per_line_agreed_ht_prices_isolate_fifo_layers() {
     let db = ConnectionFactory::new_for_test().unwrap();
     let now = Utc::now().to_rfc3339();
     let ex = db.executor();
@@ -266,8 +307,8 @@ fn per_line_agreed_prices_isolate_fifo_layers() {
     let unit_id = Uuid::new_v4().to_string();
     let user_id = Uuid::new_v4().to_string();
     let supplier_id = Uuid::new_v4().to_string();
-    let product1 = Uuid::new_v4().to_string();
-    let product2 = Uuid::new_v4().to_string();
+    let product1 = insert_configured_product(&ex, "Fearina");
+    let product2 = insert_configured_product(&ex, "Second");
 
     ex.units()
         .upsert_raw_unit(&unit_id, "UNIT_B", "Bulk Unit", "01", &now)
@@ -277,30 +318,6 @@ fn per_line_agreed_prices_isolate_fifo_layers() {
         rusqlite::params![now],
     )
     .unwrap();
-    ex.products()
-        .insert_raw_product(
-            &grpc_lib::models::Product {
-                id: product1.clone(),
-                name: "Fearina".to_string(),
-                base_price: 999.0,
-                year: 2024,
-                created_at: Utc::now(),
-            },
-            &now,
-        )
-        .unwrap();
-    ex.products()
-        .insert_raw_product(
-            &grpc_lib::models::Product {
-                id: product2.clone(),
-                name: "Second".to_string(),
-                base_price: 1.0,
-                year: 2024,
-                created_at: Utc::now(),
-            },
-            &now,
-        )
-        .unwrap();
     ex.users()
         .insert_raw_user(
             &user_id,
@@ -344,14 +361,14 @@ fn per_line_agreed_prices_isolate_fifo_layers() {
                 &AddContractProductRequest {
                     contract_id: contract_id.clone(),
                     product_id: product_id.clone(),
-                    proposed_price: price,
-                    agreed_price: Some(price),
+                    proposed_price_ht: price,
+                    agreed_price_ht: Some(price),
                     contracted_quantity: 1000.0,
                 },
                 &now,
             )
             .unwrap();
-        ex.contracts().set_agreed_price(&cp_id, price).unwrap();
+        freeze_agreed_price_ht(&db, &cp_id, price);
         ex.contracts()
             .insert_allocation(
                 &Uuid::new_v4().to_string(),
@@ -428,7 +445,7 @@ fn per_line_agreed_prices_isolate_fifo_layers() {
 }
 
 #[test]
-fn contract_agreed_price_domain_type_roundtrips() {
+fn contract_agreed_ttc_price_domain_type_roundtrips() {
     use grpc_lib::domain::accounting::cost::ContractAgreedPrice;
     use grpc_lib::domain::numeric::Money;
 

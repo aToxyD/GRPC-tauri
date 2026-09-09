@@ -533,12 +533,12 @@ pub fn validate_add_contract_product_request(req: &AddContractProductRequest) ->
             field: "product_id".to_string(),
         }));
     }
-    if req.proposed_price < 0.0 {
+    if req.proposed_price_ht < 0.0 {
         return Err(AppError::Validation(ValidationError::InvalidPrice {
-            value: req.proposed_price,
+            value: req.proposed_price_ht,
         }));
     }
-    if let Some(price) = req.agreed_price {
+    if let Some(price) = req.agreed_price_ht {
         if price < 0.0 {
             return Err(AppError::Validation(ValidationError::InvalidPrice {
                 value: price,
@@ -554,17 +554,17 @@ pub fn validate_add_contract_product_request(req: &AddContractProductRequest) ->
     Ok(())
 }
 
-/// Freeze agreed price: contract must still be in `proposed` state
+/// Freeze agreed HT price: contract must still be in `proposed` state
 /// (enforced at repo level), price must be non-negative.
-pub fn validate_set_agreed_price_request(req: &SetAgreedPriceRequest) -> ValidationResult {
+pub fn validate_set_agreed_price_ht_request(req: &SetAgreedPriceHtRequest) -> ValidationResult {
     if req.contract_product_id.trim().is_empty() {
         return Err(AppError::Validation(ValidationError::Required {
             field: "contract_product_id".to_string(),
         }));
     }
-    if req.agreed_price < 0.0 {
+    if req.agreed_price_ht < 0.0 {
         return Err(AppError::Validation(ValidationError::InvalidPrice {
-            value: req.agreed_price,
+            value: req.agreed_price_ht,
         }));
     }
     Ok(())

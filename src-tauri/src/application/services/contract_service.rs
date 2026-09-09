@@ -7,15 +7,19 @@
 //! SQL is delegated exclusively to `ContractRepository` / `SupplierRepository`
 //! / `ProductRepository` / `UnitRepository`.
 
+use crate::domain::numeric::legacy_float;
+use crate::domain::pricing::price::compute_contract_fiscal;
 use crate::domain::validation::{
     validate_add_contract_product_request, validate_create_contract_request,
-    validate_release_contract_allocation_request, validate_set_agreed_price_request,
+    validate_product_units, validate_release_contract_allocation_request,
+    validate_set_agreed_price_ht_request,
 };
 use crate::errors::{AppError, BusinessLogicError};
 use crate::models::{
     AddContractProductRequest, Contract, ContractAllocation, ContractAllocationException,
-    ContractAllocationView, ContractProduct, ContractStatus, CreateContractRequest,
-    ReleaseContractAllocationRequest, SetAgreedPriceRequest, UnitContractEntitlement,
+    ContractAllocationView, ContractPriceSnapshot, ContractProduct, ContractStatus,
+    CreateContractRequest, ReleaseContractAllocationRequest, SetAgreedPriceHtRequest,
+    UnitContractEntitlement,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
@@ -92,8 +96,8 @@ impl<'a> ContractService<'a> {
     }
 
     /// Add a product line to a `proposed` contract: creates the
-    /// `contract_products` row with `proposed_price` (+ `agreed_price` when
-    /// given) and the per-UNIT `contract_allocations` obligation row.
+    /// `contract_products` row with `proposed_price_ht` (+ `agreed_price_ht`
+    /// when given) and the per-UNIT `contract_allocations` obligation row.
     pub fn add_contract_product(
         &self,
         req: &AddContractProductRequest,
@@ -153,14 +157,56 @@ impl<'a> ContractService<'a> {
         Ok((contract_product_id, allocation_id))
     }
 
-    /// Freeze the agreed price. Allowed only while the contract is
-    /// `proposed`; after acceptance the price is immutable.
-    pub fn set_agreed_price(&self, req: &SetAgreedPriceRequest) -> Result<f64, AppError> {
-        validate_set_agreed_price_request(req)?;
-        let n = self
+    /// Freeze the agreed HT price and persist the authoritative ordered-price
+    /// snapshot. This is the SEC-087 Phase 3 price-agreement boundary: it
+    /// resolves the product's authoritative TVA classification and unit
+    /// configuration (fail closed on any gap — never consulting the legacy
+    /// fiscal-year policy), derives exact TVA/TTC via `compute_contract_fiscal`,
+    /// and persists the full snapshot atomically. Allowed only while the
+    /// contract is `proposed`; after acceptance the price is immutable.
+    pub fn set_agreed_price_ht(&self, req: &SetAgreedPriceHtRequest) -> Result<f64, AppError> {
+        validate_set_agreed_price_ht_request(req)?;
+
+        // Resolve the contract-product row to locate its product.
+        let cp = self
             .executor
             .contracts()
-            .set_agreed_price(&req.contract_product_id, req.agreed_price)?;
+            .get_contract_product(&req.contract_product_id)?
+            .ok_or_else(|| Self::not_found("سطر عقد", &req.contract_product_id))?;
+
+        // Fail closed on an incomplete product configuration: the product
+        // master is the sole current source for unit/TVA configuration. There
+        // is deliberately NO fallback to fiscal_year_tax_policy (SEC-087).
+        let config_codes = self
+            .executor
+            .products()
+            .get_product_config_codes(&cp.product_id)?
+            .ok_or_else(|| Self::not_found("منتج", &cp.product_id))?;
+        let config = validate_product_units(
+            config_codes.purchase_unit,
+            config_codes.consumption_unit,
+            config_codes.conversion_factor,
+            config_codes.tva_classification,
+        )?;
+
+        // Exact HT authority (Money), never reinterpreted from a historical TTC.
+        let agreed_price_ht = legacy_float::money_from_f64(req.agreed_price_ht)?;
+        let breakdown =
+            compute_contract_fiscal(&agreed_price_ht, &config.tva_classification.rate())?;
+
+        let snapshot = ContractPriceSnapshot {
+            contract_product_id: req.contract_product_id.clone(),
+            agreed_price_ht_scaled: agreed_price_ht.to_scaled_i64()?,
+            tva_classification_code: config.tva_classification.code(),
+            tva_rate_scaled: config.tva_classification.rate().to_scaled_i64()?,
+            tva_amount_scaled: breakdown.tva_amount.to_scaled_i64()?,
+            price_ttc_scaled: breakdown.price_ttc.to_scaled_i64()?,
+            purchase_unit_code: config.purchase_unit.code(),
+            consumption_unit_code: config.consumption_unit.code(),
+            conversion_factor: config.conversion_factor,
+        };
+
+        let n = self.executor.contracts().freeze_contract_price(&snapshot)?;
         if n == 0 {
             return Err(AppError::BusinessLogic(
                 BusinessLogicError::OperationNotPermitted {
@@ -169,11 +215,14 @@ impl<'a> ContractService<'a> {
                 },
             ));
         }
-        Ok(req.agreed_price)
+
+        legacy_float::money_to_f64(&breakdown.price_ttc).map_err(AppError::from)
     }
 
-    /// Accept a `proposed` contract. Every product line must have a frozen
-    /// agreed price before acceptance (price immutability boundary).
+    /// Accept a `proposed` contract. Every product line must have persisted its
+    /// authoritative pricing snapshot (`price_ttc` present) before acceptance —
+    /// this is the price immutability boundary. A line without a computed
+    /// `price_ttc` is rejected, so acceptance fails closed.
     pub fn accept_contract(&self, contract_id: &str, at: &str) -> Result<Contract, AppError> {
         let contract = self
             .executor
@@ -191,10 +240,11 @@ impl<'a> ContractService<'a> {
             .executor
             .contracts()
             .get_contract_products(contract_id)?;
-        if products.iter().any(|cp| cp.agreed_price.is_none()) {
+        if products.iter().any(|cp| cp.price_ttc.is_none()) {
             return Err(AppError::BusinessLogic(
                 BusinessLogicError::OperationNotPermitted {
-                    message: "لا يمكن قبول العقد قبل تثبيت سعر الاتفاق لكل المنتجات".to_string(),
+                    message: "لا يمكن قبول العقد قبل تثبيت سعر الاتفاق (سعر TTC) لكل المنتجات"
+                        .to_string(),
                 },
             ));
         }

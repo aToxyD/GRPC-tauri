@@ -81,15 +81,36 @@ pub struct Contract {
     pub created_at: Option<DateTime<Utc>>,
 }
 
-/// Product line of a contract (pricing authority)
+/// Product line of a contract (pricing authority).
+///
+/// SEC-087 Phase 3: carries the authoritative ordered-price snapshot persisted
+/// at agreement: `proposed_price_ht` (supplier proposal), `agreed_price_ht`
+/// (WILAYA-approved contractual HT), `tva_*`, and `price_ttc` (TTC per purchase
+/// unit) plus the purchase/consumption unit split and conversion factor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractProduct {
     pub id: String,
     pub contract_id: String,
     pub product_id: String,
     pub product_name: String,
-    pub proposed_price: f64,
-    pub agreed_price: Option<f64>,
+    /// Supplier-proposed HT price per purchase unit.
+    pub proposed_price_ht: f64,
+    /// Authoritative WILAYA-agreed HT per purchase unit (SEC-087 Phase 3).
+    pub agreed_price_ht: Option<f64>,
+    /// Product's TVA classification code (`domain::units::TvaClassification`).
+    pub tva_classification: Option<i32>,
+    /// Exact TVA rate (percent domain, scale-4 persisted as INTEGER).
+    pub tva_rate: Option<f64>,
+    /// Rounded TVA term `round_2dp(HT × rate / 100)`.
+    pub tva_amount: Option<f64>,
+    /// Authoritative TTC per purchase unit; drives the resolver.
+    pub price_ttc: Option<f64>,
+    /// Purchase unit code (`domain::units::UnitMeasure`, 1..=10).
+    pub purchase_unit: Option<i32>,
+    /// Consumption unit code (`domain::units::UnitMeasure`, 1..=10).
+    pub consumption_unit: Option<i32>,
+    /// Purchase→consumption conversion factor (==1 when units identical).
+    pub conversion_factor: Option<i32>,
 }
 
 /// Per-UNIT obligation/entitlement row
@@ -187,7 +208,7 @@ pub struct UnitEntitlementRow {
     pub reserved_quantity: f64,
     pub entitlement_state: String,
     pub contract_status: String,
-    pub agreed_price: Option<f64>,
+    pub price_ttc: Option<f64>,
 }
 
 /// Read-only UNIT entitlement projection DTO (Phase 4). Backend-derived:
@@ -207,7 +228,7 @@ pub struct UnitContractEntitlement {
     pub effective_remaining: f64,
     pub entitlement_state: String,
     pub contract_status: String,
-    pub agreed_price: Option<f64>,
+    pub price_ttc: Option<f64>,
 }
 
 impl From<UnitEntitlementRow> for UnitContractEntitlement {
@@ -231,7 +252,7 @@ impl From<UnitEntitlementRow> for UnitContractEntitlement {
             effective_remaining,
             entitlement_state: row.entitlement_state,
             contract_status: row.contract_status,
-            agreed_price: row.agreed_price,
+            price_ttc: row.price_ttc,
         }
     }
 }
@@ -290,22 +311,26 @@ pub struct CreateContractRequest {
 }
 
 /// Add a product to a contract: creates contract_products + allocation row.
-/// `agreed_price` may be set later during the proposed phase.
+/// `proposed_price_ht` is the supplier proposal; `agreed_price_ht` may be set
+/// later during the proposed phase via `SetAgreedPriceHtRequest`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddContractProductRequest {
     pub contract_id: String,
     pub product_id: String,
-    pub proposed_price: f64,
-    pub agreed_price: Option<f64>,
+    pub proposed_price_ht: f64,
+    pub agreed_price_ht: Option<f64>,
     pub contracted_quantity: f64,
 }
 
-/// Approve/freeze the agreed price for a contract product (WILAYA). Allowed
+/// Approve/freeze the agreed HT price for a contract product (WILAYA). Allowed
 /// only while the contract is `proposed`; after acceptance it is immutable.
+///
+/// SEC-087 Phase 3: `agreed_price_ht` is the authoritative HT per purchase
+/// unit; the persisted snapshot (HT + TVA + TTC) is computed here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetAgreedPriceRequest {
+pub struct SetAgreedPriceHtRequest {
     pub contract_product_id: String,
-    pub agreed_price: f64,
+    pub agreed_price_ht: f64,
 }
 
 /// Transition requests
@@ -327,4 +352,31 @@ pub struct ReleaseContractAllocationRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RevokeContractAllocationReleaseRequest {
     pub exception_id: String,
+}
+
+/// Authoritative ordered-price snapshot persisted at the price-agreement
+/// boundary (SEC-087 Phase 3). All monetary fields are pre-scaled INTEGERs and
+/// unit/TVA fields are closed-set codes, produced by the application layer from
+/// exact `Money`/`Rate` arithmetic; the repository performs no arithmetic.
+#[derive(Debug, Clone)]
+pub struct ContractPriceSnapshot {
+    pub contract_product_id: String,
+    pub agreed_price_ht_scaled: i64,
+    pub tva_classification_code: i32,
+    pub tva_rate_scaled: i64,
+    pub tva_amount_scaled: i64,
+    pub price_ttc_scaled: i64,
+    pub purchase_unit_code: i32,
+    pub consumption_unit_code: i32,
+    pub conversion_factor: i32,
+}
+
+/// Read-only product unit/TVA configuration codes (SEC-087) needed to build an
+/// authoritative contract price snapshot.
+#[derive(Debug, Clone, Copy)]
+pub struct ProductUnitConfigCodes {
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
+    pub tva_classification: Option<i32>,
 }

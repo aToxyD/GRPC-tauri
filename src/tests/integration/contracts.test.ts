@@ -24,7 +24,7 @@ const mockListContractAllocations = vi.fn();
 const mockListAllocationExceptions = vi.fn();
 const mockCreateContract = vi.fn();
 const mockAddContractProduct = vi.fn();
-const mockSetContractProductAgreedPrice = vi.fn();
+const mockSetContractProductAgreedPriceHt = vi.fn();
 const mockAcceptContract = vi.fn();
 const mockActivateContract = vi.fn();
 const mockEndContract = vi.fn();
@@ -47,7 +47,7 @@ vi.mock('../../lib/contracts', () => ({
   listAllocationExceptions: (...args: any[]) => mockListAllocationExceptions(...args),
   createContract: (...args: any[]) => mockCreateContract(...args),
   addContractProduct: (...args: any[]) => mockAddContractProduct(...args),
-  setContractProductAgreedPrice: (...args: any[]) => mockSetContractProductAgreedPrice(...args),
+  setContractProductAgreedPriceHt: (...args: any[]) => mockSetContractProductAgreedPriceHt(...args),
   acceptContract: (...args: any[]) => mockAcceptContract(...args),
   activateContract: (...args: any[]) => mockActivateContract(...args),
   endContract: (...args: any[]) => mockEndContract(...args),
@@ -136,7 +136,7 @@ async function submitAddProduct(
   return calls[calls.length - 1][0];
 }
 
-describe('ContractsPage add-product agreed_price normalization', () => {
+describe('ContractsPage add-product agreed_price_ht normalization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAddContractProduct.mockResolvedValue(['cp1', 'a1']);
@@ -151,39 +151,39 @@ describe('ContractsPage add-product agreed_price normalization', () => {
     mockGetSettings.mockResolvedValue({ current_year: 2026 });
   });
 
-  it('sends agreed_price null when the optional field is left untouched (empty string)', async () => {
+  it('sends agreed_price_ht null when the optional field is left untouched (empty string)', async () => {
     render(ContractsPage);
     const request = await submitAddProduct(async () => {
       // no interaction -> newAgreedPrice stays the initial ''
     });
-    expect(request.agreed_price).toBeNull();
+    expect(request.agreed_price_ht).toBeNull();
   });
 
-  it('sends the parsed number for a numeric agreed price', async () => {
+  it('sends the parsed number for a numeric agreed HT price', async () => {
     render(ContractsPage);
     const request = await submitAddProduct(async (input) => {
       await fireEvent.input(input, { target: { value: '123.45' } });
     });
-    expect(request.agreed_price).toBe(123.45);
+    expect(request.agreed_price_ht).toBe(123.45);
   });
 
-  it('sends a decimal agreed price correctly', async () => {
+  it('sends a decimal agreed HT price correctly', async () => {
     render(ContractsPage);
     const request = await submitAddProduct(async (input) => {
       await fireEvent.input(input, { target: { value: '0.5' } });
     });
-    expect(request.agreed_price).toBe(0.5);
+    expect(request.agreed_price_ht).toBe(0.5);
   });
 
-  it('sends 0 as a distinct value (not null)', async () => {
+  it('sends 0 as a distinct agreed HT value (not null)', async () => {
     render(ContractsPage);
     const request = await submitAddProduct(async (input) => {
       await fireEvent.input(input, { target: { value: '0' } });
     });
-    expect(request.agreed_price).toBe(0);
+    expect(request.agreed_price_ht).toBe(0);
   });
 
-  it('sends agreed_price null after a numeric input is typed then cleared (number input coerces to null)', async () => {
+  it('sends agreed_price_ht null after a numeric input is typed then cleared (number input coerces to null)', async () => {
     render(ContractsPage);
     const request = await submitAddProduct(async (input) => {
       await fireEvent.input(input, { target: { value: '50' } });
@@ -192,6 +192,6 @@ describe('ContractsPage add-product agreed_price normalization', () => {
       // on null (previously: "t(wt).trim is not a function").
       await fireEvent.input(input, { target: { value: '' } });
     });
-    expect(request.agreed_price).toBeNull();
+    expect(request.agreed_price_ht).toBeNull();
   });
 });

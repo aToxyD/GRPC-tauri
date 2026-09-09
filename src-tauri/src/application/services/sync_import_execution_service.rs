@@ -306,8 +306,15 @@ impl<'a> SyncImportExecutionService<'a> {
                     &line.id,
                     &line.contract_id,
                     &line.product_id,
-                    line.proposed_price,
-                    line.agreed_price,
+                    line.proposed_price_ht,
+                    line.agreed_price_ht,
+                    line.tva_classification,
+                    line.tva_rate,
+                    line.tva_amount,
+                    line.price_ttc,
+                    line.purchase_unit,
+                    line.consumption_unit,
+                    line.conversion_factor,
                     &line.created_at,
                 )?;
                 if existing.is_some() {

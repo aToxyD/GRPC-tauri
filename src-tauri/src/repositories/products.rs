@@ -59,6 +59,31 @@ impl<'a> ProductRepository<'a> {
         Ok(existing.is_some())
     }
 
+    /// Read the product's SEC-087 unit/TVA configuration codes (SQL only).
+    ///
+    /// The application layer validates these codes through
+    /// `domain::validation::validate_product_units` (fail closed) before they
+    /// can seed a contract price snapshot. Repository performs no logic.
+    pub fn get_product_config_codes(
+        &self,
+        product_id: &str,
+    ) -> Result<Option<crate::models::ProductUnitConfigCodes>, AppError> {
+        let row = self.executor.query_row_optional(
+            "SELECT purchase_unit, consumption_unit, conversion_factor, tva_classification
+             FROM products WHERE id = ?1 AND deleted = 0",
+            [product_id],
+            |r| {
+                Ok(crate::models::ProductUnitConfigCodes {
+                    purchase_unit: r.get(0)?,
+                    consumption_unit: r.get(1)?,
+                    conversion_factor: r.get(2)?,
+                    tva_classification: r.get(3)?,
+                })
+            },
+        )?;
+        Ok(row)
+    }
+
     pub fn insert_raw_product(&self, product: &Product, now: &str) -> Result<(), AppError> {
         let base_price_scaled = numeric_row::money_scaled(product.base_price)?;
         self.executor.execute(

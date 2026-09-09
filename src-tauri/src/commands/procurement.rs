@@ -23,7 +23,7 @@ use crate::models::{
     AddContractProductRequest, AssociateUnitSupplierRequest, Contract, ContractAllocationException,
     ContractAllocationView, ContractProduct, ContractTransitionRequest, CreateContractRequest,
     CreateSupplierRequest, FiscalYearTaxPolicy, ReleaseContractAllocationRequest,
-    RevokeContractAllocationReleaseRequest, SetAgreedPriceRequest, SetSupplierActiveRequest,
+    RevokeContractAllocationReleaseRequest, SetAgreedPriceHtRequest, SetSupplierActiveRequest,
     SetTaxPolicyRequest, Supplier, UnitContractEntitlement, UpdateSupplierRequest,
     XlsxExportResult,
 };
@@ -173,9 +173,9 @@ pub fn add_contract_product(
 }
 
 #[tauri::command]
-pub fn set_contract_product_agreed_price(
+pub fn set_contract_product_agreed_price_ht(
     state: State<AppState>,
-    request: SetAgreedPriceRequest,
+    request: SetAgreedPriceHtRequest,
 ) -> Result<f64, String> {
     let (session, _) = authorize_command(&state, Action::ApproveContractPrice, None)
         .map_err(into_command_error)?;
@@ -186,7 +186,7 @@ pub fn set_contract_product_agreed_price(
     let user_ctx = user_ctx_from_session(&session);
 
     AuditTxService::execute_with_audit(db, AuditAction::SetAgreedPrice, &user_ctx, |tx| {
-        ContractService::new(tx.executor).set_agreed_price(&request)
+        ContractService::new(tx.executor).set_agreed_price_ht(&request)
     })
     .map_err(into_command_error)
 }
