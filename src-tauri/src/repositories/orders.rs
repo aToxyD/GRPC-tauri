@@ -91,6 +91,14 @@ impl<'a> OrderRepository<'a> {
     /// Fetch order items for confirmation: (product_id, quantity, product_name,
     /// unit_price, allocation_id). The allocation_id is the recorded reservation
     /// leg used to verify unchanged entitlement at confirmation time.
+    ///
+    /// Deterministic ordering contract (ADR-0056): rows are ordered by the
+    /// resolver's allocation priority key (fiscal_year ASC, created_at ASC,
+    /// id ASC) with `supplier_order_items.id` as the final tie-break. The order
+    /// MUST NOT depend on SQLite rowid/insertion/index/join/plan order.
+    /// Confirmation correctness itself is order-independent under the
+    /// greedy-drain allocation invariant and Phase 4A own-reservation netting;
+    /// this ORDER BY is the explicit determinism/execution-order contract.
     #[allow(clippy::type_complexity)]
     pub fn get_order_items_for_confirmation(
         &self,
@@ -101,7 +109,9 @@ impl<'a> OrderRepository<'a> {
              FROM supplier_order_items soi
              JOIN products p ON soi.product_id = p.id
              JOIN supplier_order_item_allocations soia ON soia.item_id = soi.id
-             WHERE soi.order_id = ?1",
+             JOIN contract_allocations ca ON ca.id = soia.allocation_id
+             WHERE soi.order_id = ?1
+             ORDER BY ca.fiscal_year ASC, ca.created_at ASC, ca.id ASC, soi.id ASC",
             [order_id],
             |row| {
                 Ok((
