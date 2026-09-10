@@ -567,6 +567,7 @@ impl<'a> ContractRepository<'a> {
         Ok(self.executor.query_all(
             "SELECT ca.id, ca.fiscal_year, c.supplier_id, s.name,
                     cp.price_ttc,
+                    cp.purchase_unit, cp.consumption_unit, cp.conversion_factor,
                     ca.contracted_quantity, ca.fulfilled_quantity, ca.released_quantity,
                     ca.reserved_quantity, ca.entitlement_state
              FROM contract_allocations ca
@@ -608,11 +609,14 @@ impl<'a> ContractRepository<'a> {
                         Some(v) => Some(money_of(4, v)?),
                         None => None,
                     },
-                    contracted_quantity: quantity_of(5, row.get::<_, i64>(5)?)?,
-                    fulfilled_quantity: quantity_of(6, row.get::<_, i64>(6)?)?,
-                    released_quantity: quantity_of(7, row.get::<_, i64>(7)?)?,
-                    reserved_quantity: quantity_of(8, row.get::<_, i64>(8)?)?,
-                    entitlement_state: row.get(9)?,
+                    purchase_unit: row.get(5)?,
+                    consumption_unit: row.get(6)?,
+                    conversion_factor: row.get(7)?,
+                    contracted_quantity: quantity_of(8, row.get::<_, i64>(8)?)?,
+                    fulfilled_quantity: quantity_of(9, row.get::<_, i64>(9)?)?,
+                    released_quantity: quantity_of(10, row.get::<_, i64>(10)?)?,
+                    reserved_quantity: quantity_of(11, row.get::<_, i64>(11)?)?,
+                    entitlement_state: row.get(12)?,
                 })
             },
         )?)

@@ -77,20 +77,27 @@ impl<'a> OrderRepository<'a> {
         item_cost: f64,
         unit_id: &str,
         fiscal_year: i32,
+        purchase_unit: Option<i32>,
+        consumption_unit: Option<i32>,
+        conversion_factor: Option<i32>,
+        consumption_quantity: Option<f64>,
     ) -> Result<(), AppError> {
         let quantity_scaled = numeric_row::qty_scaled(item.quantity)?;
         let unit_price_scaled = numeric_row::money_scaled(unit_price)?;
         let item_cost_scaled = numeric_row::money_scaled(item_cost)?;
+        let consumption_quantity_scaled = match consumption_quantity {
+            Some(v) => Some(numeric_row::qty_scaled(v)?),
+            None => None,
+        };
         self.executor.execute(
-            "INSERT INTO supplier_order_items (id, order_id, product_id, quantity, unit_price, total_cost, unit_id, fiscal_year) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![item_id, order_id, &item.product_id, quantity_scaled, unit_price_scaled, item_cost_scaled, unit_id, &fiscal_year],
+            "INSERT INTO supplier_order_items (id, order_id, product_id, quantity, unit_price, total_cost, unit_id, fiscal_year, purchase_unit, consumption_unit, conversion_factor, consumption_quantity) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![item_id, order_id, &item.product_id, quantity_scaled, unit_price_scaled, item_cost_scaled, unit_id, &fiscal_year, purchase_unit, consumption_unit, conversion_factor, consumption_quantity_scaled],
         )?;
         Ok(())
     }
 
-    /// Fetch order items for confirmation: (product_id, quantity, product_name,
-    /// unit_price, allocation_id). The allocation_id is the recorded reservation
-    /// leg used to verify unchanged entitlement at confirmation time.
+    /// Fetch order items for confirmation, including the persisted SEC-087
+    /// Phase 5 unit snapshot used to convert purchase→consumption at receipt.
     ///
     /// Deterministic ordering contract (ADR-0056): rows are ordered by the
     /// resolver's allocation priority key (fiscal_year ASC, created_at ASC,
@@ -99,13 +106,13 @@ impl<'a> OrderRepository<'a> {
     /// Confirmation correctness itself is order-independent under the
     /// greedy-drain allocation invariant and Phase 4A own-reservation netting;
     /// this ORDER BY is the explicit determinism/execution-order contract.
-    #[allow(clippy::type_complexity)]
     pub fn get_order_items_for_confirmation(
         &self,
         order_id: &str,
-    ) -> Result<Vec<(String, f64, String, f64, String)>, AppError> {
+    ) -> Result<Vec<crate::models::ConfirmationItemRow>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT soi.product_id, soi.quantity, p.name, soi.unit_price, soia.allocation_id
+            "SELECT soi.product_id, soi.quantity, p.name, soi.unit_price, soia.allocation_id,
+                    soi.purchase_unit, soi.consumption_unit, soi.conversion_factor
              FROM supplier_order_items soi
              JOIN products p ON soi.product_id = p.id
              JOIN supplier_order_item_allocations soia ON soia.item_id = soi.id
@@ -114,13 +121,16 @@ impl<'a> OrderRepository<'a> {
              ORDER BY ca.fiscal_year ASC, ca.created_at ASC, ca.id ASC, soi.id ASC",
             [order_id],
             |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    numeric_row::qty_col(1, row.get::<_, i64>(1)?)?,
-                    row.get::<_, String>(2)?,
-                    numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
-                    row.get::<_, String>(4)?,
-                ))
+                Ok(crate::models::ConfirmationItemRow {
+                    product_id: row.get(0)?,
+                    quantity: numeric_row::qty_col(1, row.get::<_, i64>(1)?)?,
+                    product_name: row.get(2)?,
+                    unit_price: numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
+                    allocation_id: row.get(4)?,
+                    purchase_unit: row.get(5)?,
+                    consumption_unit: row.get(6)?,
+                    conversion_factor: row.get(7)?,
+                })
             },
         )?)
     }
@@ -194,7 +204,9 @@ impl<'a> OrderRepository<'a> {
         order_id: &str,
     ) -> Result<Vec<SupplierOrderItem>, AppError> {
         Ok(self.executor.query_all(
-            r#"SELECT oi.id, oi.order_id, oi.product_id, p.name, oi.quantity, oi.unit_price, oi.total_cost, oi.unit_id, oi.fiscal_year
+            r#"SELECT oi.id, oi.order_id, oi.product_id, p.name, oi.quantity, oi.unit_price, oi.total_cost, oi.unit_id, oi.fiscal_year,
+                       oi.purchase_unit, oi.consumption_unit, oi.conversion_factor,
+                       oi.consumption_quantity
                FROM supplier_order_items oi
                JOIN products p ON oi.product_id = p.id
                WHERE oi.order_id = ?1"#,
@@ -210,6 +222,13 @@ impl<'a> OrderRepository<'a> {
                     total_cost: numeric_row::money_col(6, row.get::<_, i64>(6)?)?,
                     unit_id: row.get(7)?,
                     fiscal_year: row.get(8)?,
+                    purchase_unit: row.get(9)?,
+                    consumption_unit: row.get(10)?,
+                    conversion_factor: row.get(11)?,
+                    consumption_quantity: match row.get::<_, Option<i64>>(12)? {
+                        Some(v) => Some(numeric_row::qty_col(12, v)?),
+                        None => None,
+                    },
                 })
             },
         )?)

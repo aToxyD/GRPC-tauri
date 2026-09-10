@@ -1,6 +1,6 @@
 {
-  "generated": "2026-09-03T00:00:00.000Z",
-  "totalTypes": 124,
+  "generated": "2026-09-10T00:00:00.000Z",
+  "totalTypes": 125,
   "types": [
     {
       "name": "LoginRequest",
@@ -217,6 +217,10 @@
         {
           "name": "last_updated",
           "type": "string"
+        },
+        {
+          "name": "consumption_unit",
+          "type": "number | null"
         }
       ]
     },
@@ -322,6 +326,22 @@
         },
         {
           "name": "fiscal_year",
+          "type": "number | null"
+        },
+        {
+          "name": "purchase_unit",
+          "type": "number | null"
+        },
+        {
+          "name": "consumption_unit",
+          "type": "number | null"
+        },
+        {
+          "name": "conversion_factor",
+          "type": "number | null"
+        },
+        {
+          "name": "consumption_quantity",
           "type": "number | null"
         }
       ]
@@ -1968,6 +1988,10 @@
         {
           "name": "total_active_layers",
           "type": "number"
+        },
+        {
+          "name": "warnings",
+          "type": "InventoryCoverageWarning[]"
         }
       ]
     },
@@ -3125,6 +3149,28 @@
         {
           "name": "tva_rate",
           "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "InventoryCoverageWarning",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "product_name",
+          "type": "string"
+        },
+        {
+          "name": "message",
+          "type": "string"
         }
       ]
     }

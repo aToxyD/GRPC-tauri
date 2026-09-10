@@ -19,6 +19,9 @@ pub(crate) struct InventoryFifoLayerRow {
     pub received_at: String,
     pub qty_remaining: f64,
     pub unit_cost: f64,
+    /// SEC-087 Phase 5: presence of a purchase snapshot on the layer
+    /// (used for advisory snapshot-coverage warnings only).
+    pub purchase_unit_cost: Option<f64>,
 }
 
 pub struct FifoLayerRepository<'a> {
@@ -43,10 +46,100 @@ impl<'a> FifoLayerRepository<'a> {
         created_by: &str,
         origin_fiscal_year: i32,
     ) -> AppResult<String> {
-        let id = Uuid::new_v4().to_string();
-
         let unit_cost_scaled = numeric_row::money_scaled(unit_cost)?;
         let qty_original_scaled = numeric_row::qty_scaled(qty_original)?;
+        self.insert_layer(
+            unit_id,
+            product_id,
+            source_type,
+            source_id,
+            unit_cost_scaled,
+            qty_original_scaled,
+            None,
+            None,
+            None,
+            None,
+            None,
+            received_at,
+            created_by,
+            origin_fiscal_year,
+        )
+    }
+
+    /// Exact-typed layer creation (SEC-087 Phase 5). Quantities and costs are
+    /// expressed in CONSUMPTION units; the purchase-side snapshot preserves the
+    /// exact historical purchase quantity/cost so procurement can be
+    /// reconstructed while FIFO valuation stays TTC-in-consumption-units.
+    ///
+    /// ADR-0048 / Option A: `unit_cost` keeps full `Decimal` precision and is
+    /// rounded to the cent exactly once here (`Money::to_scaled_i64`), at layer
+    /// creation. No running remainder is carried; the bounded residual is
+    /// `≤ 0.005 × consumption_quantity`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_layer_typed(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+        source_type: &str,
+        source_id: Option<&str>,
+        unit_cost: Money,
+        qty_original: Quantity,
+        purchase_quantity: Option<Quantity>,
+        purchase_unit_cost: Option<Money>,
+        purchase_unit: Option<i32>,
+        consumption_unit: Option<i32>,
+        conversion_factor: Option<i32>,
+        received_at: &str,
+        created_by: &str,
+        origin_fiscal_year: i32,
+    ) -> AppResult<String> {
+        let unit_cost_scaled = unit_cost.to_scaled_i64()?;
+        let qty_original_scaled = qty_original.to_scaled_i64()?;
+        let purchase_quantity_scaled = match purchase_quantity {
+            Some(q) => Some(q.to_scaled_i64()?),
+            None => None,
+        };
+        let purchase_unit_cost_scaled = match purchase_unit_cost {
+            Some(m) => Some(m.to_scaled_i64()?),
+            None => None,
+        };
+        self.insert_layer(
+            unit_id,
+            product_id,
+            source_type,
+            source_id,
+            unit_cost_scaled,
+            qty_original_scaled,
+            purchase_quantity_scaled,
+            purchase_unit_cost_scaled,
+            purchase_unit,
+            consumption_unit,
+            conversion_factor,
+            received_at,
+            created_by,
+            origin_fiscal_year,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_layer(
+        &self,
+        unit_id: &str,
+        product_id: &str,
+        source_type: &str,
+        source_id: Option<&str>,
+        unit_cost_scaled: i64,
+        qty_original_scaled: i64,
+        purchase_quantity_scaled: Option<i64>,
+        purchase_unit_cost_scaled: Option<i64>,
+        purchase_unit: Option<i32>,
+        consumption_unit: Option<i32>,
+        conversion_factor: Option<i32>,
+        received_at: &str,
+        created_by: &str,
+        origin_fiscal_year: i32,
+    ) -> AppResult<String> {
+        let id = Uuid::new_v4().to_string();
 
         self.executor
             .execute(
@@ -54,8 +147,9 @@ impl<'a> FifoLayerRepository<'a> {
             INSERT INTO fifo_stock_layers (
                 id, unit_id, product_id, source_type, source_id,
                 unit_cost, qty_original, qty_remaining, received_at, created_by,
-                origin_fiscal_year
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                origin_fiscal_year, purchase_quantity, purchase_unit_cost,
+                purchase_unit, consumption_unit, conversion_factor
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             "#,
                 params![
                     id,
@@ -68,7 +162,12 @@ impl<'a> FifoLayerRepository<'a> {
                     qty_original_scaled, // qty_remaining starts equal to qty_original
                     received_at,
                     created_by,
-                    origin_fiscal_year
+                    origin_fiscal_year,
+                    purchase_quantity_scaled,
+                    purchase_unit_cost_scaled,
+                    purchase_unit,
+                    consumption_unit,
+                    conversion_factor
                 ],
             )
             .map_err(AppError::from)?;
@@ -237,27 +336,14 @@ impl<'a> FifoLayerRepository<'a> {
                 r#"
             SELECT id, unit_id, product_id, source_type, source_id,
                    unit_cost, qty_original, qty_remaining, received_at, created_by,
-                   origin_fiscal_year
+                   origin_fiscal_year, purchase_quantity, purchase_unit_cost,
+                   purchase_unit, consumption_unit, conversion_factor
             FROM fifo_stock_layers
             WHERE unit_id = ?1 AND product_id = ?2
             ORDER BY received_at ASC, id ASC
             "#,
                 params![unit_id, product_id],
-                |row| {
-                    Ok(FifoStockLayer {
-                        id: row.get(0)?,
-                        unit_id: row.get(1)?,
-                        product_id: row.get(2)?,
-                        source_type: row.get(3)?,
-                        source_id: row.get(4)?,
-                        unit_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
-                        qty_original: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
-                        qty_remaining: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
-                        received_at: row.get(8)?,
-                        created_by: row.get(9)?,
-                        origin_fiscal_year: row.get(10)?,
-                    })
-                },
+                Self::map_fifo_layer_row,
             )
             .map_err(AppError::from)
     }
@@ -369,29 +455,41 @@ impl<'a> FifoLayerRepository<'a> {
                 r#"
             SELECT id, unit_id, product_id, source_type, source_id,
                    unit_cost, qty_original, qty_remaining, received_at, created_by,
-                   origin_fiscal_year
+                   origin_fiscal_year, purchase_quantity, purchase_unit_cost,
+                   purchase_unit, consumption_unit, conversion_factor
             FROM fifo_stock_layers
             WHERE unit_id = ?1 AND product_id = ?2 AND qty_remaining > 0
             ORDER BY received_at ASC, id ASC
             "#,
                 params![unit_id, product_id],
-                |row| {
-                    Ok(FifoStockLayer {
-                        id: row.get(0)?,
-                        unit_id: row.get(1)?,
-                        product_id: row.get(2)?,
-                        source_type: row.get(3)?,
-                        source_id: row.get(4)?,
-                        unit_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
-                        qty_original: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
-                        qty_remaining: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
-                        received_at: row.get(8)?,
-                        created_by: row.get(9)?,
-                        origin_fiscal_year: row.get(10)?,
-                    })
-                },
+                Self::map_fifo_layer_row,
             )
             .map_err(AppError::from)
+    }
+
+    /// Row mapper for `fifo_stock_layers` reads, including the SEC-087 Phase 5
+    /// purchase snapshot fields.
+    fn map_fifo_layer_row(
+        row: &rusqlite::Row<'_>,
+    ) -> rusqlite::Result<crate::models::fifo::FifoStockLayer> {
+        Ok(FifoStockLayer {
+            id: row.get(0)?,
+            unit_id: row.get(1)?,
+            product_id: row.get(2)?,
+            source_type: row.get(3)?,
+            source_id: row.get(4)?,
+            unit_cost: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
+            qty_original: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+            qty_remaining: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
+            received_at: row.get(8)?,
+            created_by: row.get(9)?,
+            origin_fiscal_year: row.get(10)?,
+            purchase_quantity: numeric_row::opt_qty_col(11, row.get(11)?)?,
+            purchase_unit_cost: numeric_row::opt_money_col(12, row.get(12)?)?,
+            purchase_unit: row.get(13)?,
+            consumption_unit: row.get(14)?,
+            conversion_factor: row.get(15)?,
+        })
     }
 
     /// Returns all active FIFO layers grouped by product for the inventory page view.
@@ -403,7 +501,8 @@ impl<'a> FifoLayerRepository<'a> {
             .query_all(
                 r#"
             SELECT f.id, f.product_id, p.name, f.source_type,
-                   f.received_at, f.qty_remaining, f.unit_cost
+                   f.received_at, f.qty_remaining, f.unit_cost,
+                   f.purchase_unit_cost
             FROM fifo_stock_layers f
             JOIN products p ON f.product_id = p.id
             WHERE f.unit_id = ?1 AND f.qty_remaining > 0
@@ -419,6 +518,7 @@ impl<'a> FifoLayerRepository<'a> {
                         received_at: row.get(4)?,
                         qty_remaining: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
                         unit_cost: numeric_row::money_col(6, row.get::<_, i64>(6)?)?,
+                        purchase_unit_cost: numeric_row::opt_money_col(7, row.get(7)?)?,
                     })
                 },
             )

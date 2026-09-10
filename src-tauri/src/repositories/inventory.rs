@@ -19,43 +19,49 @@ impl<'a> InventoryRepository<'a> {
         Self { executor }
     }
 
-    /// Get stock for a specific product
+    /// Get stock for a specific product (legacy default key: NULL
+    /// consumption unit).
     pub fn get_stock(&self, product_id: &str) -> Result<Option<InventoryStock>, AppError> {
+        self.get_stock_typed(product_id, None)
+    }
+
+    /// Get stock for a product keyed by its consumption-unit identity
+    /// (SEC-087 Phase 5). `None` selects the legacy (pre-Phase-5) row.
+    pub fn get_stock_typed(
+        &self,
+        product_id: &str,
+        consumption_unit: Option<i32>,
+    ) -> Result<Option<InventoryStock>, AppError> {
+        let key = consumption_unit.unwrap_or(-1);
         let result = self.executor.query_row_optional(
-            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated 
-                   FROM inventory_stocks s 
-                   JOIN products p ON s.product_id = p.id 
-                   WHERE s.product_id = ?1"#,
-            [product_id],
-            |row| {
-                let last_updated_str: String = row.get(5)?;
-                let last_updated = crate::errors::parse_datetime_rfc3339(&last_updated_str)
-                    .map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    })?;
-                Ok(InventoryStock {
-                    id: row.get(0)?,
-                    product_id: row.get(1)?,
-                    product_name: row.get(2)?,
-                    quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
-                    unit: row.get(4)?,
-                    last_updated,
-                })
-            },
+            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated,
+                      s.consumption_unit
+                 FROM inventory_stocks s
+                 JOIN products p ON s.product_id = p.id
+                 WHERE s.product_id = ?1 AND IFNULL(s.consumption_unit, -1) = ?2"#,
+            params![product_id, key],
+            Self::map_stock_row,
         )?;
         Ok(result)
     }
 
-    /// Check if stock exists for a given product
+    /// Check if stock exists for a given product keyed by its authoritative
+    /// consumption-unit identity (SEC-087 Phase 5).
+    ///
+    /// The existence check must not scan every `inventory_stocks` row of the
+    /// product: for a configured product only the `(product_id, consumption_unit)`
+    /// row counts, while a legacy unconfigured product matches its NULL-keyed row.
+    /// The unit is resolved from the product configuration — never from the
+    /// caller — so identity stays under single ownership (AGENTS.md A1/A3).
     pub fn stock_exists_for_product(&self, product_id: &str) -> Result<bool, AppError> {
         let exists = self
             .executor
             .query_row_optional(
-                "SELECT 1 FROM inventory_stocks WHERE product_id = ?1",
+                "SELECT 1
+                   FROM inventory_stocks s
+                   JOIN products p ON p.id = s.product_id
+                  WHERE s.product_id = ?1
+                    AND IFNULL(s.consumption_unit, -1) = IFNULL(p.consumption_unit, -1)",
                 [product_id],
                 |_row| Ok(()),
             )?
@@ -79,16 +85,23 @@ impl<'a> InventoryRepository<'a> {
         Ok(())
     }
 
-    /// Create initial empty stock for a newly imported product
+    /// Create initial empty stock for a newly created product.
+    ///
+    /// `consumption_unit` is the product's authoritative consumption-unit key
+    /// (SEC-087 Phase 5): `Some(code)` for a fully configured product, `None`
+    /// for a legacy unconfigured product (sync-imported rows, pre-Phase-5 rows).
+    /// The caller resolves the key from product configuration; this repository
+    /// never invents unit codes.
     pub fn create_initial_stock_for_product(
         &self,
         stock_id: &str,
         product_id: &str,
+        consumption_unit: Option<i32>,
         now: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, ?2, 0, 'unit', ?3)",
-            rusqlite::params![stock_id, product_id, now],
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated, consumption_unit) VALUES (?1, ?2, 0, 'unit', ?3, ?4)",
+            rusqlite::params![stock_id, product_id, now, consumption_unit],
         )?;
         Ok(())
     }
@@ -96,46 +109,71 @@ impl<'a> InventoryRepository<'a> {
     /// Get all stocks
     pub fn get_all_stocks(&self) -> Result<Vec<InventoryStock>, AppError> {
         Ok(self.executor.query_all(
-            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated
+            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated,
+                      s.consumption_unit
                FROM inventory_stocks s
                JOIN products p ON s.product_id = p.id
                ORDER BY p.name"#,
             [],
-            |row| {
-                let last_updated_str: String = row.get(5)?;
-                let last_updated = crate::errors::parse_datetime_rfc3339(&last_updated_str)
-                    .map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    })?;
-                Ok(InventoryStock {
-                    id: row.get(0)?,
-                    product_id: row.get(1)?,
-                    product_name: row.get(2)?,
-                    quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
-                    unit: row.get(4)?,
-                    last_updated,
-                })
-            },
+            Self::map_stock_row,
         )?)
     }
 
-    /// Update stock quantity for a product (wire f64 → scaled-3 INTEGER at the
-    /// repository write boundary, exactly once through Quantity).
+    /// Update stock quantity for a product (legacy default key: NULL
+    /// consumption unit).
     pub fn update_stock(&self, product_id: &str, quantity: f64) -> Result<(), AppError> {
+        self.update_stock_typed(product_id, None, quantity)
+    }
+
+    /// Upsert a stock quantity for a product keyed by consumption-unit identity
+    /// (SEC-087 Phase 5). `None` addresses the legacy (pre-Phase-5) row.
+    ///
+    /// The legacy `update_stock` was a bare UPDATE that silently no-oped when no
+    /// stock row existed (latent gap on the receipt path). This is now an
+    /// upsert: an insert-on-miss guarantees the keyed row exists before the
+    /// quantity is written, so stock writes never disappear silently.
+    pub fn update_stock_typed(
+        &self,
+        product_id: &str,
+        consumption_unit: Option<i32>,
+        quantity: f64,
+    ) -> Result<(), AppError> {
         let quantity_scaled = numeric_row::qty_scaled(quantity)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let key = consumption_unit.unwrap_or(-1);
         self.executor.execute(
-            "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2 WHERE product_id = ?3",
-            params![
-                quantity_scaled,
-                &chrono::Utc::now().to_rfc3339(),
-                &product_id
-            ],
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated, consumption_unit)
+             VALUES (?1, ?2, 0, 'unit', ?3, ?4)",
+            params![uuid::Uuid::new_v4().to_string(), product_id, now, consumption_unit],
+        )?;
+        self.executor.execute(
+            "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2, consumption_unit = ?3
+             WHERE product_id = ?4 AND IFNULL(consumption_unit, -1) = ?5",
+            params![quantity_scaled, now, consumption_unit, product_id, key],
         )?;
         Ok(())
+    }
+
+    /// Shared row mapper for `inventory_stocks` reads.
+    fn map_stock_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InventoryStock> {
+        let last_updated_str: String = row.get(5)?;
+        let last_updated =
+            crate::errors::parse_datetime_rfc3339(&last_updated_str).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+        Ok(InventoryStock {
+            id: row.get(0)?,
+            product_id: row.get(1)?,
+            product_name: row.get(2)?,
+            quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
+            unit: row.get(4)?,
+            last_updated,
+            consumption_unit: row.get(6)?,
+        })
     }
 
     /// Get stock summary for all products.
@@ -143,6 +181,13 @@ impl<'a> InventoryRepository<'a> {
     /// When `fiscal_year` is `Some`, movement-based statistics (total_in,
     /// total_out, movement_count) are scoped to that fiscal year only.
     /// `current_quantity` is always the real inventory stock, unfiltered.
+    ///
+    /// The `inventory_stocks` join is aligned on the product's authoritative
+    /// consumption-unit key (SEC-087 Phase 5): a configured product reads only
+    /// its `(product_id, consumption_unit)` row, a legacy unconfigured product
+    /// reads its NULL-keyed row. Exactly one stock identity is joined per
+    /// product, so a product with coexisting NULL and keyed rows never produces
+    /// duplicate summaries.
     pub fn get_stock_summary(
         &self,
         fiscal_year: Option<i32>,
@@ -158,6 +203,7 @@ impl<'a> InventoryRepository<'a> {
                 COALESCE(sm.movement_count, 0) as movement_count
             FROM products p
             LEFT JOIN inventory_stocks s ON p.id = s.product_id
+                AND IFNULL(s.consumption_unit, -1) = IFNULL(p.consumption_unit, -1)
             LEFT JOIN (
                 SELECT 
                     product_id,

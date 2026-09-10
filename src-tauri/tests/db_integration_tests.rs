@@ -66,7 +66,7 @@ pub fn create_test_product(db: &Database, id: &str, name: &str) -> String {
     let inventory_repo = InventoryRepository::new(executor);
     let stock_id = Uuid::new_v4().to_string();
     inventory_repo
-        .create_initial_stock_for_product(&stock_id, id, &now)
+        .create_initial_stock_for_product(&stock_id, id, None, &now)
         .unwrap();
 
     id.to_string()

@@ -82,6 +82,8 @@ export interface InventoryStock {
   quantity: number;
   unit: string;
   last_updated: string;
+  /** SEC-087 Phase 5: consumption-unit key of the stock row. */
+  consumption_unit?: number | null;
 }
 
 export interface StockCheckResult {
@@ -112,11 +114,19 @@ export interface SupplierOrderItem {
   order_id: string;
   product_id: string;
   product_name: string;
+  // Purchase quantity (the agreed contract unit).
   quantity: number;
+  // TTC price per purchase unit.
   unit_price: number;
   total_cost: number;
   unit_id?: string | null;
   fiscal_year?: number | null;
+  // SEC-087 Phase 5: purchase-to-consumption unit snapshot (all-or-nothing).
+  purchase_unit?: number | null;
+  consumption_unit?: number | null;
+  conversion_factor?: number | null;
+  // Purchase amount expressed in consumption units at creation.
+  consumption_quantity?: number | null;
 }
 
 export interface CreateOrderRequest {
@@ -820,6 +830,15 @@ export interface InventoryStockPageView {
   total_inventory_value: number;
   total_products: number;
   total_active_layers: number;
+  /** SEC-087 Phase 5 advisory snapshot-coverage warnings (display only). */
+  warnings?: InventoryCoverageWarning[];
+}
+
+export interface InventoryCoverageWarning {
+  code: 'STOCK_WITHOUT_PURCHASE_SNAPSHOT' | 'PURCHASE_SNAPSHOT_WITHOUT_STOCK';
+  product_id: string;
+  product_name: string;
+  message: string;
 }
 
 // ─── Observability Types ──────────────────────────────────────────────────────

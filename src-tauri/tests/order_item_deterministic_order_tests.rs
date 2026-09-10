@@ -221,6 +221,12 @@ fn insert_item_and_leg(
             quantity * unit_price,
             unit_id,
             fy,
+            // SEC-087 Phase 5: direct inserts carry no unit snapshot (legacy
+            // items convert 1:1 at confirmation — behavior preserved).
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
     ex.order_allocations()
@@ -239,7 +245,7 @@ fn insert_item_and_leg(
 fn confirmation_rows(
     db: &grpc_lib::db::Database,
     order_id: &str,
-) -> Vec<(String, f64, String, f64, String)> {
+) -> Vec<grpc_lib::models::ConfirmationItemRow> {
     db.executor()
         .orders()
         .get_order_items_for_confirmation(order_id)
@@ -390,14 +396,17 @@ fn confirmation_items_ordered_by_allocation_priority_across_fiscal_years() {
     let rows = confirmation_rows(&db, &f.order_id);
     assert_eq!(rows.len(), 2, "two portions -> two rows");
     assert_eq!(
-        rows[0].4, f.a.allocation_id,
+        rows[0].allocation_id, f.a.allocation_id,
         "older fiscal year must sort first"
     );
-    assert_eq!(rows[0].1, 200.0, "portion A quantity");
-    assert_eq!(rows[0].3, 100.0, "portion A price");
-    assert_eq!(rows[1].4, f.b.allocation_id, "younger fiscal year second");
-    assert_eq!(rows[1].1, 100.0, "portion B quantity");
-    assert_eq!(rows[1].3, 120.0, "portion B price");
+    assert_eq!(rows[0].quantity, 200.0, "portion A quantity");
+    assert_eq!(rows[0].unit_price, 100.0, "portion A price");
+    assert_eq!(
+        rows[1].allocation_id, f.b.allocation_id,
+        "younger fiscal year second"
+    );
+    assert_eq!(rows[1].quantity, 100.0, "portion B quantity");
+    assert_eq!(rows[1].unit_price, 120.0, "portion B price");
 }
 
 #[test]
@@ -472,12 +481,18 @@ fn confirmation_items_ordered_by_created_at_then_allocation_id_within_fiscal_yea
 
     let rows = confirmation_rows(&db, &order_id);
     assert_eq!(rows.len(), 3);
-    assert_eq!(rows[0].4, c2.allocation_id, "earlier created_at first");
     assert_eq!(
-        rows[1].4, c3.allocation_id,
+        rows[0].allocation_id, c2.allocation_id,
+        "earlier created_at first"
+    );
+    assert_eq!(
+        rows[1].allocation_id, c3.allocation_id,
         "equal created_at -> id ASC ('m' < 'n')"
     );
-    assert_eq!(rows[2].4, c1.allocation_id, "later created_at last");
+    assert_eq!(
+        rows[2].allocation_id, c1.allocation_id,
+        "later created_at last"
+    );
 }
 
 #[test]
@@ -491,14 +506,14 @@ fn same_supplier_multi_portion_shape_has_one_row_per_portion_and_one_leg_per_ite
         2,
         "one SupplierOrderItem per allocation portion"
     );
-    assert_eq!(rows[0].0, f.product_id);
-    assert_eq!(rows[1].0, f.product_id);
-    assert_eq!(rows[0].1, 200.0);
-    assert_eq!(rows[0].3, 100.0);
-    assert_eq!(rows[0].4, f.a.allocation_id);
-    assert_eq!(rows[1].1, 100.0);
-    assert_eq!(rows[1].3, 120.0);
-    assert_eq!(rows[1].4, f.b.allocation_id);
+    assert_eq!(rows[0].product_id, f.product_id);
+    assert_eq!(rows[1].product_id, f.product_id);
+    assert_eq!(rows[0].quantity, 200.0);
+    assert_eq!(rows[0].unit_price, 100.0);
+    assert_eq!(rows[0].allocation_id, f.a.allocation_id);
+    assert_eq!(rows[1].quantity, 100.0);
+    assert_eq!(rows[1].unit_price, 120.0);
+    assert_eq!(rows[1].allocation_id, f.b.allocation_id);
 
     assert_eq!(
         leg_count(&db, "item-a-2026"),

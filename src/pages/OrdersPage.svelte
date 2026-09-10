@@ -48,6 +48,16 @@
   // @category TransientState
   let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
 
+  // SEC-087 Phase 5: presentation-only label mapping for persisted unit codes
+  // (mirrors the backend UnitMeasure closed set; frontend never decides units).
+  function unitLabel(code: number): string {
+    const labels: Record<number, string> = {
+      1: 'كلغ', 2: 'لتر', 3: 'دلو', 4: 'قارورة', 5: 'صفيحة',
+      6: 'قطعة', 7: 'بيضة', 8: 'علبة', 9: 'كيس', 10: 'خبزة',
+    };
+    return labels[code] ?? `${code}`;
+  }
+
   onMount(async () => {
     loadData();
   });
@@ -361,8 +371,18 @@
               {#each orderItems as item}
                 <tr class="bg-white dark:bg-gray-900">
                   <td class="px-4 py-3">{item.product_name}</td>
-                  <td class="px-4 py-3 text-left">{item.quantity.toFixed(2)}</td>
-                  <td class="px-4 py-3 text-left">{item.unit_price.toFixed(2)} DA</td>
+                  <td class="px-4 py-3 text-left">
+                    {item.quantity.toFixed(2)}
+                    {#if item.purchase_unit != null}
+                      <span class="text-xs text-gray-400">({unitLabel(item.purchase_unit)})</span>
+                    {/if}
+                  </td>
+                  <td class="px-4 py-3 text-left">
+                    {item.unit_price.toFixed(2)} DA
+                    {#if item.purchase_unit != null}
+                      <span class="text-xs text-gray-400">/{unitLabel(item.purchase_unit)}</span>
+                    {/if}
+                  </td>
                   <td class="px-4 py-3 text-left font-medium">{item.total_cost.toFixed(2)} DA</td>
                 </tr>
               {/each}

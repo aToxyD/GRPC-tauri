@@ -41,6 +41,22 @@ pub(crate) fn rate_col(idx: usize, scaled: i64) -> Result<f64, SqliteError> {
         .map_err(|e| conversion_error(idx, e))
 }
 
+/// Reads an optional scaled-3 Quantity column (`NULL` → `None`).
+pub(crate) fn opt_qty_col(idx: usize, scaled: Option<i64>) -> Result<Option<f64>, SqliteError> {
+    match scaled {
+        Some(v) => Ok(Some(qty_col(idx, v)?)),
+        None => Ok(None),
+    }
+}
+
+/// Reads an optional scaled-2 Money column (`NULL` → `None`).
+pub(crate) fn opt_money_col(idx: usize, scaled: Option<i64>) -> Result<Option<f64>, SqliteError> {
+    match scaled {
+        Some(v) => Ok(Some(money_col(idx, v)?)),
+        None => Ok(None),
+    }
+}
+
 /// Wire f64 quantity → scaled-3 INTEGER, exactly once through the domain type.
 pub(crate) fn qty_scaled(wire: f64) -> Result<i64, NumericError> {
     legacy_float::quantity_from_f64(wire)?.to_scaled_i64()

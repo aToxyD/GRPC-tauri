@@ -156,7 +156,13 @@ CREATE TABLE IF NOT EXISTS product_tax_classifications (
 
 CREATE TABLE IF NOT EXISTS inventory_stocks (
     id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL UNIQUE,
+    -- SEC-087 Phase 5: operational stock identity is (product_id,
+    -- consumption_unit). A product may carry separate rows only for distinct
+    -- consumption units (a product master has exactly one chosen unit, so in
+    -- practice one row per product). Legacy rows with NULL consumption_unit
+    -- remain valid: NULLs are distinct under the composite UNIQUE, preserving
+    -- pre-Phase-5 single-row-per-product data.
+    product_id TEXT NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
     unit TEXT DEFAULT 'unit',
     -- SEC-087: consumption-unit key. Supersedes the free-text `unit` as the
@@ -166,6 +172,7 @@ CREATE TABLE IF NOT EXISTS inventory_stocks (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    UNIQUE(product_id, consumption_unit),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
@@ -764,6 +771,13 @@ CREATE INDEX IF NOT EXISTS idx_daily_reports_fiscal_year ON daily_reports(fiscal
 CREATE INDEX IF NOT EXISTS idx_products_year ON products(year);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 CREATE INDEX IF NOT EXISTS idx_inventory_stocks_product_id ON inventory_stocks(product_id);
+-- SEC-087 Phase 5: SQLite treats NULLs as DISTINCT under the composite
+-- UNIQUE(product_id, consumption_unit), so a second NULL-keyed row is not
+-- deduplicated by OR IGNORE. This partial unique index restores exactly-once
+-- legacy rows per product (pre-Phase-5 semantics) while leaving distinct
+-- consumption-unit rows (and one legacy row) freely coexisting.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_stocks_legacy_one_per_product
+    ON inventory_stocks(product_id) WHERE consumption_unit IS NULL;
 
 -- Units & Users
 CREATE INDEX IF NOT EXISTS idx_units_wilaya_code ON units(wilaya_code);

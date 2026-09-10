@@ -31,10 +31,22 @@ impl<'a> StockMovementService<'a> {
             .assert_fiscal_year_open(fiscal_year)?;
 
         let inventory_repo = self.executor.inventory();
-        let held_before = match inventory_repo.get_stock(&movement.product_id)? {
-            Some(s) => s.quantity,
-            None => 0.0,
-        };
+
+        // SEC-087 Phase 5: the stock identity is `(product_id, consumption_unit)`.
+        // The consumption-unit key comes from the product configuration (single
+        // source of truth); legacy products without a config key the legacy
+        // NULL-consumption-unit stock row.
+        let consumption_unit = self
+            .executor
+            .products()
+            .get_product_config_codes(&movement.product_id)?
+            .and_then(|c| c.consumption_unit);
+
+        let held_before =
+            match inventory_repo.get_stock_typed(&movement.product_id, consumption_unit)? {
+                Some(s) => s.quantity,
+                None => 0.0,
+            };
         // ADR-0048: balances computed exactly on `Decimal`; `f64` values are
         // converted only at the repo read and write boundaries. An OUT that
         // would overdraft the stock fails closed (no silent `max(0.0)` clamp).
@@ -68,7 +80,11 @@ impl<'a> StockMovementService<'a> {
             &now,
             fiscal_year,
         )?;
-        inventory_repo.update_stock(&movement.product_id, balance_after_wire)?;
+        inventory_repo.update_stock_typed(
+            &movement.product_id,
+            consumption_unit,
+            balance_after_wire,
+        )?;
         Ok(id)
     }
 

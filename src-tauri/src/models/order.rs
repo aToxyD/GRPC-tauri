@@ -35,13 +35,43 @@ pub struct SupplierOrderItem {
     pub order_id: String,
     pub product_id: String,
     pub product_name: String,
+    /// Purchase quantity (the agreed unit of the contract).
     pub quantity: f64,
+    /// TTC price per purchase unit (backend-authoritative).
     pub unit_price: f64,
     pub total_cost: f64,
     #[serde(default)]
     pub unit_id: Option<String>,
     #[serde(default)]
     pub fiscal_year: Option<i32>,
+    /// SEC-087 Phase 5: purchase→consumption unit snapshot captured at order
+    /// creation (all-or-nothing; all `None` = legacy pre-Phase-5 item).
+    #[serde(default)]
+    pub purchase_unit: Option<i32>,
+    #[serde(default)]
+    pub consumption_unit: Option<i32>,
+    #[serde(default)]
+    pub conversion_factor: Option<i32>,
+    /// Purchase quantity converted to consumption units at creation.
+    #[serde(default)]
+    pub consumption_quantity: Option<f64>,
+}
+
+/// Read-only confirmation input row of ONE supplier order item (SEC-087
+/// Phase 5). Carries the persisted unit snapshot so the receipt converts
+/// purchase→consumption from the immutable creation-time snapshot only.
+#[derive(Debug, Clone)]
+pub struct ConfirmationItemRow {
+    pub product_id: String,
+    /// Purchase quantity (quantity reserved/fulfilled on the allocation).
+    pub quantity: f64,
+    pub product_name: String,
+    /// TTC price per purchase unit.
+    pub unit_price: f64,
+    pub allocation_id: String,
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
 }
 
 /// Order status lifecycle (phantom `Received`/`Cancelled` states removed:

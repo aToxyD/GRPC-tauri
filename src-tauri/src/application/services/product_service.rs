@@ -35,11 +35,16 @@ impl<'a> ProductService<'a> {
         let repo = self.executor.products();
         repo.insert_product(&id, req, year, &config, &now)?;
 
-        // Initialize stock record (orchestration belongs to service).
+        // Initialize stock record keyed by the product's authoritative
+        // consumption-unit identity (SEC-087 Phase 5). `config` is the validated
+        // ProductUnitConfig, so a configured product always gets a keyed row.
         let stock_id = Uuid::new_v4().to_string();
-        self.executor
-            .inventory()
-            .create_initial_stock_for_product(&stock_id, &id, &now)?;
+        self.executor.inventory().create_initial_stock_for_product(
+            &stock_id,
+            &id,
+            Some(config.consumption_unit.code()),
+            &now,
+        )?;
 
         Ok(id)
     }

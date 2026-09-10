@@ -17,8 +17,9 @@ use std::collections::HashMap;
 
 use crate::domain::numeric::{legacy_float, Money, Quantity};
 use crate::domain::pricing::resolver::{
-    plan_request, resolve_supplier_for_item, PlannedPortion, ResolutionCandidate,
+    plan_request, resolve_supplier_for_item, ItemResolution, PlannedPortion, ResolutionCandidate,
 };
+use crate::domain::units::{OrderUnitSnapshot, UnitSnapshotError};
 use crate::domain::validation::{
     check_order_is_editable, validate_create_order_request, validate_update_order_request,
 };
@@ -27,6 +28,15 @@ use crate::models::{
     CreateOrderRequest, NewStockMovement, OrderStatus, StockMovementType, UpdateOrderRequest,
 };
 use crate::repositories::{DbExecutor, RepositoryProvider};
+
+/// One planned order-item leg: input, allocation, authoritative TTC unit price
+/// and the immutable SEC-087 Phase 5 purchase→consumption unit snapshot.
+type ResolutionLeg = (
+    crate::models::OrderItemInput,
+    String,
+    Money,
+    Option<OrderUnitSnapshot>,
+);
 
 /// Service for supplier order business logic
 pub struct OrderService<'a> {
@@ -50,20 +60,13 @@ impl<'a> OrderService<'a> {
         items: &[crate::models::OrderItemInput],
         unit_id: &str,
         current_fiscal_year: i32,
-    ) -> Result<
-        (
-            Vec<(crate::models::OrderItemInput, String, Money)>,
-            String,
-            String,
-            f64,
-        ),
-        AppError,
-    > {
+    ) -> Result<(Vec<ResolutionLeg>, String, String, f64), AppError> {
         let contracts = self.executor.contracts();
 
         let mut resolutions: Vec<(
             crate::models::OrderItemInput,
-            crate::domain::pricing::resolver::ItemResolution,
+            ItemResolution,
+            Option<OrderUnitSnapshot>,
         )> = Vec::new();
         for item in items {
             let candidates =
@@ -76,12 +79,16 @@ impl<'a> OrderService<'a> {
                 current_fiscal_year,
                 &candidates,
             )?;
-            resolutions.push((item.clone(), resolution));
+            // SEC-087 Phase 5: capture the resolved contract's unit snapshot at
+            // creation. Validated ALL-OR-NOTHING: a partial persisted config is a
+            // data defect and fails closed.
+            let snapshot = Self::snapshot_from_resolution(&resolution, &item.product_id)?;
+            resolutions.push((item.clone(), resolution, snapshot));
         }
 
         // Single-supplier rule: every item must resolve to the same supplier.
         let first_supplier = &resolutions[0].1.supplier_id;
-        for (item, resolution) in &resolutions {
+        for (item, resolution, _) in &resolutions {
             if &resolution.supplier_id != first_supplier {
                 return Err(AppError::BusinessLogic(
                     BusinessLogicError::PriceCalculation {
@@ -111,13 +118,13 @@ impl<'a> OrderService<'a> {
             Ok(legacy_float::quantity_from_f64(item.quantity)?)
         };
         let mut total = Money::zero();
-        for (item, res) in &resolutions {
+        for (item, res, _) in &resolutions {
             let line = res.unit_price.checked_mul_quantity(&weight(item)?)?;
             total = total.checked_add(line)?;
         }
-        let legs: Vec<(crate::models::OrderItemInput, String, Money)> = resolutions
+        let legs: Vec<ResolutionLeg> = resolutions
             .into_iter()
-            .map(|(item, res)| (item, res.allocation_id, res.unit_price))
+            .map(|(item, res, snapshot)| (item, res.allocation_id, res.unit_price, snapshot))
             .collect();
 
         Ok((
@@ -128,6 +135,36 @@ impl<'a> OrderService<'a> {
         ))
     }
 
+    /// Build the immutable order-item unit snapshot from a resolution.
+    ///
+    /// All three persisted codes must be present or all absent (legacy). A
+    /// partial set is corrupt persisted state and fails closed. Codes are then
+    /// strictly validated against the closed `1..=10` set and the
+    /// `contract_products` factor invariant.
+    fn snapshot_from_resolution(
+        resolution: &ItemResolution,
+        product_id: &str,
+    ) -> Result<Option<OrderUnitSnapshot>, AppError> {
+        match (
+            resolution.purchase_unit,
+            resolution.consumption_unit,
+            resolution.conversion_factor,
+        ) {
+            (Some(p), Some(c), Some(f)) => Ok(Some(
+                OrderUnitSnapshot::from_codes(Some(p), Some(c), Some(f))
+                    .map_err(|e| Self::snapshot_error(product_id, e))?,
+            )),
+            (None, None, None) => Ok(None),
+            _ => Err(Self::snapshot_error(product_id, UnitSnapshotError::Partial)),
+        }
+    }
+
+    fn snapshot_error(product_id: &str, e: UnitSnapshotError) -> AppError {
+        AppError::BusinessLogic(BusinessLogicError::PriceCalculation {
+            message: format!("بيانات وحدات العقد غير صالحة للمنتج {product_id}: {e}"),
+        })
+    }
+
     /// Reserve entitlement and write order item + reservation-leg rows.
     ///
     /// The order header must already exist (its FK is referenced by items).
@@ -136,14 +173,14 @@ impl<'a> OrderService<'a> {
     /// at the repo write boundary.
     fn reserve_and_write(
         &self,
-        legs: &[(crate::models::OrderItemInput, String, Money)],
+        legs: &[ResolutionLeg],
         order_id: &str,
         unit_id: &str,
         current_fiscal_year: i32,
         now: &str,
     ) -> Result<(), AppError> {
         let contracts = self.executor.contracts();
-        for (item, allocation_id, unit_price) in legs {
+        for (item, allocation_id, unit_price, snapshot) in legs {
             let reserved = contracts.try_increment_reserved(allocation_id, item.quantity)?;
             if reserved == 0 {
                 return Err(AppError::BusinessLogic(
@@ -158,6 +195,32 @@ impl<'a> OrderService<'a> {
             let item_id = uuid::Uuid::new_v4().to_string();
             let quantity = legacy_float::quantity_from_f64(item.quantity)?;
             let total_cost = unit_price.checked_mul_quantity(&quantity)?;
+
+            // SEC-087 Phase 5: persist the ALL-OR-NOTHING unit snapshot + the
+            // creation-time consumption quantity alongside the item.
+            let (
+                purchase_unit_code,
+                consumption_unit_code,
+                conversion_factor,
+                consumption_quantity,
+            ) = match snapshot {
+                Some(snapshot) => {
+                    let factor = snapshot.conversion_factor.expect(
+                        "validated snapshots always carry a conversion factor (legacy is None)",
+                    );
+                    let conversion = snapshot.to_receipt(*unit_price, quantity)?;
+                    (
+                        snapshot.purchase_unit.map(|u| u.code()),
+                        snapshot.consumption_unit.map(|u| u.code()),
+                        Some(factor),
+                        Some(legacy_float::quantity_to_f64(
+                            &conversion.consumption_quantity,
+                        )?),
+                    )
+                }
+                None => (None, None, None, None),
+            };
+
             self.executor.orders().insert_order_item(
                 &item_id,
                 order_id,
@@ -166,6 +229,10 @@ impl<'a> OrderService<'a> {
                 legacy_float::money_to_f64(&total_cost)?,
                 unit_id,
                 current_fiscal_year,
+                purchase_unit_code,
+                consumption_unit_code,
+                conversion_factor,
+                consumption_quantity,
             )?;
             self.executor.order_allocations().insert(
                 &uuid::Uuid::new_v4().to_string(),
@@ -329,11 +396,30 @@ impl<'a> OrderService<'a> {
             )?;
 
             // One item row + one allocation leg per portion (I3/I4), using the
-            // existing exact write path.
-            let legs: Vec<(crate::models::OrderItemInput, String, Money)> = group
+            // existing exact write path. The portion carries the resolved
+            // contract's SEC-087 Phase 5 unit snapshot (all-or-nothing) which
+            // `reserve_and_write` persists onto `supplier_order_items`.
+            let legs: Vec<ResolutionLeg> = group
                 .portions
                 .iter()
                 .map(|portion| {
+                    let snapshot = match (
+                        portion.purchase_unit,
+                        portion.consumption_unit,
+                        portion.conversion_factor,
+                    ) {
+                        (Some(p), Some(c), Some(f)) => Some(
+                            OrderUnitSnapshot::from_codes(Some(p), Some(c), Some(f))
+                                .map_err(|e| Self::snapshot_error(&portion.product_id, e))?,
+                        ),
+                        (None, None, None) => None,
+                        _ => {
+                            return Err(Self::snapshot_error(
+                                &portion.product_id,
+                                UnitSnapshotError::Partial,
+                            ))
+                        }
+                    };
                     Ok::<_, AppError>((
                         crate::models::OrderItemInput {
                             product_id: portion.product_id.clone(),
@@ -341,6 +427,7 @@ impl<'a> OrderService<'a> {
                         },
                         portion.allocation_id.clone(),
                         portion.unit_price,
+                        snapshot,
                     ))
                 })
                 .collect::<Result<_, _>>()?;
@@ -519,9 +606,23 @@ impl<'a> OrderService<'a> {
         // the identical price_ttc; the supplier must be identical to the
         // stored (creation-time) supplier.
         let order_supplier_id = order.supplier_id.clone();
-        let mut legs: Vec<(String, Quantity, Money)> = Vec::new();
+        type ConfirmationLeg = (
+            String,
+            Quantity,
+            Money,
+            crate::domain::units::ReceiptConversion,
+            OrderUnitSnapshot,
+        );
+        let mut legs: Vec<ConfirmationLeg> = Vec::new();
         for recorded in repo.get_order_items_for_confirmation(order_id)? {
-            let (product_id, quantity, _product_name, recorded_price, allocation_id) = recorded;
+            let (product_id, quantity, _product_name, recorded_price, allocation_id) = (
+                recorded.product_id,
+                recorded.quantity,
+                recorded.product_name,
+                recorded.unit_price,
+                recorded.allocation_id,
+            );
+            let recorded_money = legacy_float::money_from_f64(recorded_price)?;
             let mut candidates = contracts.list_resolution_candidates_full(unit_id, &product_id)?;
 
             // Subtract THIS order's still-reserved quantity from the recorded
@@ -569,7 +670,6 @@ impl<'a> OrderService<'a> {
             // Exact price compare (no float epsilon): the recorded price is a
             // serialized copy of the same decimal, so disagreement means the
             // contract moved after creation.
-            let recorded_money = legacy_float::money_from_f64(recorded_price)?;
             if resolution.unit_price != recorded_money {
                 return Err(AppError::BusinessLogic(
                     BusinessLogicError::PriceCalculation {
@@ -596,33 +696,86 @@ impl<'a> OrderService<'a> {
                 .entry(allocation_id.clone())
                 .or_insert(Quantity::zero());
             *converted = converted.checked_add(requested)?;
-            legs.push((product_id, requested, resolution.unit_price));
+
+            // SEC-087 Phase 5: rebuild the item's persisted unit snapshot and
+            // verify immutability against the re-resolved contract. A
+            // fully-NULL persisted snapshot is a legacy pre-Phase-5 order item
+            // and converts 1:1 (the current contract config is irrelevant to
+            // it; it keeps its purchase semantics). A present snapshot MUST
+            // equal the re-resolved one, else the contract moved after creation.
+            let persisted_snapshot = OrderUnitSnapshot::from_codes(
+                recorded.purchase_unit,
+                recorded.consumption_unit,
+                recorded.conversion_factor,
+            )
+            .map_err(|e| Self::snapshot_error(&product_id, e))?;
+            let resolved_snapshot = Self::snapshot_from_resolution(&resolution, &product_id)?;
+            if !persisted_snapshot.is_legacy() {
+                let stable = matches!(
+                    resolved_snapshot,
+                    Some(ref resolved) if resolved == &persisted_snapshot
+                );
+                if !stable {
+                    return Err(AppError::BusinessLogic(
+                        BusinessLogicError::PriceCalculation {
+                            message: format!(
+                                "تم تغيير وحدات العقد للمنتج {product_id} — أعد إنشاء الطلبية"
+                            ),
+                        },
+                    ));
+                }
+            }
+
+            // Exact purchase→consumption conversion (Option A): consumption
+            // quantity exact; consumption-unit cost keeps full `Decimal`
+            // precision and is rounded to the cent exactly ONCE at the FIFO
+            // layer write boundary (no running remainder).
+            let receipt = persisted_snapshot.to_receipt(resolution.unit_price, requested)?;
+            legs.push((
+                product_id,
+                requested,
+                resolution.unit_price,
+                receipt,
+                persisted_snapshot,
+            ));
         }
 
         // Stock movement + FIFO for every item (all within the surrounding tx).
         let now = chrono::Utc::now().to_rfc3339();
-        for (product_id, quantity, unit_price) in &legs {
+        for (product_id, quantity, unit_price, receipt, snapshot) in &legs {
+            // SEC-087 Phase 5: inventory and FIFO are expressed in CONSUMPTION
+            // units. The IN movement quantity is the converted puchase
+            // quantity and its unit cost the converted consumption-unit TTC
+            // cost — the same value (single scale-2 rounding) persisted on the
+            // layer.
             let movement = NewStockMovement {
                 product_id: product_id.clone(),
                 movement_type: StockMovementType::In,
-                quantity: legacy_float::quantity_to_f64(quantity)?,
+                quantity: legacy_float::quantity_to_f64(&receipt.consumption_quantity)?,
                 reference_type: Some("Order".to_string()),
                 reference_id: Some(order_id.to_string()),
                 notes: Some(format!("طلبية من: {}", order.supplier_name)),
                 user_id: user_id.to_string(),
                 username: username.to_string(),
                 unit_id: Some(unit_id.to_string()),
-                unit_cost: Some(legacy_float::money_to_f64(unit_price)?),
+                unit_cost: Some(legacy_float::money_to_f64(
+                    &receipt.unit_cost_consumption_unit,
+                )?),
             };
             stock_repo.record_stock_movement(&movement)?;
 
-            fifo_repo.create_layer(
+            fifo_repo.create_layer_typed(
                 unit_id,
                 product_id,
                 "ORDER",
                 Some(order_id),
-                legacy_float::money_to_f64(unit_price)?,
-                legacy_float::quantity_to_f64(quantity)?,
+                receipt.unit_cost_consumption_unit,
+                receipt.consumption_quantity,
+                Some(*quantity),
+                Some(*unit_price),
+                snapshot.purchase_unit.map(|u| u.code()),
+                snapshot.consumption_unit.map(|u| u.code()),
+                snapshot.conversion_factor,
                 &now,
                 user_id,
                 anchor_fy,

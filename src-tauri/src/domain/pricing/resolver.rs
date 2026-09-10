@@ -40,6 +40,12 @@ pub struct ResolutionCandidate {
     pub supplier_id: String,
     pub supplier_name: String,
     pub price_ttc: Option<Money>,
+    /// SEC-087 Phase 5: persisted purchase→consumption unit snapshot carried
+    /// from `contract_products` (all-or-nothing; all `None` = legacy contract).
+    /// Never used to choose pricing — only snapshotted onto order items.
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
     pub contracted_quantity: Quantity,
     pub fulfilled_quantity: Quantity,
     pub released_quantity: Quantity,
@@ -74,6 +80,11 @@ pub struct ItemResolution {
     pub unit_price: Money,
     /// Allocation leg committed to fulfill/reserve this item's quantity.
     pub allocation_id: String,
+    /// SEC-087 Phase 5: purchase→consumption snapshot of the winning candidate
+    /// (raw persisted codes, all-or-nothing).
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
 }
 
 /// Resolve the supplier + authoritative unit price for a single product
@@ -149,6 +160,9 @@ pub fn resolve_supplier_for_item(
         supplier_id: pick.supplier_id.clone(),
         unit_price,
         allocation_id: pick.allocation_id.clone(),
+        purchase_unit: pick.purchase_unit,
+        consumption_unit: pick.consumption_unit,
+        conversion_factor: pick.conversion_factor,
     })
 }
 
@@ -169,6 +183,11 @@ pub struct PlannedPortion {
     pub supplier_name: String,
     /// Authoritative unit price: the allocation's `price_ttc` (sole source).
     pub unit_price: Money,
+    /// SEC-087 Phase 5: purchase→consumption snapshot of the portion's
+    /// allocation (raw persisted codes, all-or-nothing).
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
     pub quantity: Quantity,
 }
 
@@ -277,6 +296,9 @@ pub fn plan_request(
                 supplier_id: candidate.supplier_id.clone(),
                 supplier_name: candidate.supplier_name.clone(),
                 unit_price,
+                purchase_unit: candidate.purchase_unit,
+                consumption_unit: candidate.consumption_unit,
+                conversion_factor: candidate.conversion_factor,
                 quantity: take,
             });
             remaining_requested = remaining_requested.checked_sub(take)?;
@@ -316,6 +338,9 @@ mod tests {
             supplier_id: format!("sup-{supplier}"),
             supplier_name: supplier.to_string(),
             price_ttc: price_ttc.map(|p| Money::parse_str(p).unwrap()),
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
             contracted_quantity: Quantity::parse_str(contracted).unwrap(),
             fulfilled_quantity: Quantity::parse_str(fulfilled).unwrap(),
             released_quantity: Quantity::parse_str(released).unwrap(),
@@ -326,6 +351,74 @@ mod tests {
 
     fn q(s: &str) -> Quantity {
         Quantity::parse_str(s).unwrap()
+    }
+
+    #[test]
+    fn snapshot_codes_pass_through_resolution() {
+        let mut c = candidate(
+            "a1",
+            2026,
+            "X",
+            "100",
+            "0",
+            "0",
+            "0",
+            "ENDED",
+            Some("30.00"),
+        );
+        c.purchase_unit = Some(8);
+        c.consumption_unit = Some(1);
+        c.conversion_factor = Some(10);
+        let r = resolve_supplier_for_item("u1", "p1", q("10"), 2027, &[c]).unwrap();
+        assert_eq!(r.purchase_unit, Some(8));
+        assert_eq!(r.consumption_unit, Some(1));
+        assert_eq!(r.conversion_factor, Some(10));
+    }
+
+    #[test]
+    fn legacy_candidate_snapshot_is_all_none() {
+        let mut c = candidate(
+            "a1",
+            2026,
+            "X",
+            "100",
+            "0",
+            "0",
+            "0",
+            "ENDED",
+            Some("30.00"),
+        );
+        c.purchase_unit = None;
+        c.consumption_unit = None;
+        c.conversion_factor = None;
+        let r = resolve_supplier_for_item("u1", "p1", q("10"), 2027, &[c]).unwrap();
+        assert_eq!(r.purchase_unit, None);
+        assert_eq!(r.consumption_unit, None);
+        assert_eq!(r.conversion_factor, None);
+    }
+
+    #[test]
+    fn plan_portions_carry_snapshot_codes() {
+        let mut c = candidate(
+            "a1",
+            2026,
+            "X",
+            "100",
+            "0",
+            "0",
+            "0",
+            "ENDED",
+            Some("30.00"),
+        );
+        c.purchase_unit = Some(8);
+        c.consumption_unit = Some(1);
+        c.conversion_factor = Some(10);
+        let candidates = candidate_map(&[(product("p1"), vec![c])]);
+        let portions = plan_request("u1", &[(product("p1"), q("10"))], 2027, &candidates).unwrap();
+        assert_eq!(portions.len(), 1);
+        assert_eq!(portions[0].purchase_unit, Some(8));
+        assert_eq!(portions[0].consumption_unit, Some(1));
+        assert_eq!(portions[0].conversion_factor, Some(10));
     }
 
     #[test]
