@@ -1,11 +1,13 @@
-import { safeInvoke } from '../tauri';
+import { safeInvoke, type CreateOrderResult } from '../tauri';
 import type {
   SupplierOrder, SupplierOrderItem, CreateOrderRequest, UpdateOrderRequest,
 } from '../types';
 
-export async function createSupplierOrder(request: CreateOrderRequest): Promise<{ orderId: string; totalAmount: number }> {
-  const [orderId, totalAmount] = await safeInvoke<[string, number]>('create_supplier_order', { request });
-  return { orderId, totalAmount };
+export type { CreateOrderResult } from '../tauri';
+
+export async function createSupplierOrder(request: CreateOrderRequest): Promise<CreateOrderResult[]> {
+  const created = await safeInvoke<Array<[string, number]>>('create_supplier_order', { request });
+  return created.map(([orderId, totalAmount]) => ({ orderId, totalAmount }));
 }
 
 export async function confirmOrder(orderId: string): Promise<void> {

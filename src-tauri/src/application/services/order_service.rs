@@ -16,7 +16,9 @@
 use std::collections::HashMap;
 
 use crate::domain::numeric::{legacy_float, Money, Quantity};
-use crate::domain::pricing::resolver::resolve_supplier_for_item;
+use crate::domain::pricing::resolver::{
+    plan_request, resolve_supplier_for_item, PlannedPortion, ResolutionCandidate,
+};
 use crate::domain::validation::{
     check_order_is_editable, validate_create_order_request, validate_update_order_request,
 };
@@ -210,6 +212,144 @@ impl<'a> OrderService<'a> {
         self.reserve_and_write(&legs, &id, unit_id, current_fiscal_year, &now)?;
 
         Ok((id, total))
+    }
+
+    /// Create one or more supplier orders for a request (ADR-0056, Phase 4B).
+    ///
+    /// Authoritative multi-supplier creation path used by the IPC command. The
+    /// caller supplies products + quantities only; supplier, allocation and
+    /// price are backend-derived by `plan_request` (I9). The whole request is
+    /// planned COMPLETELY before any write, and every resulting header, item,
+    /// reservation and audit entry is materialized inside the caller's single
+    /// `AuditTxService(CreateOrder)` transaction — any failure aborts
+    /// everything (no partial orders, I8).
+    ///
+    /// Result: exactly one `SupplierOrder` per supplier. Different suppliers
+    /// each get their own header; same-supplier portions share one header
+    /// (ADR-0056 I1/I2, rules 5/9/14). Each planned portion becomes exactly one
+    /// `SupplierOrderItem` row backed by exactly one allocation leg (I3/I4).
+    /// Every produced header is anchored to the caller-resolved current fiscal
+    /// year (I10) and copies the request `reference_number` (rule 26); the
+    /// allocation's own fiscal year is carried only by the allocation itself.
+    pub fn create_supplier_orders(
+        &self,
+        req: &CreateOrderRequest,
+        unit_id: &str,
+        current_fiscal_year: i32,
+    ) -> Result<Vec<(String, f64)>, AppError> {
+        validate_create_order_request(req)?;
+
+        // Plan COMPLETELY before any write: every product's candidates are
+        // fetched first (same transactional snapshot), the whole request is
+        // planned, and only a fully-valid plan proceeds to materialization.
+        let contracts = self.executor.contracts();
+        let mut candidates_by_product: HashMap<String, Vec<ResolutionCandidate>> = HashMap::new();
+        for item in &req.items {
+            if !candidates_by_product.contains_key(&item.product_id) {
+                let candidates =
+                    contracts.list_resolution_candidates_full(unit_id, &item.product_id)?;
+                candidates_by_product.insert(item.product_id.clone(), candidates);
+            }
+        }
+        let requests: Vec<(String, Quantity)> = req
+            .items
+            .iter()
+            .map(|item| {
+                Ok::<_, AppError>((
+                    item.product_id.clone(),
+                    legacy_float::quantity_from_f64(item.quantity)?,
+                ))
+            })
+            .collect::<Result<_, _>>()?;
+
+        let portions = plan_request(
+            unit_id,
+            &requests,
+            current_fiscal_year,
+            &candidates_by_product,
+        )?;
+        if portions.is_empty() {
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::PriceCalculation {
+                    message: "الطلب لا يحتوي على منتجات قابلة للتخطيط".to_string(),
+                },
+            ));
+        }
+
+        // Group planned portions by supplier: one header per supplier, in first
+        // occurrence order (deterministic; the same supplier is never
+        // duplicated across headers).
+        struct SupplierGroup {
+            supplier_id: String,
+            supplier_name: String,
+            portions: Vec<PlannedPortion>,
+        }
+        let mut groups: Vec<SupplierGroup> = Vec::new();
+        let mut group_index: HashMap<String, usize> = HashMap::new();
+        for portion in portions {
+            match group_index.get(&portion.supplier_id).copied() {
+                Some(i) => groups[i].portions.push(portion),
+                None => {
+                    group_index.insert(portion.supplier_id.clone(), groups.len());
+                    groups.push(SupplierGroup {
+                        supplier_id: portion.supplier_id.clone(),
+                        supplier_name: portion.supplier_name.clone(),
+                        portions: vec![portion],
+                    });
+                }
+            }
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let order_date = chrono::Utc::now().date_naive().to_string();
+        let mut results: Vec<(String, f64)> = Vec::new();
+
+        for group in &groups {
+            let order_id = uuid::Uuid::new_v4().to_string();
+
+            // Exact totals: Money × Quantity per portion; f64 appears only at
+            // the repo/wire boundary via legacy_float (ADR-0048).
+            let mut total = Money::zero();
+            for portion in &group.portions {
+                let line = portion.unit_price.checked_mul_quantity(&portion.quantity)?;
+                total = total.checked_add(line)?;
+            }
+            let total_f64 = legacy_float::money_to_f64(&total)?;
+
+            self.executor.orders().create_supplier_order_header(
+                &order_id,
+                &req.reference_number,
+                &group.supplier_id,
+                &group.supplier_name,
+                unit_id,
+                current_fiscal_year,
+                total_f64,
+                &order_date,
+                &now,
+            )?;
+
+            // One item row + one allocation leg per portion (I3/I4), using the
+            // existing exact write path.
+            let legs: Vec<(crate::models::OrderItemInput, String, Money)> = group
+                .portions
+                .iter()
+                .map(|portion| {
+                    Ok::<_, AppError>((
+                        crate::models::OrderItemInput {
+                            product_id: portion.product_id.clone(),
+                            quantity: legacy_float::quantity_to_f64(&portion.quantity)?,
+                        },
+                        portion.allocation_id.clone(),
+                        portion.unit_price,
+                    ))
+                })
+                .collect::<Result<_, _>>()?;
+            self.reserve_and_write(&legs, &order_id, unit_id, current_fiscal_year, &now)?;
+
+            results.push((order_id, total_f64));
+        }
+
+        Ok(results)
     }
 
     pub fn update_supplier_order(

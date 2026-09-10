@@ -122,11 +122,17 @@
         });
         setSuccessWithTimeout('تم تحديث الطلبية بنجاح');
       } else {
-        await createSupplierOrder({
+        const created = await createSupplierOrder({
           reference_number: referenceNumber || null,
           items,
         });
-        setSuccessWithTimeout('تم إنشاء الطلبية بنجاح — سيتم تحديد المورد والسعر تلقائياً حسب كتالوج العقود والالتزامات الجارية');
+        if (created.length > 1) {
+          setSuccessWithTimeout(
+            `تم إنشاء ${created.length} طلبيات بنجاح — وزعت تلقائياً حسب الموردين وكتالوج العقود والالتزامات الجارية`
+          );
+        } else {
+          setSuccessWithTimeout('تم إنشاء الطلبية بنجاح — سيتم تحديد المورد والسعر تلقائياً حسب كتالوج العقود والالتزامات الجارية');
+        }
       }
       closeModal();
       await refreshList();

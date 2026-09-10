@@ -16,15 +16,18 @@ use crate::errors::into_command_error;
 use crate::models::{CreateOrderRequest, SupplierOrder, SupplierOrderItem, UpdateOrderRequest};
 use tauri::State;
 
-/// Create supplier order
+/// Create supplier order(s) for a request.
 ///
-/// Supplier + price are backend-resolved from contract entitlement
-/// (ADR-0055 / SEC-087-F). Unit context is resolved from node settings.
+/// ADR-0056 (Phase 4B): a request may split into MULTIPLE supplier orders —
+/// one per supplier, all planned and materialized atomically inside a single
+/// transaction. Supplier, allocation and price are backend-resolved from
+/// contract entitlement (I9); the caller supplies products + quantities only.
+/// Unit context is resolved from node settings.
 #[tauri::command]
 pub fn create_supplier_order(
     state: State<AppState>,
     request: CreateOrderRequest,
-) -> Result<(String, f64), String> {
+) -> Result<Vec<(String, f64)>, String> {
     let (session, settings) =
         authorize_command(&state, Action::ManageOrders, None).map_err(into_command_error)?;
     state.touch_session();
@@ -38,14 +41,15 @@ pub fn create_supplier_order(
 
     let user_ctx = user_ctx_from_session(&session);
 
-    // Create the order - returns (order_id, total_amount)
-    let (order_id, total) =
+    // Create every resulting (order_id, total_amount) atomically in one
+    // transaction — no partial orders (ADR-0056 I8).
+    let created =
         AuditTxService::execute_with_audit(db, AuditAction::CreateOrder, &user_ctx, |tx| {
-            OrderService::new(tx.executor).create_supplier_order(&request, &unit_id, fiscal_year)
+            OrderService::new(tx.executor).create_supplier_orders(&request, &unit_id, fiscal_year)
         })
         .map_err(into_command_error)?;
 
-    Ok((order_id, total))
+    Ok(created)
 }
 
 /// Confirm supplier order with atomic audit.
@@ -188,7 +192,7 @@ pub fn get_orders(
 pub fn create_order(
     state: State<AppState>,
     request: CreateOrderRequest,
-) -> Result<(String, f64), String> {
+) -> Result<Vec<(String, f64)>, String> {
     create_supplier_order(state, request)
 }
 
