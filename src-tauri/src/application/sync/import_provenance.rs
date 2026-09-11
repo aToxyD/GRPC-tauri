@@ -49,7 +49,9 @@ pub fn products_source_allowed_for_unit(importer_wilaya_code: &str, source_node_
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
+    use crate::application::sync::{
+        PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+    };
     use crate::application::usecases::exports::types::MonthlySummaryExportDataset;
     use crate::models::{DailyDetailSyncSnapshot, MonthlySummary};
     use chrono::{NaiveDate, TimeZone, Utc};
@@ -68,7 +70,7 @@ mod tests {
     fn pkg_with_source(source: &str) -> SyncPackage<MonthlySummaryExportDataset> {
         SyncPackage {
             metadata: SyncPackageMetadata {
-                schema_version: SchemaVersion::V2,
+                schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
                 created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
                 source_node_id: source.into(),
                 issuer_identity_id: None,

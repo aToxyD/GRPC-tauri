@@ -1,4 +1,5 @@
-//! Protocol contract checks for sync schema V2 (canonical JSON + Ed25519 + SHA-256).
+//! Protocol contract checks for the sync envelope (SEC-087 Phase 6A / ADR-0057:
+//! schema V3; canonical JSON + Ed25519 + SHA-256).
 //!
 //! Golden JSON files under `tests/fixtures/sync/` document stable **shape**; builders still
 //! emit fresh `integrity_hash` / `signature` per key material. This test locks **determinism**
@@ -71,7 +72,10 @@ fn v2_builder_is_deterministic_for_fixed_key_and_payload() {
     // The builder fills integrity_hash + signature; signing_key_id is the
     // signer's public key (fixed secret → fixed key → deterministic).
     pkg.metadata.signing_key_id = Some(signer.public_key_hex());
-    assert_eq!(pkg.metadata.schema_version.as_u16(), 2);
+    assert_eq!(
+        pkg.metadata.schema_version.as_u16(),
+        SYNC_PACKAGE_SCHEMA_VERSION.as_u16()
+    );
     assert_eq!(
         pkg.metadata.signature_version,
         Some(DEFAULT_SIGNATURE_VERSION)
@@ -105,7 +109,10 @@ fn v2_builder_is_deterministic_for_fixed_key_and_payload() {
     );
 
     let v: serde_json::Value = serde_json::from_str(&content_a).expect("json");
-    assert_eq!(v["metadata"]["schema_version"], 2);
+    assert_eq!(
+        v["metadata"]["schema_version"],
+        serde_json::json!(SYNC_PACKAGE_SCHEMA_VERSION.as_u16())
+    );
     assert_eq!(v["metadata"]["signature_version"], 2);
     assert!(v["metadata"]["integrity_hash"].is_string());
     assert!(v["metadata"]["signature"].is_string());

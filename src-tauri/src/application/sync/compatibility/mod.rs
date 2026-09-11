@@ -23,10 +23,11 @@ pub struct SupportedSchemaWindow;
 
 impl CompatibilityPolicy for SupportedSchemaWindow {
     fn can_import(version: SchemaVersion) -> Result<(), ImportCompatibilityError> {
-        // SEC-007 (ADR-0047): V1 sync packages are permanently removed. V2 is
-        // the ONLY supported schema version — any package older than V2 is
-        // rejected as too old.
-        const MIN_SUPPORTED: SchemaVersion = SchemaVersion::V2;
+        // SEC-087 Phase 6A (ADR-0057): the import schema window is closed at
+        // V3 — V3 is the ONLY supported envelope version. Anything older than
+        // V3 (V0/V1/V2) is rejected as too old; anything newer (V4+) is
+        // rejected as too new. There is NO backward compatibility window.
+        const MIN_SUPPORTED: SchemaVersion = SchemaVersion::V3;
         let max = SYNC_PACKAGE_SCHEMA_VERSION;
         if version < MIN_SUPPORTED {
             return Err(ImportCompatibilityError::PackageTooOld { version });
@@ -43,9 +44,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_v2_when_exporter_emits_v2() {
-        assert!(SupportedSchemaWindow::can_import(SchemaVersion::V2).is_ok());
+    fn accepts_current_schema_version_only() {
+        assert!(SupportedSchemaWindow::can_import(SchemaVersion::V3).is_ok());
         assert!(SupportedSchemaWindow::can_import(SYNC_PACKAGE_SCHEMA_VERSION).is_ok());
+    }
+
+    #[test]
+    fn rejects_v2_as_too_old() {
+        let err = SupportedSchemaWindow::can_import(SchemaVersion::V2).expect_err("V2 must reject");
+        assert_eq!(err.code(), "PACKAGE_TOO_OLD");
     }
 
     #[test]
@@ -57,7 +64,7 @@ mod tests {
     #[test]
     fn rejects_future_schema_as_too_new() {
         let err =
-            SupportedSchemaWindow::can_import(SchemaVersion::new(3)).expect_err("must reject");
+            SupportedSchemaWindow::can_import(SchemaVersion::new(4)).expect_err("V4 must reject");
         assert_eq!(err.code(), "PACKAGE_TOO_NEW");
     }
 

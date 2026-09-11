@@ -4,4 +4,4 @@
 
 use super::SchemaVersion;
 
-pub const SYNC_PACKAGE_SCHEMA_VERSION: SchemaVersion = SchemaVersion::V2;
+pub const SYNC_PACKAGE_SCHEMA_VERSION: SchemaVersion = SchemaVersion::V3;

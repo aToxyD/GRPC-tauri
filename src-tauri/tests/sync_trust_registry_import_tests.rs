@@ -22,7 +22,9 @@ use grpc_lib::application::authz::Action;
 use grpc_lib::application::services::{
     IdentityTrustAnchorService, SyncPackageIdentityVerificationService,
 };
-use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
+use grpc_lib::application::sync::{
+    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+};
 use grpc_lib::application::usecases::sync::import_registry_package::{
     execute as apply_registry_package, ImportRegistryPackageInput, RegistryPackagePayload,
     UnitFleetEntry,
@@ -193,7 +195,7 @@ fn trust_package(
     let signer = Ed25519PackageSigner::new(secret);
     SyncPackage {
         metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
             issuer_identity_id: Some(issuer_id),
@@ -218,7 +220,7 @@ fn registry_package(
     let signer = Ed25519PackageSigner::new(ISSUER_SECRET);
     SyncPackage {
         metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
             issuer_identity_id: Some(issuer_id),

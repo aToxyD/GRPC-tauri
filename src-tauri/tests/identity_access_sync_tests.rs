@@ -41,7 +41,8 @@ use grpc_lib::application::services::{
     SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
 };
 use grpc_lib::application::sync::{
-    ImportedPackageRegistry, PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata,
+    ImportedPackageRegistry, PackageId, SyncPackage, SyncPackageMetadata,
+    SYNC_PACKAGE_SCHEMA_VERSION,
 };
 use grpc_lib::application::usecases::sync::import_identity_access_package::{
     execute as apply_identity_access_package, ImportIdentityAccessPackageInput,
@@ -154,7 +155,7 @@ fn identity_access_package(
     let signer = Ed25519PackageSigner::new(secret);
     SyncPackage {
         metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
             issuer_identity_id: Some(issuer_id),
@@ -176,7 +177,7 @@ fn trust_package(
     let signer = Ed25519PackageSigner::new(secret);
     SyncPackage {
         metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
             issuer_identity_id: Some(issuer_id),

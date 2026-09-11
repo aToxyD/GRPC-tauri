@@ -2,9 +2,7 @@
 
 use chrono::Datelike;
 
-use crate::application::sync::{
-    CompatibilityPolicy, SupportedSchemaWindow, SyncPackage, SYNC_PACKAGE_SCHEMA_VERSION,
-};
+use crate::application::sync::SyncPackage;
 use crate::application::usecases::exports::types::{
     ContractCatalogExportDataset, DailyReportExportDataset, MonthlySummaryExportDataset,
     ProductsExportDataset,
@@ -16,19 +14,6 @@ use crate::errors::{AppError, AppResult, ValidationError};
 pub fn validate_monthly_summary_package_for_import(
     package: &SyncPackage<MonthlySummaryExportDataset>,
 ) -> AppResult<()> {
-    let sv = package.metadata.schema_version;
-    if let Err(e) = SupportedSchemaWindow::can_import(sv) {
-        return Err(AppError::Validation(ValidationError::InvalidFormat {
-            field: "schema_version".into(),
-            message: format!(
-                "[{}] إصدار المخطط {} غير مدعوم بالاستيراد (المدعوم حاليًا {})",
-                e.code(),
-                sv,
-                SYNC_PACKAGE_SCHEMA_VERSION
-            ),
-        }));
-    }
-
     if package.metadata.package_id.0.trim().is_empty() {
         return Err(AppError::Validation(ValidationError::InvalidFormat {
             field: "package_id".into(),
@@ -62,19 +47,6 @@ pub fn validate_monthly_summary_package_for_import(
 pub fn validate_products_package_for_import(
     package: &SyncPackage<ProductsExportDataset>,
 ) -> AppResult<()> {
-    let sv = package.metadata.schema_version;
-    if let Err(e) = SupportedSchemaWindow::can_import(sv) {
-        return Err(AppError::Validation(ValidationError::InvalidFormat {
-            field: "schema_version".into(),
-            message: format!(
-                "[{}] إصدار المخطط {} غير مدعوم بالاستيراد (المدعوم حاليًا {})",
-                e.code(),
-                sv,
-                SYNC_PACKAGE_SCHEMA_VERSION
-            ),
-        }));
-    }
-
     if package.metadata.package_id.0.trim().is_empty() {
         return Err(AppError::Validation(ValidationError::InvalidFormat {
             field: "package_id".into(),
@@ -102,18 +74,6 @@ pub fn validate_products_package_for_import(
 pub fn validate_daily_report_package_for_import(
     package: &SyncPackage<DailyReportExportDataset>,
 ) -> AppResult<()> {
-    let sv = package.metadata.schema_version;
-    if let Err(e) = SupportedSchemaWindow::can_import(sv) {
-        return Err(AppError::Validation(ValidationError::InvalidFormat {
-            field: "schema_version".into(),
-            message: format!(
-                "[{}] إصدار المخطط {} غير مدعوم بالاستيراد (المدعوم حاليًا {})",
-                e.code(),
-                sv,
-                SYNC_PACKAGE_SCHEMA_VERSION
-            ),
-        }));
-    }
     if package.metadata.package_id.0.trim().is_empty() {
         return Err(AppError::Validation(ValidationError::InvalidFormat {
             field: "package_id".into(),
@@ -148,18 +108,6 @@ pub fn validate_daily_report_package_for_import(
 pub fn validate_contract_catalog_package_for_import(
     package: &SyncPackage<ContractCatalogExportDataset>,
 ) -> AppResult<()> {
-    let sv = package.metadata.schema_version;
-    if let Err(e) = SupportedSchemaWindow::can_import(sv) {
-        return Err(AppError::Validation(ValidationError::InvalidFormat {
-            field: "schema_version".into(),
-            message: format!(
-                "[{}] إصدار المخطط {} غير مدعوم بالاستيراد (المدعوم حاليًا {})",
-                e.code(),
-                sv,
-                SYNC_PACKAGE_SCHEMA_VERSION
-            ),
-        }));
-    }
     if package.metadata.package_id.0.trim().is_empty() {
         return Err(AppError::Validation(ValidationError::InvalidFormat {
             field: "package_id".into(),

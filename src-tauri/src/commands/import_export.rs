@@ -22,7 +22,10 @@ use crate::application::services::{
 use crate::application::sync::import::{
     ImportAuditEvent, ImportAuditEventType, ImportAuditLogger, ImportFailureReason,
 };
-use crate::application::sync::{SyncPackage, SyncPackageMetadata};
+use crate::application::sync::{
+    CompatibilityPolicy, SupportedSchemaWindow, SyncPackage, SyncPackageMetadata,
+    SYNC_PACKAGE_SCHEMA_VERSION,
+};
 use crate::application::usecases::exports::types::{
     DailyReportExportInput, MonthlySummaryExportInput, StockMovementsExportDataset,
 };
@@ -1834,6 +1837,27 @@ where
     // 3. Package Loading (Encrypted)
     let package =
         loader(std::path::Path::new(&file_path), &state.crypto_port).map_err(into_command_error)?;
+
+    // SEC-087 Phase 6A (ADR-0057): single centralized, kind-blind schema-version
+    // compatibility gate. V3 is the ONLY supported envelope version. Runs
+    // immediately after package load/deserialization and BEFORE the import
+    // security-requirements validation, per-kind validation, provenance checks,
+    // replay handling, any DB mutation, imported-package marking, and
+    // audit/event success recording. V0/V1/V2 → PACKAGE_TOO_OLD; V4+ →
+    // PACKAGE_TOO_NEW; V3 passes. Kind-blind: applies to every pipeline kind.
+    if let Err(e) = SupportedSchemaWindow::can_import(package.metadata.schema_version) {
+        return Err(into_command_error(AppError::Validation(
+            ValidationError::InvalidFormat {
+                field: "schema_version".into(),
+                message: format!(
+                    "[{}] إصدار المخطط {} غير مدعوم بالاستيراد (المدعوم حاليًا {})",
+                    e.code(),
+                    package.metadata.schema_version,
+                    SYNC_PACKAGE_SCHEMA_VERSION
+                ),
+            },
+        )));
+    }
 
     // SEC-003-02: kind-aware authenticity requirements. Rejects unsigned / V1
     // downgraded critical kinds before replay/sequence processing, the

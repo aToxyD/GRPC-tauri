@@ -26,7 +26,9 @@ use chrono::{NaiveDate, Utc};
 use std::path::Path;
 use uuid::Uuid;
 
-use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
+use grpc_lib::application::sync::{
+    PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+};
 use grpc_lib::application::usecases::exports::export_monthly_summary_dataset::execute as export_monthly_summary_dataset;
 use grpc_lib::application::usecases::exports::types::{
     DailyReportExportDataset, MonthlySummaryExportDataset, MonthlySummaryExportInput,
@@ -238,10 +240,10 @@ fn write_encrypted<T: serde::Serialize>(package: &SyncPackage<T>, secret: [u8; 3
         .expect("build encrypted package");
 }
 
-fn v2_metadata(pkg_id: &str, issuer_id: Uuid, source_node_id: &str) -> SyncPackageMetadata {
+fn envelope_metadata(pkg_id: &str, issuer_id: Uuid, source_node_id: &str) -> SyncPackageMetadata {
     let signer = Ed25519PackageSigner::new(UNIT_SECRET);
     SyncPackageMetadata {
-        schema_version: SchemaVersion::V2,
+        schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
         created_at: Utc::now(),
         source_node_id: source_node_id.to_string(),
         issuer_identity_id: Some(issuer_id),
@@ -286,7 +288,7 @@ fn stock_movements_package(
     movements: Vec<StockMovement>,
 ) -> SyncPackage<StockMovementsExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
+        metadata: envelope_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: StockMovementsExportDataset { movements },
     }
 }
@@ -297,7 +299,7 @@ fn daily_report_package(
     unit_id: Uuid,
 ) -> SyncPackage<DailyReportExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
+        metadata: envelope_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: DailyReportExportDataset {
             snapshot: DailyReportSyncSnapshot {
                 report_id: format!("rep-{pkg_id}"),
@@ -334,7 +336,7 @@ fn monthly_summary_package(
     unit_id: Uuid,
 ) -> SyncPackage<MonthlySummaryExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
+        metadata: envelope_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: MonthlySummaryExportDataset {
             summary: MonthlySummary {
                 month: 8,
@@ -366,7 +368,7 @@ fn products_package(
     unit_id: Uuid,
 ) -> SyncPackage<ProductsExportDataset> {
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
+        metadata: envelope_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: ProductsExportDataset {
             product_rows: vec![ProductExportRow {
                 product: Product {
@@ -392,7 +394,7 @@ fn trust_package(
 ) -> SyncPackage<grpc_lib::application::usecases::sync::import_trust_package::TrustPackagePayload> {
     use grpc_lib::application::usecases::sync::import_trust_package::TrustPackagePayload;
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
+        metadata: envelope_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: TrustPackagePayload {
             certificates: vec![],
             revocations: vec![],
@@ -409,7 +411,7 @@ fn registry_package(
 > {
     use grpc_lib::application::usecases::sync::import_registry_package::RegistryPackagePayload;
     SyncPackage {
-        metadata: v2_metadata(pkg_id, issuer_id, &unit_id.to_string()),
+        metadata: envelope_metadata(pkg_id, issuer_id, &unit_id.to_string()),
         payload: RegistryPackagePayload {
             snapshot_version: 1,
             wilaya_identity_id: issuer_id,
@@ -431,6 +433,21 @@ fn movement_rows(state: &AppState, unit_id: &str) -> Vec<(String, String, String
     .expect("query")
     .map(|r| r.expect("row"))
     .collect()
+}
+
+/// Number of `applied_sync_packages` ("has-imported") markers for a package id.
+fn applied_package_marker_count(state: &AppState, package_id: &str) -> usize {
+    let guard = state.get_db().expect("lock");
+    let db = guard.as_ref().expect("db");
+    let count: i64 = db
+        .get_connection()
+        .query_row(
+            "SELECT COUNT(*) FROM applied_sync_packages WHERE package_id = ?1",
+            rusqlite::params![package_id],
+            |row| row.get(0),
+        )
+        .expect("query marker count");
+    count as usize
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1349,4 +1366,97 @@ fn empty_payload_unit_id_is_restamped_to_authenticated_subject() {
             "empty payload unit_id must be restamped to the authenticated subject"
         );
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-087 Phase 6A (ADR-0057): centralized V3-only schema gate
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// V2 envelope is rejected by the CENTRAL kind-blind schema gate — including
+/// stock_movements, which previously had no local window check. Rejection
+/// happens after load/deserialization and BEFORE per-kind validation,
+/// provenance checks, identity verification, replay processing, imported-package
+/// marking, and any DB mutation.
+#[test]
+fn v2_stock_movements_package_rejected_by_schema_gate_before_any_mutation() {
+    let (state, anchor_id) = build_wilaya_state();
+    let unit_identity = Uuid::new_v4();
+    let unit_id = Uuid::new_v4();
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
+    set_wilaya_admin_session(&state);
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("mov-v2.sync");
+    let mut package = stock_movements_package("sm-v2-old", unit_identity, unit_id, vec![]);
+    package.metadata.schema_version = SchemaVersion::V2;
+    let package = sign_v2_package(package, UNIT_SECRET);
+    write_encrypted(&package, UNIT_SECRET, &path);
+
+    let err = import_stock_movements_package_impl(
+        &state,
+        path.to_string_lossy().into_owned(),
+        unit_id.to_string(),
+    )
+    .expect_err("V2 envelope must be rejected by the central schema gate");
+    assert!(err.contains("PACKAGE_TOO_OLD"), "got: {err}");
+    assert_eq!(
+        movement_rows(&state, &unit_id.to_string()).len(),
+        0,
+        "rejected V2 package must not mutate stock_movements"
+    );
+    assert_eq!(
+        applied_package_marker_count(&state, "sm-v2-old"),
+        0,
+        "rejected V2 package must not be marked imported"
+    );
+}
+
+/// V4 envelope is rejected as too new by the central kind-blind gate, before
+/// any DB mutation.
+#[test]
+fn v4_stock_movements_package_rejected_by_schema_gate_before_any_mutation() {
+    let (state, anchor_id) = build_wilaya_state();
+    let unit_identity = Uuid::new_v4();
+    let unit_id = Uuid::new_v4();
+    seed_unit(
+        &state,
+        unit_identity,
+        unit_id,
+        CredentialStatus::Active,
+        anchor_id,
+        WILAYA_CODE,
+    );
+    set_wilaya_admin_session(&state);
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("mov-v4.sync");
+    let mut package = stock_movements_package("sm-v4-future", unit_identity, unit_id, vec![]);
+    package.metadata.schema_version = SchemaVersion::new(4);
+    let package = sign_v2_package(package, UNIT_SECRET);
+    write_encrypted(&package, UNIT_SECRET, &path);
+
+    let err = import_stock_movements_package_impl(
+        &state,
+        path.to_string_lossy().into_owned(),
+        unit_id.to_string(),
+    )
+    .expect_err("V4 envelope must be rejected as too new");
+    assert!(err.contains("PACKAGE_TOO_NEW"), "got: {err}");
+    assert_eq!(
+        movement_rows(&state, &unit_id.to_string()).len(),
+        0,
+        "rejected V4 package must not mutate stock_movements"
+    );
+    assert_eq!(
+        applied_package_marker_count(&state, "sm-v4-future"),
+        0,
+        "rejected V4 package must not be marked imported"
+    );
 }

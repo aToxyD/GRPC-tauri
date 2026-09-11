@@ -36,7 +36,9 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use grpc_lib::application::services::AdminAccessFirstImportPredicatesService;
-use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
+use grpc_lib::application::sync::{
+    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+};
 use grpc_lib::commands::{
     export_admin_access_package_impl, import_admin_access_package_impl, AppState,
 };
@@ -106,7 +108,7 @@ fn admin_package(
             integrity_hash: None,
             issuer_identity_id: Some(issuer_id),
             package_id: PackageId(package_id.to_string()),
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             signature: None,
             signature_version: Some(SIGNATURE_VERSION_ED25519),
             signing_key_id: Some("default".to_string()),

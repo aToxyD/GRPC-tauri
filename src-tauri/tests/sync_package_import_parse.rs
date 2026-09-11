@@ -1,10 +1,11 @@
-//! Parse + validate plaintext sync packages (SEC-007: V2-only, Ed25519).
+//! Parse + validate plaintext sync packages (SEC-007 + SEC-087 Phase 6A /
+//! ADR-0057: V3-only envelope, Ed25519).
 
 use chrono::{NaiveDate, TimeZone, Utc};
 
 use grpc_lib::application::sync::{
-    validate_monthly_summary_package_for_import, PackageId, SchemaVersion, SyncPackage,
-    SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+    validate_monthly_summary_package_for_import, CompatibilityPolicy, PackageId, SchemaVersion,
+    SupportedSchemaWindow, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
 };
 use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
 use grpc_lib::errors::AppError;
@@ -83,32 +84,13 @@ fn v2_package_roundtrips_encrypted_and_validates() {
 
 #[test]
 fn rejects_unsupported_schema_version() {
-    let created_at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    let pkg = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::new(SYNC_PACKAGE_SCHEMA_VERSION.as_u16() + 99),
-            created_at,
-            source_node_id: "u".into(),
-            issuer_identity_id: None,
-            package_id: PackageId("p1".into()),
-            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
-            signing_key_id: None,
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: monthly_dataset(),
-    };
-
-    let err =
-        validate_monthly_summary_package_for_import(&pkg).expect_err("must reject future schema");
-    match err {
-        AppError::Validation(grpc_lib::errors::ValidationError::InvalidFormat {
-            message, ..
-        }) => {
-            assert!(message.contains("PACKAGE_TOO_NEW"));
-        }
-        other => panic!("unexpected error: {:?}", other),
-    }
+    // SEC-087 Phase 6A (ADR-0057): the ENVELOPE-SCHEMA window is the property
+    // of the centralized kind-blind gate (`SupportedSchemaWindow`), no longer
+    // of the per-kind validators. A future (V4+) envelope is rejected as
+    // PACKAGE_TOO_NEW.
+    let future = SchemaVersion::new(SYNC_PACKAGE_SCHEMA_VERSION.as_u16() + 99);
+    let err = SupportedSchemaWindow::can_import(future).expect_err("must reject future schema");
+    assert_eq!(err.code(), "PACKAGE_TOO_NEW");
 }
 
 #[test]
@@ -167,30 +149,10 @@ fn rejects_package_without_integrity_hash() {
 
 #[test]
 fn rejects_package_too_old_schema() {
-    let created_at = Utc.with_ymd_and_hms(2026, 1, 3, 0, 0, 0).unwrap();
-    let pkg = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::new(0),
-            created_at,
-            source_node_id: "u".into(),
-            issuer_identity_id: None,
-            package_id: PackageId("p-old".into()),
-            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
-            signing_key_id: None,
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: monthly_dataset(),
-    };
-
-    let err =
-        validate_monthly_summary_package_for_import(&pkg).expect_err("must reject old schema");
-    match err {
-        AppError::Validation(grpc_lib::errors::ValidationError::InvalidFormat {
-            message, ..
-        }) => {
-            assert!(message.contains("PACKAGE_TOO_OLD"));
-        }
-        other => panic!("unexpected error: {:?}", other),
-    }
+    // SEC-087 Phase 6A (ADR-0057): envelope-schema oldness (V0/V1/V2 →
+    // PACKAGE_TOO_OLD) is decided by the centralized kind-blind gate
+    // (`SupportedSchemaWindow`), which is now the single owner of the rule.
+    let old = SchemaVersion::new(0);
+    let err = SupportedSchemaWindow::can_import(old).expect_err("must reject old schema");
+    assert_eq!(err.code(), "PACKAGE_TOO_OLD");
 }
