@@ -42,6 +42,12 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
                 updated_at: Utc::now().to_rfc3339(),
                 node_id: "wilaya".into(),
                 deleted: 0,
+                // SEC-087 Phase 6B: conforming V3 config (purchase=consumption,
+                // factor 1, tva 0).
+                purchase_unit: Some(1),
+                consumption_unit: Some(1),
+                conversion_factor: Some(1),
+                tva_classification: Some(0),
             }],
         },
     }

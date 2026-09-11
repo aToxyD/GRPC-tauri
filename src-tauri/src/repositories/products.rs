@@ -59,6 +59,30 @@ impl<'a> ProductRepository<'a> {
         Ok(existing.is_some())
     }
 
+    /// Read the product's SEC-087 unit/TVA configuration wire codes for the
+    /// sync export surface (SQL only). Unlike `get_product_config_codes`, this
+    /// does NOT filter on `deleted` so the WILAYA exporter can emit a
+    /// conforming V3 payload for soft-deleted rows too (a deleted Product
+    /// payload must still carry the configuration, SEC-087 Phase 6B).
+    pub fn get_product_sync_config(
+        &self,
+        product_id: &str,
+    ) -> Result<Option<crate::models::ProductUnitConfigCodes>, AppError> {
+        Ok(self.executor.query_row_optional(
+            "SELECT purchase_unit, consumption_unit, conversion_factor, tva_classification
+             FROM products WHERE id = ?1",
+            [product_id],
+            |r| {
+                Ok(crate::models::ProductUnitConfigCodes {
+                    purchase_unit: r.get(0)?,
+                    consumption_unit: r.get(1)?,
+                    conversion_factor: r.get(2)?,
+                    tva_classification: r.get(3)?,
+                })
+            },
+        )?)
+    }
+
     /// Read the product's SEC-087 unit/TVA configuration codes (SQL only).
     ///
     /// The application layer validates these codes through
@@ -104,52 +128,51 @@ impl<'a> ProductRepository<'a> {
             .map_err(AppError::from)
     }
 
-    /// Insert or replace a product from a sync record
+    /// Insert or update a product from a sync record (SEC-087 Phase 6B).
+    ///
+    /// Explicit `ON CONFLICT(id) DO UPDATE` — NEVER `INSERT OR REPLACE`.
+    /// REPLACE is DELETE-then-INSERT, which would cascade-delete
+    /// `inventory_stocks` rows (`ON DELETE CASCADE`) and be blocked by the
+    /// `product_tax_classifications` RESTRICT FK, silently destroying or
+    /// resetting inventory identity. `created_at` is local insert history
+    /// (WILAYA-authoritative id) and is preserved on conflict. The update list
+    /// is explicit and covers every WILAYA-authoritative Product field;
+    /// no local-only column is touched.
     pub fn upsert_product_sync(
         &self,
         record: &crate::models::ProductSyncRecord,
     ) -> Result<(), AppError> {
         let base_price_scaled = numeric_row::money_scaled(record.base_price)?;
-        // Use INSERT OR REPLACE to handle both new and existing products
-        // This will delete the old row if it exists, which may fail with FK constraints
-        // If that fails, try UPDATE instead
-        let result = self.executor.execute(
-            "INSERT OR REPLACE INTO products (id, name, base_price, year, created_at, updated_at, node_id, deleted) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        self.executor.execute(
+            "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at, updated_at, node_id, deleted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                base_price = excluded.base_price,
+                year = excluded.year,
+                purchase_unit = excluded.purchase_unit,
+                consumption_unit = excluded.consumption_unit,
+                conversion_factor = excluded.conversion_factor,
+                tva_classification = excluded.tva_classification,
+                updated_at = excluded.updated_at,
+                node_id = excluded.node_id,
+                deleted = excluded.deleted",
             rusqlite::params![
                 &record.id,
                 &record.name,
                 base_price_scaled,
                 &record.year,
+                &record.purchase_unit,
+                &record.consumption_unit,
+                &record.conversion_factor,
+                &record.tva_classification,
                 &record.created_at,
                 &record.updated_at,
                 &record.node_id,
                 &record.deleted
             ],
-        );
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(rusqlite::Error::SqliteFailure(err, _))
-                if err.code == rusqlite::ErrorCode::ConstraintViolation =>
-            {
-                // FK constraint failed, try UPDATE instead
-                self.executor.execute(
-                    "UPDATE products SET name = ?1, base_price = ?2, year = ?3, updated_at = ?4, node_id = ?5, deleted = ?6 WHERE id = ?7",
-                    rusqlite::params![
-                        &record.name,
-                        base_price_scaled,
-                        &record.year,
-                        &record.updated_at,
-                        &record.node_id,
-                        &record.deleted,
-                        &record.id
-                    ],
-                )?;
-                Ok(())
-            }
-            Err(e) => Err(AppError::Sqlite(e)),
-        }
+        )?;
+        Ok(())
     }
 
     /// Update an existing product

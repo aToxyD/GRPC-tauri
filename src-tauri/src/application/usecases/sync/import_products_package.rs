@@ -75,6 +75,13 @@ pub fn execute(
             updated_at: r.updated_at,
             node_id: r.node_id,
             deleted: r.deleted,
+            // SEC-087 Phase 6B: the record carries the V3 configuration just
+            // validated by validate_products_package_for_import (called at the
+            // top of this function) — these are Some and mutually consistent.
+            purchase_unit: r.purchase_unit,
+            consumption_unit: r.consumption_unit,
+            conversion_factor: r.conversion_factor,
+            tva_classification: r.tva_classification,
         })
         .collect();
 

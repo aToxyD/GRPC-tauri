@@ -382,6 +382,11 @@ fn products_package(
                 updated_at: Utc::now().to_rfc3339(),
                 node_id: unit_id.to_string(),
                 deleted: 0,
+                // SEC-087 Phase 6B: conforming V3 config.
+                purchase_unit: Some(1),
+                consumption_unit: Some(1),
+                conversion_factor: Some(1),
+                tva_classification: Some(0),
             }],
         },
     }

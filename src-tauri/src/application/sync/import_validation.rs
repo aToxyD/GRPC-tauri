@@ -44,6 +44,16 @@ pub fn validate_monthly_summary_package_for_import(
     Ok(())
 }
 
+/// SEC-087 Phase 6B (ADR-0057 §3.4): Product V3 configuration gate.
+/// All four fields (purchase_unit, consumption_unit, conversion_factor,
+/// tva_classification) are REQUIRED; the domain validator rejects any record
+/// whose configuration is absent or out-of-range. This function is invoked at
+/// the TOP of `import_products_package::execute` BEFORE `has_imported` and
+/// before any Product/inventory row mutation — a fail-closed validation-first
+/// boundary. The package-level gate (enforced by the central pipeline)
+/// guarantees the payload carries the four fields at the kind/version level;
+/// here we enforce the SEMANTIC invariant (valid unit codes, factor > 0,
+/// same-unit factor = 1, etc.) per record.
 pub fn validate_products_package_for_import(
     package: &SyncPackage<ProductsExportDataset>,
 ) -> AppResult<()> {
@@ -66,6 +76,31 @@ pub fn validate_products_package_for_import(
             field: "product_rows".into(),
             message: "الحزمة لا تحتوي على منتجات".into(),
         }));
+    }
+
+    // SEC-087 Phase 6B (ADR-0057 §3.4): per-record V3 configuration
+    // validation — fail-closed; a single malformed record rejects the entire
+    // package BEFORE any mutation.
+    for row in &package.payload.product_rows {
+        validation::validate_product_units(
+            row.purchase_unit,
+            row.consumption_unit,
+            row.conversion_factor,
+            row.tva_classification,
+        )
+        .map_err(|e| {
+            AppError::Validation(ValidationError::InvalidFormat {
+                field: format!("product_rows[{}].config", row.product.id),
+                message: format!(
+                    "Product «{}» V3 config rejected: {}",
+                    row.product.id,
+                    match &e {
+                        AppError::Validation(v) => format!("{v}"),
+                        other => format!("{other}"),
+                    }
+                ),
+            })
+        })?;
     }
 
     Ok(())

@@ -113,13 +113,38 @@ impl StockCheckResult {
     }
 }
 
-/// Helper for product export containing sync information
+/// Helper for product export containing sync information.
+///
+/// SEC-087 Phase 6B (ADR-0057 §3.4): the V3 Product sync record carries the
+/// WILAYA-authoritative unit/TVA configuration as wire codes
+/// (`UnitMeasure` `1..=10`, `TvaClassification` `0..=2`). The `Option` +
+/// `#[serde(default)]` shape is the deserializer shape-compatibility shim:
+/// a config-free 6A-era payload deserializes to `None` here and is rejected
+/// fail-closed by the semantic validator (`validate_product_units`) BEFORE any
+/// Product mutation. `convertion_factor` is an integer, and the purchase →
+/// consumption factor invariant is enforced by the domain validator, never
+/// normalized here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductExportRow {
     pub product: Product,
     pub updated_at: String,
     pub node_id: String,
     pub deleted: i32,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): purchase unit code.
+    #[serde(default)]
+    pub purchase_unit: Option<i32>,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): consumption unit
+    /// code — the keyed inventory identity unit.
+    #[serde(default)]
+    pub consumption_unit: Option<i32>,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): integer
+    /// purchase → consumption factor (`1` when the units match).
+    #[serde(default)]
+    pub conversion_factor: Option<i32>,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): TVA
+    /// classification code (`0..=2`).
+    #[serde(default)]
+    pub tva_classification: Option<i32>,
 }
 
 #[cfg(test)]
