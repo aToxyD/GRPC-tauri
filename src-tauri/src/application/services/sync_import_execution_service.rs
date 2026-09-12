@@ -11,7 +11,7 @@ use crate::application::sync_integrity::types::ConflictDetectionOutcome;
 use crate::application::usecases::exports::types::ContractCatalogExportDataset;
 use crate::db::Database;
 use crate::domain::events::{DomainEvent, EventContext};
-use crate::errors::AppError;
+use crate::errors::{AppError, ValidationError};
 use crate::models::{DailyReportMeal, DailyReportResult, ProductSyncRecord};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::{Datelike, Utc};
@@ -207,22 +207,23 @@ impl<'a> SyncImportExecutionService<'a> {
 
                 if !stock_exists {
                     let stock_id = uuid::Uuid::new_v4().to_string();
-                    // SEC-087 Phase 6B (ADR-0057 §3.4): stock identity is keyed
+                    // SEC-087 Phase 6C (ADR-0057 §3.4): stock identity is keyed
                     // by the product's authoritative consumption unit
-                    // (`(product_id, consumption_unit)`), following the Phase 5
+                    // (`(product_id, consumption_unit)`), following the
                     // create_initial_stock_for_product path used by
                     // ProductService::create_product. The V3 validator
-                    // guarantees `consumption_unit` is Some, so a configured
-                    // product NEVER falls back to a NULL-keyed stock row. A
-                    // legacy NULL-keyed row (UNIQUE(product_id, NULL)) does not
-                    // match stock_exists_for_product (identity resolved from
-                    // p.consumption_unit), so it travels unchanged and the new
-                    // keyed row coexists — legacy rows are never silently
-                    // re-keyed or merged.
+                    // guarantees `consumption_unit` is Some, so the keyed row is
+                    // created with the product's configured unit — there is no
+                    // NULL-keyed row and nothing is re-keyed or merged.
+                    let configured_key = record.consumption_unit.ok_or_else(|| {
+                        AppError::Validation(ValidationError::Required {
+                            field: "products[].consumption_unit".to_string(),
+                        })
+                    })?;
                     inventory_repo.create_initial_stock_for_product(
                         &stock_id,
                         &record.id,
-                        record.consumption_unit,
+                        configured_key,
                         &record.updated_at,
                     )?;
                 }

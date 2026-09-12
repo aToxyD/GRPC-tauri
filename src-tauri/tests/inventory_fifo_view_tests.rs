@@ -20,15 +20,15 @@ fn init_db() -> grpc_lib::db::Database {
     // Insert products
     let now = "2025-01-01T00:00:00Z";
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p1', 'Farine', 10000.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p1', 'Farine', 10000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p2', 'Huile', 20000.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p2', 'Huile', 20000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p3', 'Sucre', 15000.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p3', 'Sucre', 15000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
 

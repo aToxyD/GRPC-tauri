@@ -34,6 +34,12 @@ fn inventory_reconciliation_is_exact_quantity() {
                     year: 2024,
                     created_at: chrono::Utc::now(),
                 },
+                &grpc_lib::models::ProductUnitConfigCodes {
+                    purchase_unit: 1,
+                    consumption_unit: 1,
+                    conversion_factor: 1,
+                    tva_classification: 0,
+                },
                 &now,
             )
             .unwrap();
@@ -50,7 +56,7 @@ fn inventory_reconciliation_is_exact_quantity() {
         .unwrap();
     executor
         .execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, 'prod-majo', 2500, 'unit', ?2)",
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated) VALUES (?1, 'prod-majo', 2500, 'unit', 1, ?2)",
             rusqlite::params![Uuid::new_v4().to_string(), now],
         )
         .unwrap();
@@ -58,7 +64,7 @@ fn inventory_reconciliation_is_exact_quantity() {
     // product prod-drift: opening 0 + IN 1.000 − OUT 0 = stock 2.000 → 1.000 drift
     executor
         .execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, 'prod-drift', 2000, 'unit', ?2)",
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated) VALUES (?1, 'prod-drift', 2000, 'unit', 1, ?2)",
             rusqlite::params![Uuid::new_v4().to_string(), now],
         )
         .unwrap();

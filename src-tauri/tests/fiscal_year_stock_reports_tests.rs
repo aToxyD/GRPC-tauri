@@ -22,23 +22,23 @@ fn init_db() -> grpc_lib::db::Database {
     // Insert products
     let now = "2025-01-01T00:00:00Z";
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p1', 'Farine', 10000.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p1', 'Farine', 10000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, year, created_at) VALUES ('p2', 'Huile', 20000.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p2', 'Huile', 20000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
 
     // Insert inventory_stocks rows
     let stock_id1 = Uuid::new_v4().to_string();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1, 'p1', 50000.0, 'kg', ?2, ?2)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1, 'p1', 50000.0, 'kg', 1, ?2, ?2)",
         rusqlite::params![stock_id1, now],
     ).unwrap_or_else(|e| panic!("insert stock p1: {}", e));
     let stock_id2 = Uuid::new_v4().to_string();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1, 'p2', 30000.0, 'L', ?2, ?2)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1, 'p2', 30000.0, 'L', 1, ?2, ?2)",
         rusqlite::params![stock_id2, now],
     ).unwrap_or_else(|e| panic!("insert stock p2: {}", e));
 

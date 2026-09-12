@@ -183,10 +183,10 @@ impl<'a> ContractService<'a> {
             .get_product_config_codes(&cp.product_id)?
             .ok_or_else(|| Self::not_found("منتج", &cp.product_id))?;
         let config = validate_product_units(
-            config_codes.purchase_unit,
-            config_codes.consumption_unit,
-            config_codes.conversion_factor,
-            config_codes.tva_classification,
+            Some(config_codes.purchase_unit),
+            Some(config_codes.consumption_unit),
+            Some(config_codes.conversion_factor),
+            Some(config_codes.tva_classification),
         )?;
 
         // Exact HT authority (Money), never reinterpreted from a historical TTC.

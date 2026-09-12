@@ -319,6 +319,12 @@ fn seed_products(db: &Database) {
                 year: 2026,
                 created_at: Utc::now(),
             },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
             &now,
         )
         .expect("seed product");

@@ -46,12 +46,12 @@ fn test_fiscal_lifecycle_sim() {
     // 2. Create some products and stock
     let product_id = "prod-1";
     executor.execute(
-        "INSERT INTO products (id, name, base_price, year, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        "INSERT INTO products (id, name, base_price, year, created_at, updated_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1, 1, 1, 0)",
         rusqlite::params![product_id, "Product 1", 100.0, current_year, Utc::now().to_rfc3339()],
     ).unwrap();
 
     executor.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, ?2, 0.0, 'kg', ?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated) VALUES (?1, ?2, 0.0, 'kg', 1, ?3)",
         rusqlite::params!["stock-1", product_id, Utc::now().to_rfc3339()],
     ).unwrap();
 
@@ -79,7 +79,11 @@ fn test_fiscal_lifecycle_sim() {
         .expect("Should allow write in open year");
 
     // Verify stock
-    let stock = executor.inventory().get_stock(product_id).unwrap().unwrap();
+    let stock = executor
+        .inventory()
+        .get_stock_typed(product_id, 1)
+        .unwrap()
+        .unwrap();
     assert_eq!(stock.quantity, 50.0);
 
     executor
@@ -113,7 +117,11 @@ fn test_fiscal_lifecycle_sim() {
     );
 
     // Verify stock increased
-    let stock = executor.inventory().get_stock(product_id).unwrap().unwrap();
+    let stock = executor
+        .inventory()
+        .get_stock_typed(product_id, 1)
+        .unwrap()
+        .unwrap();
     assert_eq!(stock.quantity, 100.0); // 50 + 50
 
     // 6. CARRY-FORWARD VERIFICATION

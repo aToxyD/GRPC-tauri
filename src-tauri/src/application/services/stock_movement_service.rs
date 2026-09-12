@@ -3,7 +3,7 @@
 //! Handles inserting and retrieving stock movements.
 
 use crate::domain::numeric::legacy_float;
-use crate::errors::{AppError, BusinessLogicError};
+use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::{
     NewStockMovement, StockMovement, StockMovementFilters, StockMovementResponse, StockMovementType,
 };
@@ -32,15 +32,25 @@ impl<'a> StockMovementService<'a> {
 
         let inventory_repo = self.executor.inventory();
 
-        // SEC-087 Phase 5: the stock identity is `(product_id, consumption_unit)`.
+        // SEC-087 Phase 6C: the stock identity is `(product_id, consumption_unit)`.
         // The consumption-unit key comes from the product configuration (single
-        // source of truth); legacy products without a config key the legacy
-        // NULL-consumption-unit stock row.
+        // source of truth). Every persistent Product carries a REQUIRED config,
+        // so an absent config (missing/soft-deleted product) fails closed — there
+        // is no legacy NULL-keyed row and no fallback.
         let consumption_unit = self
             .executor
             .products()
             .get_product_config_codes(&movement.product_id)?
-            .and_then(|c| c.consumption_unit);
+            .map(|c| c.consumption_unit)
+            .ok_or_else(|| {
+                AppError::Validation(ValidationError::InvalidFormat {
+                    field: "product_id".to_string(),
+                    message: format!(
+                        "Product «{}» has no unit/TVA configuration — stock cannot be traced",
+                        movement.product_id
+                    ),
+                })
+            })?;
 
         let held_before =
             match inventory_repo.get_stock_typed(&movement.product_id, consumption_unit)? {

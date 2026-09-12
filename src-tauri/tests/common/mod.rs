@@ -103,6 +103,9 @@ pub fn assert_error<T: std::fmt::Debug>(result: Result<T, String>, expected_msg:
 }
 
 /// Insert a test product and its inventory_stocks row.
+/// The product carries a complete valid SEC-087 unit/TVA configuration
+/// (purchase=consumption=Kilogram, factor 1, TVA 0%) and the stock row is keyed
+/// by that consumption unit — the finalized Product/inventory model.
 /// Returns the product_id.
 #[allow(dead_code)]
 pub fn create_test_product(
@@ -118,13 +121,13 @@ pub fn create_test_product(
     let now = chrono::Utc::now().to_rfc3339();
     db.get_connection()
         .execute(
-            "INSERT INTO products (id, name, base_price, year, created_at, updated_at)              VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at, updated_at)              VALUES (?1, ?2, ?3, ?4, 1, 1, 1, 0, ?5, ?5)",
             params![product_id, name, base_price * 100.0, fiscal_year, now],
         )
         .expect("insert product");
     db.get_connection()
         .execute(
-            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)              VALUES (?1, ?2, 0.0, 'unit', ?3, ?3)",
+            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at, consumption_unit)              VALUES (?1, ?2, 0.0, 'unit', ?3, ?3, 1)",
             params![format!("stock-{}", product_id), product_id, now],
         )
         .expect("insert inventory_stocks");

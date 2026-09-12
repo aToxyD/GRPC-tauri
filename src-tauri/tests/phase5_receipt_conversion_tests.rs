@@ -556,24 +556,28 @@ fn inventory_stock_is_keyed_by_product_and_consumption_unit() {
     let stock = db
         .executor()
         .inventory()
-        .get_stock_typed(&product_id, Some(1))
+        .get_stock_typed(&product_id, 1)
         .expect("read keyed stock")
         .expect("keyed stock present");
     assert_eq!(stock.quantity, 20.0);
-    assert_eq!(stock.consumption_unit, Some(1));
+    assert_eq!(stock.consumption_unit, 1);
 
-    // A legacy NULL-key row can coexist without clobbering the keyed row.
+    // A direct typed update on the same keyed identity is applied in place;
+    // there is no secondary / NULL-keyed row under the finalized identity.
     db.executor()
         .inventory()
-        .update_stock_typed(&product_id, None, 0.0)
-        .expect("seed legacy row");
+        .update_stock_typed(&product_id, 1, 0.0)
+        .expect("reset keyed row");
     let keyed = db
         .executor()
         .inventory()
-        .get_stock_typed(&product_id, Some(1))
+        .get_stock_typed(&product_id, 1)
         .expect("read keyed stock again")
         .expect("keyed stock still present");
-    assert_eq!(keyed.quantity, 20.0, "keyed row unaffected by legacy row");
+    assert_eq!(
+        keyed.quantity, 0.0,
+        "keyed row updated in place on its identity"
+    );
 }
 
 // --- 7. persisted snapshot is immutable against later contract changes -----
@@ -818,10 +822,11 @@ fn confirmation_is_zero_sum_reservation_to_fulfillment() {
     let stock = db
         .executor()
         .inventory()
-        .get_stock_typed(&product_id, Some(1))
+        .get_stock_typed(&product_id, 1)
         .expect("read stock")
         .expect("stock present");
     assert_eq!(stock.quantity, 30.0);
+    assert_eq!(stock.consumption_unit, 1);
     assert_eq!(layers(&db, &unit_id, &product_id)[0].qty_remaining, 30.0);
     assert_eq!(movements(&db, &order_id)[0].quantity, 30.0);
 }

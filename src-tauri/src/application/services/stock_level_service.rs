@@ -44,35 +44,33 @@ impl<'a> StockLevelService<'a> {
         self.get_stock_summary(fiscal_year)
     }
 
-    /// Authoritative consumption-unit key for a product (SEC-087 Phase 5),
+    /// Authoritative consumption-unit key for a product (SEC-087 Phase 6C),
     /// resolved from backend product configuration — the single source of truth
     /// for stock identity (AGENTS.md A1/A3).
     ///
-    /// A configured product resolves to its authoritative `consumption_unit`
-    /// code; an existing-but-unconfigured/legacy product resolves to the legacy
-    /// NULL stock identity. This helper resolves the product's configuration,
-    /// NOT its existence: `get_product_config_codes()` returns `None` for both
-    /// a missing product and an unconfigured one, so the `None` output must
-    /// never be interpreted as a product-existence verdict. Missing products
-    /// cannot expose inventory rows regardless of the resolved key, because
-    /// `get_stock_typed`/`get_stock_summary` look stock up through the
-    /// structural `products` lookup plus the FK relationship
-    /// (`inventory_stocks.product_id → products.id`, ON DELETE CASCADE), which
-    /// makes a stock row for an unknown product unmatchable. Unit codes are
-    /// never derived from purchase_unit, FIFO layers, or UI input here.
+    /// `get_product_config_codes()` returns `None` when the product row is
+    /// missing or soft-deleted — never because a persistent Product lacks a
+    /// config (the canonical schema is NOT NULL). The `None` output must
+    /// therefore be interpreted as "no readable product", and the caller treats
+    /// it as "no stock", never as a legacy NULL-keyed identity. Missing products
+    /// cannot expose inventory rows regardless of the resolved key.
     fn resolve_consumption_unit(&self, product_id: &str) -> Result<Option<i32>, AppError> {
         Ok(self
             .executor
             .products()
             .get_product_config_codes(product_id)?
-            .and_then(|c| c.consumption_unit))
+            .map(|c| c.consumption_unit))
     }
 
     pub fn get_stock(&self, product_id: &str) -> Result<Option<InventoryStock>, AppError> {
         if product_id.trim().is_empty() {
             return Err(AppError::Internal("product_id is required".to_string()));
         }
-        let key = self.resolve_consumption_unit(product_id)?;
+        let key = match self.resolve_consumption_unit(product_id)? {
+            Some(k) => k,
+            // Missing or soft-deleted product: no readable inventory identity.
+            None => return Ok(None),
+        };
         self.executor.inventory().get_stock_typed(product_id, key)
     }
 
@@ -89,7 +87,15 @@ impl<'a> StockLevelService<'a> {
                 "quantity cannot be negative".to_string(),
             ));
         }
-        self.executor.inventory().update_stock(product_id, quantity)
+        let key = self.resolve_consumption_unit(product_id)?.ok_or_else(|| {
+            AppError::Internal(format!(
+                "product {} has no unit/TVA configuration",
+                product_id
+            ))
+        })?;
+        self.executor
+            .inventory()
+            .update_stock_typed(product_id, key, quantity)
     }
 
     pub fn check_stock_availability(
@@ -99,10 +105,14 @@ impl<'a> StockLevelService<'a> {
         let mut results = Vec::new();
         for item in items {
             let key = self.resolve_consumption_unit(&item.product_id)?;
-            let stock = self
-                .executor
-                .inventory()
-                .get_stock_typed(&item.product_id, key)?;
+            let stock = match key {
+                // Missing or soft-deleted product: no stock.
+                None => None,
+                Some(k) => self
+                    .executor
+                    .inventory()
+                    .get_stock_typed(&item.product_id, k)?,
+            };
             let (available_qty, product_name) = match stock {
                 Some(s) => (s.quantity, s.product_name),
                 None => (0.0, "غير معروف".to_string()),

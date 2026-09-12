@@ -158,6 +158,12 @@ fn inventory_valuation_weighted_cost_and_totals_are_exact() {
                 year: 2024,
                 created_at: chrono::Utc::now(),
             },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
             &now,
         )
         .unwrap();
@@ -231,6 +237,12 @@ fn inventory_valuation_non_terminating_weighted_cost_rounds_at_boundary() {
                 year: 2024,
                 created_at: chrono::Utc::now(),
             },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
             &now,
         )
         .unwrap();
@@ -300,6 +312,12 @@ fn inventory_valuation_quantity_uses_scale_three() {
                 base_price: 100.0,
                 year: 2024,
                 created_at: chrono::Utc::now(),
+            },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
             },
             &now,
         )

@@ -27,10 +27,10 @@ pub struct InventoryStock {
     pub quantity: f64,
     pub unit: String,
     pub last_updated: DateTime<Utc>,
-    /// SEC-087 Phase 5: consumption-unit key of the stock row (`None` for
-    /// legacy rows created before the unit-aware identity).
-    #[serde(default)]
-    pub consumption_unit: Option<i32>,
+    /// SEC-087 Phase 6C: consumption-unit key of the stock row — the inventory
+    /// identity unit (REQUIRED, NOT NULL in the schema; there is no legacy
+    /// NULL-keyed row).
+    pub consumption_unit: i32,
 }
 
 /// Request to create a new product

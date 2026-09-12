@@ -25,12 +25,12 @@ fn seed_unit(ex: DbExecutor<'_>, id: &str) {
 
 fn seed_product(ex: DbExecutor<'_>, product_id: &str) {
     ex.execute(
-        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'Test Product',0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,'Test Product',0,2025,?2,1,1,1,0)",
         params![product_id, Utc::now().to_rfc3339()],
     )
     .expect("insert product");
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1,?2,0,'unit',?3,?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1,?2,0,'unit',1,?3,?3)",
         params![format!("stock-{}", product_id), product_id, Utc::now().to_rfc3339()],
     )
     .expect("insert inventory_stocks");

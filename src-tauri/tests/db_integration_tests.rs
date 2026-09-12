@@ -59,6 +59,12 @@ pub fn create_test_product(db: &Database, id: &str, name: &str) -> String {
                 year: 2024,
                 created_at: Utc::now(),
             },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
             &now,
         )
         .unwrap();
@@ -66,7 +72,7 @@ pub fn create_test_product(db: &Database, id: &str, name: &str) -> String {
     let inventory_repo = InventoryRepository::new(executor);
     let stock_id = Uuid::new_v4().to_string();
     inventory_repo
-        .create_initial_stock_for_product(&stock_id, id, None, &now)
+        .create_initial_stock_for_product(&stock_id, id, 1, &now)
         .unwrap();
 
     id.to_string()
@@ -162,7 +168,7 @@ pub fn create_stock_movement(
     // تحديث المخزون عبر المستودع
     let inventory_repo = InventoryRepository::new(executor);
     inventory_repo
-        .update_stock(product_id, balance_after)
+        .update_stock_typed(product_id, 1, balance_after)
         .unwrap();
 
     id

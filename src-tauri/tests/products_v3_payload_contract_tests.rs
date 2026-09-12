@@ -650,33 +650,29 @@ fn conflict_update_preserves_created_at_and_keyed_stock() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2d. Real pipeline: legacy NULL-config stock row coexists with the new keyed
-// stock row (never silently re-keyed, never merged)
+// 2d. Real pipeline: a configured local product without stock establishes
+// exactly one keyed inventory identity on import — no other row
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn legacy_null_stock_coexists_with_new_keyed_stock() {
+fn configured_product_without_stock_gets_keyed_identity_on_import() {
     let (state, anchor_id) = build_unit_state();
     set_session(&state);
 
-    // A legacy row (phase-5-era pre-keying) + its NULL-keyed stock row, inserted
-    // directly (as the pre-6B importer used to write them).
+    // A locally-row-seeded product already carries a complete configuration but
+    // no stock row yet. The import must establish exactly the keyed inventory
+    // identity (product_id, consumption_unit); a NULL-keyed identity cannot
+    // exist under the finalized schema.
     let now = Utc::now().to_rfc3339();
     {
         let guard = state.get_db().expect("lock");
         let db = guard.as_ref().expect("db");
         db.get_connection().execute(
-            "INSERT INTO products (id, name, base_price, year, created_at, updated_at, node_id, deleted)
-             VALUES ('p-legacy', 'LegacyBread', 900, 2026, ?1, ?1, '16', 0)",
+            "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at, updated_at, node_id, deleted)
+             VALUES ('p-legacy', 'LegacyBread', 900, 2026, 1, 1, 1, 0, ?1, ?1, '16', 0)",
             rusqlite::params![now],
         )
-        .expect("legacy product");
-        db.get_connection().execute(
-            "INSERT INTO inventory_stocks (id, product_id, quantity, last_updated, updated_at, node_id, deleted)
-             VALUES ('stock-legacy-null', 'p-legacy', 0, ?1, ?1, '16', 0)",
-            rusqlite::params![now],
-        )
-        .expect("legacy NULL-keyed stock row");
+        .expect("seed configured product");
     }
 
     let created = Utc::now();
@@ -693,24 +689,15 @@ fn legacy_null_stock_coexists_with_new_keyed_stock() {
     let path = dir.path().join("products.sync");
     write_encrypted(&pkg, WILAYA_SECRET, &path);
     import_products_package_impl(&state, path.to_string_lossy().into_owned())
-        .expect("configured re-baseline of the legacy product ok");
+        .expect("configured re-baseline of the local product ok");
 
-    // The legacy NULL-keyed row stays untouched; the keyed row is created.
+    // Exactly one keyed stock row; no NULL-keyed identity exists.
     let stocks = stock_rows(&state, "p-legacy");
-    assert_eq!(stocks.len(), 2, "legacy NULL-keyed + new keyed row coexist");
-    let null_keyed = stocks.iter().find(|(_, unit)| unit.is_none());
-    let keyed = stocks.iter().find(|(_, unit)| *unit == Some(1));
-    assert!(
-        null_keyed.is_some(),
-        "legacy row must NOT be silently re-keyed or merged"
-    );
-    assert!(
-        keyed.is_some(),
-        "configured product establishes its keyed inventory identity"
-    );
-    assert!(
-        keyed.unwrap().0 != "stock-legacy-null",
-        "the keyed row is a fresh stock id, distinct from the legacy NULL row"
+    assert_eq!(stocks.len(), 1, "exactly one keyed stock row");
+    assert_eq!(
+        stocks[0].1,
+        Some(1),
+        "stock identity follows the configured consumption_unit"
     );
 }
 

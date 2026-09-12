@@ -49,7 +49,7 @@ fn unit_db(unit_id: &str) -> Database {
 fn seed_product(db: &Database, id: &str, name: &str, year: i32) {
     db.get_connection()
         .execute(
-            "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1, ?2, ?3, ?4, ?5, 1, 1, 1, 0)",
             params![id, name, 10000.0f64, year, NOW],
         )
         .expect("seed product");

@@ -27,8 +27,8 @@ fn seed_product(executor: grpc_lib::repositories::DbExecutor<'_>, id: &str, pric
     let year = Utc::now().year();
     executor
         .execute(
-            "INSERT INTO products (id, name, base_price, year, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            "INSERT INTO products (id, name, base_price, year, created_at, updated_at, purchase_unit, consumption_unit, conversion_factor, tva_classification)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1, 1, 1, 0)",
             rusqlite::params![
                 id,
                 format!("Prod {}", id),
@@ -40,8 +40,8 @@ fn seed_product(executor: grpc_lib::repositories::DbExecutor<'_>, id: &str, pric
         .unwrap();
     executor
         .execute(
-            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated)
-             VALUES (?1, ?2, 100.0, 'kg', ?3)",
+            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated)
+             VALUES (?1, ?2, 100.0, 'kg', 1, ?3)",
             rusqlite::params![format!("stock-{}", id), id, Utc::now().to_rfc3339()],
         )
         .unwrap();

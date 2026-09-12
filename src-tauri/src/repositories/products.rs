@@ -74,10 +74,10 @@ impl<'a> ProductRepository<'a> {
             [product_id],
             |r| {
                 Ok(crate::models::ProductUnitConfigCodes {
-                    purchase_unit: r.get(0)?,
-                    consumption_unit: r.get(1)?,
-                    conversion_factor: r.get(2)?,
-                    tva_classification: r.get(3)?,
+                    purchase_unit: r.get::<_, i32>(0)?,
+                    consumption_unit: r.get::<_, i32>(1)?,
+                    conversion_factor: r.get::<_, i32>(2)?,
+                    tva_classification: r.get::<_, i32>(3)?,
                 })
             },
         )?)
@@ -98,21 +98,36 @@ impl<'a> ProductRepository<'a> {
             [product_id],
             |r| {
                 Ok(crate::models::ProductUnitConfigCodes {
-                    purchase_unit: r.get(0)?,
-                    consumption_unit: r.get(1)?,
-                    conversion_factor: r.get(2)?,
-                    tva_classification: r.get(3)?,
+                    purchase_unit: r.get::<_, i32>(0)?,
+                    consumption_unit: r.get::<_, i32>(1)?,
+                    conversion_factor: r.get::<_, i32>(2)?,
+                    tva_classification: r.get::<_, i32>(3)?,
                 })
             },
         )?;
         Ok(row)
     }
 
-    pub fn insert_raw_product(&self, product: &Product, now: &str) -> Result<(), AppError> {
+    pub fn insert_raw_product(
+        &self,
+        product: &Product,
+        config: &crate::models::ProductUnitConfigCodes,
+        now: &str,
+    ) -> Result<(), AppError> {
         let base_price_scaled = numeric_row::money_scaled(product.base_price)?;
         self.executor.execute(
-            "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![&product.id, &product.name, base_price_scaled, &product.year, now],
+            "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                &product.id,
+                &product.name,
+                base_price_scaled,
+                &product.year,
+                config.purchase_unit,
+                config.consumption_unit,
+                config.conversion_factor,
+                config.tva_classification,
+                now
+            ],
         )?;
         Ok(())
     }

@@ -554,29 +554,20 @@ fn snapshots_are_built_from_explicit_agreed_ht_only() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn missing_tva_classification_rejects_freezing() {
+fn unresolvable_product_config_rejects_freezing() {
     let db = ConnectionFactory::new_for_test().unwrap();
     let ex = db.executor();
     let unit_id = Uuid::new_v4().to_string();
 
-    // Product with units but NO TVA classification.
-    let now = Utc::now().to_rfc3339();
-    let product = Uuid::new_v4().to_string();
-    ex.products()
-        .insert_raw_product(
-            &grpc_lib::models::Product {
-                id: product.clone(),
-                name: "NoTva".to_string(),
-                base_price: 100.0,
-                year: FY,
-                created_at: Utc::now(),
-            },
-            &now,
-        )
-        .unwrap();
+    // A persistent Product always carries a complete unit/TVA configuration
+    // (NOT NULL canonical schema), so the pricing path can no longer observe a
+    // partially configured product. The remaining fail-closed trigger is an
+    // unresolvable product master (soft-deleted here): the config lookup must
+    // reject, never fall back.
+    let product = insert_configured_product(&ex, "DeletedConfig", 0);
     db.get_connection()
         .execute(
-            "UPDATE products SET purchase_unit = 1, consumption_unit = 1, conversion_factor = 1 WHERE id = ?1",
+            "UPDATE products SET deleted = 1 WHERE id = ?1",
             params![product],
         )
         .unwrap();
@@ -591,7 +582,7 @@ fn missing_tva_classification_rejects_freezing() {
             contract_product_id: cp,
             agreed_price_ht: 100.0,
         })
-        .expect_err("missing tva_classification must fail closed");
+        .expect_err("unresolvable product config must fail closed");
     assert!(
         matches!(
             err,
@@ -602,52 +593,22 @@ fn missing_tva_classification_rejects_freezing() {
     );
 }
 
+/// A partially configured Product (missing `tva_classification`) can never be
+/// persisted — the finalized canonical schema rejects it with NOT NULL, so an
+/// incomplete configuration cannot reach the pricing path.
 #[test]
-fn missing_unit_configuration_rejects_freezing() {
+fn incomplete_product_config_cannot_be_persisted() {
     let db = ConnectionFactory::new_for_test().unwrap();
-    let ex = db.executor();
-    let unit_id = Uuid::new_v4().to_string();
-
-    // Product with a TVA classification but NO unit configuration.
     let now = Utc::now().to_rfc3339();
-    let product = Uuid::new_v4().to_string();
-    ex.products()
-        .insert_raw_product(
-            &grpc_lib::models::Product {
-                id: product.clone(),
-                name: "NoUnits".to_string(),
-                base_price: 100.0,
-                year: FY,
-                created_at: Utc::now(),
-            },
-            &now,
-        )
-        .unwrap();
-    db.get_connection()
-        .execute(
-            "UPDATE products SET tva_classification = 2 WHERE id = ?1",
-            params![product],
-        )
-        .unwrap();
 
-    let supplier = seed_supplier(&ex);
-    seed_unit_and_fiscal(&ex, &unit_id);
-    let contract = seed_contract(&ex, &unit_id, &supplier);
-    let cp = seed_product_line(&db, &contract, &product, &unit_id);
-
-    let err = ContractService::new(db.executor())
-        .set_agreed_price_ht(&SetAgreedPriceHtRequest {
-            contract_product_id: cp,
-            agreed_price_ht: 100.0,
-        })
-        .expect_err("incomplete unit config must fail closed");
+    let res = db.get_connection().execute(
+        "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at)
+         VALUES (?1, 'Partial', 10000, ?2, 1, 1, 1, NULL, ?3)",
+        params![Uuid::new_v4().to_string(), FY, now],
+    );
     assert!(
-        matches!(
-            err,
-            grpc_lib::errors::AppError::BusinessLogic(_)
-                | grpc_lib::errors::AppError::Validation(_)
-        ),
-        "expected fail-closed rejection, got {err:?}"
+        res.is_err(),
+        "a product missing any SEC-087 config column must be rejected by the schema"
     );
 }
 

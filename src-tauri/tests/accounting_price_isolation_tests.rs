@@ -39,13 +39,13 @@ fn setup_unit_product_layers(
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'P',9999.0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,'P',9999.0,2025,?2,1,1,1,0)",
         rusqlite::params![product_id, now],
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)
-         VALUES (?1, ?2, ?3, 'unit', ?4, ?4)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at)
+         VALUES (?1, ?2, ?3, 'unit', 1, ?4, ?4)",
         rusqlite::params![format!("s-{}", product_id), product_id, qty, now],
     )
     .unwrap();
@@ -142,13 +142,13 @@ fn setup_two_layers(db: &grpc_lib::db::Database) -> (String, String) {
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'P',0.0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,'P',0.0,2025,?2,1,1,1,0)",
         rusqlite::params![product_id, now],
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)
-         VALUES (?1, ?2, 30.0, 'unit', ?3, ?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at)
+         VALUES (?1, ?2, 30.0, 'unit', 1, ?3, ?3)",
         rusqlite::params![format!("s-{}", product_id), product_id, now],
     )
     .unwrap();
@@ -455,7 +455,7 @@ fn fifo_consumes_oldest_layer_first_by_received_at_then_id() {
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, year, created_at) VALUES (?1,'P',1.0,2025,?2)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,'P',1.0,2025,?2,1,1,1,0)",
         rusqlite::params![product_id, now],
     )
     .unwrap();

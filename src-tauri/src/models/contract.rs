@@ -372,11 +372,13 @@ pub struct ContractPriceSnapshot {
 }
 
 /// Read-only product unit/TVA configuration codes (SEC-087) needed to build an
-/// authoritative contract price snapshot.
+/// authoritative contract price snapshot. Fields are REQUIRED codes (`i32`) —
+/// the canonical schema enforces NOT NULL, so a persisted Product always
+/// carries all four.
 #[derive(Debug, Clone, Copy)]
 pub struct ProductUnitConfigCodes {
-    pub purchase_unit: Option<i32>,
-    pub consumption_unit: Option<i32>,
-    pub conversion_factor: Option<i32>,
-    pub tva_classification: Option<i32>,
+    pub purchase_unit: i32,
+    pub consumption_unit: i32,
+    pub conversion_factor: i32,
+    pub tva_classification: i32,
 }
