@@ -432,6 +432,11 @@ impl AppError {
                 message: format!("{}: {}", translate_field(field), message),
                 details: Some(self.to_string()),
             },
+            AppError::Validation(ValidationError::OutOfRange { field, value }) => UserError {
+                code: "VAL_RANGE".to_string(),
+                message: format!("قيمة {} خارج النطاق المسموح: {}", translate_field(field), value),
+                details: Some(self.to_string()),
+            },
 
             // أخطاء منطق الأعمال
             AppError::BusinessLogic(BusinessLogicError::InsufficientStock(msg)) => UserError {
@@ -593,6 +598,36 @@ impl AppError {
                 ),
                 details: None,
             },
+            AppError::BusinessLogic(BusinessLogicError::ProductNotAvailableInYear { year }) => {
+                UserError {
+                    code: "PRODUCT_NOT_AVAILABLE_IN_YEAR".to_string(),
+                    message: format!("المنتج غير متوفر للسنة المالية {}", year),
+                    details: None,
+                }
+            }
+            AppError::BusinessLogic(BusinessLogicError::PriceCalculation { message }) => UserError {
+                code: "PRICE_CALCULATION".to_string(),
+                message: message.clone(),
+                details: None,
+            },
+            AppError::BusinessLogic(BusinessLogicError::RateCalculation { message }) => UserError {
+                code: "RATE_CALCULATION".to_string(),
+                message: message.clone(),
+                details: None,
+            },
+            AppError::BusinessLogic(BusinessLogicError::UnitNotConfigured) => UserError {
+                code: "UNIT_NOT_CONFIGURED".to_string(),
+                message: "إعداد الوحدة غير مكتمل. يجب إكمال بيانات الإعداد قبل متابعة العملية."
+                    .to_string(),
+                details: None,
+            },
+            AppError::BusinessLogic(BusinessLogicError::ValidationError { field, message }) => {
+                UserError {
+                    code: "BIZ_VALIDATION".to_string(),
+                    message: format!("{}: {}", translate_field(field), message),
+                    details: Some(self.to_string()),
+                }
+            }
 
             // أخطاء المصادقة
             AppError::Authentication(AuthenticationError::InvalidCredentials { username: _ }) => {
@@ -929,5 +964,183 @@ mod tests {
             "User message must not contain raw column names: {}",
             user_err.message
         );
+    }
+
+    // ----------------------------------------------------------
+    // SEC-087 R-03: missing to_user_error arms must NOT fall through
+    // to INTERNAL. Each targeted variant maps to a dedicated code and
+    // an Arabic message following repository conventions.
+    // ----------------------------------------------------------
+
+    /// ProductNotAvailableInYear must not fall through to INTERNAL; the user
+    /// must learn the product is unavailable for the fiscal year.
+    #[test]
+    fn product_not_available_in_year_maps_to_dedicated_code() {
+        let e = AppError::BusinessLogic(BusinessLogicError::ProductNotAvailableInYear { year: 2023 });
+        let user_err = e.to_user_error();
+
+        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_eq!(user_err.code, "PRODUCT_NOT_AVAILABLE_IN_YEAR");
+        assert!(
+            user_err.message.contains("غير متوفر") && user_err.message.contains("2023"),
+            "message must state the product is unavailable for year 2023: {}",
+            user_err.message
+        );
+        assert!(!user_err.message.contains("INTERNAL"));
+        assert!(user_err.details.is_none(), "no internal details to expose");
+    }
+
+    /// PriceCalculation carries a caller-curated Arabic message that must be
+    /// forwarded as-is (same convention as OperationNotPermitted). It must not
+    /// fall through to INTERNAL and must not gain a debug prefix.
+    #[test]
+    fn price_calculation_error_returns_actionable_safe_message() {
+        let e = AppError::BusinessLogic(BusinessLogicError::PriceCalculation {
+            message: "الكمية المطلوبة (10) تتجاوز الرصيد المتاح للمورد X (5)".to_string(),
+        });
+        let user_err = e.to_user_error();
+
+        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_eq!(user_err.code, "PRICE_CALCULATION");
+        assert_eq!(
+            user_err.message,
+            "الكمية المطلوبة (10) تتجاوز الرصيد المتاح للمورد X (5)"
+        );
+
+        let rendered = into_command_error(e);
+        assert_eq!(rendered, user_err.message, "production path returns message as-is");
+        assert!(
+            !rendered.contains("[dev:") && !rendered.contains("Error:"),
+            "no debug marker or prefix may leak: {rendered}"
+        );
+    }
+
+    /// RateCalculation must not fall through to INTERNAL; it reuses the same
+    /// message-forwarding convention as PriceCalculation.
+    #[test]
+    fn rate_calculation_error_maps_to_dedicated_code() {
+        let e = AppError::BusinessLogic(BusinessLogicError::RateCalculation {
+            message: "تعذر حساب المعدل للسنة الحالية".to_string(),
+        });
+        let user_err = e.to_user_error();
+
+        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_eq!(user_err.code, "RATE_CALCULATION");
+        assert_eq!(user_err.message, "تعذر حساب المعدل للسنة الحالية");
+        assert!(!user_err.message.contains("INTERNAL"));
+    }
+
+    /// UnitNotConfigured is a node-readiness condition, not a product-unit
+    /// immutability issue; it must not be conflated with UNIT_CONFIG_FROZEN and
+    /// must not leak internal settings field names.
+    #[test]
+    fn unit_not_configured_maps_to_config_code_without_leaking_field_names() {
+        let e = AppError::BusinessLogic(BusinessLogicError::UnitNotConfigured);
+        let user_err = e.to_user_error();
+
+        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_eq!(user_err.code, "UNIT_NOT_CONFIGURED");
+        assert_ne!(user_err.code, "UNIT_CONFIG_FROZEN", "distinct semantics");
+        assert!(
+            user_err.message.contains("إعداد الوحدة"),
+            "message must communicate missing unit configuration: {}",
+            user_err.message
+        );
+        for leaked in ["unit_code", "wilaya_code", "unit_name", "wilaya_name"] {
+            assert!(
+                !user_err.message.contains(leaked),
+                "internal field name '{}' must not leak: {}",
+                leaked,
+                user_err.message
+            );
+        }
+    }
+
+    /// BusinessLogicError::ValidationError carries a curated Arabic message
+    /// (e.g. supplier duplicate, positive quantity) that must be preserved in a
+    /// validation-shaped user error, without debug prefixes.
+    #[test]
+    fn business_validation_error_preserves_curated_arabic_message() {
+        let e = AppError::BusinessLogic(BusinessLogicError::ValidationError {
+            field: "name".to_string(),
+            message: "مورد بنفس الاسم موجود مسبقاً".to_string(),
+        });
+        let user_err = e.to_user_error();
+
+        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_eq!(user_err.code, "BIZ_VALIDATION");
+        assert!(
+            user_err.message.contains("الاسم") && user_err.message.contains("مورد بنفس الاسم"),
+            "message must contain translated field and curated text: {}",
+            user_err.message
+        );
+        assert!(
+            !user_err.message.contains("Business logic error")
+                && !user_err.message.contains("Validation error"),
+            "no debug prefix may leak: {}",
+            user_err.message
+        );
+    }
+
+    /// ValidationError::OutOfRange must not fall through to INTERNAL. Verify
+    /// representative range violations (fiscal year, calendar month).
+    #[test]
+    fn validation_out_of_range_maps_to_range_code() {
+        let year_out_of_range =
+            AppError::Validation(ValidationError::OutOfRange {
+                field: "year".to_string(),
+                value: "1999".to_string(),
+            })
+            .to_user_error();
+
+        assert_ne!(
+            year_out_of_range.code, "INTERNAL",
+            "must not fall through to INTERNAL"
+        );
+        assert_eq!(year_out_of_range.code, "VAL_RANGE");
+        assert!(
+            year_out_of_range.message.contains("خارج النطاق")
+                && year_out_of_range.message.contains("1999"),
+            "message must state the out-of-range value: {}",
+            year_out_of_range.message
+        );
+        assert!(!year_out_of_range.message.contains("INTERNAL"));
+
+        let month_out_of_range =
+            AppError::Validation(ValidationError::OutOfRange {
+                field: "month".to_string(),
+                value: "13".to_string(),
+            })
+            .to_user_error();
+
+        assert_eq!(month_out_of_range.code, "VAL_RANGE");
+        assert!(
+            month_out_of_range.message.contains("13"),
+            "message must surface the offending value: {}",
+            month_out_of_range.message
+        );
+    }
+
+    /// Guard: existing unrelated mappings must remain unchanged after adding the
+    /// SEC-087 arms (representative FISCAL and VAL codes).
+    #[test]
+    fn existing_unrelated_mappings_remain_unchanged() {
+        let fiscal =
+            AppError::BusinessLogic(BusinessLogicError::FiscalYearClosed { year: 2023 })
+                .to_user_error();
+        assert_eq!(fiscal.code, "FISCAL_CLOSED");
+
+        let required = AppError::Validation(ValidationError::Required {
+            field: "name".to_string(),
+        })
+        .to_user_error();
+        assert_eq!(required.code, "VAL_REQUIRED");
+
+        let format = AppError::Validation(ValidationError::InvalidFormat {
+            field: "date".to_string(),
+            message: "صيغة غير صالحة".to_string(),
+        })
+        .to_user_error();
+        assert_eq!(format.code, "VAL_FORMAT");
     }
 }
