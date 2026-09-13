@@ -193,6 +193,23 @@ impl<'a> StockMovementRepository<'a> {
         Ok(())
     }
 
+    /// ADR-0058 stock-activity existence predicate (SQL only).
+    ///
+    /// `Frozen(product_id) ⇔ EXISTS(SELECT 1 FROM stock_movements WHERE
+    /// product_id = :product_id)`. A single `stock_movements` row for the
+    /// product freezes its unit/factor configuration tuple.
+    pub fn has_stock_activity(&self, product_id: &str) -> Result<bool, AppError> {
+        let exists = self
+            .executor
+            .query_row_optional(
+                "SELECT 1 FROM stock_movements WHERE product_id = ?1",
+                [product_id],
+                |_row| Ok(()),
+            )?
+            .is_some();
+        Ok(exists)
+    }
+
     /// Check if a movement exists by its ID
     pub fn movement_exists(&self, id: &str) -> Result<bool, AppError> {
         let count: i64 = self.executor.query_row(

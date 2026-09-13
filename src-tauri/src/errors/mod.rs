@@ -246,6 +246,12 @@ pub enum BusinessLogicError {
     #[error("Duplicate sync package: {package_id}")]
     DuplicateSyncPackage { package_id: String },
 
+    /// وحدة/عامل المنتج مجمّد بعد أول حركة مخزون (ADR-0058)
+    #[error(
+        "Product unit configuration frozen after first stock movement (ADR-0058): {product_id}"
+    )]
+    UnitConfigImmutableAfterMovement { product_id: String },
+
     /// السنة المالية مغلقة
     #[error("Fiscal year {year} is closed")]
     FiscalYearClosed { year: i32 },
@@ -467,6 +473,15 @@ impl AppError {
                     details: Some(self.to_string()),
                 }
             }
+            AppError::BusinessLogic(BusinessLogicError::UnitConfigImmutableAfterMovement {
+                product_id,
+            }) => UserError {
+                code: "UNIT_CONFIG_FROZEN".to_string(),
+                message: format!(
+                    "لا يمكن تغيير وحدات المنتج «{product_id}» بعد أول حركة مخزون — الحزمة مرفوضة بالكامل. صُحّح الكتالوج على مستوى الولاية وأعد التصدير."
+                ),
+                details: Some(self.to_string()),
+            },
             AppError::BusinessLogic(BusinessLogicError::ResourceNotFound { resource, id }) => {
                 UserError {
                     code: "BIZ_NOT_FOUND".to_string(),

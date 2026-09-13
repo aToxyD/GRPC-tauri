@@ -28,6 +28,7 @@ pub use import_provenance::{
 pub use import_validation::{
     validate_contract_catalog_package_for_import, validate_daily_report_package_for_import,
     validate_monthly_summary_package_for_import, validate_products_package_for_import,
+    validate_products_package_unit_config_immutable,
 };
 pub use package::SyncPackage;
 pub use package_kind::SyncPackageKind;

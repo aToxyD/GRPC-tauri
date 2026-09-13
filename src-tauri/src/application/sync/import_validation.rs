@@ -8,7 +8,8 @@ use crate::application::usecases::exports::types::{
     ProductsExportDataset,
 };
 use crate::domain::validation;
-use crate::errors::{AppError, AppResult, ValidationError};
+use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
+use crate::repositories::{DbExecutor, RepositoryProvider};
 
 /// Wire + semantic checks before any DB mutation.
 pub fn validate_monthly_summary_package_for_import(
@@ -103,6 +104,51 @@ pub fn validate_products_package_for_import(
         })?;
     }
 
+    Ok(())
+}
+
+/// ADR-0058: Product unit/factor tuple immutability gate (DB-backed).
+///
+/// Once a Product has any `stock_movements` row (`has_stock_activity`), its
+/// `(purchase_unit, consumption_unit, conversion_factor)` tuple is frozen.
+/// This gate runs inside the existing Product V3 validation/import boundary —
+/// AFTER the pure `validate_products_package_for_import` gate and BEFORE any
+/// Product/inventory mutation or imported-package marking. A forbidden tuple
+/// change rejects the ENTIRE package, fail-closed, with zero mutation.
+///
+/// Non-goals preserved (ADR-0058 §4): `name`, `base_price`, and
+/// `tva_classification` are NOT compared here — `tva_classification` remains
+/// governed by the fiscal-year rule (ADR-0055 §3.9).
+pub fn validate_products_package_unit_config_immutable(
+    package: &SyncPackage<ProductsExportDataset>,
+    executor: DbExecutor<'_>,
+) -> AppResult<()> {
+    for row in &package.payload.product_rows {
+        let product_id = &row.product.id;
+        if !executor.stock_movements().has_stock_activity(product_id)? {
+            continue;
+        }
+        let persisted = executor.products().get_product_sync_config(product_id)?;
+        if let Some(p) = persisted {
+            let incoming = (
+                row.purchase_unit,
+                row.consumption_unit,
+                row.conversion_factor,
+            );
+            let frozen = (
+                Some(p.purchase_unit),
+                Some(p.consumption_unit),
+                Some(p.conversion_factor),
+            );
+            if incoming != frozen {
+                return Err(AppError::BusinessLogic(
+                    BusinessLogicError::UnitConfigImmutableAfterMovement {
+                        product_id: product_id.clone(),
+                    },
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
