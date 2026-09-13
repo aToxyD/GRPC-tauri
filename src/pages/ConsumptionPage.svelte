@@ -32,13 +32,11 @@
   import MealTabs from '../components/consumption/MealTabs.svelte';
   import MealSection from '../components/consumption/MealSection.svelte';
   import {
-    dailySummaryFromFormsAndFifo,
     hasAnyConsumption,
     mealItemsFromForm,
     mealPreviewFromFifo,
     parseBeneficiaryCounts,
     productFifoCostsForMeal,
-    summaryFromSaved,
   } from '../components/consumption/preview';
   import {
     emptyMealForms,
@@ -82,9 +80,9 @@
   // @category ProjectionState
   let displaySummary = $derived(
     dailyView
-      ? summaryFromSaved(dailyView)
+      ? dailyView.daily_summary
       : fifoPreview
-        ? dailySummaryFromFormsAndFifo(mealForms, fifoPreview)
+        ? fifoPreview.daily_summary
         : {
             breakfast_beneficiaries: 0,
             lunch_beneficiaries: 0,
@@ -108,16 +106,12 @@
 
   // @category ProjectionState
   let activeMealPreview = $derived(
-    mealPreviewFromFifo(mealForms[activeMeal], activeFifoMeal)
+    mealPreviewFromFifo(activeFifoMeal)
   );
 
   // @category UiState
   let activeMealFifoCosts = $derived(
-    productFifoCostsForMeal(
-      activeFifoMeal,
-      mealForms[activeMeal],
-      fifoPreview?.predicted_consumption_layers
-    )
+    productFifoCostsForMeal(activeFifoMeal)
   );
 
   // @category UiState
