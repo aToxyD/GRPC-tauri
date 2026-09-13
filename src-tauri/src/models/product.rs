@@ -18,6 +18,33 @@ pub struct Product {
     pub created_at: DateTime<Utc>,
 }
 
+/// Local read-projection of a [`Product`] plus its SEC-087 unit/TVA
+/// configuration (Phase 6D).
+///
+/// **LOCAL READ ONLY**: returned by the `get_product` / `list_products` IPC
+/// commands so the WILAYA Products UI can display the persisted configuration.
+/// It MUST NOT enter any sync, persistence, create/update/delete, FIFO, order,
+/// or domain contract: the V3 sync export keeps embedding the config-free
+/// [`Product`] inside [`crate::models::ProductExportRow`] and continues to use
+/// `ProductRepository::list_products()` unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductRead {
+    pub id: String,
+    pub name: String,
+    pub base_price: f64,
+    pub year: i32,
+    pub created_at: DateTime<Utc>,
+    /// Purchase-unit wire code (`UnitMeasure`, `1..=10`).
+    pub purchase_unit: i32,
+    /// Consumption-unit wire code (`UnitMeasure`, `1..=10`) — the keyed
+    /// inventory identity unit.
+    pub consumption_unit: i32,
+    /// Integer purchase→consumption factor (always `1` when units match).
+    pub conversion_factor: i32,
+    /// TVA classification wire code (`TvaClassification`, `0..=2`).
+    pub tva_classification: i32,
+}
+
 /// Current inventory stock level for a product
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryStock {

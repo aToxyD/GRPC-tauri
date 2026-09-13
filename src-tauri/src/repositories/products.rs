@@ -260,6 +260,82 @@ impl<'a> ProductRepository<'a> {
         )?)
     }
 
+    /// Read a single product via the Phase 6D local read projection
+    /// [`crate::models::ProductRead`] (SQL only; the SEC-087 config columns are
+    /// NOT NULL in the canonical schema).
+    ///
+    /// LOCAL-ONLY: feeds the `get_product` IPC command. It is NOT used by the
+    /// V3 sync exporter, which keeps consuming the config-free
+    /// [`crate::models::Product`] via `list_products()`.
+    pub fn get_product_with_config(
+        &self,
+        product_id: &str,
+    ) -> Result<Option<crate::models::ProductRead>, AppError> {
+        Ok(self.executor.query_row_optional(
+            "SELECT id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification
+             FROM products WHERE id = ?1",
+            [product_id],
+            |row| {
+                let created_at_str: String = row.get(4)?;
+                let created_at =
+                    crate::errors::parse_datetime_rfc3339(&created_at_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+                Ok(crate::models::ProductRead {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    base_price: numeric_row::money_col(2, row.get::<_, i64>(2)?)?,
+                    year: row.get(3)?,
+                    created_at,
+                    purchase_unit: row.get(5)?,
+                    consumption_unit: row.get(6)?,
+                    conversion_factor: row.get(7)?,
+                    tva_classification: row.get(8)?,
+                })
+            },
+        )?)
+    }
+
+    /// List all products via the Phase 6D local read projection
+    /// [`crate::models::ProductRead`] (SQL only). Same ordering contract as
+    /// `list_products()`: `year DESC, name`.
+    ///
+    /// LOCAL-ONLY: feeds the `list_products` IPC command. It is NOT used by the
+    /// V3 sync exporter or any persistence/domain/FIFO/order path.
+    pub fn list_products_with_config(&self) -> Result<Vec<crate::models::ProductRead>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification
+             FROM products ORDER BY year DESC, name",
+            [],
+            |row| {
+                let created_at_str: String = row.get(4)?;
+                let created_at =
+                    crate::errors::parse_datetime_rfc3339(&created_at_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+                Ok(crate::models::ProductRead {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    base_price: numeric_row::money_col(2, row.get::<_, i64>(2)?)?,
+                    year: row.get(3)?,
+                    created_at,
+                    purchase_unit: row.get(5)?,
+                    consumption_unit: row.get(6)?,
+                    conversion_factor: row.get(7)?,
+                    tva_classification: row.get(8)?,
+                })
+            },
+        )?)
+    }
+
     pub fn count_active_products(&self) -> Result<i64, AppError> {
         let count = self.executor.query_row(
             "SELECT COUNT(*) FROM products WHERE deleted = 0",

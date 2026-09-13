@@ -113,4 +113,21 @@ impl<'a> ProductService<'a> {
     pub fn list_products(&self) -> Result<Vec<crate::models::Product>, AppError> {
         self.executor.products().list_products()
     }
+
+    /// Phase 6D local read projection incl. the SEC-087 unit/TVA config
+    /// (feeds the `get_product` IPC command). LOCAL-ONLY: never used by sync,
+    /// persistence, create/update/delete, FIFO, order, or domain paths.
+    pub fn get_product_read(
+        &self,
+        id: &str,
+    ) -> Result<Option<crate::models::ProductRead>, AppError> {
+        self.executor.products().get_product_with_config(id)
+    }
+
+    /// Phase 6D local read projection incl. the SEC-087 unit/TVA config
+    /// (feeds the `list_products` IPC command). LOCAL-ONLY: never used by sync,
+    /// persistence, create/update/delete, FIFO, order, or domain paths.
+    pub fn list_products_read(&self) -> Result<Vec<crate::models::ProductRead>, AppError> {
+        self.executor.products().list_products_with_config()
+    }
 }

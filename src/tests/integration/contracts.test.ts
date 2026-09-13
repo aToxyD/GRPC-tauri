@@ -92,6 +92,10 @@ const product: Product = {
   base_price: 120,
   year: 2026,
   created_at: '2026-01-01T00:00:00Z',
+  purchase_unit: 1,
+  consumption_unit: 1,
+  conversion_factor: 1,
+  tva_classification: 0,
 };
 
 /**

@@ -12,7 +12,7 @@ use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::into_command_error;
-use crate::models::{CreateProductRequest, Product, UpdateProductRequest};
+use crate::models::{CreateProductRequest, ProductRead, UpdateProductRequest};
 use tauri::State;
 
 /// Create a new product with full audit trail
@@ -94,9 +94,12 @@ pub fn delete_product(state: State<AppState>, product_id: String) -> Result<(), 
     Ok(())
 }
 
-/// Get single product by ID
+/// Get single product by ID (Phase 6D local read projection incl. config)
 #[tauri::command]
-pub fn get_product(state: State<AppState>, product_id: String) -> Result<Option<Product>, String> {
+pub fn get_product(
+    state: State<AppState>,
+    product_id: String,
+) -> Result<Option<ProductRead>, String> {
     let (_session, _settings) =
         authorize_command(&state, Action::ReadProducts, None).map_err(into_command_error)?;
     state.touch_session();
@@ -106,13 +109,13 @@ pub fn get_product(state: State<AppState>, product_id: String) -> Result<Option<
 
     // Read operations call Repository directly (or Service if logic is needed)
     ProductService::new(db.executor())
-        .get_product(&product_id)
+        .get_product_read(&product_id)
         .map_err(into_command_error)
 }
 
-/// List all products (unfiltered)
+/// List all products (unfiltered; Phase 6D local read projection incl. config)
 #[tauri::command]
-pub fn list_products(state: State<AppState>) -> Result<Vec<Product>, String> {
+pub fn list_products(state: State<AppState>) -> Result<Vec<ProductRead>, String> {
     let (_session, _settings) =
         authorize_command(&state, Action::ReadProducts, None).map_err(into_command_error)?;
     state.touch_session();
@@ -121,7 +124,7 @@ pub fn list_products(state: State<AppState>) -> Result<Vec<Product>, String> {
     let db = db_ref_or_command_error(guard.as_ref())?;
 
     ProductService::new(db.executor())
-        .list_products()
+        .list_products_read()
         .map_err(into_command_error)
 }
 

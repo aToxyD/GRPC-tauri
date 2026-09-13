@@ -39,17 +39,33 @@ export interface NodeConfiguration {
 }
 
 // Product Types
+/** SEC-087 Phase 6D: `list_products`/`get_product` return the backend product
+ *  read projection (`ProductRead`) which includes the unit/TVA configuration
+ *  codes. All four codes are authoritative numbers supplied by the backend. */
 export interface Product {
   id: string;
   name: string;
   base_price: number;
   year: number;
   created_at: string;
+  // UnitMeasure wire codes 1..=10 (see `domain/units.rs`).
+  purchase_unit: number;
+  consumption_unit: number;
+  // Integer purchase→consumption factor (1 when units match).
+  conversion_factor: number;
+  // TvaClassification wire code 0..=2 (see `domain/units.rs`).
+  tva_classification: number;
 }
 
 export interface CreateProductRequest {
   name: string;
   base_price: number;
+  // SEC-087 Phase 6D: unit/TVA configuration is mandatory for newly created
+  // Products (validated fail-closed by the backend validator).
+  purchase_unit: number;
+  consumption_unit: number;
+  conversion_factor: number;
+  tva_classification: number;
 }
 
 export interface UpdateProductRequest {

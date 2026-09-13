@@ -16,6 +16,7 @@
   import AppDialog from '../lib/components/ui/AppDialog.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
 
   const scope = createRuntimeScope();
@@ -44,6 +45,49 @@
   let productName = $state('');
   // @category TransientState
   let basePrice = $state('');
+  // @category TransientState
+  let purchaseUnit = $state<number | ''>('');
+  // @category TransientState
+  let consumptionUnit = $state<number | ''>('');
+  // @category TransientState
+  let conversionFactor = $state<string>('1');
+  // @category TransientState
+  let tvaClassification = $state<number | ''>('');
+
+  // SEC-087 Phase 6D: presentation-only label maps for the backend unit codes
+  // (UnitMeasure 1..=10) and TVA classification codes (TvaClassification
+  // 0..=2). Display only — canonical codes are the wire contract (A5/F3).
+  const UNIT_LABELS: Record<number, string> = {
+    1: 'كلغ', 2: 'لتر', 3: 'دلو', 4: 'قارورة', 5: 'صفيحة',
+    6: 'قطعة', 7: 'بيضة', 8: 'علبة', 9: 'كيس', 10: 'خبزة',
+  };
+  const UNIT_CODES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const TVA_OPTIONS: { code: number; label: string }[] = [
+    { code: 0, label: 'EXONÉRÉ' },
+    { code: 1, label: '9 %' },
+    { code: 2, label: '19 %' },
+  ];
+  const TVA_LABELS: Record<number, string> = {
+    0: 'EXONÉRÉ',
+    1: '9 %',
+    2: '19 %',
+  };
+
+  function unitLabel(code: number): string {
+    return UNIT_LABELS[code] ?? `${code}`;
+  }
+
+  // Same-unit config forces the conversion factor to 1 (domain rule).
+  // @category DerivedState
+  const unitsEqual = $derived(
+    purchaseUnit !== '' && consumptionUnit !== '' && purchaseUnit === consumptionUnit,
+  );
+
+  function syncConversionFactor() {
+    if (unitsEqual) {
+      conversionFactor = '1';
+    }
+  }
 
   onMount(async () => {
     await loadData();
@@ -67,6 +111,10 @@
     editingProduct = null;
     productName = '';
     basePrice = '';
+    purchaseUnit = '';
+    consumptionUnit = '';
+    conversionFactor = '1';
+    tvaClassification = '';
     showModal = true;
     productsOp.error.set(null);
   }
@@ -91,9 +139,25 @@
       return;
     }
 
-    await productsOp.run(async () => {
-      const price = parseFloat(basePrice);
+    const price = parseFloat(basePrice);
+    if (!editingProduct) {
+      // SEC-087: unit/TVA config is mandatory for newly created products.
+      if (purchaseUnit === '' || consumptionUnit === '' || tvaClassification === '') {
+        productsOp.error.set('Veuillez sélectionner les unités et la classification TVA');
+        return;
+      }
+      const factor = parseInt(conversionFactor, 10);
+      if (!Number.isInteger(factor) || factor <= 0) {
+        productsOp.error.set('Le facteur de conversion doit être un entier supérieur à 0');
+        return;
+      }
+      if (purchaseUnit === consumptionUnit && factor !== 1) {
+        productsOp.error.set('Le facteur de conversion doit être 1 lorsque les unités sont identiques');
+        return;
+      }
+    }
 
+    await productsOp.run(async () => {
       if (editingProduct) {
         const request: UpdateProductRequest = {
           id: editingProduct.id,
@@ -106,6 +170,10 @@
         const request: CreateProductRequest = {
           name: productName,
           base_price: price,
+          purchase_unit: Number(purchaseUnit),
+          consumption_unit: Number(consumptionUnit),
+          conversion_factor: parseInt(conversionFactor, 10),
+          tva_classification: Number(tvaClassification),
         };
         await createProduct(request);
         setSuccessWithTimeout('تم إنشاء المنتج بنجاح');
@@ -256,6 +324,8 @@
         <svelte:fragment slot="head">
           <th class="table-header">الاسم</th>
           <th class="table-header">السعر المرجعي</th>
+          <th class="table-header">الوحدات</th>
+          <th class="table-header">TVA</th>
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
 
@@ -263,6 +333,11 @@
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{product.name}</td>
             <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
+            <td class="table-cell text-xs">
+              {unitLabel(product.purchase_unit)} → {unitLabel(product.consumption_unit)}
+              {#if product.conversion_factor !== 1}×{product.conversion_factor}{/if}
+            </td>
+            <td class="table-cell text-xs">{TVA_LABELS[product.tva_classification] ?? product.tva_classification}</td>
             <td class="table-cell text-left space-x-2 space-x-reverse">
               <AppButton variant="ghost" size="sm" on:click={() => openEditModal(product)} ariaLabel="تعديل">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,6 +384,56 @@
       <AppAlert intent="info">
         السعر المرجعي أساس قياسي فقط ولا يمثل سعر الشراء. أسعار الشراء الفعلية محددة في عقود التموين (agreed price) ضمن كتالوج العقود.
       </AppAlert>
+
+      {#if !editingProduct}
+        <AppSelect
+          id="purchaseUnit"
+          label="وحدة الشراء *"
+          bind:value={purchaseUnit}
+          required
+          on:change={syncConversionFactor}
+        >
+          <option value="">-- اختر وحدة الشراء --</option>
+          {#each UNIT_CODES as code}
+            <option value={code}>{unitLabel(code)}</option>
+          {/each}
+        </AppSelect>
+
+        <AppSelect
+          id="consumptionUnit"
+          label="وحدة الاستهلاك *"
+          bind:value={consumptionUnit}
+          required
+          on:change={syncConversionFactor}
+        >
+          <option value="">-- اختر وحدة الاستهلاك --</option>
+          {#each UNIT_CODES as code}
+            <option value={code}>{unitLabel(code)}</option>
+          {/each}
+        </AppSelect>
+
+        <AppInput
+          id="conversionFactor"
+          label="معامل التحويل *"
+          type="number"
+          min="1"
+          placeholder="1"
+          disabled={unitsEqual}
+          bind:value={conversionFactor}
+        />
+        {#if unitsEqual}
+          <AppAlert intent="info">
+            عندما تتطابق وحدة الشراء ووحدة الاستهلاك، يكون معامل التحويل 1.
+          </AppAlert>
+        {/if}
+
+        <AppSelect id="tvaClassification" label="تصنيف TVA *" bind:value={tvaClassification} required>
+          <option value="">-- اختر تصنيف TVA --</option>
+          {#each TVA_OPTIONS as opt}
+            <option value={opt.code}>{opt.label}</option>
+          {/each}
+        </AppSelect>
+      {/if}
     </div>
   </div>
 

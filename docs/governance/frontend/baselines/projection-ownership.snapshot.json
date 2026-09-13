@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-10T00:00:00.000Z",
+  "generated": "2026-09-13T00:00:00.000Z",
   "totalTypes": 125,
   "types": [
     {
@@ -123,6 +123,22 @@
         {
           "name": "year",
           "type": "number"
+        },
+        {
+          "name": "purchase_unit",
+          "type": "number"
+        },
+        {
+          "name": "consumption_unit",
+          "type": "number"
+        },
+        {
+          "name": "conversion_factor",
+          "type": "number"
+        },
+        {
+          "name": "tva_classification",
+          "type": "number"
         }
       ]
     },
@@ -136,6 +152,22 @@
         },
         {
           "name": "base_price",
+          "type": "number"
+        },
+        {
+          "name": "purchase_unit",
+          "type": "number"
+        },
+        {
+          "name": "consumption_unit",
+          "type": "number"
+        },
+        {
+          "name": "conversion_factor",
+          "type": "number"
+        },
+        {
+          "name": "tva_classification",
           "type": "number"
         }
       ]
