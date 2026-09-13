@@ -6,9 +6,8 @@
 
 **Date: 2026-09-09**
 
-This ADR is a proposal. It is NOT accepted and does NOT authorize implementation
-until separately ratified by the owner. It supersedes — on acceptance — the
-single-allocation single-supplier rejection clauses of ADR-0055 §3.5 and §3.6 and
+**ACCEPTED — 2026-09-09 (SEC-087 Phase 4B ratification).** This decision supersedes
+the single-allocation single-supplier rejection clauses of ADR-0055 §3.5 and §3.6 and
 defines the item/allocation-leg cardinality contract for Phase 4B.
 
 ## Owner
@@ -534,8 +533,8 @@ For this ADR to be considered accepted by the owner, all of the following must h
 7. Same-supplier and different-supplier examples render correctly under I1–I12.
 8. No schema change, no Phase 4A change, no sync change, no authorization change is
    introduced.
-9. The status is `Proposed` and no implementation claim is made.
+9. The status is recorded as `Accepted` in `ADR_INDEX.md`.
 
-On owner acceptance, the ADR status is updated to `Accepted`, the `ADR_INDEX.md` entry
-synchronized, and Phase 4B implementation is authorized subject to the repository's
-governance gate.
+On owner acceptance (2026-09-09), the ADR status was recorded as `Accepted` in
+`ADR_INDEX.md`, the index entry was synchronized, and Phase 4B implementation was
+authorized subject to the repository's governance gate.
