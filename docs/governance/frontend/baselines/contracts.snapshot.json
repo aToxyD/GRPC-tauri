@@ -564,9 +564,6 @@
         },
         {
           "name": "listSupplierOrders"
-        },
-        {
-          "name": "createOrder"
         }
       ],
       "commands": [
@@ -590,14 +587,11 @@
         },
         {
           "command": "list_supplier_orders"
-        },
-        {
-          "command": "create_order"
         }
       ],
       "loc": 39,
-      "exportCount": 8,
-      "commandCount": 8
+      "exportCount": 7,
+      "commandCount": 7
     },
     {
       "name": "user",

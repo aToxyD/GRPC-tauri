@@ -170,11 +170,6 @@ export async function listSupplierOrders(): Promise<SupplierOrder[]> {
   return await safeInvoke('list_supplier_orders');
 }
 
-export async function createOrder(request: CreateOrderRequest): Promise<CreateOrderResult[]> {
-  const created = await safeInvoke<Array<[string, number]>>('create_order', { request });
-  return created.map(([orderId, totalAmount]) => ({ orderId, totalAmount }));
-}
-
 // Daily Reports
 export async function createDailyReport(input: DailyReportInput, unitId?: string): Promise<DailyReportResult> {
   return await safeInvoke('create_daily_report', { input, unitId });

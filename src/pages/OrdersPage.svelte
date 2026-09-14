@@ -4,6 +4,7 @@
   import { listSupplierOrders, createSupplierOrder, updateSupplierOrder, deleteSupplierOrder, confirmOrder, getSupplierOrderItems } from '../lib/contracts';
   import { showAsk } from '../lib/tauri';
   import { listProducts } from '../lib/contracts';
+  import { unitLabel } from '../lib/unitLabels';
   import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -47,16 +48,6 @@
   let referenceNumber = $state('');
   // @category TransientState
   let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
-
-  // SEC-087 Phase 5: presentation-only label mapping for persisted unit codes
-  // (mirrors the backend UnitMeasure closed set; frontend never decides units).
-  function unitLabel(code: number): string {
-    const labels: Record<number, string> = {
-      1: 'كلغ', 2: 'لتر', 3: 'دلو', 4: 'قارورة', 5: 'صفيحة',
-      6: 'قطعة', 7: 'بيضة', 8: 'علبة', 9: 'كيس', 10: 'خبزة',
-    };
-    return labels[code] ?? `${code}`;
-  }
 
   onMount(async () => {
     loadData();

@@ -33,8 +33,3 @@ export async function getSupplierOrderItems(orderId: string): Promise<SupplierOr
 export async function listSupplierOrders(): Promise<SupplierOrder[]> {
   return await safeInvoke('list_supplier_orders');
 }
-
-export async function createOrder(request: CreateOrderRequest): Promise<{ orderId: string; totalAmount: number }> {
-  const [orderId, totalAmount] = await safeInvoke<[string, number]>('create_order', { request });
-  return { orderId, totalAmount };
-}

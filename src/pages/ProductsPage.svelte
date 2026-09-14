@@ -4,6 +4,7 @@
   import { saveFile, openFile, showAsk } from '../lib/tauri';
   import { exportProductsPackage, importProductsPackage } from '../lib/contracts';
   import { listProducts, createProduct, updateProduct, deleteProduct, getSettings, exportProductsExcel } from '../lib/contracts';
+  import { unitLabel, UNIT_CODES } from '../lib/unitLabels';
   import type { Product, Settings, CreateProductRequest, UpdateProductRequest } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -54,14 +55,10 @@
   // @category TransientState
   let tvaClassification = $state<number | ''>('');
 
-  // SEC-087 Phase 6D: presentation-only label maps for the backend unit codes
-  // (UnitMeasure 1..=10) and TVA classification codes (TvaClassification
-  // 0..=2). Display only — canonical codes are the wire contract (A5/F3).
-  const UNIT_LABELS: Record<number, string> = {
-    1: 'كلغ', 2: 'لتر', 3: 'دلو', 4: 'قارورة', 5: 'صفيحة',
-    6: 'قطعة', 7: 'بيضة', 8: 'علبة', 9: 'كيس', 10: 'خبزة',
-  };
-  const UNIT_CODES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  // SEC-087 Phase 6D: presentation-only label maps for the backend TVA
+  // classification codes (TvaClassification 0..=2). Display only — canonical
+  // codes are the wire contract (A5/F3). Unit labels/codes come from
+  // ../lib/unitLabels.
   const TVA_OPTIONS: { code: number; label: string }[] = [
     { code: 0, label: 'EXONÉRÉ' },
     { code: 1, label: '9 %' },
@@ -72,10 +69,6 @@
     1: '9 %',
     2: '19 %',
   };
-
-  function unitLabel(code: number): string {
-    return UNIT_LABELS[code] ?? `${code}`;
-  }
 
   // Same-unit config forces the conversion factor to 1 (domain rule).
   // @category DerivedState
@@ -384,6 +377,12 @@
       <AppAlert intent="info">
         السعر المرجعي أساس قياسي فقط ولا يمثل سعر الشراء. أسعار الشراء الفعلية محددة في عقود التموين (agreed price) ضمن كتالوج العقود.
       </AppAlert>
+
+      {#if editingProduct}
+        <AppAlert intent="info">
+          وحدات القياس وتصنيف TVA ثابتة بعد إنشاء المنتج ولا يمكن تعديلها في نموذج التعديل.
+        </AppAlert>
+      {/if}
 
       {#if !editingProduct}
         <AppSelect

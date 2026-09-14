@@ -59,7 +59,7 @@ export const DOMAIN_REGISTRY: Record<string, {
   orders: {
     contract: "orders.contract.ts",
     pages: ["OrdersPage"],
-    functions: ["createSupplierOrder", "confirmOrder", "updateSupplierOrder", "deleteSupplierOrder", "getSupplierOrder", "getSupplierOrderItems", "listSupplierOrders", "createOrder"],
+    functions: ["createSupplierOrder", "confirmOrder", "updateSupplierOrder", "deleteSupplierOrder", "getSupplierOrder", "getSupplierOrderItems", "listSupplierOrders"],
     crossDomainExceptions: ["listProducts"],
   },
   report: {
