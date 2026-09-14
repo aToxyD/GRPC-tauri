@@ -296,7 +296,9 @@
         contract_product_id: target.id,
         agreed_price_ht: value,
       });
-      setSuccessWithTimeout('تم تثبيت سعر الاتفاق');
+      setSuccessWithTimeout(
+        target.agreed_price_ht !== null ? 'تم تحديث سعر الاتفاق' : 'تم تثبيت سعر الاتفاق'
+      );
       agreedPriceTarget = null;
       if (selectedContract) await refreshDetail(selectedContract.id);
     });
@@ -484,10 +486,15 @@
                 <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">{product.product_name}</td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{product.proposed_price_ht.toFixed(2)} دج</td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                  {#if product.agreed_price_ht !== null}
+                  {#if selectedContract.status === 'Proposed' && product.agreed_price_ht !== null}
+                    <span class="me-1">{product.agreed_price_ht.toFixed(2)} دج</span>
+                    <AppButton size="sm" variant="secondary" on:click={() => { newAgreedPrice = (product.agreed_price_ht ?? 0).toString(); openSetAgreedPrice(product); }}>مراجعة السعر</AppButton>
+                  {:else if product.agreed_price_ht !== null}
                     {product.agreed_price_ht.toFixed(2)} دج
-                  {:else}
+                  {:else if selectedContract.status === 'Proposed'}
                     <AppButton size="sm" variant="secondary" on:click={() => { newAgreedPrice = ''; openSetAgreedPrice(product); }}>تثبيت السعر</AppButton>
+                  {:else}
+                    —
                   {/if}
                 </td>
                 <td class="px-3 py-2 text-sm">
@@ -597,13 +604,19 @@
     </svelte:fragment>
   </AppDialog>
 
-  <AppDialog open={agreedPriceTarget !== null} title="تثبيت سعر الاتفاق" on:close={() => (agreedPriceTarget = null)}>
+  <AppDialog
+    open={agreedPriceTarget !== null}
+    title={agreedPriceTarget?.agreed_price_ht !== null ? 'مراجعة سعر الاتفاق' : 'تثبيت سعر الاتفاق'}
+    on:close={() => (agreedPriceTarget = null)}
+  >
     <div dir="rtl" class="space-y-4">
       <AppInput id="agreed-price" label="سعر الاتفاق (دج) *" type="number" bind:value={newAgreedPrice} required min={0} placeholder="0.00" />
     </div>
     <svelte:fragment slot="actions">
       <AppButton variant="secondary" on:click={() => (agreedPriceTarget = null)}>إلغاء</AppButton>
-      <AppButton on:click={saveAgreedPrice} loading={$loading}>تثبيت</AppButton>
+      <AppButton on:click={saveAgreedPrice} loading={$loading}>
+        {agreedPriceTarget?.agreed_price_ht !== null ? 'تحديث' : 'تثبيت'}
+      </AppButton>
     </svelte:fragment>
   </AppDialog>
 

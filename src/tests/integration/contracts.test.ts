@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import ContractsPage from '../../pages/ContractsPage.svelte';
-import type { Contract, Product } from '../../lib/types';
+import type { Contract, ContractProduct, Product } from '../../lib/types';
 
 // Mock Tauri modules
 const mockSaveFile = vi.fn();
@@ -96,6 +96,42 @@ const product: Product = {
   consumption_unit: 1,
   conversion_factor: 1,
   tva_classification: 0,
+};
+
+const contractProduct: ContractProduct = {
+  id: 'cp1',
+  contract_id: 'c1',
+  product_id: 'p1',
+  product_name: 'دقيق',
+  proposed_price_ht: 120,
+  agreed_price_ht: null,
+  tva_classification: null,
+  tva_rate: null,
+  tva_amount: null,
+  price_ttc: null,
+  purchase_unit: null,
+  consumption_unit: null,
+  conversion_factor: null,
+};
+
+const agreedContractProduct: ContractProduct = {
+  ...contractProduct,
+  id: 'cp2',
+  agreed_price_ht: 110.5,
+  tva_classification: 0,
+  tva_rate: 19,
+  tva_amount: 21,
+  price_ttc: 131.5,
+  purchase_unit: 1,
+  consumption_unit: 1,
+  conversion_factor: 1,
+};
+
+const acceptedContract: Contract = {
+  ...contract,
+  id: 'c2',
+  status: 'Accepted',
+  contract_reference: 'C-2026-002',
 };
 
 /**
@@ -197,5 +233,76 @@ describe('ContractsPage add-product agreed_price_ht normalization', () => {
       await fireEvent.input(input, { target: { value: '' } });
     });
     expect(request.agreed_price_ht).toBeNull();
+  });
+});
+
+describe('ContractsPage agreed-price action availability (R-02 revision UX)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAddContractProduct.mockResolvedValue(['cp1', 'a1']);
+    mockGetContractProducts.mockResolvedValue([]);
+    mockListContractAllocations.mockResolvedValue([]);
+    mockListAllocationExceptions.mockResolvedValue([]);
+    mockListUnitSuppliers.mockResolvedValue([]);
+    mockListSuppliers.mockResolvedValue([]);
+    mockListUnits.mockResolvedValue([]);
+    mockListProducts.mockResolvedValue([product]);
+    mockGetSettings.mockResolvedValue({ current_year: 2026 });
+  });
+
+  async function selectContract(reference: string) {
+    await waitFor(() => {
+      expect(screen.getByText(reference)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(reference));
+  }
+
+  it('Proposed + no agreed price -> initial set action available', async () => {
+    mockListContracts.mockResolvedValue([contract]);
+    mockGetContractProducts.mockResolvedValue([contractProduct]);
+    render(ContractsPage);
+    await selectContract('C-2026-001');
+    await waitFor(() => {
+      expect(screen.getByText('تثبيت السعر')).toBeInTheDocument();
+    });
+  });
+
+  it('Proposed + existing agreed price -> revision action available (R-02 gap)', async () => {
+    mockListContracts.mockResolvedValue([contract]);
+    mockGetContractProducts.mockResolvedValue([agreedContractProduct]);
+    mockSetContractProductAgreedPriceHt.mockResolvedValue(131.5);
+    render(ContractsPage);
+    await selectContract('C-2026-001');
+    await waitFor(() => {
+      expect(screen.getByText('مراجعة السعر')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('مراجعة السعر'));
+
+    const priceInput = (await screen.findByLabelText(/سعر الاتفاق \(دج\)/)) as HTMLInputElement;
+    expect(priceInput.value).toBe('110.5');
+
+    await fireEvent.input(priceInput, { target: { value: '99.5' } });
+    fireEvent.click(screen.getByText('تحديث'));
+    await waitFor(() => {
+      expect(mockSetContractProductAgreedPriceHt).toHaveBeenCalledWith({
+        contract_product_id: 'cp2',
+        agreed_price_ht: 99.5,
+      });
+    });
+  });
+
+  it('non-Proposed (Accepted) + existing agreed price -> revision action NOT exposed', async () => {
+    mockListContracts.mockResolvedValue([acceptedContract]);
+    mockGetContractProducts.mockResolvedValue([
+      { ...agreedContractProduct, contract_id: 'c2' },
+    ]);
+    render(ContractsPage);
+    await selectContract('C-2026-002');
+    await waitFor(() => {
+      expect(screen.getByText('110.50 دج')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('مراجعة السعر')).not.toBeInTheDocument();
+    expect(screen.queryByText('تثبيت السعر')).not.toBeInTheDocument();
+    expect(screen.queryByText('اعتماد المقترح')).not.toBeInTheDocument();
   });
 });
