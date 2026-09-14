@@ -98,8 +98,9 @@ export interface InventoryStock {
   quantity: number;
   unit: string;
   last_updated: string;
-  /** SEC-087 Phase 5: consumption-unit key of the stock row. */
-  consumption_unit?: number | null;
+  /** SEC-087 Phase 6C: consumption-unit key of the stock row — the inventory
+   *  identity unit (REQUIRED, NOT NULL in the schema; no legacy NULL-keyed row). */
+  consumption_unit: number;
 }
 
 export interface StockCheckResult {
@@ -221,6 +222,15 @@ export interface ContractProduct {
   product_name: string;
   proposed_price_ht: number;
   agreed_price_ht: number | null;
+  // SEC-087 Phase 3: authoritative ordered-price snapshot persisted at
+  // agreement (backend ContractProduct projection — nullable until agreed).
+  tva_classification: number | null;
+  tva_rate: number | null;
+  tva_amount: number | null;
+  price_ttc: number | null;
+  purchase_unit: number | null;
+  consumption_unit: number | null;
+  conversion_factor: number | null;
 }
 
 export interface ContractAllocation {

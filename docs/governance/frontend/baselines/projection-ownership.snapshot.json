@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-13T00:00:00.000Z",
+  "generated": "2026-09-14T00:00:00.000Z",
   "totalTypes": 125,
   "types": [
     {
@@ -2893,6 +2893,34 @@
         },
         {
           "name": "agreed_price_ht",
+          "type": "number | null"
+        },
+        {
+          "name": "tva_classification",
+          "type": "number | null"
+        },
+        {
+          "name": "tva_rate",
+          "type": "number | null"
+        },
+        {
+          "name": "tva_amount",
+          "type": "number | null"
+        },
+        {
+          "name": "price_ttc",
+          "type": "number | null"
+        },
+        {
+          "name": "purchase_unit",
+          "type": "number | null"
+        },
+        {
+          "name": "consumption_unit",
+          "type": "number | null"
+        },
+        {
+          "name": "conversion_factor",
           "type": "number | null"
         }
       ]
