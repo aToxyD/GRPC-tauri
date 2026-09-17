@@ -976,10 +976,14 @@ mod tests {
     /// must learn the product is unavailable for the fiscal year.
     #[test]
     fn product_not_available_in_year_maps_to_dedicated_code() {
-        let e = AppError::BusinessLogic(BusinessLogicError::ProductNotAvailableInYear { year: 2023 });
+        let e =
+            AppError::BusinessLogic(BusinessLogicError::ProductNotAvailableInYear { year: 2023 });
         let user_err = e.to_user_error();
 
-        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_ne!(
+            user_err.code, "INTERNAL",
+            "must not fall through to INTERNAL"
+        );
         assert_eq!(user_err.code, "PRODUCT_NOT_AVAILABLE_IN_YEAR");
         assert!(
             user_err.message.contains("غير متوفر") && user_err.message.contains("2023"),
@@ -1000,7 +1004,10 @@ mod tests {
         });
         let user_err = e.to_user_error();
 
-        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_ne!(
+            user_err.code, "INTERNAL",
+            "must not fall through to INTERNAL"
+        );
         assert_eq!(user_err.code, "PRICE_CALCULATION");
         assert_eq!(
             user_err.message,
@@ -1008,7 +1015,10 @@ mod tests {
         );
 
         let rendered = into_command_error(e);
-        assert_eq!(rendered, user_err.message, "production path returns message as-is");
+        assert_eq!(
+            rendered, user_err.message,
+            "production path returns message as-is"
+        );
         assert!(
             !rendered.contains("[dev:") && !rendered.contains("Error:"),
             "no debug marker or prefix may leak: {rendered}"
@@ -1024,7 +1034,10 @@ mod tests {
         });
         let user_err = e.to_user_error();
 
-        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_ne!(
+            user_err.code, "INTERNAL",
+            "must not fall through to INTERNAL"
+        );
         assert_eq!(user_err.code, "RATE_CALCULATION");
         assert_eq!(user_err.message, "تعذر حساب المعدل للسنة الحالية");
         assert!(!user_err.message.contains("INTERNAL"));
@@ -1038,7 +1051,10 @@ mod tests {
         let e = AppError::BusinessLogic(BusinessLogicError::UnitNotConfigured);
         let user_err = e.to_user_error();
 
-        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_ne!(
+            user_err.code, "INTERNAL",
+            "must not fall through to INTERNAL"
+        );
         assert_eq!(user_err.code, "UNIT_NOT_CONFIGURED");
         assert_ne!(user_err.code, "UNIT_CONFIG_FROZEN", "distinct semantics");
         assert!(
@@ -1067,7 +1083,10 @@ mod tests {
         });
         let user_err = e.to_user_error();
 
-        assert_ne!(user_err.code, "INTERNAL", "must not fall through to INTERNAL");
+        assert_ne!(
+            user_err.code, "INTERNAL",
+            "must not fall through to INTERNAL"
+        );
         assert_eq!(user_err.code, "BIZ_VALIDATION");
         assert!(
             user_err.message.contains("الاسم") && user_err.message.contains("مورد بنفس الاسم"),
@@ -1086,12 +1105,11 @@ mod tests {
     /// representative range violations (fiscal year, calendar month).
     #[test]
     fn validation_out_of_range_maps_to_range_code() {
-        let year_out_of_range =
-            AppError::Validation(ValidationError::OutOfRange {
-                field: "year".to_string(),
-                value: "1999".to_string(),
-            })
-            .to_user_error();
+        let year_out_of_range = AppError::Validation(ValidationError::OutOfRange {
+            field: "year".to_string(),
+            value: "1999".to_string(),
+        })
+        .to_user_error();
 
         assert_ne!(
             year_out_of_range.code, "INTERNAL",
@@ -1106,12 +1124,11 @@ mod tests {
         );
         assert!(!year_out_of_range.message.contains("INTERNAL"));
 
-        let month_out_of_range =
-            AppError::Validation(ValidationError::OutOfRange {
-                field: "month".to_string(),
-                value: "13".to_string(),
-            })
-            .to_user_error();
+        let month_out_of_range = AppError::Validation(ValidationError::OutOfRange {
+            field: "month".to_string(),
+            value: "13".to_string(),
+        })
+        .to_user_error();
 
         assert_eq!(month_out_of_range.code, "VAL_RANGE");
         assert!(
@@ -1125,9 +1142,8 @@ mod tests {
     /// SEC-087 arms (representative FISCAL and VAL codes).
     #[test]
     fn existing_unrelated_mappings_remain_unchanged() {
-        let fiscal =
-            AppError::BusinessLogic(BusinessLogicError::FiscalYearClosed { year: 2023 })
-                .to_user_error();
+        let fiscal = AppError::BusinessLogic(BusinessLogicError::FiscalYearClosed { year: 2023 })
+            .to_user_error();
         assert_eq!(fiscal.code, "FISCAL_CLOSED");
 
         let required = AppError::Validation(ValidationError::Required {
