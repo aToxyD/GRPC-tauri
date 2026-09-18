@@ -408,8 +408,11 @@ select target-unit dataset
 Importer `in_scope` filtering remains a **defense-in-depth** control, not the
 primary isolation mechanism:
 
-- **Target binding / authentication is the primary package-to-UNIT boundary**
-  (§13 importer target matrix).
+- **Authentication is today the primary package-to-UNIT boundary** — Ed25519
+  `signature_version = 2` verification via
+  `verify_v2_package_for_import`. Phase 2 adds **target binding** (§13
+  importer target matrix) as the explicit package-to-UNIT semantic boundary;
+  it is NOT implemented yet.
 - **Dataset selection at export is the producer-side boundary** (§15.1): the
   artifact physically contains only the target unit's rows.
 - **`in_scope` filtering at import remains an additional defensive layer**,
@@ -419,31 +422,72 @@ primary isolation mechanism:
   because `in_scope` happens to filter rows. Row filtering never substitutes
   for target binding.
 
-Import ordering is preserved as implemented at the V3 boundary
-(`commands/import_export.rs` pipeline): the kind-blind schema gate at
-envelope entry, replay dedup on exact `package_id`, then
-`verify_v2_package_for_import` performing cryptographic authentication and
-provenance before kind dispatch, the kind importer performing
-structural/business validation, `in_scope` enforced per-dimension during
-application inside the single transaction, and atomic apply. Target binding
-(the importer target matrix) is inserted as an additional stage in the
-importer phase:
+### Current implemented import pipeline (verified)
+
+The current V3 import pipeline, verified against the executable order of
+`commands/import_export.rs::run_import_pipeline_core` and
+`application/usecases/sync/import_contract_catalog_package.rs::execute`:
 
 ```
-schema
--> cryptographic authentication
--> provenance
--> replay protection
--> target binding (importer phase)
--> structural/business validation
--> in_scope
--> atomic apply
+schema (kind-blind envelope gate, SupportedSchemaWindow)
+-> kind-aware import security requirements
+-> cryptographic authentication (verify_v2_package_for_import,
+   Ed25519 signature_version=2 + membership/issuer policy)
+-> structural/business validation (validate_contract_catalog_package_for_import)
+-> provenance / source check (products_source_allowed_for_unit)
+-> replay protection (exact package_id dedup, registry.has_imported)
+-> importer-unit scope resolution (resolve_importer_unit_id)
+-> in_scope + target-scoped application (import_contract_catalog_sync)
+-> atomic apply (single transaction) + package_id marked imported
 ```
 
-The ordering above reflects the actually documented pipeline; in particular,
-replay protection precedes the kind importer's validation, and `in_scope` is
-enforced at apply time inside the atomic transaction rather than as an
-early isolation gate.
+Step resolution across both layers:
+
+**Command layer (`commands/import_export.rs`).** Authorization and session
+touch precede the DB transaction; after encrypted package load/decrypt the
+kind-blind schema/envelope gate (`SupportedSchemaWindow::can_import`) runs at
+envelope entry, followed by the kind-aware import security requirements
+(`validate_import_security_requirements`, rejecting unsigned / V1-downgraded
+critical kinds). Inside the single import transaction
+(`with_event_persistence`), the transactional settings are re-read (F-04 /
+SYNC-007) and `verify_v2_package_for_import` performs the cryptographic
+authentication — Ed25519 node identity, `signature_version = 2`, with the
+kind-scoped issuer/membership policy — before the per-kind importer runs.
+No transport sequencing exists (SEC-056D/SEC-057).
+
+**Importer usecase (`import_contract_catalog_package.rs::execute`),** in
+executable order:
+
+1. `validate_contract_catalog_package_for_import(&input.package)` —
+   structural/business validation;
+2. `products_source_allowed_for_unit(...)` — provenance/source check on
+   `source_node_id` against the importer's wilaya code;
+3. `registry.has_imported(&package_id)` — exact `package_id` replay dedup;
+4. `resolve_importer_unit_id(...)` — importer-unit scope resolution;
+5. `import_contract_catalog_sync(...)` — the target-scoped application path,
+   including `in_scope` enforcement during dimension application, inside the
+   atomic transaction;
+6. `registry.mark_imported(&package_id)` — applied-package record.
+
+The executable order therefore places structural/business validation BEFORE
+the provenance/source check, and the provenance/source check BEFORE exact
+`package_id` replay dedup. `in_scope` is enforced at apply time inside the
+atomic transaction rather than as an early isolation gate.
+
+### Future Phase 2 target binding
+
+- A target-binding control will be introduced for `UnitDistribution`
+  packages, but its exact placement in the import pipeline is a **Phase 2
+  design decision** and MUST be settled and documented before Phase 2
+  implementation.
+- Phase 2 MUST ensure target binding occurs before any target-specific
+  application or acceptance of the package.
+- Target binding is NOT part of the current implemented pipeline and is NOT
+  shown in the current-order diagram above. The current implementation order
+  is documented separately (above) and remains the reference for present
+  behavior.
+- No target-binding implementation is introduced by this documentation
+  correction.
 
 ## 15.3 Failure Isolation: B Must Not Invalidate A
 
