@@ -554,7 +554,7 @@ pub fn export_daily_report_package(
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
     // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
-    let target_node_id =
+    let _target_node_id =
         crate::application::services::transport_target::resolve_wilaya_transport_target(
             executor,
             &settings_row,
@@ -566,7 +566,8 @@ pub fn export_daily_report_package(
             dataset.clone(),
             &source_node_id,
             "daily_report",
-            &target_node_id,
+            None,
+            None,
             std::path::Path::new(&file_path),
             export_subject_type(settings.node_type),
             &state.crypto_port,
@@ -984,7 +985,7 @@ pub fn export_monthly_summary_package(
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
     // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
-    let target_node_id =
+    let _target_node_id =
         crate::application::services::transport_target::resolve_wilaya_transport_target(
             executor,
             &settings_row,
@@ -996,7 +997,8 @@ pub fn export_monthly_summary_package(
             dataset.clone(),
             &source_node_id,
             "monthly_summary",
-            &target_node_id,
+            None,
+            None,
             std::path::Path::new(&file_path),
             export_subject_type(settings_row.node_type),
             &state.crypto_port,
@@ -1164,7 +1166,7 @@ pub fn export_stock_movements_package(
         resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
 
     // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
-    let target_node_id =
+    let _target_node_id =
         crate::application::services::transport_target::resolve_wilaya_transport_target(
             executor,
             &settings_row,
@@ -1176,7 +1178,8 @@ pub fn export_stock_movements_package(
             dataset.clone(),
             &source_node_id,
             "stock_movements",
-            &target_node_id,
+            None,
+            None,
             std::path::Path::new(&file_path),
             export_subject_type(settings_row.node_type),
             &state.crypto_port,
@@ -2088,6 +2091,8 @@ mod security_requirement_tests {
             signature_version: Some(SIGNATURE_VERSION_V2),
             signing_key_id: Some("default".to_string()),
             source_node_id: "wilaya-a".to_string(),
+            export_mode: None,
+            target_node_id: None,
         }
     }
 
@@ -2210,6 +2215,8 @@ mod security_requirement_tests {
                 signature_version: None,
                 signing_key_id: Some("default".to_string()),
                 source_node_id: "unit-a".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
             payload: ProductsExportDataset {
                 product_rows: Vec::new(),
@@ -2239,6 +2246,8 @@ mod security_requirement_tests {
             signature_version: Some(SIGNATURE_VERSION_V2),
             signing_key_id: Some("default".to_string()),
             source_node_id: "wilaya-a".to_string(),
+            export_mode: None,
+            target_node_id: None,
         }
     }
 

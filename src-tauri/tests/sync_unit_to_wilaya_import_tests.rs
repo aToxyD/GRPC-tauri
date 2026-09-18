@@ -252,6 +252,8 @@ fn envelope_metadata(pkg_id: &str, issuer_id: Uuid, source_node_id: &str) -> Syn
         signing_key_id: Some(signer.public_key_hex()),
         integrity_hash: None,
         signature: None,
+        export_mode: None,
+        target_node_id: None,
     }
 }
 

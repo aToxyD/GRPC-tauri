@@ -55,6 +55,8 @@ fn fixture_products_package() -> SyncPackage<ProductsExportDataset> {
             signing_key_id: Some(v2_signer().public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: ProductsExportDataset {
             product_rows: vec![ProductExportRow {
@@ -85,6 +87,8 @@ fn fixture_daily_package() -> SyncPackage<DailyReportExportDataset> {
             signing_key_id: Some(v2_signer().public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: DailyReportExportDataset {
             snapshot: DailyReportSyncSnapshot {
@@ -207,6 +211,8 @@ fn fixture_contract_catalog_package() -> SyncPackage<ContractCatalogExportDatase
             signing_key_id: Some(v2_signer().public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: ContractCatalogExportDataset {
             suppliers: vec![supplier],
@@ -306,6 +312,8 @@ fn v1_shaped_package_is_rejected_by_deserializer() {
             signing_key_id: Some("default".into()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: ProductsExportDataset {
             product_rows: Vec::new(),

@@ -231,7 +231,8 @@ fn fresh_unit_cross_kind_exports_admin_then_products() {
             },
             "wilaya-test-node",
             "products",
-            "UNIT-A",
+            None,
+            None,
             &p2,
             SubjectType::Wilaya,
             &crypto,
@@ -283,7 +284,8 @@ fn fresh_unit_cross_kind_exports_products_then_admin() {
             },
             "wilaya-test-node",
             "products",
-            "UNIT-B",
+            None,
+            None,
             &p1,
             SubjectType::Wilaya,
             &crypto,
@@ -339,7 +341,7 @@ fn interleaved_kinds_and_targets_are_exact_distinct_packages() {
             )
             .expect("admin export")
     };
-    let export_products = |target: &str, path: &std::path::Path| {
+    let export_products = |_target: &str, path: &std::path::Path| {
         service
             .export_v2_package(
                 ProductsExportDataset {
@@ -347,7 +349,8 @@ fn interleaved_kinds_and_targets_are_exact_distinct_packages() {
                 },
                 "wilaya-test-node",
                 "products",
-                target,
+                None,
+                None,
                 path,
                 SubjectType::Wilaya,
                 &crypto,
@@ -427,7 +430,8 @@ fn failed_export_writes_nothing_and_retry_succeeds() {
                 },
                 "wilaya-test-node",
                 "products",
-                "UNIT-A",
+                None,
+                None,
                 &bad,
                 SubjectType::Wilaya,
                 &crypto,
@@ -446,7 +450,8 @@ fn failed_export_writes_nothing_and_retry_succeeds() {
             },
             "wilaya-test-node",
             "products",
-            "UNIT-A",
+            None,
+            None,
             &good,
             SubjectType::Wilaya,
             &crypto,

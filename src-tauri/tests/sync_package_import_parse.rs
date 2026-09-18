@@ -59,6 +59,8 @@ fn v2_package_roundtrips_encrypted_and_validates() {
             signing_key_id: Some(signer.public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: monthly_dataset(),
     };
@@ -107,6 +109,8 @@ fn rejects_integrity_hash_mismatch() {
             signing_key_id: None,
             integrity_hash: Some("deadbeef".into()),
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: monthly_dataset(),
     };
@@ -135,6 +139,8 @@ fn rejects_package_without_integrity_hash() {
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: monthly_dataset(),
     };

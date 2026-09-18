@@ -204,6 +204,8 @@ fn trust_package(
             signing_key_id: Some(signer.public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: TrustPackagePayload {
             certificates,
@@ -229,6 +231,8 @@ fn registry_package(
             signing_key_id: Some(signer.public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: RegistryPackagePayload {
             snapshot_version,

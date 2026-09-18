@@ -382,6 +382,8 @@ mod tests {
                 signature_version: Some(crate::domain::identity::SIGNATURE_VERSION_ED25519),
                 signing_key_id: Some(signer.public_key_hex()),
                 source_node_id: "wilaya-a".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
             payload: json!({ "units": [] }),
         };
@@ -509,6 +511,8 @@ mod tests {
                 signature_version: None,
                 signing_key_id: None,
                 source_node_id: "unit-a".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
             payload: json!({ "items": [] }),
         };
@@ -533,6 +537,8 @@ mod tests {
                 signature_version: Some(1),
                 signing_key_id: None,
                 source_node_id: "unit-a".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
             payload: json!({ "items": [] }),
         };
@@ -875,6 +881,8 @@ mod tests {
                 signature_version: Some(crate::domain::identity::SIGNATURE_VERSION_ED25519),
                 signing_key_id: Some(signer.public_key_hex()),
                 source_node_id: "unit-a".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
             payload: json!({
                 "movements": [

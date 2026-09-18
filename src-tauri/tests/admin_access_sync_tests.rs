@@ -113,6 +113,8 @@ fn admin_package(
             signature_version: Some(SIGNATURE_VERSION_ED25519),
             signing_key_id: Some("default".to_string()),
             source_node_id: "wilaya-a".to_string(),
+            export_mode: None,
+            target_node_id: None,
         },
         payload,
     }

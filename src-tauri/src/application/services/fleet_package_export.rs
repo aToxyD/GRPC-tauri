@@ -64,12 +64,13 @@ pub fn export_products_fleet(
     emit_per_target(
         db,
         node_key_store,
-        |exporter, target, path| {
+        |exporter, _target, path| {
             exporter.export_v2_package(
                 dataset.clone(),
                 source_node_id,
                 PRODUCTS_PACKAGE_KIND,
-                target,
+                None,
+                None,
                 path,
                 subject_type,
                 crypto_port,
@@ -104,12 +105,13 @@ pub fn export_contract_catalog_fleet(
     emit_per_target(
         db,
         node_key_store,
-        |exporter, target, path| {
+        |exporter, _target, path| {
             exporter.export_v2_package(
                 dataset.clone(),
                 source_node_id,
                 CONTRACT_CATALOG_PACKAGE_KIND,
-                target,
+                None,
+                None,
                 path,
                 subject_type,
                 crypto_port,

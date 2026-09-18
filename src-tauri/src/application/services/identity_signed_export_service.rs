@@ -27,7 +27,7 @@ use serde::Serialize;
 
 use crate::application::services::NodeIdentityResolver;
 use crate::application::sync::{
-    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+    PackageExportMode, PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
 };
 use crate::db::Database;
 use crate::domain::identity::{SubjectType, SIGNATURE_VERSION_ED25519};
@@ -55,13 +55,18 @@ impl<'a> IdentitySignedExportService<'a> {
     /// Fail-closed: `None` from the resolver (no node key, no ACTIVE
     /// certificate, R5 mismatch, non-Ed25519 algorithm) is an error — there is
     /// no HMAC fallback path for production sync exports.
+    ///
+    /// `export_mode` / `target_node_id` are authenticated Contract Catalog
+    /// replay metadata (SEC-087 Phase 2) carried inside the signed envelope.
+    /// `None` for both on every non-Contract-Catalog producer.
     #[allow(clippy::too_many_arguments)]
     pub fn export_v2_package<T: Serialize>(
         &self,
         dataset: T,
         source_node_id: &str,
         kind: &str,
-        _target_node_id: &str,
+        export_mode: Option<PackageExportMode>,
+        target_node_id: Option<&str>,
         target_path: &Path,
         node_type: SubjectType,
         crypto_port: &AgeFileEncryptionProvider,
@@ -81,6 +86,8 @@ impl<'a> IdentitySignedExportService<'a> {
             dataset,
             source_node_id,
             kind,
+            export_mode,
+            target_node_id,
             identity_id,
             signer,
             target_path,
@@ -131,6 +138,8 @@ impl<'a> IdentitySignedExportService<'a> {
             dataset,
             source_node_id,
             crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCESS_PACKAGE_KIND,
+            None,
+            None,
             identity_id,
             signer,
             target_path,
@@ -156,6 +165,8 @@ impl<'a> IdentitySignedExportService<'a> {
         dataset: T,
         source_node_id: &str,
         kind: &str,
+        export_mode: Option<PackageExportMode>,
+        target_node_id: Option<&str>,
         identity_id: Uuid,
         signer: Ed25519PackageSigner,
         target_path: &Path,
@@ -172,6 +183,8 @@ impl<'a> IdentitySignedExportService<'a> {
                 signing_key_id: Some(signer.public_key_hex()),
                 integrity_hash: None,
                 signature: None,
+                export_mode,
+                target_node_id: target_node_id.map(str::to_string),
             },
             payload: dataset,
         };
@@ -245,6 +258,8 @@ impl<'a> IdentitySignedExportService<'a> {
                 signing_key_id: Some(signer.public_key_hex()),
                 integrity_hash: None,
                 signature: None,
+                export_mode: None,
+                target_node_id: None,
             },
             payload: dataset,
         };

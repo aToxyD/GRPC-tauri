@@ -35,6 +35,8 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: ProductsExportDataset {
             product_rows: vec![ProductExportRow {

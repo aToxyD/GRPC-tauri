@@ -274,6 +274,8 @@ fn package(
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: dataset,
     }

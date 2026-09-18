@@ -197,6 +197,8 @@ fn products_package_v3(
             signing_key_id: Some(signer.public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: ProductsExportDataset { product_rows: rows },
     }

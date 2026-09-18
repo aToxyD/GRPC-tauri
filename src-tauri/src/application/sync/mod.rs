@@ -32,6 +32,6 @@ pub use import_validation::{
 };
 pub use package::SyncPackage;
 pub use package_kind::SyncPackageKind;
-pub use package_metadata::{PackageId, SyncPackageMetadata};
+pub use package_metadata::{PackageExportMode, PackageId, SyncPackageMetadata};
 pub use schema_version::SchemaVersion;
 pub use unit_issuer_membership::verify_unit_issuer_membership;
