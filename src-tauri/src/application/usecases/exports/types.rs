@@ -69,6 +69,26 @@ pub struct StockMovementsExportInput {
 #[derive(Debug, Clone, Default)]
 pub struct ExportContractCatalogInput;
 
+/// Explicit export mode for a Contract Catalog exchange (ADR-0059).
+///
+/// Locked semantic: the mode is NEVER represented as `Option<TargetUnit>` with
+/// `None == FleetRestore`. `UnitDistribution` structurally requires the target
+/// node code (`units.code`, authoritative via
+/// `transport_target::resolve_unit_transport_target`) and can never represent a
+/// missing target; `FleetRestore` is the only fleet-wide form.
+///
+/// Phase 1 establishes this mode model only; the mode-carrying input wrapper is
+/// introduced by the later exporter/use-case wiring phase once constructor
+/// boundaries exist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportContractCatalogMode {
+    /// Fleet-wide restore/reissue — UNSCOPED dataset, all statuses retained.
+    FleetRestore,
+    /// UNIT-scoped distribution — dataset restricted to the target unit's
+    /// exportable contracts (ADR-0059 §6 status policy).
+    UnitDistribution { target_unit_code: String },
+}
+
 /// A contract product line carrying the authoritative ordered-price snapshot
 /// plus its `created_at` (both needed by the import upsert; the `ContractProduct`
 /// model does not expose `created_at`).
@@ -117,4 +137,32 @@ pub struct ContractCatalogExportDataset {
     pub unit_supplier_links: Vec<ContractCatalogUnitSupplierLink>,
     pub contracts: Vec<ContractCatalogContractRow>,
     pub tax_policies: Vec<FiscalYearTaxPolicy>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_distribution_requires_a_target_code() {
+        let mode = ExportContractCatalogMode::UnitDistribution {
+            target_unit_code: "W101".to_string(),
+        };
+        match mode {
+            ExportContractCatalogMode::UnitDistribution { target_unit_code } => {
+                assert_eq!(target_unit_code, "W101");
+            }
+            ExportContractCatalogMode::FleetRestore => {
+                panic!("UNIT distribution must carry the target unit code");
+            }
+        }
+    }
+
+    #[test]
+    fn fleet_restore_has_no_target() {
+        let mode = ExportContractCatalogMode::FleetRestore;
+        if let ExportContractCatalogMode::UnitDistribution { .. } = mode {
+            panic!("fleet restore must not carry a target unit code");
+        }
+    }
 }

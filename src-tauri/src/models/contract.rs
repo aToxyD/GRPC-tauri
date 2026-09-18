@@ -61,6 +61,23 @@ impl ContractStatus {
             ContractStatus::Proposed | ContractStatus::Accepted | ContractStatus::Active
         )
     }
+
+    /// Per-UNIT Contract Catalog export eligibility (ADR-0059).
+    ///
+    /// The UNIT-scoped distribution artifact includes only
+    /// `Accepted | Active | Ended` contracts; `Proposed | Cancelled` are
+    /// excluded. Purely classificatory — it never mutates the status.
+    ///
+    /// NOTE: `Ended` remains exportable at the status level, but an `Ended(B)`
+    /// contract belonging to a different unit MUST NEVER appear in unit A's
+    /// artifact; that cross-unit exclusion is enforced by exporter unit-scoping
+    /// (unit scope trumps Ended eligibility, ADR-0059 §6).
+    pub fn is_catalog_exportable(&self) -> bool {
+        matches!(
+            self,
+            ContractStatus::Accepted | ContractStatus::Active | ContractStatus::Ended
+        )
+    }
 }
 
 /// Contract header
@@ -381,4 +398,48 @@ pub struct ProductUnitConfigCodes {
     pub consumption_unit: i32,
     pub conversion_factor: i32,
     pub tva_classification: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_exportable_statuses_are_accepted_active_ended() {
+        for status in [
+            ContractStatus::Accepted,
+            ContractStatus::Active,
+            ContractStatus::Ended,
+        ] {
+            assert!(
+                status.is_catalog_exportable(),
+                "{status:?} must be exportable"
+            );
+        }
+    }
+
+    #[test]
+    fn proposed_and_cancelled_are_not_catalog_exportable() {
+        for status in [ContractStatus::Proposed, ContractStatus::Cancelled] {
+            assert!(
+                !status.is_catalog_exportable(),
+                "{status:?} must NOT be exportable"
+            );
+        }
+    }
+
+    #[test]
+    fn predicate_is_pure_observation() {
+        for status in [
+            ContractStatus::Proposed,
+            ContractStatus::Accepted,
+            ContractStatus::Active,
+            ContractStatus::Ended,
+            ContractStatus::Cancelled,
+        ] {
+            let before = status;
+            let _ = status.is_catalog_exportable();
+            assert_eq!(before, status, "{status:?} must not be mutated");
+        }
+    }
 }
