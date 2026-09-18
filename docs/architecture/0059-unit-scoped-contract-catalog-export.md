@@ -10,8 +10,11 @@ UNIT-scoped Contract Catalog distribution, eliminating the historical
 sync path (ADR-0055 §3.10 / SEC-087-F). In its first phase it ratifies the
 explicit export mode model, the authoritative target-node identity, the
 per-UNIT status eligibility rule, the `SyncPackageMetadata.target_node_id`
-field with its serialization behavior, and the importer target-validation
-policy. It purposely does NOT implement exporter/importer wiring.
+field with its serialization behavior, the importer target-validation
+policy, and the export-boundary invariants (producer selected-dataset
+validation, `in_scope` as defense-in-depth, failure isolation, and
+replay/provenance preservation, §15). It purposely does NOT implement
+exporter/importer wiring.
 
 | Item | Status |
 |------|--------|
@@ -113,7 +116,7 @@ It deliberately does **not** yet deliver or wire:
 - repository SQL hardening (`repositories/contracts.rs`).
 
 Those are explicit later-phase workstreams that require their own
-implementation authorization (§8, §15, §17).
+implementation authorization (§8, §16, §18).
 
 # 3. Export Mode Model
 
@@ -367,7 +370,126 @@ artifact, target mismatch (§13), dataset scope breach — MUST:
 No silent ignore, no partial application, no interactive conflict
 resolution, no legacy fallback (ADR-0058 §5 precedent).
 
-# 15. Deferred Work (later phases, separate authorization)
+# 15. Export Boundary Invariants
+
+This section records four mandatory architectural invariants governing the
+unit-scoped Contract Catalog export/import boundaries. They are contract
+requirements; most take effect with the Phase 2 exporter/importer wiring.
+They do not broaden the Phase 1 code deliverables.
+
+## 15.1 Producer Selected-Dataset Validation
+
+Producer-side validation MUST be performed against the EXACT dataset selected
+for the export target/mode, before canonical serialization, hashing, signing,
+and encryption. For `UnitDistribution` the producer pipeline is strictly:
+
+```
+select target-unit dataset
+-> validate that selected dataset
+-> canonicalize/serialize
+-> hash
+-> sign
+-> encrypt
+```
+
+- The producer MUST NOT validate a broader WILAYA-wide dataset and only
+  later filter it into the unit artifact. Validation and emission operate on
+  one dataset: the exact rows the target unit will receive.
+- This preserves artifact correctness: unrelated-unit data defects never
+  become a dependency of the target-unit artifact, because those rows are
+  never part of the validated, serialized, hashed, signed payload.
+- Precision: this does NOT claim that validation discovers arbitrary database
+  corruption. The architectural point is that the dataset being validated
+  MUST be the dataset actually emitted and signed — the validation domain is
+  identical to the artifact domain.
+
+## 15.2 `in_scope` as Defense-in-Depth
+
+Importer `in_scope` filtering remains a **defense-in-depth** control, not the
+primary isolation mechanism:
+
+- **Target binding / authentication is the primary package-to-UNIT boundary**
+  (§13 importer target matrix).
+- **Dataset selection at export is the producer-side boundary** (§15.1): the
+  artifact physically contains only the target unit's rows.
+- **`in_scope` filtering at import remains an additional defensive layer**,
+  applied late in the pipeline.
+- `in_scope` MUST NOT be treated as the primary isolation mechanism.
+- A package targeting UNIT A MUST never become valid for UNIT B merely
+  because `in_scope` happens to filter rows. Row filtering never substitutes
+  for target binding.
+
+Import ordering is preserved as implemented at the V3 boundary
+(`commands/import_export.rs` pipeline): the kind-blind schema gate at
+envelope entry, replay dedup on exact `package_id`, then
+`verify_v2_package_for_import` performing cryptographic authentication and
+provenance before kind dispatch, the kind importer performing
+structural/business validation, `in_scope` enforced per-dimension during
+application inside the single transaction, and atomic apply. Target binding
+(the importer target matrix) is inserted as an additional stage in the
+importer phase:
+
+```
+schema
+-> cryptographic authentication
+-> provenance
+-> replay protection
+-> target binding (importer phase)
+-> structural/business validation
+-> in_scope
+-> atomic apply
+```
+
+The ordering above reflects the actually documented pipeline; in particular,
+replay protection precedes the kind importer's validation, and `in_scope` is
+enforced at apply time inside the atomic transaction rather than as an
+early isolation gate.
+
+## 15.3 Failure Isolation: B Must Not Invalidate A
+
+**Invariant:** for two distinct units A and B, data belonging exclusively to
+B MUST NOT cause unit A's `UnitDistribution` artifact to be rejected,
+malformed, semantically invalid, or otherwise fail. Examples of B-only data
+that must be incapable of invalidating A's artifact include:
+
+- malformed B-only contract data;
+- invalid B-only draft/contract state;
+- B-only allocation/data inconsistency;
+- B-only dataset validation failure.
+
+Conversely, A-only defects MAY invalidate A's artifact without invalidating
+B's artifact.
+
+The unit-scoped artifact is an **independent validation/signing failure
+domain**. This is a direct failure-isolation invariant, not merely the
+statement that "the payload is unit-scoped." It is underpinned by §15.1:
+because producer validation runs over the exact selected dataset, B-only rows
+are excluded before validation, serialization, hashing, and signing, so a
+B-only defect cannot surface in A's artifact; and by §13: target binding
+rejects at import any artifact that somehow reaches the wrong unit.
+
+## 15.4 Replay and Provenance Preservation
+
+The unit-scoped export redesign does NOT remove, bypass, or weaken existing
+replay protection or provenance mechanisms:
+
+- **Replay protection via the existing applied-package / `package_id`
+  mechanism** is preserved. Each emitted package is uniquely identified;
+  import dedup on the exact `package_id` remains the replay boundary.
+- **Provenance via `source_node_id`** is preserved.
+- **Authenticity / signature verification** (Ed25519,
+  `signature_version = 2`, whole-package canonical coverage) is preserved
+  unchanged.
+- **Target binding is an ADDITIONAL semantic boundary** (§15.2, §13); it does
+  NOT replace provenance or replay protection.
+- Once implemented in Phase 2, `target_node_id` is signed/authenticated as
+  part of the package contract: it is covered by the same package signature
+  as every other metadata field (§8), so it cannot be altered without
+  invalidating the package.
+
+No new replay or provenance mechanism is introduced by this ADR.
+
+# 16. Deferred Work (later phases, separate authorization)
 
 1. **Exporter wiring** — per-UNIT dataset selection in
    `export_contract_catalog_dataset.rs`; fleet loop + per-target dataset
@@ -387,11 +509,11 @@ resolution, no legacy fallback (ADR-0058 §5 precedent).
    its serde contract and tests, together with the exporter/serializer wiring
    that the value flows through (§8).
 
-# 16. Non-Goals
+# 17. Non-Goals
 
 This ADR does **not**:
 
-1. implement exporter or importer wiring (§2, §15);
+1. implement exporter or importer wiring (§2, §16);
 2. introduce recipient-specific encryption or any key split (§12);
 3. add a `products` dimension or change the four-dimension dataset shape;
 4. alter lifecycle rules of `ContractStatus` or any transition predicate;
@@ -407,14 +529,14 @@ This ADR does **not**:
 11. define the frontend's mode UI or add any frontend business logic;
 12. change transport sequencing (still permanently retired).
 
-# 17. Implementation Boundary
+# 18. Implementation Boundary
 
 Phase 1 (this ratification) delivers: the mode enum (§3) and the status
 predicate (§6), plus their unit tests and this ADR. The metadata field (§8),
-the input wrapper (§4), and everything in §15 remain out of scope until
+the input wrapper (§4), and everything in §16 remain out of scope until
 separately authorized.
 
-# 18. Testing Contract
+# 19. Testing Contract
 
 Phase 1 tests (included in this change):
 
@@ -432,7 +554,7 @@ deserializes to `None`; present field preserved; round-trip through
 `Ended(B)` exclusion; empty `contracts: []` acceptance for UNIT-scoped;
 fleet all-status retention.
 
-# 19. Governance Records
+# 20. Governance Records
 
 - Follow-on SEC-087-F decision record; ADR-0055 §3.10 reserved this path.
 - Accepted as number **0059**; the `ADR_INDEX.md` row is added per
