@@ -164,26 +164,43 @@ impl<'a> ContractRepository<'a> {
         supplier_id: Option<&str>,
         fiscal_year: Option<i32>,
     ) -> Result<Vec<Contract>, AppError> {
-        let mut sql = format!("SELECT {CONTRACT_COLUMNS} FROM contracts WHERE deleted = 0");
-        let mut filters: Vec<String> = Vec::new();
-        let mut keyed: Vec<String> = Vec::new();
-        if let Some(u) = unit_id {
-            filters.push(format!("unit_id = '{}'", u.replace('\'', "''")));
-            keyed.push("unit_id".to_string());
-        }
-        if let Some(s) = supplier_id {
-            filters.push(format!("supplier_id = '{}'", s.replace('\'', "''")));
-            keyed.push("supplier_id".to_string());
-        }
-        if let Some(y) = fiscal_year {
-            filters.push(format!("fiscal_year = {y}"));
-        }
-        if !filters.is_empty() {
-            sql.push_str(" AND ");
-            sql.push_str(&filters.join(" AND "));
-        }
-        sql.push_str(" ORDER BY fiscal_year DESC, created_at DESC");
-        Ok(self.executor.query_all(&sql, [], map_contract_row)?)
+        // Fully parameterized optional filters — no string interpolation of
+        // unit_id/supplier_id/fiscal_year (ADR-0059 deferred SQL hardening).
+        // The `(?N IS NULL OR col = ?N)` shape is the repository-wide
+        // convention for optional filters (see reports.rs).
+        Ok(self.executor.query_all(
+            &format!(
+                "SELECT {CONTRACT_COLUMNS} FROM contracts WHERE deleted = 0
+                 AND (?1 IS NULL OR unit_id = ?1)
+                 AND (?2 IS NULL OR supplier_id = ?2)
+                 AND (?3 IS NULL OR fiscal_year = ?3)
+                 ORDER BY fiscal_year DESC, created_at DESC"
+            ),
+            params![unit_id, supplier_id, fiscal_year],
+            map_contract_row,
+        )?)
+    }
+
+    /// Exportable contracts for a single UNIT (ADR-0059 per-UNIT status
+    /// policy: `Accepted | Active | Ended`; `Proposed | Cancelled` excluded).
+    ///
+    /// UNIT scope is enforced at the SQL boundary (`unit_id = ?`), so an
+    /// `Ended` contract owned by a different UNIT can never be selected —
+    /// unit scope trumps Ended eligibility (ADR-0059 §6).
+    pub fn list_catalog_exportable_contracts_for_unit(
+        &self,
+        unit_id: &str,
+    ) -> Result<Vec<Contract>, AppError> {
+        Ok(self.executor.query_all(
+            &format!(
+                "SELECT {CONTRACT_COLUMNS} FROM contracts
+                 WHERE unit_id = ?1 AND deleted = 0
+                   AND status IN ('accepted', 'active', 'ended')
+                 ORDER BY fiscal_year DESC, created_at DESC"
+            ),
+            [unit_id],
+            map_contract_row,
+        )?)
     }
 
     /// Count live (proposed/accepted/active) contracts for a unit + fiscal year.
@@ -475,6 +492,46 @@ impl<'a> ContractRepository<'a> {
                     entitlement_state, version, created_at
              FROM contract_allocations WHERE contract_id = ?1 AND deleted = 0",
             [contract_id],
+            |row| {
+                Ok((
+                    ContractAllocation {
+                        id: row.get(0)?,
+                        contract_id: row.get(1)?,
+                        contract_product_id: row.get(2)?,
+                        unit_id: row.get(3)?,
+                        product_id: row.get(4)?,
+                        fiscal_year: row.get(5)?,
+                        contracted_quantity: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+                        fulfilled_quantity: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
+                        released_quantity: numeric_row::qty_col(8, row.get::<_, i64>(8)?)?,
+                        reserved_quantity: numeric_row::qty_col(9, row.get::<_, i64>(9)?)?,
+                        entitlement_state: row.get(10)?,
+                        version: row.get(11)?,
+                    },
+                    row.get::<_, String>(12)?,
+                ))
+            },
+        )?)
+    }
+
+    /// Allocation rows for one contract, restricted to one owning UNIT
+    /// (UNIT-scoped Contract Catalog export, ADR-0059 §11.1). The allocation
+    /// row is per-UNIT (`contract_allocations.unit_id`); selecting through the
+    /// target-owned contract chain AND the row's own unit keeps the artifact
+    /// exactly aligned with the importer's `in_scope` semantics.
+    pub fn list_sync_allocations_for_contract_unit(
+        &self,
+        contract_id: &str,
+        unit_id: &str,
+    ) -> Result<Vec<(ContractAllocation, String)>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT id, contract_id, contract_product_id, unit_id, product_id, fiscal_year,
+                    contracted_quantity, fulfilled_quantity, released_quantity, reserved_quantity,
+                    entitlement_state, version, created_at
+             FROM contract_allocations
+             WHERE contract_id = ?1 AND unit_id = ?2 AND deleted = 0
+             ORDER BY fiscal_year ASC, created_at ASC, id ASC",
+            params![contract_id, unit_id],
             |row| {
                 Ok((
                     ContractAllocation {

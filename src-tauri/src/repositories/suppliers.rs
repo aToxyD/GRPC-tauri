@@ -163,6 +163,20 @@ impl<'a> SupplierRepository<'a> {
         )?)
     }
 
+    /// UNIT↔supplier associations for ONE unit (UNIT-scoped Contract Catalog
+    /// export, ADR-0059 §11.1), ordered deterministically.
+    pub fn list_unit_supplier_links_for_unit(
+        &self,
+        unit_id: &str,
+    ) -> Result<Vec<(String, String)>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT unit_id, supplier_id FROM unit_suppliers
+             WHERE unit_id = ?1 ORDER BY unit_id, supplier_id",
+            [unit_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
+    }
+
     /// WILAYA-authoritative supplier upsert (ContractCatalog V2, WILAYA → UNIT
     /// read-only projection). Refreshes every supplier-owned column on conflict.
     pub fn upsert_sync_supplier(&self, supplier: &Supplier) -> Result<(), AppError> {

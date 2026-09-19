@@ -410,11 +410,110 @@ pub fn export_contract_catalog_package_impl(
                 report_count: 0,
                 inventory_total_value: 0.0,
                 export_reason: "contract_catalog_sync_package".to_string(),
-                export_mode: None,
+                export_mode: Some("fleet_restore".to_string()),
                 target_node_id: None,
             },
         )
     });
+
+    let duration = start_time.elapsed().as_millis() as i64;
+    let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(
+        crate::application::services::TelemetryEventType::SyncExport,
+        crate::application::services::TelemetryOutcome::Success,
+        Some(duration),
+        Some(serde_json::json!({
+            "path": file_path,
+            "kind": CONTRACT_CATALOG_PACKAGE_KIND,
+            "targets": outcome.targets,
+            "artifact_count": outcome.artifact_paths.len(),
+        })),
+        Some(&session.user_id),
+    );
+
+    Ok(result)
+}
+
+/// Export UNIT-scoped ContractCatalog sync packages (`.sync`) to EXACTLY the
+/// requested unit targets (ADR-0059): one independent signed/encrypted
+/// artifact per target with authenticated `unit_distribution` metadata.
+///
+/// Authz: `Action::ExportContractCatalogPackage` → WILAYA Admin only. The
+/// renderer names the target units; each target is resolved fail-closed
+/// server-side before any artifact is written.
+#[tauri::command]
+pub fn export_contract_catalog_to_units(
+    state: State<AppState>,
+    file_path: String,
+    targets: Vec<String>,
+) -> Result<PackageExportResult, String> {
+    export_contract_catalog_to_units_impl(&state, file_path, targets)
+}
+
+/// Implementation of `export_contract_catalog_to_units` (testable without a
+/// Tauri runtime).
+pub fn export_contract_catalog_to_units_impl(
+    state: &AppState,
+    file_path: String,
+    targets: Vec<String>,
+) -> Result<PackageExportResult, String> {
+    let (session, settings) = authorize_command(state, Action::ExportContractCatalogPackage, None)
+        .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+    let start_time = std::time::Instant::now();
+
+    let source_node_id =
+        resolve_export_source_node_id(db.executor(), &settings).map_err(into_command_error)?;
+
+    let outcome = crate::application::services::export_contract_catalog_unit_distribution(
+        db,
+        &node_key_store(),
+        &state.crypto_port,
+        &source_node_id,
+        export_subject_type(settings.node_type),
+        std::path::Path::new(&file_path),
+        &targets,
+    )
+    .map_err(into_command_error)?;
+
+    log::info!(
+        target: "grpc::import_export",
+        "export_contract_catalog_to_units: success targets={} base_path={}",
+        outcome.targets.join(","),
+        file_path
+    );
+
+    let signing_key_id =
+        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
+    let _ = db.with_transaction(|tx| {
+        for (target, _artifact_path) in outcome.targets.iter().zip(outcome.artifact_paths.iter()) {
+            record_export_with_reproducibility(
+                tx,
+                signing_key_id.clone(),
+                ExportReproducibilityContext {
+                    export_hash: Uuid::new_v4().to_string(),
+                    fiscal_year: settings.current_year,
+                    generated_by: session.username.clone(),
+                    movement_count: 0,
+                    report_count: 0,
+                    inventory_total_value: 0.0,
+                    export_reason: "contract_catalog_sync_package".to_string(),
+                    export_mode: Some("unit_distribution".to_string()),
+                    target_node_id: Some(target.clone()),
+                },
+            )?;
+        }
+        Ok(())
+    });
+
+    let result = PackageExportResult::success(
+        file_path.clone(),
+        outcome.record_count,
+        "encrypted".to_string(),
+    );
 
     let duration = start_time.elapsed().as_millis() as i64;
     let _ = crate::application::services::TelemetryService::new(db.executor()).record_event(

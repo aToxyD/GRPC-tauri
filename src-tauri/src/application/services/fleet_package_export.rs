@@ -20,10 +20,11 @@
 
 use super::transport_target;
 use super::IdentitySignedExportService;
+use crate::application::sync::PackageExportMode;
 use crate::application::usecases::exports::export_contract_catalog_dataset;
 use crate::application::usecases::exports::export_products_dataset;
 use crate::application::usecases::exports::types::{
-    ExportContractCatalogInput, ExportProductsInput,
+    ExportContractCatalogInput, ExportContractCatalogMode, ExportProductsInput,
 };
 use crate::application::usecases::sync::import_contract_catalog_package::CONTRACT_CATALOG_PACKAGE_KIND;
 use crate::application::usecases::sync::import_products_package::PRODUCTS_PACKAGE_KIND;
@@ -91,6 +92,10 @@ pub fn export_products_fleet(
 /// suppliers, unit–supplier associations, contract headers/lines,
 /// allocations (+ exceptions) and fiscal-year tax policies; UNIT-owned
 /// runtime state is never serialized.
+///
+/// The artifact is explicitly labeled `FleetRestore` mode (ADR-0059 §6):
+/// authenticated replay metadata — never inferred from the "no target node"
+/// shape.
 pub fn export_contract_catalog_fleet(
     db: &mut Database,
     node_key_store: &NodeKeyStore,
@@ -99,8 +104,12 @@ pub fn export_contract_catalog_fleet(
     subject_type: SubjectType,
     requested_path: &Path,
 ) -> AppResult<FleetExportOutcome> {
-    let dataset =
-        export_contract_catalog_dataset::execute(db.executor(), ExportContractCatalogInput)?;
+    let dataset = export_contract_catalog_dataset::execute(
+        db.executor(),
+        ExportContractCatalogInput {
+            mode: ExportContractCatalogMode::FleetRestore,
+        },
+    )?;
     let targets = transport_target::resolve_fleet_unit_targets(db.executor())?;
     emit_per_target(
         db,
@@ -110,7 +119,7 @@ pub fn export_contract_catalog_fleet(
                 dataset.clone(),
                 source_node_id,
                 CONTRACT_CATALOG_PACKAGE_KIND,
-                None,
+                Some(PackageExportMode::FleetRestore),
                 None,
                 path,
                 subject_type,
@@ -124,6 +133,95 @@ pub fn export_contract_catalog_fleet(
         targets,
         artifact_paths,
         record_count: dataset.contracts.len(),
+    })
+}
+
+/// Export a UNIT-scoped ContractCatalog artifact to EXACTLY the requested
+/// unit targets (ADR-0059 §9). Each target receives an INDEPENDENT dataset —
+/// selected, validated and signed for that unit alone — never a clone of a
+/// fleet-wide artifact:
+///
+/// 1. fail-closed resolution of every requested target code (any unknown /
+///    ineligible target aborts the whole batch BEFORE any emission);
+/// 2. one independent `UnitDistribution` dataset per resolved target
+///    (contracts restricted to the target's internal unit id, allocations /
+///    exceptions via that contract chain, suppliers/links restricted to the
+///    target's relationships, global tax policies);
+/// 3. only then emits per-target artifacts with authenticated
+///    `(UnitDistribution, target code)` metadata.
+///
+/// Partial-failure semantics mirror trust rotation: the first failing target
+/// aborts (fail loud); artifacts already written earlier remain standalone-
+/// valid packages. An empty `targets` slice is rejected — batch intent must
+/// be materialized, it cannot be silently inferred from the whole fleet.
+pub fn export_contract_catalog_unit_distribution(
+    db: &mut Database,
+    node_key_store: &NodeKeyStore,
+    crypto_port: &AgeFileEncryptionProvider,
+    source_node_id: &str,
+    subject_type: SubjectType,
+    requested_path: &Path,
+    targets: &[String],
+) -> AppResult<FleetExportOutcome> {
+    if targets.is_empty() {
+        return Err(crate::errors::AppError::Validation(
+            crate::errors::ValidationError::InvalidFormat {
+                field: "targets".into(),
+                message:
+                    "توزيع كتالوج العقود بالوحدة يتطلب قائمة وحدات مستهدفة — أدخل واحدة على الأقل"
+                        .into(),
+            },
+        ));
+    }
+
+    // Phase 1 — fail-closed resolution + dataset construction for EVERY
+    // target. All executor-backed work MUST precede any emission (the exporter
+    // holds the database for signing/sequence state).
+    let resolved = targets
+        .iter()
+        .map(|code| {
+            let dataset = export_contract_catalog_dataset::execute(
+                db.executor(),
+                ExportContractCatalogInput {
+                    mode: ExportContractCatalogMode::UnitDistribution {
+                        target_unit_code: code.clone(),
+                    },
+                },
+            )?;
+            Ok::<_, crate::errors::AppError>((code.clone(), dataset))
+        })
+        .collect::<crate::errors::AppResult<Vec<_>>>()?;
+
+    // Phase 2 — emission (no executor-backed reads beyond the exporter).
+    let mut artifact_paths = Vec::with_capacity(resolved.len());
+    let mut record_count = 0usize;
+    {
+        let exporter = IdentitySignedExportService::new(db, node_key_store);
+        for (code, dataset) in &resolved {
+            let artifact_path = transport_target::derive_per_target_artifact_path(
+                requested_path,
+                code,
+                targets.len(),
+            );
+            exporter.export_v2_package(
+                dataset.clone(),
+                source_node_id,
+                CONTRACT_CATALOG_PACKAGE_KIND,
+                Some(PackageExportMode::UnitDistribution),
+                Some(code),
+                &artifact_path,
+                subject_type,
+                crypto_port,
+            )?;
+            record_count += dataset.contracts.len();
+            artifact_paths.push(artifact_path);
+        }
+    }
+
+    Ok(FleetExportOutcome {
+        targets: resolved.iter().map(|(code, _)| code.clone()).collect(),
+        artifact_paths,
+        record_count,
     })
 }
 

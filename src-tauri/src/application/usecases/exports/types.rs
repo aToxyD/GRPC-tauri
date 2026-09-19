@@ -66,8 +66,16 @@ pub struct StockMovementsExportInput {
 // release exceptions), and the fiscal-year TVA policies. UNIT nodes apply ONLY
 // the rows scoped to their own unit id; WILAYA applies the full catalog.
 
-#[derive(Debug, Clone, Default)]
-pub struct ExportContractCatalogInput;
+/// Consumer-facing input wrapper (ADR-0059 §4, exporter/use-case wiring phase).
+///
+/// The mode is a mandatory, structurally-explicit field: there is no way to
+/// construct a Contract Catalog export without declaring whether it is a
+/// fleet-wide restore or a UNIT-scoped distribution targeting one exact
+/// `units.code`.
+#[derive(Debug, Clone)]
+pub struct ExportContractCatalogInput {
+    pub mode: ExportContractCatalogMode,
+}
 
 /// Explicit export mode for a Contract Catalog exchange (ADR-0059).
 ///
