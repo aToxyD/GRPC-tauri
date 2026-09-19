@@ -277,6 +277,8 @@ pub fn export_products_package(
                 report_count: 0,
                 inventory_total_value: 0.0,
                 export_reason: "products_sync_package".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
         )
     });
@@ -408,6 +410,8 @@ pub fn export_contract_catalog_package_impl(
                 report_count: 0,
                 inventory_total_value: 0.0,
                 export_reason: "contract_catalog_sync_package".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
         )
     });
@@ -1529,6 +1533,8 @@ pub fn export_admin_access_package_impl(
                 report_count: 0,
                 inventory_total_value: 0.0,
                 export_reason: "admin_access_sync_package".to_string(),
+                export_mode: None,
+                target_node_id: None,
             },
         )
     });

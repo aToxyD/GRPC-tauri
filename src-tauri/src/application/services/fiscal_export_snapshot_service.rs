@@ -22,6 +22,10 @@ pub struct FiscalExportSnapshot {
     pub signing_key_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub export_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_node_id: Option<String>,
 }
 
 pub struct FiscalExportSnapshotService<'a> {
@@ -52,6 +56,8 @@ impl<'a> FiscalExportSnapshotService<'a> {
             active_anomalies_count: snapshot.active_anomalies_count,
             signing_key_id: snapshot.signing_key_id.clone(),
             export_reason: snapshot.export_reason.clone(),
+            export_mode: snapshot.export_mode.clone(),
+            target_node_id: snapshot.target_node_id.clone(),
         };
 
         let id = self

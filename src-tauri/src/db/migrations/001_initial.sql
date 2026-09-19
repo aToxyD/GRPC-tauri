@@ -698,7 +698,9 @@ CREATE TABLE IF NOT EXISTS fiscal_export_snapshots (
     archived_years_count INTEGER,
     active_anomalies_count INTEGER,
     signing_key_id TEXT,
-    export_reason TEXT
+    export_reason TEXT,
+    export_mode TEXT NULL,
+    target_node_id TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS fiscal_operational_snapshots (

@@ -183,6 +183,8 @@ fn case_e_rejects_overwrite_of_fiscal_export_snapshot_for_archived_year() {
         active_anomalies_count: None,
         signing_key_id: None,
         export_reason: None,
+        export_mode: None,
+        target_node_id: None,
     };
 
     let err = FiscalExportSnapshotService::new(db.executor())

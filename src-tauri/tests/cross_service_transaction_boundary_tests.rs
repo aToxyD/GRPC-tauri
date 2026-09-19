@@ -278,6 +278,8 @@ fn case_e_export_snapshot_failure_no_partial_export_metadata() {
         active_anomalies_count: None,
         signing_key_id: None,
         export_reason: None,
+        export_mode: None,
+        target_node_id: None,
     };
 
     let before: i64 = db

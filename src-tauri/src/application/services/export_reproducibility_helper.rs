@@ -19,6 +19,8 @@ pub struct ExportReproducibilityContext {
     pub report_count: i64,
     pub inventory_total_value: f64,
     pub export_reason: String,
+    pub export_mode: Option<String>,
+    pub target_node_id: Option<String>,
 }
 
 /// SEC-008 (ADR-0048): the export signing key id is the hex Ed25519 public key
@@ -58,6 +60,8 @@ pub fn record_export_with_reproducibility(
         active_anomalies_count: Some(active_anomalies_count),
         signing_key_id: Some(signing_key_id),
         export_reason: Some(ctx.export_reason),
+        export_mode: ctx.export_mode,
+        target_node_id: ctx.target_node_id,
     };
 
     FiscalExportSnapshotService::new(executor).record_export_snapshot(&snapshot)

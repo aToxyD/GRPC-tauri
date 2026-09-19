@@ -136,6 +136,8 @@ fn export_snapshot_stores_reproducibility_columns() {
         active_anomalies_count: Some(0),
         signing_key_id: Some("test-key".to_string()),
         export_reason: Some("unit_test".to_string()),
+        export_mode: None,
+        target_node_id: None,
     };
     FiscalExportSnapshotService::new(db.executor())
         .record_export_snapshot(&snap)

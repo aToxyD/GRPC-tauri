@@ -18,6 +18,8 @@ pub struct FiscalExportSnapshot {
     pub active_anomalies_count: Option<i64>,
     pub signing_key_id: Option<String>,
     pub export_reason: Option<String>,
+    pub export_mode: Option<String>,
+    pub target_node_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,8 +54,8 @@ impl<'a> FiscalSnapshotRepository<'a> {
                 (export_hash, generated_at, generated_by, fiscal_year,
                  movement_count, report_count, inventory_total_value,
                  integrity_state, archived_years_count, active_anomalies_count,
-                 signing_key_id, export_reason)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 signing_key_id, export_reason, export_mode, target_node_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
             "#,
             params![
                 snapshot.export_hash,
@@ -68,9 +70,48 @@ impl<'a> FiscalSnapshotRepository<'a> {
                 snapshot.active_anomalies_count,
                 snapshot.signing_key_id,
                 snapshot.export_reason,
+                snapshot.export_mode,
+                snapshot.target_node_id,
             ],
         )?;
         Ok(self.executor.last_insert_rowid())
+    }
+
+    pub fn get_export_snapshot_by_hash(
+        &self,
+        export_hash: &str,
+    ) -> AppResult<Option<FiscalExportSnapshot>> {
+        self.executor
+            .query_row_optional(
+                r#"
+                SELECT export_hash, generated_at, generated_by, fiscal_year,
+                       movement_count, report_count, inventory_total_value,
+                       integrity_state, archived_years_count, active_anomalies_count,
+                       signing_key_id, export_reason, export_mode, target_node_id
+                FROM fiscal_export_snapshots
+                WHERE export_hash = ?1
+                "#,
+                params![export_hash],
+                |r| {
+                    Ok(FiscalExportSnapshot {
+                        export_hash: r.get(0)?,
+                        generated_at: r.get(1)?,
+                        generated_by: r.get(2)?,
+                        fiscal_year: r.get(3)?,
+                        movement_count: r.get(4)?,
+                        report_count: r.get(5)?,
+                        inventory_total_value: numeric_row::money_col(6, r.get::<_, i64>(6)?)?,
+                        integrity_state: r.get(7)?,
+                        archived_years_count: r.get(8)?,
+                        active_anomalies_count: r.get(9)?,
+                        signing_key_id: r.get(10)?,
+                        export_reason: r.get(11)?,
+                        export_mode: r.get(12)?,
+                        target_node_id: r.get(13)?,
+                    })
+                },
+            )
+            .map_err(Into::into)
     }
 
     #[allow(clippy::too_many_arguments)]
