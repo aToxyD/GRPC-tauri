@@ -279,10 +279,13 @@ The ratified contract:
 - **Cryptographic coverage (implemented C1/C3):** the value is covered by the
   package Ed25519 signature (`signature_version = 2`) exactly like every
   other metadata field, because the signature is computed over the whole
-  canonical package — the canonical-coverage test in `package_metadata.rs`
-  asserts serialized + signature-payload equality including `target_node_id`.
-  It therefore cannot be altered in transit or at rest without invalidating
-  the package.
+  canonical package — the canonical-coverage test
+  `authenticated_fields_change_canonical_integrity_and_signature_bytes` in
+  `package_metadata.rs` shows that adding `export_mode` / `target_node_id`
+  changes both the canonical integrity bytes and the canonical signature
+  bytes, i.e. the authenticated fields participate in the
+  integrity/signature material. It therefore cannot be altered in transit or
+  at rest without invalidating the package.
 
 Serialization contract (implemented in C1):
 
@@ -671,10 +674,15 @@ fleet all-status retention.
 C1–C4: the §8 serde and canonical-signature coverage tests (C1,
 `package_metadata.rs`), the export reproducibility snapshot tests (C2,
 `export_reproducibility_persistence_tests.rs`), the exporter per-UNIT
-isolation, shared-supplier, all-status-retention, and empty-artifact tests
-(C3, `contract_catalog_unit_distribution_export_tests.rs`), and the importer
-target-matrix, `Ended(B)` exclusion, empty-`UnitDistribution` acceptance, and
-tamper tests (C4, `contract_catalog_package_import_tests.rs`).
+isolation, shared-supplier, all-status-retention, empty-artifact, and
+`Ended(B)`-exclusion tests (C3, `contract_catalog_unit_distribution_export_tests.rs`,
+including `unit_distribution_scopes_contracts_allocations_and_exceptions`),
+the importer target-matrix, cross-unit-import isolation
+(`unit_import_is_scoped_to_local_unit`), and empty-`UnitDistribution`
+acceptance tests (C4, `contract_catalog_package_import_tests.rs`), and the
+C4 target-tamper test
+`tampered_target_node_id_fails_signature_verification_before_semantic_binding`
+in `contract_catalog_unit_distribution_export_tests.rs`.
 
 # 20. Governance Records
 
