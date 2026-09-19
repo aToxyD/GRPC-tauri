@@ -5,7 +5,7 @@ use crate::application::services::SettingsService;
 use crate::application::services::SyncImportExecutionService;
 use crate::application::sync::{
     products_source_allowed_for_unit, validate_contract_catalog_package_for_import,
-    ImportedPackageRegistry, SyncPackage,
+    ImportedPackageRegistry, PackageExportMode, SyncPackage, SyncPackageMetadata,
 };
 use crate::application::usecases::exports::types::ContractCatalogExportDataset;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
@@ -29,12 +29,22 @@ pub struct ImportContractCatalogPackageOutcome {
     pub package_id: String,
 }
 
+/// The importing node's own unit identity, carrying both the canonical
+/// `units.id` (row scoping) and the authoritative `units.code` (target
+/// binding). WILAYA importers carry no unit scope.
+#[derive(Debug, Clone)]
+struct ImporterUnit {
+    id: String,
+    code: String,
+}
+
 /// The importing node's own unit identity.
 ///
 /// UNIT importers scope the projection to their own unit row (FKs target the
-/// local `units` table, which holds exactly the node's own unit). WILAYA
+/// local `units` table, which holds exactly the node's own unit) and expose
+/// the authoritative `units.code` for SEC-087 C4 target binding. WILAYA
 /// importers carry no unit scope — they apply the full catalog (restore path).
-fn resolve_importer_unit_id(executor: DbExecutor<'_>) -> AppResult<Option<String>> {
+fn resolve_importer_unit(executor: DbExecutor<'_>) -> AppResult<Option<ImporterUnit>> {
     let settings = SettingsService::new(executor).get_settings()?;
     let unit_code = match settings.node_type {
         NodeType::Unit => settings.unit_code.as_deref().ok_or_else(|| {
@@ -52,7 +62,82 @@ fn resolve_importer_unit_id(executor: DbExecutor<'_>) -> AppResult<Option<String
                 message: format!("لا توجد وحدة محلية بالرمز «{unit_code}»"),
             })
         })?;
-    Ok(Some(unit.id))
+    Ok(Some(ImporterUnit {
+        id: unit.id,
+        code: unit.code,
+    }))
+}
+
+/// SEC-087 Phase 2 — C4: Contract Catalog target binding (ADR-0059 §13–15).
+///
+/// Enforces the authenticated `export_mode` / `target_node_id` matrix against
+/// the importer's own node before any database mutation or replay marking.
+/// Only authenticated metadata is interpreted (the payload is integrity-bound
+/// and Ed25519-signed upstream); the retired `SyncImportRequest.target_node_id`
+/// is never consulted. Matching uses EXACT string equality against the
+/// authoritative local `units.code` — no trimming, normalization, or case
+/// folding.
+///
+/// Matrix:
+/// - `export_mode = None`            → REJECT (legacy targetless contract
+///   catalog packages are rejected; no inferred mode fallback).
+/// - `FleetRestore` + no target      → ACCEPT only on WILAYA, REJECT on UNIT.
+/// - `FleetRestore` + target         → REJECT everywhere.
+/// - `UnitDistribution` + target     → ACCEPT only on a UNIT whose exact
+///   `units.code` equals the package target; REJECT on WILAYA and on any
+///   other UNIT.
+/// - `UnitDistribution` + no target  → REJECT.
+fn validate_contract_catalog_target_for_import(
+    metadata: &SyncPackageMetadata,
+    importer_unit: &Option<ImporterUnit>,
+) -> AppResult<()> {
+    let mode = metadata.export_mode;
+    match mode {
+        None => {
+            return Err(AppError::Validation(ValidationError::InvalidFormat {
+                field: "export_mode".into(),
+                message: "الحزمة لا تحمل نمط تصدير موثّقًا — كتالوج العقود غير موجّه مرفوض".into(),
+            }));
+        }
+        Some(PackageExportMode::FleetRestore) => {
+            if metadata.target_node_id.is_some() {
+                return Err(AppError::Validation(ValidationError::InvalidFormat {
+                    field: "target_node_id".into(),
+                    message: "نمط استعادة الأسطول غير قابل للتوجيه إلى وحدة".into(),
+                }));
+            }
+            if importer_unit.is_some() {
+                return Err(AppError::Validation(ValidationError::InvalidFormat {
+                    field: "export_mode".into(),
+                    message: "لا يمكن للوحدة استيراد كتالوج استعادة الأسطول".into(),
+                }));
+            }
+        }
+        Some(PackageExportMode::UnitDistribution) => {
+            let local_code = match importer_unit.as_ref().map(|u| u.code.as_str()) {
+                None => {
+                    return Err(AppError::Validation(ValidationError::InvalidFormat {
+                        field: "target_node_id".into(),
+                        message: "لا يمكن للولاية استيراد كتالوج موزّع على وحدة".into(),
+                    }));
+                }
+                Some(code) => code,
+            };
+            let package_target = metadata.target_node_id.as_deref().ok_or_else(|| {
+                AppError::Validation(ValidationError::InvalidFormat {
+                    field: "target_node_id".into(),
+                    message: "نمط التوزيع على الوحدة يتطلب وحدة مستهدفة معلّنة".into(),
+                })
+            })?;
+            if package_target != local_code {
+                return Err(AppError::Validation(ValidationError::InvalidFormat {
+                    field: "target_node_id".into(),
+                    message: "هدف الحزمة لا يطابق الوحدة المحلية".into(),
+                }));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn execute(
@@ -80,6 +165,14 @@ pub fn execute(
         }));
     }
 
+    let importer_unit = resolve_importer_unit(executor)?;
+
+    // SEC-087 Phase 2 — C4 (ADR-0059 §13–15): target binding is enforced
+    // AFTER structural validation and BEFORE replay marking, dataset
+    // application, or any business mutation. Rejected packages consume no
+    // replay slot and write no catalog rows.
+    validate_contract_catalog_target_for_import(&input.package.metadata, &importer_unit)?;
+
     let package_id = input.package.metadata.package_id.clone();
     if registry.has_imported(&package_id)? {
         return Err(AppError::BusinessLogic(
@@ -89,10 +182,10 @@ pub fn execute(
         ));
     }
 
-    let importer_unit_id = resolve_importer_unit_id(executor)?;
-
-    let summary = SyncImportExecutionService::new(executor)
-        .import_contract_catalog_sync(&input.package.payload, importer_unit_id.as_deref())?;
+    let summary = SyncImportExecutionService::new(executor).import_contract_catalog_sync(
+        &input.package.payload,
+        importer_unit.as_ref().map(|u| u.id.as_str()),
+    )?;
     registry.mark_imported(&package_id)?;
 
     let imported = summary.suppliers_imported

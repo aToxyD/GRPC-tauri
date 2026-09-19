@@ -10,7 +10,7 @@
 use chrono::{TimeZone, Utc};
 
 use grpc_lib::application::sync::{
-    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+    PackageExportMode, PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
 };
 use grpc_lib::application::usecases::exports::types::{
     ContractCatalogAllocationRow, ContractCatalogContractRow, ContractCatalogExportDataset,
@@ -258,10 +258,15 @@ fn mixed_catalog() -> ContractCatalogExportDataset {
     }
 }
 
+/// SEC-087 Phase 2 — C4 (ADR-0059 §13–15): fixtures carry EXPLICIT
+/// authenticated `export_mode` / `target_node_id`. Legacy targetless fixtures
+/// are only produced by the dedicated legacy-rejection tests.
 fn package(
     pkg_id: &str,
     dataset: ContractCatalogExportDataset,
     source: &str,
+    mode: Option<PackageExportMode>,
+    target: Option<&str>,
 ) -> SyncPackage<ContractCatalogExportDataset> {
     SyncPackage {
         metadata: SyncPackageMetadata {
@@ -274,11 +279,42 @@ fn package(
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
-            export_mode: None,
-            target_node_id: None,
+            export_mode: mode,
+            target_node_id: target.map(str::to_string),
         },
         payload: dataset,
     }
+}
+
+/// WILAYA-broadcast fleet-restore package (unscoped, no target).
+fn fleet_package(
+    pkg_id: &str,
+    dataset: ContractCatalogExportDataset,
+    source: &str,
+) -> SyncPackage<ContractCatalogExportDataset> {
+    package(
+        pkg_id,
+        dataset,
+        source,
+        Some(PackageExportMode::FleetRestore),
+        None,
+    )
+}
+
+/// UNIT-scoped package explicitly bound to the given target unit code.
+fn unit_package(
+    pkg_id: &str,
+    dataset: ContractCatalogExportDataset,
+    source: &str,
+    target: &str,
+) -> SyncPackage<ContractCatalogExportDataset> {
+    package(
+        pkg_id,
+        dataset,
+        source,
+        Some(PackageExportMode::UnitDistribution),
+        Some(target),
+    )
 }
 
 fn apply_package(
@@ -382,7 +418,7 @@ fn wilaya_full_catalog_restore_import_persists_everything() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_wilaya(&mut db);
 
-    let pkg = package("pkg-cc-full-1", full_catalog(), WILAYA);
+    let pkg = fleet_package("pkg-cc-full-1", full_catalog(), WILAYA);
     let outcome = apply_package(&mut db, &pkg).expect("apply full catalog");
     assert!(outcome.imported > 0, "full restore must import rows");
     assert_eq!(outcome.skipped, 0, "no rows out of WILAYA scope");
@@ -427,7 +463,7 @@ fn replay_same_package_id_is_rejected() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_wilaya(&mut db);
 
-    let pkg = package("pkg-cc-replay", full_catalog(), WILAYA);
+    let pkg = fleet_package("pkg-cc-replay", full_catalog(), WILAYA);
     apply_package(&mut db, &pkg).expect("first import ok");
 
     let err = apply_package(&mut db, &pkg).expect_err("replay must fail");
@@ -442,7 +478,7 @@ fn unit_import_is_scoped_to_local_unit() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_unit(&mut db);
 
-    let pkg = package("pkg-cc-scope", mixed_catalog(), WILAYA);
+    let pkg = unit_package("pkg-cc-scope", mixed_catalog(), WILAYA, "L01");
     let outcome = apply_package(&mut db, &pkg).expect("apply scoped catalog");
     assert!(outcome.skipped > 0, "out-of-scope rows must be skipped");
 
@@ -476,7 +512,7 @@ fn unit_reimport_refreshes_wilaya_owned_and_preserves_local_runtime() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_unit(&mut db);
 
-    let v1 = package("pkg-cc-v1", mixed_catalog(), WILAYA);
+    let v1 = unit_package("pkg-cc-v1", mixed_catalog(), WILAYA, "L01");
     apply_package(&mut db, &v1).expect("apply v1");
 
     // Local UNIT runtime state (deliveries consumed from the entitlement).
@@ -492,7 +528,7 @@ fn unit_reimport_refreshes_wilaya_owned_and_preserves_local_runtime() {
     next_catalog.contracts[0].allocations[0]
         .allocation
         .contracted_quantity = 150.0;
-    let v2 = package("pkg-cc-v2", next_catalog, WILAYA);
+    let v2 = unit_package("pkg-cc-v2", next_catalog, WILAYA, "L01");
     apply_package(&mut db, &v2).expect("apply v2");
 
     let a = ContractRepository::new(db.executor())
@@ -515,7 +551,169 @@ fn source_provenance_mismatch_is_fail_closed() {
     seed_unit(&mut db);
 
     // A package whose source node id does not match the importer's wilaya.
-    let pkg = package("pkg-cc-forge", mixed_catalog(), "05");
+    // Target binding passes first (correct mode/target), then provenance fails.
+    let pkg = unit_package("pkg-cc-forge", mixed_catalog(), "05", "L01");
     let err = apply_package(&mut db, &pkg).expect_err("mismatched source must fail");
     assert!(matches!(err, AppError::Validation(_)));
+}
+
+// ─── SEC-087 Phase 2 — C4: Contract Catalog target binding (ADR-0059 §13–15) ──
+
+/// Matrix row: `export_mode = None` (with or without a stray target) is
+/// rejected regardless of importer node — legacy targetless V3 contract
+/// catalog packages are rejected, with NO inferred-mode fallback.
+#[test]
+fn legacy_targetless_contract_catalog_package_is_rejected() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_wilaya(&mut db);
+
+    let none_none = package("pkg-cc-legacy", full_catalog(), WILAYA, None, None);
+    let err = apply_package(&mut db, &none_none)
+        .expect_err("None/None must be rejected on a WILAYA node");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "None/None rejected as validation: {err:?}"
+    );
+
+    let none_target = package("pkg-cc-legacy-2", full_catalog(), WILAYA, None, Some("A1"));
+    let err = apply_package(&mut db, &none_target)
+        .expect_err("None/target must be rejected on a WILAYA node");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "None/target rejected as validation: {err:?}"
+    );
+
+    let mut db_unit = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db_unit);
+    let legacy_unit = package("pkg-cc-legacy-3", mixed_catalog(), WILAYA, None, None);
+    let err = apply_package(&mut db_unit, &legacy_unit)
+        .expect_err("None/None must be rejected on a UNIT node too");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "None/None rejected on UNIT as validation: {err:?}"
+    );
+}
+
+/// A UNIT importer rejects a UnitDistribution package bound to a DIFFERENT
+/// unit code, with no rows written and no replay slot consumed.
+#[test]
+fn unit_rejects_distribution_bound_to_another_unit() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    // Target "O02" is a real, existing unit — a *different* one.
+    let wrong_target = unit_package("pkg-cc-wrong", mixed_catalog(), WILAYA, "O02");
+    let err =
+        apply_package(&mut db, &wrong_target).expect_err("wrong target unit must be rejected");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "wrong target rejected as validation: {err:?}"
+    );
+
+    assert!(
+        ContractRepository::new(db.executor())
+            .get_contract("ctr-local")
+            .expect("read")
+            .is_none(),
+        "rejected package must write no catalog rows"
+    );
+
+    // No replay slot consumed: the SAME package_id with the correct target
+    // imports successfully on retry.
+    let corrected = unit_package("pkg-cc-wrong", mixed_catalog(), WILAYA, "L01");
+    let outcome = apply_package(&mut db, &corrected).expect("same-id corrected retry succeeds");
+    assert!(outcome.imported > 0, "corrected retry imports rows");
+}
+
+/// A UNIT importer never applies a FleetRestore catalog.
+#[test]
+fn unit_rejects_fleet_restore_catalog() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    let pkg = fleet_package("pkg-cc-fleet-unit", mixed_catalog(), WILAYA);
+    let err =
+        apply_package(&mut db, &pkg).expect_err("fleet restore on a UNIT node must be rejected");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "fleet restore rejected on UNIT as validation: {err:?}"
+    );
+}
+
+/// A WILAYA importer never applies a unit-distribution (targeted) catalog.
+#[test]
+fn wilaya_rejects_unit_distribution_catalog() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_wilaya(&mut db);
+
+    let pkg = unit_package("pkg-cc-ud-wilaya", mixed_catalog(), WILAYA, "A1");
+    let err = apply_package(&mut db, &pkg)
+        .expect_err("unit distribution on a WILAYA node must be rejected");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "unit distribution rejected on WILAYA as validation: {err:?}"
+    );
+}
+
+/// A FleetRestore catalog that carries a target is malformed and rejected
+/// everywhere (the exporter never produces this; proving fail-closed).
+#[test]
+fn fleet_restore_catalog_with_target_is_rejected_everywhere() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_wilaya(&mut db);
+
+    let pkg = package(
+        "pkg-cc-fleet-target",
+        full_catalog(),
+        WILAYA,
+        Some(PackageExportMode::FleetRestore),
+        Some("A1"),
+    );
+    let err =
+        apply_package(&mut db, &pkg).expect_err("fleet restore with a target must be rejected");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "fleet restore with target rejected as validation: {err:?}"
+    );
+}
+
+/// A UnitDistribution catalog without a declared target is rejected — the
+/// target is mandatory for that mode (no fallback).
+#[test]
+fn unit_distribution_without_target_is_rejected() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    let pkg = package(
+        "pkg-cc-ud-none",
+        mixed_catalog(),
+        WILAYA,
+        Some(PackageExportMode::UnitDistribution),
+        None,
+    );
+    let err = apply_package(&mut db, &pkg)
+        .expect_err("unit distribution without a target must be rejected");
+    assert!(
+        matches!(&err, AppError::Validation(_)),
+        "targetless unit distribution rejected as validation: {err:?}"
+    );
+}
+
+/// A UnitDistribution package bound to the importer's own unit MAY carry an
+/// EMPTY contract set (ADR-0059 §10) and must import cleanly.
+#[test]
+fn unit_distribution_with_empty_contracts_is_accepted_for_the_target() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    let empty = ContractCatalogExportDataset {
+        suppliers: Vec::new(),
+        unit_supplier_links: Vec::new(),
+        contracts: Vec::new(),
+        tax_policies: Vec::new(),
+    };
+    let pkg = unit_package("pkg-cc-empty", empty, WILAYA, "L01");
+    let outcome = apply_package(&mut db, &pkg)
+        .expect("empty unit-distribution catalog accepted for the target unit");
+    assert_eq!(outcome.imported, 0, "no rows to import");
 }

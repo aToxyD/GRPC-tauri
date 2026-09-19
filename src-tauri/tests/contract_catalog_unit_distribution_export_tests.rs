@@ -30,13 +30,16 @@ use grpc_lib::application::services::{
     current_wilaya_signing_key_id, export_contract_catalog_fleet,
     record_export_with_reproducibility, ExportReproducibilityContext,
     FinalizeWilayaProvisionResult, IdentityProvisioningService,
-    SyncPackageIdentityVerificationService,
+    SyncPackageIdentityVerificationService, V2ImportPolicy,
 };
 use grpc_lib::application::sync::PackageExportMode;
+use grpc_lib::application::usecases::exports::types::ContractCatalogExportDataset;
+use grpc_lib::application::usecases::sync::import_contract_catalog_package::CONTRACT_CATALOG_PACKAGE_KIND;
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
     Ed25519CertificateSignature, IdentityCertificate, IdentitySigner, SubjectType,
 };
+use grpc_lib::errors::AppError;
 use grpc_lib::infrastructure::identity::NodeKeyStore;
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
 use grpc_lib::infrastructure::security::Ed25519SigningProvider;
@@ -1172,4 +1175,46 @@ fn seed_malformed_unit_b_contract(db: &Database) {
             now,
         )
         .expect("malformed B contract product line");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-087 Phase 2 — C4 (S10): a post-signing tamper of `target_node_id` is
+// rejected cryptographically BEFORE the semantic target binding can interpret
+// it. The tampered metadata changes the canonical signature bytes, so Ed25519
+// authentication fails first — the semantic matrix in the importer is never
+// reached with attacker-modified data.
+
+#[test]
+fn tampered_target_node_id_fails_signature_verification_before_semantic_binding() {
+    let mut node = provisioned_catalog_node();
+    let dir = TempDir::new().expect("temp dir");
+
+    let (_, paths) = unit_export(&mut node, &dir, "base", &["UNIT-A"]);
+    let pkg = read_package(&paths[0]);
+    assert_eq!(
+        pkg.metadata.target_node_id.as_deref(),
+        Some("UNIT-A"),
+        "signed artifact targets UNIT-A"
+    );
+
+    let mut tampered = pkg;
+    tampered.metadata.target_node_id = Some("UNIT-B".to_string());
+
+    let policy = V2ImportPolicy::new(
+        CONTRACT_CATALOG_PACKAGE_KIND,
+        true,
+        WILAYA,
+        None,
+        None::<&dyn Fn(&ContractCatalogExportDataset) -> Vec<String>>,
+    );
+    let err = SyncPackageIdentityVerificationService::verify_v2_package_for_import(
+        make_executor(&node.db),
+        &tampered,
+        &policy,
+    )
+    .expect_err("tampered target must fail Ed25519 authentication");
+    assert!(
+        matches!(err, AppError::Validation(_)),
+        "crypto rejection surfaces as validation: {err:?}"
+    );
 }

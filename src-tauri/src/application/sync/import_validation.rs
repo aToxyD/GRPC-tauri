@@ -186,6 +186,12 @@ pub fn validate_daily_report_package_for_import(
 /// SEC-087-F). The catalog is a WILAYA-authoritative projection; a package
 /// without contracts carries no projection and is rejected fail-closed
 /// (mirrors the products validator's non-empty rule).
+///
+/// SEC-087 Phase 2 C4 (ADR-0059 §10): a `UnitDistribution` package is the
+/// unit-scoped per-unit projection and MAY legitimately carry an EMPTY
+/// contract set (the target's own view contains no contracts), so the
+/// non-empty rule applies ONLY outside `UnitDistribution`. Scope/target
+/// binding itself is enforced separately by the importer.
 pub fn validate_contract_catalog_package_for_import(
     package: &SyncPackage<ContractCatalogExportDataset>,
 ) -> AppResult<()> {
@@ -201,7 +207,11 @@ pub fn validate_contract_catalog_package_for_import(
             message: "مصدر الحزمة (العقدة) مفقود — لا يمكن الاستيراد بدون بيانات المنشأ".into(),
         }));
     }
-    if package.payload.contracts.is_empty() {
+    let is_unit_distribution = matches!(
+        package.metadata.export_mode,
+        Some(crate::application::sync::PackageExportMode::UnitDistribution)
+    );
+    if package.payload.contracts.is_empty() && !is_unit_distribution {
         return Err(AppError::Validation(ValidationError::InvalidFormat {
             field: "contracts".into(),
             message: "الحزمة لا تحتوي عقودًا — كتالوج العقود فارغ".into(),
