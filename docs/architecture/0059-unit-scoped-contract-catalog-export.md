@@ -4,37 +4,56 @@
 
 **ACCEPTED — 2026-09-17.**
 
-This ADR establishes the protocol/domain contract foundation for a
+> **Implementation status (post C1–C4).** The exporter/importer wiring, the
+> `SyncPackageMetadata.target_node_id` field, the mode-carrying input
+> wrapper, the importer target-binding matrix, and the
+> `repositories/contracts.rs` SQL hardening — all admitted deferred items in
+> the Phase 1 ratification (§4, §8, §16) — were subsequently implemented, and
+> the functional scope is complete at HEAD `f14ca73`:
+>
+> | Phase | Commit | Scope |
+> |-------|--------|-------|
+> | C1 — authenticated export-mode metadata | `26b6dd8` | `target_node_id` + `export_mode` serde contract, canonical-signature coverage, V3 retained |
+> | C2 — export reproducibility persistence | `54d52bf` | export snapshot `export_mode` / `target_node_id` persistence |
+> | C3 — unit-scoped contract catalog export | `917f0ad` | exporter wiring, per-UNIT dataset selection/validation, `ExportContractCatalogInput { mode }`, SQL `?1` binding hardening |
+> | C4 — import target binding | `f14ca73` | importer target-matrix enforcement, `resolve_importer_unit`, empty-`UnitDistribution` allowance, `TARGET_REJECTED` classification |
+
+This ADR established the protocol/domain contract foundation for a
 UNIT-scoped Contract Catalog distribution, eliminating the historical
 `Option<TargetUnit>` ambiguity on the WILAYA → UNIT `contract_catalog`
-sync path (ADR-0055 §3.10 / SEC-087-F). In its first phase it ratifies the
+sync path (ADR-0055 §3.10 / SEC-087-F). In its first phase it ratified the
 explicit export mode model, the authoritative target-node identity, the
 per-UNIT status eligibility rule, the `SyncPackageMetadata.target_node_id`
 field with its serialization behavior, the importer target-validation
 policy, and the export-boundary invariants (producer selected-dataset
 validation, `in_scope` as defense-in-depth, failure isolation, and
-replay/provenance preservation, §15). It purposely does NOT implement
-exporter/importer wiring.
+replay/provenance preservation, §15). The Phase 1 ratification purposely did
+NOT implement exporter/importer wiring; that wiring and every §16 deferred
+item were subsequently delivered by C1–C4 (implementation-status table
+above). Where the body text says a control is "deferred", "future", "not yet
+implemented", or "Phase 2", those statements describe the Phase 1
+ratification and were superseded as mapped in the table, the annotated
+sections, and §16.
 
-| Item | Status |
-|------|--------|
-| Explicit mode model `ExportContractCatalogMode` (no `Option<TargetUnit>` ambiguity) | **ACCEPTED** |
-| `UnitDistribution { target_unit_code }` requires a target code structurally | **ACCEPTED** |
-| Input wrapper with `mode` field deferred to the exporter/use-case wiring phase | **ACCEPTED** |
-| Target identity = `units.code` (authoritative via `resolve_unit_transport_target`) | **ACCEPTED** |
-| Per-UNIT status policy: `Accepted \| Active \| Ended` included; `Proposed \| Cancelled` excluded | **ACCEPTED** |
-| `Ended(B)` MUST NEVER appear in unit A's artifact (unit scope trumps Ended eligibility) | **ACCEPTED** |
-| FleetRestore status policy: ALL statuses retained (separate from per-UNIT rule) | **ACCEPTED** |
-| `SyncPackageMetadata.target_node_id: Option<String>` (`units.code`, `None` = fleet) — contract RATIFIED; field implemented in Phase 2 | **ACCEPTED (Phase 2 implementation)** |
-| Additive serde-compatible field; `SYNC_PACKAGE_SCHEMA_VERSION` stays **V3**; no bump | **ACCEPTED** |
-| Per-UNIT package may contain zero contracts (`contracts: []`) — documented, not enforced | **ACCEPTED** |
-| Dataset stays 4-dimension (no `products` dimension); product lines carry identity/name denormalized | **ACCEPTED** |
-| Shared `GRPC_APP_KEY` age encryption retained; `target_node_id` = authenticity, not confidentiality | **ACCEPTED** |
-| Importer target matrix documented (Phase 1) — enforcement wired in importer phase | **ACCEPTED** |
-| SQL parameter-binding hardening for `repositories/contracts.rs` deferred to a later phase | **ACCEPTED (deferred)** |
-| No migration / no new sync envelope version / no V4 / no transport reactivation | **ACCEPTED** |
-| Phase 1 does NOT wire exporter pipeline or importer validation | **ACCEPTED** |
-| Phase 1 code deliverables = `ExportContractCatalogMode` + `ContractStatus::is_catalog_exportable` only; metadata field and input wrapper deferred | **ACCEPTED** |
+| Item | Decision status | Implementation status (post C1–C4) |
+|------|-----------------|-------------------------------------|
+| Explicit mode model `ExportContractCatalogMode` (no `Option<TargetUnit>` ambiguity) | **ACCEPTED** | **IMPLEMENTED** (Phase 1 + C3) |
+| `UnitDistribution { target_unit_code }` requires a target code structurally | **ACCEPTED** | **IMPLEMENTED** (Phase 1 + C3) |
+| Input wrapper with `mode` field deferred to the exporter/use-case wiring phase | **ACCEPTED (deferred)** | **IMPLEMENTED** (C3 — `ExportContractCatalogInput { mode }`) |
+| Target identity = `units.code` (authoritative via `resolve_unit_transport_target`) | **ACCEPTED** | **IMPLEMENTED** (C3 exporter / C4 importer) |
+| Per-UNIT status policy: `Accepted \| Active \| Ended` included; `Proposed \| Cancelled` excluded | **ACCEPTED** | **IMPLEMENTED** (Phase 1 predicate; C3 exporter enforcement) |
+| `Ended(B)` MUST NEVER appear in unit A's artifact (unit scope trumps Ended eligibility) | **ACCEPTED** | **IMPLEMENTED** (C3 — SQL unit-scope + dataset validator) |
+| FleetRestore status policy: ALL statuses retained (separate from per-UNIT rule) | **ACCEPTED** | **IMPLEMENTED** (C3 — fleet path unchanged) |
+| `SyncPackageMetadata.target_node_id: Option<String>` (`units.code`, `None` = fleet) — contract RATIFIED; field implemented in Phase 2 | **ACCEPTED (Phase 2 implementation)** | **IMPLEMENTED** (C1 — field + serde contract; C4 — import binding) |
+| Additive serde-compatible field; `SYNC_PACKAGE_SCHEMA_VERSION` stays **V3**; no bump | **ACCEPTED** | **IMPLEMENTED** (C1 — V3 retained) |
+| Per-UNIT package may contain zero contracts (`contracts: []`) | **ACCEPTED (documented)** | **IMPLEMENTED** (C3 exporter; C4 importer empty-`UnitDistribution` allowance) |
+| Dataset stays 4-dimension (no `products` dimension); product lines carry identity/name denormalized | **ACCEPTED** | **IMPLEMENTED** (C3) |
+| Shared `GRPC_APP_KEY` age encryption retained; `target_node_id` = authenticity, not confidentiality | **ACCEPTED** | Retained unchanged (C1–C4) |
+| Importer target matrix | **ACCEPTED (documented)** | **IMPLEMENTED** (C4 — `validate_contract_catalog_target_for_import`) |
+| SQL parameter-binding hardening for `repositories/contracts.rs` | **ACCEPTED (deferred)** | **IMPLEMENTED** (C3 — typed `?N` binding) |
+| No migration / no new sync envelope version / no V4 / no transport reactivation | **ACCEPTED** | Retained (C1–C4) |
+| Phase 1 does NOT wire exporter pipeline or importer validation | **ACCEPTED** | **SUPERSEDED** (C3 wired the exporter; C4 wired importer validation) |
+| Phase 1 code deliverables = `ExportContractCatalogMode` + `ContractStatus::is_catalog_exportable` only; metadata field and input wrapper deferred | **ACCEPTED** | **SUPERSEDED** (C1–C4 delivered the deferred items) |
 
 # Date
 
@@ -103,10 +122,10 @@ This ADR is ratified in a **foundation phase** that delivers, in code:
 - `ContractStatus::is_catalog_exportable()` (per-UNIT status predicate) in
   `src-tauri/src/models/contract.rs`.
 
-It deliberately does **not** yet deliver or wire:
+At ratification it deliberately did **not** deliver or wire:
 
-- the `SyncPackageMetadata.target_node_id` field (§8) — deferred to Phase 2
-  because implementing it requires touching the protected production
+- the `SyncPackageMetadata.target_node_id` field (§8) — deferred because
+  implementing it requires touching the protected production
   serialization/export path;
 - the mode into `ExportContractCatalogInput` (see §4);
 - the exporter pipeline (`export_contract_catalog_dataset.rs`,
@@ -115,8 +134,14 @@ It deliberately does **not** yet deliver or wire:
   `sync_import_execution_service.rs`);
 - repository SQL hardening (`repositories/contracts.rs`).
 
-Those are explicit later-phase workstreams that require their own
-implementation authorization (§8, §16, §18).
+Those were explicit later-phase workstreams requiring their own
+implementation authorization (§8, §16, §18). Each was subsequently
+authorized and implemented: the metadata field + serde contract (C1,
+`26b6dd8`), export reproducibility persistence (C2, `54d52bf`), the exporter
+pipeline, the mode-carrying input wrapper, and the SQL hardening (C3,
+`917f0ad`), and the importer validation with the target-binding matrix (C4,
+`f14ca73`). §16 records the itemized reconciliation; nothing listed here
+remains deferred.
 
 # 3. Export Mode Model
 
@@ -149,14 +174,27 @@ A mode-carrying input wrapper
 pub struct ExportContractCatalogInput { pub mode: ExportContractCatalogMode }
 ```
 
-is the eventual consumer-facing input. It is **deferred** to the
+is the eventual consumer-facing input. It was **deferred** to the
 exporter/use-case wiring phase because the existing
-`ExportContractCatalogInput` is an empty marker struct whose only
-construction site (`fleet_package_export.rs`) is out of the Phase 1
-boundary. Introducing the field now would force a constructor rewrite
-inside a file whose wiring is not part of this phase. Phase 1 therefore
-delivers the enum only, without compatibility shims, overloaded
+`ExportContractCatalogInput` was an empty marker struct whose only
+construction site (`fleet_package_export.rs`) was out of the Phase 1
+boundary. Introducing the field then would have forced a constructor rewrite
+inside a file whose wiring was not part of the phase. Phase 1 therefore
+delivered the enum only, without compatibility shims, overloaded
 constructors, or speculative refactoring of the existing export APIs.
+
+**Current state (C3).** The deferral is resolved. The mode-carrying input
+wrapper is implemented —
+
+```rust
+pub struct ExportContractCatalogInput { pub mode: ExportContractCatalogMode }
+```
+
+— defined at `src-tauri/src/application/usecases/exports/types.rs` and
+consumed by the export dataset builder
+(`application/usecases/exports/export_contract_catalog_dataset.rs`) and the
+fleet loop (`fleet_package_export.rs`), which now constructs per-target
+inputs instead of a shared empty marker struct.
 
 # 5. Target Node Identity
 
@@ -194,12 +232,16 @@ Additional MUST:
 - **`Ended(B)` belonging to a different UNIT MUST NEVER appear in unit A's
   artifact.** UNIT scope trumps Ended eligibility. A contract whose
   authoritative owner unit differs from the target unit is excluded even
-  when its status is `Ended`. Enforcement lives in the exporter's unit
-  scoping (later phase); the predicate is the status-level rule only.
+  when its status is `Ended`. The predicate is the status-level rule only;
+  the exporter applies the unit-scope filter at the SQL boundary.
 
-The exporter phase will apply the predicate AND the unit-scope filter over
-`ContractCatalogContractRow`/allocations when building a `UnitDistribution`
-dataset.
+**Current state (C3).** The exporter applies the predicate AND the
+unit-scope filter over `ContractCatalogContractRow`/allocations when building
+a `UnitDistribution` dataset: `list_catalog_exportable_contracts_for_unit`
+scopes at the SQL boundary (`WHERE unit_id = ?1 ... AND status IN
+('accepted','active','ended')`), so an `Ended(B)` row is excluded from unit
+A's artifact by construction and the `Ended(B)` MUST NEVER requirement is
+enforced in code.
 
 # 7. FleetRestore Status Policy
 
@@ -216,15 +258,16 @@ fleet-wide:
 The two policies are distinct decision points and are documented as such;
 no code path may implicitly conflate them.
 
-# 8. Metadata: `target_node_id` (Phase 2 contract)
+# 8. Metadata: `target_node_id` (contract ratified; field implemented in C1)
 
-This ADR RATIFIES the metadata contract; the actual
-`SyncPackageMetadata.target_node_id` field is NOT introduced in Phase 1.
-Phase 2 introduces it together with the exporter/serializer/importer wiring
-as part of target-binding implementation, because adding the field requires
-modifying the protected production serialization/export path. Phase 1
-introduces no placeholder, no `None`-valued construction, no duplicate
-metadata type, and no speculative serialization change.
+This ADR RATIFIED the metadata contract. The actual
+`SyncPackageMetadata.target_node_id` field was NOT introduced in Phase 1; it
+was introduced in C1 (`26b6dd8`) together with the C3 exporter/serializer
+and C4 importer wiring as part of target-binding implementation, because
+adding the field required modifying the protected production
+serialization/export path. Phase 1 introduced no placeholder, no
+`None`-valued construction, no duplicate metadata type, and no speculative
+serialization change; the current state is the C1 field definition.
 
 The ratified contract:
 
@@ -233,13 +276,15 @@ The ratified contract:
 - **`target_node_id` is ABSENT for `FleetRestore`** — serde
   `default` + `skip_serializing_if = Option::is_none`, so fleet package
   canonical bytes stay unchanged.
-- **Cryptographic coverage:** once the exporter/serialization path is
-  implemented, the value is covered by the package Ed25519 signature
-  (`signature_version = 2`) exactly like every other metadata field, because
-  the signature is computed over the whole canonical package. It therefore
-  cannot be altered in transit or at rest without invalidating the package.
+- **Cryptographic coverage (implemented C1/C3):** the value is covered by the
+  package Ed25519 signature (`signature_version = 2`) exactly like every
+  other metadata field, because the signature is computed over the whole
+  canonical package — the canonical-coverage test in `package_metadata.rs`
+  asserts serialized + signature-payload equality including `target_node_id`.
+  It therefore cannot be altered in transit or at rest without invalidating
+  the package.
 
-Serialization contract when implemented:
+Serialization contract (implemented in C1):
 
 ```rust
 #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -280,8 +325,10 @@ Semantics:
 No V4, no timestamp/build/version/heuristic boundaries, no legacy
 compatibility path.
 
-This rationale is contract-level: no field bytes exist until Phase 2
-introduces the serialization together with the exporter/serializer wiring.
+At ratification this rationale was contract-level (no field bytes existed).
+Field bytes now exist: C1 introduced the serialization together with the
+canonical-signature coverage test, and C3 wired it through the exporter
+serializer.
 
 # 10. Zero-Contract Semantics
 
@@ -289,13 +336,16 @@ A per-UNIT `UnitDistribution` artifact MAY legitimately contain
 `contracts: []` (no exportable contracts for that unit in the scoped fiscal
 state).
 
-- Phase 1 documents this; it is NOT yet enforced.
-- The later-phase importer must accept an empty contracts array for a
-  UNIT-scoped package that is otherwise valid, because a target unit may
-  legitimately have no exportable contracts.
-- The existing whole-package rule that rejects empty `contracts` for the
-  fleet artifact (`import_validation.rs`) is a separate policy for the
-  current fleet form; the per-UNIT empty allowance differentiates the modes.
+- Phase 1 documented this; the allowance is now enforced (C3 exporter / C4
+  importer).
+- The importer (C4) accepts an empty contracts array for a
+  `UnitDistribution` package that is otherwise valid, because a target unit
+  may legitimately have no exportable contracts: `UnitDistribution` is
+  exempted from the non-empty `contracts` rule in
+  `validate_contract_catalog_package_for_import`.
+- The whole-package rule that rejects empty `contracts` for the fleet
+  artifact (`FleetRestore` import validation) is a separate policy for the
+  fleet form; the per-UNIT empty allowance differentiates the modes.
 
 # 11. Dataset Scope
 
@@ -338,9 +388,12 @@ shipping boundary is the four current dimensions
 
 # 13. Importer Target Validation Matrix
 
-Documented for Phase 1; enforcement is wired in the importer phase. The
-matrix is keyed on the receiving node's own `units.code` and the package's
-`target_node_id`.
+Documented in Phase 1; enforcement is wired and implemented (C4, `f14ca73`).
+The matrix is keyed on the receiving node's own `units.code` and the
+package's `target_node_id`. Enforcement lives in
+`validate_contract_catalog_target_for_import` inside the importer usecase,
+after structural validation and the provenance/source check and before
+replay dedup and any application (§15.2).
 
 | Importer node | `target_node_id` | Outcome |
 |---------------|------------------|---------|
@@ -374,8 +427,10 @@ resolution, no legacy fallback (ADR-0058 §5 precedent).
 
 This section records four mandatory architectural invariants governing the
 unit-scoped Contract Catalog export/import boundaries. They are contract
-requirements; most take effect with the Phase 2 exporter/importer wiring.
-They do not broaden the Phase 1 code deliverables.
+requirements. "Most take effect with the Phase 2 exporter/importer wiring"
+described the Phase 1 ratification; the wiring was delivered by C3/C4, so
+these invariants are now in force. They did not broaden the Phase 1 code
+deliverables.
 
 ## 15.1 Producer Selected-Dataset Validation
 
@@ -408,11 +463,10 @@ select target-unit dataset
 Importer `in_scope` filtering remains a **defense-in-depth** control, not the
 primary isolation mechanism:
 
-- **Authentication is today the primary package-to-UNIT boundary** — Ed25519
-  `signature_version = 2` verification via
-  `verify_v2_package_for_import`. Phase 2 adds **target binding** (§13
-  importer target matrix) as the explicit package-to-UNIT semantic boundary;
-  it is NOT implemented yet.
+- **Authentication is the primary package-to-UNIT boundary** — Ed25519
+  `signature_version = 2` verification via `verify_v2_package_for_import`.
+  **Target binding** (§13 importer target matrix) is implemented (C4) as the
+  explicit package-to-UNIT semantic boundary.
 - **Dataset selection at export is the producer-side boundary** (§15.1): the
   artifact physically contains only the target unit's rows.
 - **`in_scope` filtering at import remains an additional defensive layer**,
@@ -422,11 +476,12 @@ primary isolation mechanism:
   because `in_scope` happens to filter rows. Row filtering never substitutes
   for target binding.
 
-### Current implemented import pipeline (verified)
+### Current implemented import pipeline (verified, post-C4)
 
 The current V3 import pipeline, verified against the executable order of
 `commands/import_export.rs::run_import_pipeline_core` and
-`application/usecases/sync/import_contract_catalog_package.rs::execute`:
+`application/usecases/sync/import_contract_catalog_package.rs::execute` at
+HEAD `f14ca73`:
 
 ```
 schema (kind-blind envelope gate, SupportedSchemaWindow)
@@ -435,11 +490,16 @@ schema (kind-blind envelope gate, SupportedSchemaWindow)
    Ed25519 signature_version=2 + membership/issuer policy)
 -> structural/business validation (validate_contract_catalog_package_for_import)
 -> provenance / source check (products_source_allowed_for_unit)
+-> importer-unit scope resolution (resolve_importer_unit, returns units.code)
+-> target binding validation (validate_contract_catalog_target_for_import)
 -> replay protection (exact package_id dedup, registry.has_imported)
--> importer-unit scope resolution (resolve_importer_unit_id)
 -> in_scope + target-scoped application (import_contract_catalog_sync)
 -> atomic apply (single transaction) + package_id marked imported
 ```
+
+Target binding therefore runs AFTER cryptographic authentication and
+structural validation and BEFORE replay dedup and any business mutation; a
+target-rejected package consumes no replay slot and writes zero catalog rows.
 
 Step resolution across both layers:
 
@@ -459,35 +519,45 @@ No transport sequencing exists (SEC-056D/SEC-057).
 executable order:
 
 1. `validate_contract_catalog_package_for_import(&input.package)` —
-   structural/business validation;
-2. `products_source_allowed_for_unit(...)` — provenance/source check on
+   structural/business validation (mode-aware; empty `contracts` allowed for
+   `UnitDistribution`, §10);
+2. importer-wilaya code presence requirement (`Required { wilaya_code }`, the
+   F-04 transactional setting re-read);
+3. `products_source_allowed_for_unit(...)` — provenance/source check on
    `source_node_id` against the importer's wilaya code;
-3. `registry.has_imported(&package_id)` — exact `package_id` replay dedup;
-4. `resolve_importer_unit_id(...)` — importer-unit scope resolution;
-5. `import_contract_catalog_sync(...)` — the target-scoped application path,
+4. `resolve_importer_unit(...)` — resolves the local UNIT's authoritative
+   `units.code`; the resolver returns `ImporterUnit { id, code }`, the exact
+   string used by the target matrix (§13);
+5. `validate_contract_catalog_target_for_import(...)` — target binding (§13
+   matrix: `export_mode` × `target_node_id` against the local unit's exact
+   `units.code`); rejects legacy targetless and cross-unit packages before
+   any replay slot is consumed and any row is written;
+6. `registry.has_imported(&package_id)` — exact `package_id` replay dedup;
+7. `import_contract_catalog_sync(...)` — the target-scoped application path,
    including `in_scope` enforcement during dimension application, inside the
    atomic transaction;
-6. `registry.mark_imported(&package_id)` — applied-package record.
+8. `registry.mark_imported(&package_id)` — applied-package record.
 
 The executable order therefore places structural/business validation BEFORE
-the provenance/source check, and the provenance/source check BEFORE exact
-`package_id` replay dedup. `in_scope` is enforced at apply time inside the
-atomic transaction rather than as an early isolation gate.
+the provenance/source check, the provenance/source check and target binding
+BEFORE exact `package_id` replay dedup, and replay dedup BEFORE any
+application. `in_scope` is enforced at apply time inside the atomic
+transaction rather than as an early isolation gate.
 
-### Future Phase 2 target binding
+### Target binding (implemented by C4)
 
-- A target-binding control will be introduced for `UnitDistribution`
-  packages, but its exact placement in the import pipeline is a **Phase 2
-  design decision** and MUST be settled and documented before Phase 2
-  implementation.
-- Phase 2 MUST ensure target binding occurs before any target-specific
-  application or acceptance of the package.
-- Target binding is NOT part of the current implemented pipeline and is NOT
-  shown in the current-order diagram above. The current implementation order
-  is documented separately (above) and remains the reference for present
-  behavior.
-- No target-binding implementation is introduced by this documentation
-  correction.
+- The target-binding control for `UnitDistribution` packages is
+  **implemented** (C4, `f14ca73` — `validate_contract_catalog_target_for_import`
+  + `resolve_importer_unit`), settling the earlier "Phase 2 design decision"
+  on placement: after structural validation and the provenance/source check,
+  before replay dedup and before any target-specific application or
+  acceptance.
+- Target binding occurs inside the single import transaction and before any
+  business mutation; a target-rejected package consumes no replay slot and
+  writes zero catalog rows.
+- The diagram above is the current implemented order and remains the
+  reference for present behavior. Legacy targetless V3 `contract_catalog`
+  packages (absent `export_mode` / `target_node_id`) are rejected per §13.
 
 ## 15.3 Failure Isolation: B Must Not Invalidate A
 
@@ -526,38 +596,35 @@ replay protection or provenance mechanisms:
   unchanged.
 - **Target binding is an ADDITIONAL semantic boundary** (§15.2, §13); it does
   NOT replace provenance or replay protection.
-- Once implemented in Phase 2, `target_node_id` is signed/authenticated as
-  part of the package contract: it is covered by the same package signature
-  as every other metadata field (§8), so it cannot be altered without
-  invalidating the package.
+- `target_node_id` is signed/authenticated as part of the package contract
+  (implemented C1): it is covered by the same package signature as every
+  other metadata field (§8), so it cannot be altered without invalidating the
+  package.
 
 No new replay or provenance mechanism is introduced by this ADR.
 
-# 16. Deferred Work (later phases, separate authorization)
+# 16. Deferred Work (historical — resolved by C1–C4)
 
-1. **Exporter wiring** — per-UNIT dataset selection in
-   `export_contract_catalog_dataset.rs`; fleet loop + per-target dataset
-   precompute in `fleet_package_export.rs`; metadata population in
-   `identity_signed_export_service.rs`.
-2. **Importer wiring** — target matrix enforcement + `units.code`
-   resolution in `import_contract_catalog_package.rs` /
-   `sync_import_execution_service.rs`; `resolve_importer_unit_id` extended to
-   return `unit.code`; empty-contracts allowance.
-3. **SQL hardening** — replacement of the manual
-   `unit_id = '...'` escaping at `repositories/contracts.rs` with typed
-   parameter binding (`?1`), repository-layer confined, zero business logic
-   change.
-4. **Input wrapper** — `ExportContractCatalogInput { mode }` introduction
-   (§4).
-5. **Metadata field** — introduce `SyncPackageMetadata.target_node_id` with
-   its serde contract and tests, together with the exporter/serializer wiring
-   that the value flows through (§8).
+All items below were listed at ratification as deferred work requiring
+separate authorization. Each has since been authorized and implemented; the
+list is preserved for traceability.
+
+| # | Historical deferred item | Implementation status | Implemented by | Current state |
+|---|--------------------------|----------------------|----------------|---------------|
+| 1 | Exporter wiring — per-UNIT dataset selection in `export_contract_catalog_dataset.rs`; fleet loop + per-target dataset precompute in `fleet_package_export.rs`; metadata population in `identity_signed_export_service.rs` | **IMPLEMENTED** | C3 (`917f0ad`) | Unit-scoped dataset selection + validation; fleet loop with per-target precompute; `export_mode`/`target_node_id` populated in the exporter |
+| 2 | Importer wiring — target matrix enforcement + `units.code` resolution in `import_contract_catalog_package.rs` / `sync_import_execution_service.rs`; `resolve_importer_unit_id` extended to return `unit.code`; empty-contracts allowance | **IMPLEMENTED** | C4 (`f14ca73`) | `validate_contract_catalog_target_for_import` enforces §13; `resolve_importer_unit` returns `ImporterUnit { id, code }`; empty `UnitDistribution` accepted |
+| 3 | SQL hardening — replacement of the manual `unit_id = '...'` escaping at `repositories/contracts.rs` with typed parameter binding (`?1`), repository-layer confined, zero business logic change | **IMPLEMENTED** | C3 (`917f0ad`) | `unit_id`/`supplier_id`/`fiscal_year` filters use typed `?N` binding (`list_contracts`, `list_catalog_exportable_contracts_for_unit`, `count_live_contracts_for_unit_year`, ...) |
+| 4 | Input wrapper — `ExportContractCatalogInput { mode }` introduction (§4) | **IMPLEMENTED** | C3 (`917f0ad`) | `ExportContractCatalogInput { mode }` in `exports/types.rs`, consumed by the exporter |
+| 5 | Metadata field — introduce `SyncPackageMetadata.target_node_id` with its serde contract and tests, together with the exporter/serializer wiring that the value flows through (§8) | **IMPLEMENTED** | C1 (`26b6dd8`); exporter wiring C3 | Field + serde contract + canonical-signature coverage; V3 retained |
+
+**No deferred implementation remains from this ADR as of C4.**
 
 # 17. Non-Goals
 
 This ADR does **not**:
 
-1. implement exporter or importer wiring (§2, §16);
+1. implement exporter or importer wiring at ratification time (§2, §16) —
+   subsequently delivered by C1–C4;
 2. introduce recipient-specific encryption or any key split (§12);
 3. add a `products` dimension or change the four-dimension dataset shape;
 4. alter lifecycle rules of `ContractStatus` or any transition predicate;
@@ -565,7 +632,8 @@ This ADR does **not**:
    target filtering, or change renderer authority (file title is not a
    security boundary);
 6. use a filename, rendering label, or `units.id` as the security identity;
-7. do a broad SQL refactor (only the targeted hardening above, later);
+7. do a broad SQL refactor (only the targeted hardening above — delivered by
+   C3);
 8. migrate the schema, bump the envelope version, add tables/columns, or
    reopen the V3 window;
 9. add a legacy compatibility path or V4;
@@ -575,10 +643,11 @@ This ADR does **not**:
 
 # 18. Implementation Boundary
 
-Phase 1 (this ratification) delivers: the mode enum (§3) and the status
+Phase 1 (this ratification) delivered: the mode enum (§3) and the status
 predicate (§6), plus their unit tests and this ADR. The metadata field (§8),
-the input wrapper (§4), and everything in §16 remain out of scope until
-separately authorized.
+the input wrapper (§4), and everything in §16 stayed out of scope at
+ratification and were subsequently authorized and implemented by C1–C4; the
+functional scope of this ADR is complete at HEAD `f14ca73`.
 
 # 19. Testing Contract
 
@@ -597,6 +666,15 @@ deserializes to `None`; present field preserved; round-trip through
 `serde_json::Value`); importer target matrix acceptance/rejection;
 `Ended(B)` exclusion; empty `contracts: []` acceptance for UNIT-scoped;
 fleet all-status retention.
+
+**Expansion status.** The later-phase test contract was delivered with
+C1–C4: the §8 serde and canonical-signature coverage tests (C1,
+`package_metadata.rs`), the export reproducibility snapshot tests (C2,
+`export_reproducibility_persistence_tests.rs`), the exporter per-UNIT
+isolation, shared-supplier, all-status-retention, and empty-artifact tests
+(C3, `contract_catalog_unit_distribution_export_tests.rs`), and the importer
+target-matrix, `Ended(B)` exclusion, empty-`UnitDistribution` acceptance, and
+tamper tests (C4, `contract_catalog_package_import_tests.rs`).
 
 # 20. Governance Records
 
