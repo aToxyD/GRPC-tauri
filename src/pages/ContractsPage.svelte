@@ -228,7 +228,7 @@
       contractsOp.error.set('يرجى ملء الحقول الإلزامية');
       return;
     }
-    await contractsOp.run(async () => {
+    const created = await contractsOp.run(async () => {
       const request: CreateContractRequest = {
         unit_id: newUnitId,
         supplier_id: newSupplierId,
@@ -236,12 +236,15 @@
         contract_reference: newReference.trim(),
         notes: newNotes.trim() || null,
       };
-      const created = await createContract(request);
+      const result = await createContract(request);
       setSuccessWithTimeout('تم إنشاء العقد بنجاح');
       showCreateModal = false;
+      return result;
+    });
+    if (created !== null) {
       await loadAll();
       await selectContract(created);
-    });
+    }
   }
 
   function openAddProduct() {
@@ -259,7 +262,7 @@
       contractsOp.error.set('يرجى ملء الحقول الإلزامية');
       return;
     }
-    await contractsOp.run(async () => {
+    const productAdded = await contractsOp.run(async () => {
       const agreed =
           newAgreedPrice === '' || newAgreedPrice === null
               ? null
@@ -274,8 +277,8 @@
       await addContractProduct(request);
       setSuccessWithTimeout('تمت إضافة المنتج إلى العقد');
       showAddProductModal = false;
-      await refreshDetail(contract.id);
     });
+    if (productAdded !== null) await refreshDetail(contract.id);
   }
 
   function openSetAgreedPrice(product: ContractProduct) {
@@ -291,7 +294,7 @@
       contractsOp.error.set('يرجى إدخال سعر اتفاق صحيح');
       return;
     }
-    await contractsOp.run(async () => {
+    const priceOk = await contractsOp.run(async () => {
       await setContractProductAgreedPriceHt({
         contract_product_id: target.id,
         agreed_price_ht: value,
@@ -300,22 +303,24 @@
         target.agreed_price_ht !== null ? 'تم تحديث سعر الاتفاق' : 'تم تثبيت سعر الاتفاق'
       );
       agreedPriceTarget = null;
-      if (selectedContract) await refreshDetail(selectedContract.id);
     });
+    if (priceOk !== null && selectedContract) await refreshDetail(selectedContract.id);
   }
 
   async function transition(action: 'accept' | 'activate' | 'end' | 'cancel') {
     const contract = selectedContract;
     if (!contract) return;
-    await contractsOp.run(async () => {
+    const transitionOk = await contractsOp.run(async () => {
       if (action === 'accept') await acceptContract({ contract_id: contract.id });
       if (action === 'activate') await activateContract({ contract_id: contract.id });
       if (action === 'end') await endContract({ contract_id: contract.id });
       if (action === 'cancel') await cancelContract({ contract_id: contract.id });
       setSuccessWithTimeout('تم تحديث حالة العقد');
+    });
+    if (transitionOk !== null) {
       await loadAll();
       if (selectedContract) await selectContract(selectedContract);
-    });
+    }
   }
 
   async function handleCancelConfirm() {

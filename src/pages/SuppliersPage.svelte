@@ -110,7 +110,7 @@
       return;
     }
 
-    await suppliersOp.run(async () => {
+    const saveOk = await suppliersOp.run(async () => {
       if (editingSupplier) {
         const request: UpdateSupplierRequest = {
           id: editingSupplier.id,
@@ -129,16 +129,16 @@
       }
 
       closeModal();
-      await loadData();
     });
+    if (saveOk !== null) await loadData();
   }
 
   async function toggleActive(supplier: Supplier) {
-    await suppliersOp.run(async () => {
+    const toggleOk = await suppliersOp.run(async () => {
       await setSupplierActive({ supplier_id: supplier.id, active: !supplier.active });
       setSuccessWithTimeout(supplier.active ? 'تم إيقاف المورد' : 'تم تفعيل المورد');
-      await loadData();
     });
+    if (toggleOk !== null) await loadData();
   }
 
   async function handleDelete(supplier: Supplier) {
@@ -181,7 +181,7 @@
     const toAdd = selectedUnitIds.filter((id) => !current.includes(id));
     const toRemove = current.filter((id) => !next.has(id));
 
-    await suppliersOp.run(async () => {
+    const linkOk = await suppliersOp.run(async () => {
       for (const unitId of toAdd) {
         await associateSupplierWithUnit({ unit_id: unitId, supplier_id: associationSupplier!.id });
       }
@@ -190,8 +190,8 @@
       }
       setSuccessWithTimeout('تم تحديث ارتباطات المورد بالوحدات بنجاح');
       closeAssociation();
-      await loadData();
     });
+    if (linkOk !== null) await loadData();
   }
 
   async function handleExport() {
