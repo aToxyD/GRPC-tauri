@@ -8,7 +8,8 @@
 //! / `ProductRepository` / `UnitRepository`.
 
 use crate::domain::numeric::legacy_float;
-use crate::domain::pricing::price::compute_contract_fiscal;
+use crate::domain::numeric::Money;
+use crate::domain::pricing::price::{compute_contract_fiscal, ContractFiscalBreakdown};
 use crate::domain::validation::{
     validate_add_contract_product_request, validate_create_contract_request,
     validate_product_units, validate_release_contract_allocation_request,
@@ -154,16 +155,70 @@ impl<'a> ContractService<'a> {
             &now,
         )?;
 
+        // SEC-087: when an agreed HT price is supplied at add time, the line
+        // advance the line to the authoritative price snapshot through the SAME
+        // single fiscal boundary as `set_agreed_price_ht` — never a second
+        // formula on this path.
+        if let Some(agreed) = req.agreed_price_ht {
+            let agreed_money = legacy_float::money_from_f64(agreed)?;
+            let (snapshot, _breakdown) = self.resolve_contract_price_snapshot(
+                &req.product_id,
+                &contract_product_id,
+                &agreed_money,
+            )?;
+            self.executor.contracts().freeze_contract_price(&snapshot)?;
+        }
+
         Ok((contract_product_id, allocation_id))
     }
 
-    /// Freeze the agreed HT price and persist the authoritative ordered-price
-    /// snapshot. This is the SEC-087 Phase 3 price-agreement boundary: it
-    /// resolves the product's authoritative TVA classification and unit
-    /// configuration (fail closed on any gap — never consulting the legacy
-    /// fiscal-year policy), derives exact TVA/TTC via `compute_contract_fiscal`,
-    /// and persists the full snapshot atomically. Allowed only while the
-    /// contract is `proposed`; after acceptance the price is immutable.
+    /// Resolve the authoritative contract-price snapshot for a single order
+    /// line. This is the **single** SEC-087 fiscal boundary: it resolves the
+    /// product's authoritative unit/TVA configuration codes (fail closed on any
+    /// gap — deliberately NO fallback to the legacy fiscal-year policy),
+    /// derives exact TVA/TTC via `compute_contract_fiscal`, and builds the
+    /// atomic `ContractPriceSnapshot` that `freeze_contract_price` persists.
+    /// Both `set_agreed_price_ht` and `add_contract_product` (when an agreed
+    /// price is supplied at add time) compute their snapshot here, so there is
+    /// no second fiscal implementation.
+    fn resolve_contract_price_snapshot(
+        &self,
+        product_id: &str,
+        contract_product_id: &str,
+        agreed_price_ht: &Money,
+    ) -> Result<(ContractPriceSnapshot, ContractFiscalBreakdown), AppError> {
+        // Fail closed on an incomplete product configuration: the product
+        // master is the sole current source for unit/TVA configuration. There
+        // is deliberately NO fallback to fiscal_year_tax_policy (SEC-087).
+        let config_codes = self
+            .executor
+            .products()
+            .get_product_config_codes(product_id)?
+            .ok_or_else(|| Self::not_found("منتج", product_id))?;
+        let config = validate_product_units(
+            Some(config_codes.purchase_unit),
+            Some(config_codes.consumption_unit),
+            Some(config_codes.conversion_factor),
+            Some(config_codes.tva_classification),
+        )?;
+
+        // Exact HT authority (Money), never reinterpreted from a historical TTC.
+        let breakdown = compute_contract_fiscal(&agreed_price_ht, &config.tva_classification.rate())?;
+
+        let snapshot = ContractPriceSnapshot {
+            contract_product_id: contract_product_id.to_string(),
+            agreed_price_ht_scaled: agreed_price_ht.to_scaled_i64()?,
+            tva_classification_code: config.tva_classification.code(),
+            tva_rate_scaled: config.tva_classification.rate().to_scaled_i64()?,
+            tva_amount_scaled: breakdown.tva_amount.to_scaled_i64()?,
+            price_ttc_scaled: breakdown.price_ttc.to_scaled_i64()?,
+            purchase_unit_code: config.purchase_unit.code(),
+            consumption_unit_code: config.consumption_unit.code(),
+            conversion_factor: config.conversion_factor,
+        };
+        Ok((snapshot, breakdown))
+    }
+
     pub fn set_agreed_price_ht(&self, req: &SetAgreedPriceHtRequest) -> Result<f64, AppError> {
         validate_set_agreed_price_ht_request(req)?;
 
