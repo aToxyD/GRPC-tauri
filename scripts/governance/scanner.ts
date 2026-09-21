@@ -139,7 +139,7 @@ export const DOMAIN_REGISTRY: Record<string, {
       "getSupplier", "listSuppliers", "listUnitSuppliers", "getContract", "listContracts", "getContractProducts", "listContractAllocations", "listAllocationExceptions",
       "exportSuppliersExcel", "exportContractsExcel", "exportContractAllocationsExcel",
     ],
-    crossDomainExceptions: ["listProducts", "listUnits"],
+    crossDomainExceptions: ["listProducts", "listUnits", "calculateProductPriceWithTva"],
   },
 };
 

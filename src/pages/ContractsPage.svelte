@@ -22,6 +22,7 @@
     listUnits,
     listSuppliers,
     listProducts,
+    calculateProductPriceWithTva,
     getSettings,
   } from '../lib/contracts';
   import type {
@@ -103,6 +104,62 @@
   // Set-agreed-price form
   // @category TransientState
   let agreedPriceTarget = $state<ContractProduct | null>(null);
+
+  // @category DerivedState
+  let addProductTvaRate = $state<number | null>(null);
+  // @category DerivedState
+  let addProductTtcPreview = $state('');
+  // @category DerivedState
+  let agreedPriceTvaRate = $state<number | null>(null);
+  // @category DerivedState
+  let agreedPriceTtcRecap = $state('');
+
+  // TVA rate (%) of a catalog product used for a read-only display/preview. Never a business rule.
+  function catalogTvaRateById(productId: string): number | null {
+    return products.find((p) => p.id === productId)?.tva_rate ?? null;
+  }
+
+  // @category Effect
+  $effect(() => {
+    const selected = products.find((p) => p.id === newProductId);
+    addProductTvaRate = selected?.tva_rate ?? null;
+    const price = parseFloat(newProposedPrice);
+    if (newProductId === '' || Number.isNaN(price) || price < 0 || addProductTvaRate === null) {
+      addProductTtcPreview = '';
+      return;
+    }
+    calculateProductPriceWithTva(price, addProductTvaRate)
+      .then((ttc) => {
+        addProductTtcPreview = ttc.toFixed(2);
+      })
+      .catch(() => {
+        addProductTtcPreview = '';
+      });
+  });
+
+  // @category Effect
+  $effect(() => {
+    const t = agreedPriceTarget;
+    if (t === null) {
+      agreedPriceTvaRate = null;
+      agreedPriceTtcRecap = '';
+      return;
+    }
+    const rate = t.tva_rate ?? catalogTvaRateById(t.product_id);
+    agreedPriceTvaRate = rate;
+    const price = parseFloat(newAgreedPrice);
+    if (rate === null || Number.isNaN(price) || price < 0) {
+      agreedPriceTtcRecap = '';
+      return;
+    }
+    calculateProductPriceWithTva(price, rate)
+      .then((ttc) => {
+        agreedPriceTtcRecap = ttc.toFixed(2);
+      })
+      .catch(() => {
+        agreedPriceTtcRecap = '';
+      });
+  });
 
   // Release form
   // @category TransientState
@@ -484,6 +541,8 @@
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السعر المقترح</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">التسعير المتفق عليه</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">نسبة الضريبة</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السعر ش.ض (TTC)</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">إجراءات</th>
             </svelte:fragment>
             {#each selectedProducts as product (product.id)}
@@ -498,6 +557,20 @@
                     {product.agreed_price_ht.toFixed(2)} دج
                   {:else if selectedContract.status === 'Proposed'}
                     <AppButton size="sm" variant="secondary" on:click={() => { newAgreedPrice = ''; openSetAgreedPrice(product); }}>تثبيت السعر</AppButton>
+                  {:else}
+                    —
+                  {/if}
+                </td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                  {#if product.tva_rate !== null}
+                    {product.tva_rate.toFixed(2)}%
+                  {:else}
+                    —
+                  {/if}
+                </td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                  {#if product.price_ttc !== null}
+                    {product.price_ttc.toFixed(2)} دج
                   {:else}
                     —
                   {/if}
@@ -600,6 +673,20 @@
         {/each}
       </AppSelect>
       <AppInput id="add-proposed-price" label="السعر المقترح (دج) *" type="number" bind:value={newProposedPrice} required min={0} placeholder="0.00" />
+      {#if newProductId}
+        <div class="rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-600 dark:text-gray-400">
+          <div class="flex items-center justify-between gap-2">
+            <span>نسبة الضريبة</span>
+            <span class="font-semibold">{addProductTvaRate !== null ? addProductTvaRate.toFixed(2) + '%' : '—'}</span>
+          </div>
+          {#if newProposedPrice !== '' && newProposedPrice !== '.' && addProductTtcPreview !== ''}
+            <div class="mt-1 flex items-center justify-between gap-2 border-t border-gray-200 dark:border-gray-700 pt-1">
+              <span>السعر المقدر ش.ض (TTC، غير ملزم)</span>
+              <span class="font-semibold">{addProductTtcPreview} دج</span>
+            </div>
+          {/if}
+        </div>
+      {/if}
       <AppInput id="add-agreed-price" label="سعر الاتفاق (دج، اختياري)" type="number" bind:value={newAgreedPrice} min={0} placeholder="0.00" />
       <AppInput id="add-quantity" label="الكمية المتفق عليها *" type="number" bind:value={newQuantity} required min={0} placeholder="0" />
     </div>
@@ -616,6 +703,20 @@
   >
     <div dir="rtl" class="space-y-4">
       <AppInput id="agreed-price" label="سعر الاتفاق (دج) *" type="number" bind:value={newAgreedPrice} required min={0} placeholder="0.00" />
+      {#if agreedPriceTarget}
+        <div class="rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-600 dark:text-gray-400">
+          <div class="flex items-center justify-between gap-2">
+            <span>نسبة الضريبة</span>
+            <span class="font-semibold">{agreedPriceTvaRate !== null ? agreedPriceTvaRate.toFixed(2) + '%' : '—'}</span>
+          </div>
+          {#if newAgreedPrice !== '' && newAgreedPrice !== '.' && agreedPriceTtcRecap !== ''}
+            <div class="mt-1 flex items-center justify-between gap-2 border-t border-gray-200 dark:border-gray-700 pt-1">
+              <span>السعر ش.ض (TTC، غير ملزم)</span>
+              <span class="font-semibold">{agreedPriceTtcRecap} دج</span>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
     <svelte:fragment slot="actions">
       <AppButton variant="secondary" on:click={() => (agreedPriceTarget = null)}>إلغاء</AppButton>

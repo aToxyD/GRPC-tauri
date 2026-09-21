@@ -139,6 +139,10 @@
         {
           "name": "tva_classification",
           "type": "number"
+        },
+        {
+          "name": "tva_rate",
+          "type": "number"
         }
       ]
     },

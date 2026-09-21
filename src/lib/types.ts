@@ -55,6 +55,10 @@ export interface Product {
   conversion_factor: number;
   // TvaClassification wire code 0..=2 (see `domain/units.rs`).
   tva_classification: number;
+  // Authoritative percent-domain TVA rate (`Rate`), backend-derived from the
+  // product fiscal classification — SEC-087 Task 2. Display verbatim; never map
+  // `tva_classification` codes to percentages here.
+  tva_rate: number;
 }
 
 export interface CreateProductRequest {

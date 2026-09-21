@@ -43,6 +43,14 @@ pub struct ProductRead {
     pub conversion_factor: i32,
     /// TVA classification wire code (`TvaClassification`, `0..=2`).
     pub tva_classification: i32,
+    /// Authoritative numeric TVA rate in percent domain (`Rate`, `0.0..=100.0`);
+    /// e.g. 19% → `19.0`. Produced ONLY at the backend fiscal boundary via the
+    /// existing `rate_to_f64(&TvaClassification::rate())` conversion — the
+    /// single code→rate authority. The frontend must display this verbatim and
+    /// must never map `tva_classification` codes to percentages itself.
+    /// SEC-087 Phase 7 (Task 2): non-null projection derived from the product
+    /// fiscal classification, never persisted (no DB column, no migration).
+    pub tva_rate: f64,
 }
 
 /// Current inventory stock level for a product

@@ -96,6 +96,7 @@ const product: Product = {
   consumption_unit: 1,
   conversion_factor: 1,
   tva_classification: 0,
+  tva_rate: 0,
 };
 
 const contractProduct: ContractProduct = {

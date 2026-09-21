@@ -295,6 +295,7 @@ impl<'a> ProductRepository<'a> {
                     consumption_unit: row.get(6)?,
                     conversion_factor: row.get(7)?,
                     tva_classification: row.get(8)?,
+                    tva_rate: numeric_row::tva_rate_col(8, row.get::<_, i32>(8)?)?,
                 })
             },
         )?)
@@ -331,6 +332,7 @@ impl<'a> ProductRepository<'a> {
                     consumption_unit: row.get(6)?,
                     conversion_factor: row.get(7)?,
                     tva_classification: row.get(8)?,
+                    tva_rate: numeric_row::tva_rate_col(8, row.get::<_, i32>(8)?)?,
                 })
             },
         )?)
