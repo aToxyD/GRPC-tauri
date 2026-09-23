@@ -18,7 +18,7 @@
     revokeContractAllocationRelease,
     exportContractsExcel,
     exportContractAllocationsExcel,
-    exportContractCatalogPackage,
+    exportContractCatalogToUnits,
     listUnits,
     listSuppliers,
     listProducts,
@@ -89,6 +89,12 @@
   // @category TransientState
   let newNotes = $state('');
 
+  // ContractCatalog UNIT distribution (ADR-0059 / SEC-087-F)
+  // @category TransientState
+  let showDistributeModal = $state(false);
+  // @category TransientState
+  let distributeSelectedUnitIds = $state<string[]>([]);
+
   // Add-product form
   // @category TransientState
   let showAddProductModal = $state(false);
@@ -117,6 +123,12 @@
   // TVA rate (%) of a catalog product used for a read-only display/preview. Never a business rule.
   function catalogTvaRateById(productId: string): number | null {
     return products.find((p) => p.id === productId)?.tva_rate ?? null;
+  }
+
+  // Presentation-only UNIT label: `name (code)`, falling back to the raw id.
+  function unitLabel(unitId: string): string {
+    const unit = units.find((u) => u.id === unitId);
+    return unit ? `${unit.name} (${unit.code})` : unitId;
   }
 
   // @category Effect
@@ -265,19 +277,55 @@
     });
   }
 
-  async function handleExportCatalog() {
+  function openDistribute() {
+    distributeSelectedUnitIds = [];
+    contractsOp.error.set(null);
+    showDistributeModal = true;
+  }
+
+  function toggleDistributeUnit(unitId: string) {
+    distributeSelectedUnitIds = distributeSelectedUnitIds.includes(unitId)
+      ? distributeSelectedUnitIds.filter((id) => id !== unitId)
+      : [...distributeSelectedUnitIds, unitId];
+  }
+
+  function toggleDistributeAll() {
+    const allSelected = units.length > 0 && distributeSelectedUnitIds.length === units.length;
+    distributeSelectedUnitIds = allSelected ? [] : units.map((u) => u.id);
+  }
+
+  async function handleDistribute() {
+    if (units.length === 0 || distributeSelectedUnitIds.length === 0) {
+      contractsOp.error.set('يرجى اختيار وحدة واحدة على الأقل لتوزيع كتالوج العقود');
+      return;
+    }
+    const targetCodes: string[] = [];
+    for (const id of distributeSelectedUnitIds) {
+      const unit = units.find((u) => u.id === id);
+      if (!unit?.code) {
+        contractsOp.error.set(`تعذر تحديد رمز الوحدة «${id}»`);
+        return;
+      }
+      targetCodes.push(unit.code);
+    }
     const year = settings?.current_year ?? new Date().getFullYear();
     const filePath = await saveFile({
       defaultPath: `contract_catalog_${year}.sync`,
       filters: [{ name: 'حزمة المزامنة', extensions: ['sync'] }],
     });
     if (!filePath) return;
-    await contractsOp.run(async () => {
-      const result = await exportContractCatalogPackage(filePath);
+    const distributed = await contractsOp.run(async () => {
+      const result = await exportContractCatalogToUnits(filePath, targetCodes);
       setSuccessWithTimeout(
-        `تم تصدير كتالوج العقود: ${result.record_count} سجل (حزمة .sync موقعة رقمياً)`
+        `تم توزيع كتالوج العقود على ${targetCodes.length} وحدة: ${result.record_count} سجل (حزمة .sync موقعة رقمياً)`
       );
+      showDistributeModal = false;
+      distributeSelectedUnitIds = [];
+      return true;
     });
+    if (distributed !== null) {
+      await loadAll();
+    }
   }
 
   async function saveContract() {
@@ -466,10 +514,10 @@
         <AppButton variant="secondary" on:click={() => handleExport('contracts')}>تصدير العقود</AppButton>
         <AppButton
           variant="secondary"
-          on:click={handleExportCatalog}
-          ariaLabel="تصدير كتالوج العقود كحزمة مزامنة موقعة للوحدات المرتبطة"
+          on:click={openDistribute}
+          ariaLabel="توزيع كتالوج العقود على الوحدات المحددة كحزم مزامنة موقعة"
         >
-          تصدير كتالوج العقود
+          توزيع الكتالوج على الوحدات
         </AppButton>
         <AppButton on:click={openCreate} ariaLabel="إنشاء عقد جديد">إنشاء عقد</AppButton>
       </svelte:fragment>
@@ -487,6 +535,7 @@
         <AppTable loading={$loading} empty={contracts.length === 0} error={$error} emptyMessage="لا توجد عقود بعد" caption="قائمة العقود">
           <svelte:fragment slot="head">
             <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المرجع</th>
+            <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الوحدة</th>
             <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المورد</th>
             <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السنة</th>
             <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الحالة</th>
@@ -497,6 +546,7 @@
               onclick={() => selectContract(contract)}
             >
               <td class="px-4 py-3 text-sm text-gray-800 dark:text-gray-100">{contract.contract_reference}</td>
+              <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{unitLabel(contract.unit_id)}</td>
               <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                 {suppliers.find((s) => s.id === contract.supplier_id)?.name || contract.supplier_id}
               </td>
@@ -739,6 +789,49 @@
     <svelte:fragment slot="actions">
       <AppButton variant="secondary" on:click={() => (releaseTarget = null)}>إلغاء</AppButton>
       <AppButton on:click={saveRelease} loading={$loading}>تسجيل الإفراج</AppButton>
+    </svelte:fragment>
+  </AppDialog>
+
+  <AppDialog
+    open={showDistributeModal}
+    title="توزيع الكتالوج على الوحدات"
+    description="اختر الوحدات المستهدفة — تصدر لكل وحدة حزمة .sync موقعة ومشفرة خاصة بها (نمط التوزيع على الوحدة)"
+    on:close={() => (showDistributeModal = false)}
+  >
+    <div dir="rtl" class="space-y-4">
+      <label class="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
+        <input
+          type="checkbox"
+          checked={units.length > 0 && distributeSelectedUnitIds.length === units.length}
+          onchange={toggleDistributeAll}
+          disabled={units.length === 0}
+          class="w-4 h-4 rounded"
+        />
+        <span class="text-sm font-medium text-gray-800 dark:text-gray-200">تحديد جميع الوحدات</span>
+      </label>
+      {#if units.length === 0}
+        <AppAlert intent="info">لا توجد وحدات مسجلة بعد. أنشئ الوحدات أولاً من صفحة "الوحدات".</AppAlert>
+      {:else}
+        <div class="max-h-[40vh] overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+          {#each units as unit (unit.id)}
+            <label class="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
+              <input
+                type="checkbox"
+                checked={distributeSelectedUnitIds.includes(unit.id)}
+                onchange={() => toggleDistributeUnit(unit.id)}
+                class="w-4 h-4 rounded"
+              />
+              <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{unit.code} - {unit.name}</span>
+            </label>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    <svelte:fragment slot="actions">
+      <AppButton variant="secondary" on:click={() => (showDistributeModal = false)}>إلغاء</AppButton>
+      <AppButton on:click={handleDistribute} loading={$loading} disabled={distributeSelectedUnitIds.length === 0}>
+        توزيع ({distributeSelectedUnitIds.length})
+      </AppButton>
     </svelte:fragment>
   </AppDialog>
 </Layout>

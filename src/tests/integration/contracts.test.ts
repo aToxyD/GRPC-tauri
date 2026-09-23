@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import ContractsPage from '../../pages/ContractsPage.svelte';
-import type { Contract, ContractProduct, Product } from '../../lib/types';
+import type { Contract, ContractProduct, Product, Unit } from '../../lib/types';
 
 // Mock Tauri modules
 const mockSaveFile = vi.fn();
@@ -34,6 +34,8 @@ const mockRevokeContractAllocationRelease = vi.fn();
 const mockExportContractsExcel = vi.fn();
 const mockExportContractAllocationsExcel = vi.fn();
 const mockExportContractCatalogPackage = vi.fn();
+const mockExportContractCatalogToUnits = vi.fn();
+const mockCalculateProductPriceWithTva = vi.fn();
 const mockListUnits = vi.fn();
 const mockListSuppliers = vi.fn();
 const mockListProducts = vi.fn();
@@ -58,6 +60,10 @@ vi.mock('../../lib/contracts', () => ({
   exportContractAllocationsExcel: (...args: any[]) => mockExportContractAllocationsExcel(...args),
   exportContractCatalogPackage: (...args: any[]) =>
     mockExportContractCatalogPackage(...args),
+  exportContractCatalogToUnits: (...args: any[]) =>
+    mockExportContractCatalogToUnits(...args),
+  calculateProductPriceWithTva: (...args: any[]) =>
+    mockCalculateProductPriceWithTva(...args),
   listUnits: (...args: any[]) => mockListUnits(...args),
   listSuppliers: (...args: any[]) => mockListSuppliers(...args),
   listProducts: (...args: any[]) => mockListProducts(...args),
@@ -135,6 +141,24 @@ const acceptedContract: Contract = {
   contract_reference: 'C-2026-002',
 };
 
+const unit: Unit = {
+  id: 'u1',
+  code: 'A1',
+  name: 'وحدة أ',
+  wilaya_code: '16',
+  user_id: null,
+  created_at: '2026-01-01T00:00:00Z',
+};
+
+const unitB: Unit = {
+  id: 'u2',
+  code: 'B1',
+  name: 'وحدة ب',
+  wilaya_code: '16',
+  user_id: null,
+  created_at: '2026-01-01T00:00:00Z',
+};
+
 /**
  * Drive the real ContractsPage add-product UI path:
  *   select Proposed contract -> "إضافة منتج" -> fill required fields ->
@@ -190,6 +214,7 @@ describe('ContractsPage add-product agreed_price_ht normalization', () => {
     mockListProducts.mockResolvedValue([product]);
     mockListContracts.mockResolvedValue([contract]);
     mockGetSettings.mockResolvedValue({ current_year: 2026 });
+    mockCalculateProductPriceWithTva.mockResolvedValue(200);
   });
 
   it('sends agreed_price_ht null when the optional field is left untouched (empty string)', async () => {
@@ -249,6 +274,7 @@ describe('ContractsPage agreed-price action availability (R-02 revision UX)', ()
     mockListUnits.mockResolvedValue([]);
     mockListProducts.mockResolvedValue([product]);
     mockGetSettings.mockResolvedValue({ current_year: 2026 });
+    mockCalculateProductPriceWithTva.mockResolvedValue(200);
   });
 
   async function selectContract(reference: string) {
@@ -305,5 +331,100 @@ describe('ContractsPage agreed-price action availability (R-02 revision UX)', ()
     expect(screen.queryByText('مراجعة السعر')).not.toBeInTheDocument();
     expect(screen.queryByText('تثبيت السعر')).not.toBeInTheDocument();
     expect(screen.queryByText('اعتماد المقترح')).not.toBeInTheDocument();
+  });
+});
+
+describe('ContractsPage ContractCatalog UNIT distribution (ADR-0059)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockListContracts.mockResolvedValue([contract]);
+    mockListSuppliers.mockResolvedValue([]);
+    mockListProducts.mockResolvedValue([product]);
+    mockListUnits.mockResolvedValue([unit, unitB]);
+    mockGetSettings.mockResolvedValue({ current_year: 2026 });
+    mockGetContractProducts.mockResolvedValue([]);
+    mockListContractAllocations.mockResolvedValue([]);
+    mockListAllocationExceptions.mockResolvedValue([]);
+    mockListUnitSuppliers.mockResolvedValue([]);
+    mockCalculateProductPriceWithTva.mockResolvedValue(200);
+    mockExportContractCatalogToUnits.mockResolvedValue({
+      file_path: 'contract_catalog_2026.sync',
+      record_count: 2,
+      success: true,
+      message: 'encrypted',
+      file_hash: 'hash',
+    });
+    mockSaveFile.mockResolvedValue('/tmp/contract_catalog_2026.sync');
+  });
+
+  async function openDistribute() {
+    await waitFor(() => {
+      expect(screen.getByText('C-2026-001')).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /توزيع كتالوج العقود على الوحدات/ }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText('تحديد جميع الوحدات')).toBeInTheDocument();
+    });
+  }
+
+  it('renders the UNIT column as `name (code)` for each contract', async () => {
+    render(ContractsPage);
+    await waitFor(() => {
+      expect(screen.getByText('C-2026-001')).toBeInTheDocument();
+    });
+    expect(screen.getByText('وحدة أ (A1)')).toBeInTheDocument();
+  });
+
+  it('submits the UnitDistribution command with exact UNIT CODES for selected units', async () => {
+    const { container } = render(ContractsPage);
+    await openDistribute();
+
+    const checkboxes = () =>
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    fireEvent.click(checkboxes()[1]);
+    fireEvent.click(checkboxes()[2]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'توزيع (2)' }));
+
+    await waitFor(() => {
+      expect(mockExportContractCatalogToUnits).toHaveBeenCalledWith(
+        '/tmp/contract_catalog_2026.sync',
+        ['A1', 'B1'],
+      );
+    });
+  });
+
+  it('select-all toggles every unit and submits all codes', async () => {
+    const { container } = render(ContractsPage);
+    await openDistribute();
+
+    const checkboxes = () =>
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkboxes()).toHaveLength(3);
+    expect(checkboxes()[1].checked).toBe(false);
+    expect(checkboxes()[2].checked).toBe(false);
+
+    fireEvent.click(checkboxes()[0]);
+    expect(checkboxes()[1].checked).toBe(true);
+    expect(checkboxes()[2].checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'توزيع (2)' }));
+
+    await waitFor(() => {
+      expect(mockExportContractCatalogToUnits).toHaveBeenCalledWith(
+        '/tmp/contract_catalog_2026.sync',
+        ['A1', 'B1'],
+      );
+    });
+  });
+
+  it('submit is disabled with zero selection', async () => {
+    render(ContractsPage);
+    await openDistribute();
+    const submit = screen.getByRole('button', { name: 'توزيع (0)' });
+    expect(submit).toBeDisabled();
+    expect(mockExportContractCatalogToUnits).not.toHaveBeenCalled();
   });
 });

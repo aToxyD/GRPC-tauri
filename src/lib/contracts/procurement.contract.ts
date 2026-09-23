@@ -206,10 +206,12 @@ export async function exportContractAllocationsExcel(
 }
 
 // ContractCatalog sync packages (ADR-0055 / SEC-087-F): the system path by
-// which WILAYA-administered ContractCatalog reaches UNIT nodes. Fleet-level
-// export mirrors `export_products_package` (SEC-033); import is UNIT-scoped.
-export async function exportContractCatalogPackage(filePath: string): Promise<SyncExportResult> {
-  return await safeInvoke('export_contract_catalog_package', { filePath });
+// which WILAYA-administered ContractCatalog reaches UNIT nodes. The producer
+// names the target UNITS by their authoritative `units.code`; each target
+// receives one independent signed/encrypted `unit_distribution` artifact
+// (ADR-0059). Import is UNIT-scoped.
+export async function exportContractCatalogToUnits(filePath: string, targets: string[]): Promise<SyncExportResult> {
+  return await safeInvoke('export_contract_catalog_to_units', { filePath, targets });
 }
 
 export async function importContractCatalogPackage(filePath: string): Promise<SyncImportResult> {
