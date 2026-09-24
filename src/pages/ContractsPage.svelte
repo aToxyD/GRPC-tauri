@@ -33,6 +33,7 @@
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
   import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
+  import { unitLabel } from '../lib/unitLabels';
 
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppTable from '../lib/components/ui/AppTable.svelte';
@@ -125,22 +126,49 @@
     return products.find((p) => p.id === productId)?.tva_rate ?? null;
   }
 
-  // Presentation-only UNIT label: `name (code)`, falling back to the raw id.
-  function unitLabel(unitId: string): string {
+  // Presentation-only organizational UNIT label: `name (code)`, falling back to the raw id.
+  function orgUnitLabel(unitId: string): string {
     const unit = units.find((u) => u.id === unitId);
     return unit ? `${unit.name} (${unit.code})` : unitId;
   }
 
+  // Presentation-only matched allocation quantity for a ContractProduct row.
+  // The value is read verbatim from the authoritative `ContractAllocation`
+  // projection (`contracted_quantity`); it is never re-derived here.
+  // @category UiState
+  function contractedQtyForProduct(contractProductId: string): number | null {
+    return selectedAllocations.find(
+      (a) => a.contract_product_id === contractProductId
+    )?.contracted_quantity ?? null;
+  }
+
+  // Task 1c/1f: the proposed price is read-only and always snapshots the WILAYA
+  // catalog ReferencePrice (`Product.base_price`) of the selected Product, so
+  // the operator compares it against the agreed price instead of typing it.
+  // @category UiState
+  function orderQuantityLabel(): string {
+    const selected = products.find((p) => p.id === newProductId);
+    return selected
+      ? `الكمية المتفق عليها * (${unitLabel(selected.purchase_unit)})`
+      : 'الكمية المتفق عليها *';
+  }
+
+  // Task 1d: the add-product TTC preview depends ONLY on the agreed HT price
+  // and the selected Product's authoritative TVA rate. The proposed price is
+  // never used in this calculation path — TTC is backend-derived by
+  // `calculate_product_price_with_tva` and this preview is non-binding.
   // @category Effect
   $effect(() => {
     const selected = products.find((p) => p.id === newProductId);
-    addProductTvaRate = selected?.tva_rate ?? null;
-    const price = parseFloat(newProposedPrice);
-    if (newProductId === '' || Number.isNaN(price) || price < 0 || addProductTvaRate === null) {
+    newProposedPrice = selected ? String(selected.base_price) : '';
+    const rate = selected?.tva_rate ?? null;
+    addProductTvaRate = rate;
+    const price = parseFloat(newAgreedPrice);
+    if (newProductId === '' || Number.isNaN(price) || price < 0 || rate === null) {
       addProductTtcPreview = '';
       return;
     }
-    calculateProductPriceWithTva(price, addProductTvaRate)
+    calculateProductPriceWithTva(price, rate)
       .then((ttc) => {
         addProductTtcPreview = ttc.toFixed(2);
       })
@@ -546,7 +574,7 @@
               onclick={() => selectContract(contract)}
             >
               <td class="px-4 py-3 text-sm text-gray-800 dark:text-gray-100">{contract.contract_reference}</td>
-              <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{unitLabel(contract.unit_id)}</td>
+              <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{orgUnitLabel(contract.unit_id)}</td>
               <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                 {suppliers.find((s) => s.id === contract.supplier_id)?.name || contract.supplier_id}
               </td>
@@ -589,6 +617,7 @@
           <AppTable empty={selectedProducts.length === 0} emptyMessage="لم تُضف منتجات بعد">
             <svelte:fragment slot="head">
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الكمية المتفق عليها</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السعر المقترح</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">التسعير المتفق عليه</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">نسبة الضريبة</th>
@@ -598,6 +627,11 @@
             {#each selectedProducts as product (product.id)}
               <tr class="border-t border-gray-100 dark:border-gray-700">
                 <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">{product.product_name}</td>
+                <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                  {contractedQtyForProduct(product.id) !== null
+                    ? contractedQtyForProduct(product.id)?.toFixed(2)
+                    : '—'}
+                </td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{product.proposed_price_ht.toFixed(2)} دج</td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
                   {#if selectedContract.status === 'Proposed' && product.agreed_price_ht !== null}
@@ -722,14 +756,15 @@
           <option value={product.id}>{product.name}</option>
         {/each}
       </AppSelect>
-      <AppInput id="add-proposed-price" label="السعر المقترح (دج) *" type="number" bind:value={newProposedPrice} required min={0} placeholder="0.00" />
+      <AppInput id="add-proposed-price" label="السعر المقترح (دج) — من الكتالوج" type="number" value={newProposedPrice} readonly required min={0} placeholder="0.00" />
+      <AppInput id="add-agreed-price" label="سعر الاتفاق (دج، اختياري)" type="number" bind:value={newAgreedPrice} min={0} placeholder="0.00" />
       {#if newProductId}
         <div class="rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-600 dark:text-gray-400">
           <div class="flex items-center justify-between gap-2">
             <span>نسبة الضريبة</span>
             <span class="font-semibold">{addProductTvaRate !== null ? addProductTvaRate.toFixed(2) + '%' : '—'}</span>
           </div>
-          {#if newProposedPrice !== '' && newProposedPrice !== '.' && addProductTtcPreview !== ''}
+          {#if newAgreedPrice !== '' && newAgreedPrice !== '.' && addProductTtcPreview !== ''}
             <div class="mt-1 flex items-center justify-between gap-2 border-t border-gray-200 dark:border-gray-700 pt-1">
               <span>السعر المقدر ش.ض (TTC، غير ملزم)</span>
               <span class="font-semibold">{addProductTtcPreview} دج</span>
@@ -737,8 +772,7 @@
           {/if}
         </div>
       {/if}
-      <AppInput id="add-agreed-price" label="سعر الاتفاق (دج، اختياري)" type="number" bind:value={newAgreedPrice} min={0} placeholder="0.00" />
-      <AppInput id="add-quantity" label="الكمية المتفق عليها *" type="number" bind:value={newQuantity} required min={0} placeholder="0" />
+      <AppInput id="add-quantity" label={orderQuantityLabel()} type="number" bind:value={newQuantity} required min={0} placeholder="0" />
     </div>
     <svelte:fragment slot="actions">
       <AppButton variant="secondary" on:click={() => (showAddProductModal = false)}>إلغاء</AppButton>
