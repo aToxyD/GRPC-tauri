@@ -334,7 +334,7 @@
               <span class="block font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
               {#if remainingForProduct(op.product.id) !== null}
                 <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  المتبقي من العقد: {remainingForProduct(op.product.id)?.toFixed(2)} ({unitLabel(op.product.consumption_unit)})
+                  المتبقي من العقد: {remainingForProduct(op.product.id)?.toFixed(2)} ({unitLabel(op.product.purchase_unit)})
                 </span>
               {/if}
             </span>
