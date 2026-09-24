@@ -4,6 +4,7 @@
   import { getSettings, getAllStocks } from '../lib/contracts';
   import type { Settings, InventoryStock, SupplierOrder } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { unitLabel } from '../lib/unitLabels';
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
@@ -134,7 +135,7 @@
                 {stock.quantity.toFixed(2)}
               </span>
             </td>
-            <td class="table-cell">{stock.unit}</td>
+            <td class="table-cell">{unitLabel(stock.consumption_unit)}</td>
             <td class="table-cell text-sm text-gray-500 dark:text-gray-400">{new Date(stock.last_updated).toLocaleDateString('fr-FR')}</td>
           </tr>
         {/each}
