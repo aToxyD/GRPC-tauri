@@ -60,12 +60,12 @@
   // codes are the wire contract (A5/F3). Unit labels/codes come from
   // ../lib/unitLabels.
   const TVA_OPTIONS: { code: number; label: string }[] = [
-    { code: 0, label: 'EXONÉRÉ' },
+    { code: 0, label: 'معفى' },
     { code: 1, label: '9 %' },
     { code: 2, label: '19 %' },
   ];
   const TVA_LABELS: Record<number, string> = {
-    0: 'EXONÉRÉ',
+    0: 'معفى',
     1: '9 %',
     2: '19 %',
   };

@@ -168,10 +168,10 @@ impl TvaClassification {
         }
     }
 
-    /// Canonical French label.
+    /// Presentation label (wire codes `0..=2` remain canonical, A5/F3).
     pub fn label(self) -> &'static str {
         match self {
-            TvaClassification::Exonere => "EXONÉRÉ",
+            TvaClassification::Exonere => "معفى",
             TvaClassification::NinePercent => "9 %",
             TvaClassification::NineteenPercent => "19 %",
         }
@@ -420,7 +420,7 @@ mod tests {
         assert_eq!(TvaClassification::Exonere.rate_permyriad(), 0);
         assert_eq!(TvaClassification::NinePercent.rate_permyriad(), 90_000);
         assert_eq!(TvaClassification::NineteenPercent.rate_permyriad(), 190_000);
-        assert_eq!(TvaClassification::Exonere.label(), "EXONÉRÉ");
+        assert_eq!(TvaClassification::Exonere.label(), "معفى");
         assert_eq!(TvaClassification::NineteenPercent.label(), "19 %");
     }
 
