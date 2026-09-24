@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { saveFile } from '../lib/tauri';
-  import { listUnits, getSettings, computeUnitInventorySnapshot, getUnitInventoryView, getAvailableReportMonths, exportUnitInventoryExcel } from '../lib/contracts';
+  import { listUnits, getSettings, computeUnitInventorySnapshot, getUnitInventoryView, getAvailableReportMonths, exportUnitInventoryExcel, listProducts } from '../lib/contracts';
   import { showSuccess, showError, showWarning } from '../lib/notifications';
   import { formatErrorMessage } from '../lib/errors';
+  import { unitLabel } from '../lib/unitLabels';
   import type {
     Unit, Settings, UnitInventoryView,
-    UnitMonthlySnapshot, ComputeSnapshotResult
+    UnitMonthlySnapshot, ComputeSnapshotResult, Product
   } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -41,6 +42,8 @@
   let availableMonths: [number, number][] = $state([]);
   // @category ProjectionState
   let inventoryView: UnitInventoryView | null = $state(null);
+  // @category ProjectionState
+  let products: Product[] = $state([]);
 
   // @category UiState
   let selectedUnitId = $state('');
@@ -52,6 +55,14 @@
   let searchProduct = $state('');
 
   // ── Derived ────────────────────────────────────
+  // Presentation-only consumption unit of a product from the WILAYA catalog,
+  // used to label the displayed quantities. Never a numeric conversion.
+  // @category UiState
+  function consumptionUnitFor(productId: string): string {
+    const p = products.find((prod) => prod.id === productId);
+    return p ? unitLabel(p.consumption_unit) : '—';
+  }
+
   // @category UiState
   let filteredItems: UnitMonthlySnapshot[] = $derived(
     ((inventoryView as UnitInventoryView | null)?.items ?? []).filter((i: UnitMonthlySnapshot) =>
@@ -74,6 +85,8 @@
     await unitsOp.run(async () => {
       const settings = await getSettings();
       units = await listUnits(settings?.wilaya_code ?? '');
+      const [prods] = await Promise.all([listProducts()]);
+      products = prods;
     });
   });
 
@@ -305,6 +318,7 @@
 
           <svelte:fragment slot="head">
             <th class="table-header">المنتج</th>
+            <th class="table-header">وحدة الاستهلاك</th>
             <th class="table-header text-center">المخزون الأولي</th>
             <th class="table-header text-center text-green-700 dark:text-green-500">دخول (+)</th>
             <th class="table-header text-center text-red-700 dark:text-red-500">خروج (−)</th>
@@ -339,6 +353,10 @@
                     متوسط 3 أشهر: {item.avg_consumption_3months.toFixed(1)}
                   </p>
                 {/if}
+              </td>
+
+              <td class="table-cell">
+                {consumptionUnitFor(item.product_id)}
               </td>
 
               <td class="table-cell text-center">
