@@ -12,10 +12,19 @@ impl<'a> ReportCalculationService<'a> {
         Self { executor }
     }
 
-    pub fn calculate_meal_cost(items: Vec<(f64, f64)>) -> f64 {
-        items
-            .into_iter()
-            .fold(0.0, |acc, (qty, price)| acc + qty * price)
+    /// Total meal cost from `(quantity, unit_price)` wire pairs (ADR-0048).
+    /// Each term is exact `money × quantity`; the sum is exact `Decimal` and is
+    /// rounded to `f64` exactly once at this boundary.
+    pub fn calculate_meal_cost(items: Vec<(f64, f64)>) -> Result<f64, AppError> {
+        use crate::domain::numeric::legacy_float;
+        let mut total = crate::domain::numeric::Money::zero();
+        for (qty, price) in items {
+            let quantity = legacy_float::quantity_from_f64(qty)?;
+            let unit_price = legacy_float::money_from_f64(price)?;
+            let line = unit_price.checked_mul_quantity(&quantity)?;
+            total = total.checked_add(line)?;
+        }
+        legacy_float::money_to_f64(&total).map_err(Into::into)
     }
 
     pub fn calculate_meal_rate(
@@ -36,8 +45,16 @@ impl<'a> ReportCalculationService<'a> {
         DailyReportMeal::compute_meal_average(total_cost, total_beneficiaries)
     }
 
-    pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> f64 {
-        base_price * (1.0 + tva / 100.0)
+    /// IPC-facing TVA calculation (SEC-087 / ADR-0048): the `f64` inputs are wire
+    /// values, converted to exact `Decimal` at this boundary; the arithmetic is
+    /// the canonical tax-term chain owned by `domain::pricing::price` and the
+    /// TTC result is rounded exactly once back to `f64`. Transitional legacy
+    /// display helper — NOT an authoritative pricing source.
+    pub fn calculate_product_price_with_tva(base_price: f64, tva: f64) -> Result<f64, AppError> {
+        let base = crate::domain::numeric::legacy_float::money_from_f64(base_price)?;
+        let rate = crate::domain::numeric::legacy_float::rate_from_f64(tva)?;
+        let breakdown = crate::domain::pricing::price::compute_contract_fiscal(&base, &rate)?;
+        crate::domain::numeric::legacy_float::money_to_f64(&breakdown.price_ttc).map_err(Into::into)
     }
 
     pub fn build_wilaya_reports(

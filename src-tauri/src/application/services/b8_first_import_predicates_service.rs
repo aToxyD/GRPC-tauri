@@ -91,21 +91,17 @@ impl B8FirstImportPredicatesService {
     ///
     /// - The ACTIVE WILAYA trust anchor is installed locally (Root-verified);
     /// - the package issuer IS the installed anchor (no cross-WILAYA
-    ///   acceptance);
-    /// - the package is the first signed artifact from this issuer on this
-    ///   node (empty transport ledger) with the fixed bootstrap sequence 1
-    ///   (A44-08).
+    ///   acceptance).
     ///
-    /// The `.unit` is a one-time bootstrap artifact OUTSIDE the Transport
-    /// Guard ordering domain: it never advances the per-issuer ledger, so the
-    /// first `identity_access` import still opens the ledger at sequence 1
-    /// (A45-06). A re-imported `.unit` on a node that already holds ledger
-    /// state fails closed — recovery is the governed reprovisioning process
-    /// (A44-12), never a V2→V1 shortcut.
+    /// The SEC-056D/SEC-057 retirement removed the transport-sequence
+    /// bootstrap (no fixed sequence-1 requirement, no per-issuer transport
+    /// ledger "accepted once" check). The one-time provisioning property is
+    /// carried by the B8 `no_active_admin` predicate and exact `package_id`
+    /// dedup; the issuer-pinning check below remains the security core and is
+    /// unchanged.
     pub fn verify_unit_v2_acceptance(
         executor: &DbExecutor<'_>,
         issuer_identity_id: &str,
-        package_sequence: Option<u64>,
     ) -> Result<(), AppError> {
         let rejection = |message: &str| {
             AppError::Validation(ValidationError::InvalidFormat {
@@ -124,20 +120,8 @@ impl B8FirstImportPredicatesService {
             })?;
 
         if anchor.identity_id.to_string() != issuer_identity_id {
-            return Err(rejection("مُصدِر حزمة العقدة ليس مرساة الثقة المحلية المثبتة"));
-        }
-        if package_sequence != Some(1) {
             return Err(rejection(
-                "أول حزمة عقدة V2 يجب أن تحمل رقم التسلسل 1 (A44-08)",
-            ));
-        }
-
-        let last = executor
-            .sync_applied_packages()
-            .last_applied_sequence_for_issuer(issuer_identity_id)?;
-        if last.is_some() {
-            return Err(rejection(
-                "حزمة العقدة V2 تُقبل مرة واحدة فقط على العقدة الجديدة",
+                "مُصدِر حزمة العقدة ليس مرساة الثقة المحلية المثبتة",
             ));
         }
         Ok(())

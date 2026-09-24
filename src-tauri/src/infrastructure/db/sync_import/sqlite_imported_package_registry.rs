@@ -7,7 +7,6 @@ pub struct SqliteImportedPackageRegistry<'a> {
     kind: &'a str,
     source_node_id: Option<&'a str>,
     imported_by: &'a str,
-    package_sequence: Option<u64>,
     issuer_identity_id: Option<&'a str>,
 }
 
@@ -17,7 +16,6 @@ impl<'a> SqliteImportedPackageRegistry<'a> {
         kind: &'a str,
         source_node_id: Option<&'a str>,
         imported_by: &'a str,
-        package_sequence: Option<u64>,
         issuer_identity_id: Option<&'a str>,
     ) -> Self {
         Self {
@@ -25,7 +23,6 @@ impl<'a> SqliteImportedPackageRegistry<'a> {
             kind,
             source_node_id,
             imported_by,
-            package_sequence,
             issuer_identity_id,
         }
     }
@@ -42,7 +39,6 @@ impl ImportedPackageRegistry for SqliteImportedPackageRegistry<'_> {
             self.kind,
             self.source_node_id,
             self.imported_by,
-            self.package_sequence,
             self.issuer_identity_id,
         )?;
         if !inserted {

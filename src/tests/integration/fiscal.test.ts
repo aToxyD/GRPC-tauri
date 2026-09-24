@@ -13,6 +13,8 @@ const mockPreviewFiscalClosurePackage = vi.fn();
 const mockApplyFiscalClosurePackage = vi.fn();
 
 const mockShowAsk = vi.fn();
+const mockListFiscalTaxPolicies = vi.fn();
+const mockSetFiscalTaxPolicy = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
     safeInvoke: vi.fn(),
@@ -32,6 +34,8 @@ vi.mock('../../lib/contracts', () => ({
     applyFiscalClosurePackage: (...args: any[]) => mockApplyFiscalClosurePackage(...args),
     listProducts: (...args: any[]) => mockListProducts(...args),
     getSettings: (...args: any[]) => mockGetSettings(...args),
+    listFiscalTaxPolicies: (...args: any[]) => mockListFiscalTaxPolicies(...args),
+    setFiscalTaxPolicy: (...args: any[]) => mockSetFiscalTaxPolicy(...args),
 }));
 
 describe('Fiscal Management Integration Flow', () => {
@@ -48,6 +52,7 @@ describe('Fiscal Management Integration Flow', () => {
             status: 'open'
         });
         mockListProducts.mockResolvedValue([]);
+        mockListFiscalTaxPolicies.mockResolvedValue([]);
         mockGetFiscalTransitionHistory.mockResolvedValue([]);
         mockListFiscalPackageRegistry.mockResolvedValue([]);
     });

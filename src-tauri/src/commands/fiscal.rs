@@ -6,6 +6,7 @@ use crate::commands::common::{db_mut_or_app_error, db_mut_or_command_error};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::events::DomainEvent;
+use crate::domain::validation;
 use crate::errors::{into_command_error, AppError};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -127,7 +128,8 @@ pub fn run_fiscal_integrity_scan(
 /// `get_advanced_diagnostics_bundle`). Extracted for command-boundary testing.
 pub fn run_fiscal_integrity_scan_impl(
     state: &AppState,
-) -> Result<crate::application::services::fiscal_integrity_service::FiscalIntegrityReport, AppError> {
+) -> Result<crate::application::services::fiscal_integrity_service::FiscalIntegrityReport, AppError>
+{
     let (_session, _settings) = authorize_command(state, Action::ViewSystemHealth, None)?;
     state.touch_session();
 
@@ -182,6 +184,7 @@ pub fn export_fiscal_closure_package(
         None,
     )
     .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
 
     // Wilaya-only guard
@@ -193,22 +196,32 @@ pub fn export_fiscal_closure_package(
 
     let node_id = settings.unit_name.as_deref().unwrap_or("WILAYA");
 
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = guard.as_mut().ok_or_else(|| "DB unavailable".to_string())?;
+
+    // SEC-008: resolve the local WILAYA identity whose Ed25519 key signs the
+    // package (fail-closed inside the service). No env-based signing secret is
+    // ever consulted.
+    let (signer_info, signer) = FiscalClosurePackageService::resolve_wilaya_signer(
+        db,
+        &crate::commands::common::node_key_store(),
+    )
+    .map_err(into_command_error)?;
+
     let pkg = FiscalClosurePackageService::build_closure_package(
         node_id,
         &session.username,
         closed_year,
         opened_year,
         &closure_timestamp_utc,
+        &signer_info,
         transition_id,
     )
     .map_err(into_command_error)?;
 
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = guard.as_mut().ok_or_else(|| "DB unavailable".to_string())?;
-
     let executor = db.executor();
     FiscalClosurePackageService::new(executor)
-        .export_to_file(&pkg, &file_path)
+        .export_to_file(&pkg, &signer, &file_path)
         .map_err(into_command_error)?;
 
     // Audit the export
@@ -256,6 +269,7 @@ pub fn preview_fiscal_closure_package(
         None,
     )
     .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
 
     // Unit-only guard
@@ -275,7 +289,7 @@ pub fn preview_fiscal_closure_package(
 
 /// [Unit only] Apply a fiscal closure package — atomic, fail-closed.
 ///
-/// Operator must confirm with "APPLY-FISCAL-CLOSURE" typed in the UI.
+/// Operator must confirm with "APPLY-FISCAL-TRANSITION" typed in the UI.
 #[tauri::command]
 pub fn apply_fiscal_closure_package(
     state: State<AppState>,
@@ -291,6 +305,7 @@ pub fn apply_fiscal_closure_package(
         None,
     )
     .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
     state.touch_session();
 
     // Unit-only guard

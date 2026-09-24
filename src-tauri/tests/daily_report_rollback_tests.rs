@@ -30,11 +30,12 @@ fn seed_product_and_stock(
     year: i32,
 ) {
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,?2,0.0,0.0,?3,?4)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,?2,0.0,?3,?4,1,1,1,0)",
         rusqlite::params![product_id, name, year, now],
-    ).expect("insert product");
+    )
+    .expect("insert product");
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1,?2,100.0,'unit',?3,?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1,?2,100.0,'unit',1,?3,?3)",
         rusqlite::params![format!("stock-{}", product_id), product_id, now],
     ).expect("insert inventory_stocks");
 }

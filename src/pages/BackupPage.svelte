@@ -39,6 +39,10 @@
   let restoreBackupPath = '';
   // @category TransientState
   let restoreConfirmationInput = '';
+  // @category UiState
+  let restoreOlderTrustStep = false;
+  // @category TransientState
+  let restoreOlderTrustInput = '';
 
   // @category ProjectionState
   let backups: BackupInfo[] = [];
@@ -94,6 +98,8 @@
 
     restoreBackupPath = backupPath;
     restoreConfirmationInput = '';
+    restoreOlderTrustInput = '';
+    restoreOlderTrustStep = false;
     showRestoreModal = true;
   }
 
@@ -102,15 +108,37 @@
       backupsOp.error.set('تم إلغاء الاستعادة: التأكيد المكتوب غير صحيح.');
       return;
     }
+    if (restoreOlderTrustStep && restoreOlderTrustInput.trim() !== 'RESTORE-OLDER-TRUST') {
+      backupsOp.error.set('تم إلغاء الاستعادة: تأكيد الحالة الأقدم غير صحيح.');
+      return;
+    }
 
     showRestoreModal = false;
 
     await restoreBackupOp.guard(async () => {
       try {
         const { token } = await issueOperationExecutionToken({ operation: 'restore' });
-        await restoreBackup(restoreBackupPath, restoreConfirmationInput.trim(), token);
+        await restoreBackup(
+          restoreBackupPath,
+          restoreConfirmationInput.trim(),
+          token,
+          restoreOlderTrustStep ? restoreOlderTrustInput.trim() : null,
+        );
       } catch (err) {
-        backupsOp.error.set(formatErrorMessage(err));
+        const message = formatErrorMessage(err);
+        // The backend detected that the selected backup contains older
+        // security/trust state and requires the distinct ceremony token.
+        // Only an already-authorized Admin can reach this step.
+        if (message.includes('RESTORE-OLDER-TRUST')) {
+          showRestoreModal = true;
+          restoreOlderTrustStep = true;
+          backupsOp.error.set(
+            'النسخة الاحتياطية المحددة تحتوي على حالة أمنية/ثقة أقدم من الحالة الحالية. ' +
+            'لاستعادة نسخة أقدم عن قصد، يجب كتابة الرمز الإضافي RESTORE-OLDER-TRUST.',
+          );
+        } else {
+          backupsOp.error.set(message);
+        }
       }
     });
   }
@@ -289,7 +317,7 @@
       open={showRestoreModal}
       title="تحذير: استعادة النسخة الاحتياطية"
       destructive={true}
-      on:close={() => { showRestoreModal = false; restoreBackupPath = ''; restoreConfirmationInput = ''; }}
+      on:close={() => { showRestoreModal = false; restoreBackupPath = ''; restoreConfirmationInput = ''; restoreOlderTrustInput = ''; restoreOlderTrustStep = false; }}
     >
       <div class="space-y-4">
         <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
@@ -307,20 +335,34 @@
           placeholder="RESTORE"
           autocomplete="off"
         />
+
+        {#if restoreOlderTrustStep}
+          <AppAlert intent="warning" title="النسخة الاحتياطية تحتوي على حالة أمنية/ثقة أقدم:">
+            هذه النسخة تم إنشاؤها قبل تطورات أمنية لاحقة (شهادات/سجل/مرساة ثقة). استعادتها ستعيد النظام إلى حالة أمنية أقدم. للمتابعة عن قصد، يجب كتابة الرمز الإضافي RESTORE-OLDER-TRUST.
+          </AppAlert>
+
+          <AppInput
+            id="restore-older-trust-confirm"
+            label="لتأكيد الاستعادة المتعمدة لحالة أقدم، يرجى كتابة الرمز: RESTORE-OLDER-TRUST"
+            bind:value={restoreOlderTrustInput}
+            placeholder="RESTORE-OLDER-TRUST"
+            autocomplete="off"
+          />
+        {/if}
       </div>
       
       <svelte:fragment slot="actions">
         <AppButton 
           variant="secondary" 
           disabled={$restoring}
-          on:click={() => { showRestoreModal = false; restoreBackupPath = ''; restoreConfirmationInput = ''; }}
+          on:click={() => { showRestoreModal = false; restoreBackupPath = ''; restoreConfirmationInput = ''; restoreOlderTrustInput = ''; restoreOlderTrustStep = false; }}
         >
           إلغاء
         </AppButton>
         <AppButton 
           variant="danger"
           loading={$restoring}
-          disabled={restoreConfirmationInput.trim() !== 'RESTORE' || $restoring}
+          disabled={restoreConfirmationInput.trim() !== 'RESTORE' || (restoreOlderTrustStep && restoreOlderTrustInput.trim() !== 'RESTORE-OLDER-TRUST') || $restoring}
           on:click={executeRestoreBackup}
         >
           تأكيد الاستعادة وإعادة التشغيل

@@ -22,23 +22,23 @@ fn init_db() -> grpc_lib::db::Database {
     // Insert products
     let now = "2025-01-01T00:00:00Z";
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, tva, year, created_at) VALUES ('p1', 'Farine', 100.0, 0.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p1', 'Farine', 10000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
     ex.execute(
-        "INSERT OR IGNORE INTO products (id, name, base_price, tva, year, created_at) VALUES ('p2', 'Huile', 200.0, 0.0, 2025, ?1)",
+        "INSERT OR IGNORE INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at) VALUES ('p2', 'Huile', 20000.0, 2025, 1, 1, 1, 0, ?1)",
         rusqlite::params![now],
     ).unwrap();
 
     // Insert inventory_stocks rows
     let stock_id1 = Uuid::new_v4().to_string();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1, 'p1', 50.0, 'kg', ?2, ?2)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1, 'p1', 50000.0, 'kg', 1, ?2, ?2)",
         rusqlite::params![stock_id1, now],
     ).unwrap_or_else(|e| panic!("insert stock p1: {}", e));
     let stock_id2 = Uuid::new_v4().to_string();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1, 'p2', 30.0, 'L', ?2, ?2)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1, 'p2', 30000.0, 'L', 1, ?2, ?2)",
         rusqlite::params![stock_id2, now],
     ).unwrap_or_else(|e| panic!("insert stock p2: {}", e));
 
@@ -50,8 +50,8 @@ fn insert_movement(ex: DbExecutor<'_>, product_id: &str, mtype: &str, qty: f64, 
     let ts = Utc::now().to_rfc3339();
     ex.execute(
         "INSERT INTO stock_movements (id, product_id, movement_type, quantity, balance_before, balance_after, timestamp, user_id, username, unit_id, updated_at, fiscal_year, unit_cost)
-         VALUES (?1, ?2, ?3, ?4, 0.0, ?4, ?5, 'test_user', 'test_user', 'test_unit', ?5, ?6, 100.0)",
-        rusqlite::params![id, product_id, mtype, qty, ts, year],
+         VALUES (?1, ?2, ?3, ?4, 0.0, ?4, ?5, 'test_user', 'test_user', 'test_unit', ?5, ?6, 10000.0)",
+        rusqlite::params![id, product_id, mtype, qty * 1000.0, ts, year],
     ).unwrap_or_else(|e| panic!("insert movement: {}", e));
 }
 
@@ -60,7 +60,7 @@ fn insert_daily_report(ex: DbExecutor<'_>, date: &str, year: i32, unit_id: &str)
     let ts = Utc::now().to_rfc3339();
     ex.execute(
         "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, updated_at, fiscal_year)
-         VALUES (?1, ?2, ?3, 1000.0, 200.0, 50, ?4, ?4, ?5)",
+         VALUES (?1, ?2, ?3, 100000.0, 20000.0, 50, ?4, ?4, ?5)",
         rusqlite::params![id, date, unit_id, ts, year],
     ).unwrap_or_else(|e| panic!("insert daily report: {}", e));
     id

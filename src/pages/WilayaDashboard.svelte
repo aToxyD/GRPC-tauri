@@ -275,17 +275,13 @@
 
           <svelte:fragment slot="head">
             <th class="table-header">الاسم</th>
-            <th class="table-header">السعر</th>
-            <th class="table-header">الضريبة</th>
-            <th class="table-header">المورد</th>
+            <th class="table-header">السعر المرجعي</th>
           </svelte:fragment>
 
           {#each currentYearProducts.slice(0, 5) as product}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
               <td class="table-cell font-medium">{product.name}</td>
               <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
-              <td class="table-cell">{product.tva}%</td>
-              <td class="table-cell">{product.supplier_name || "-"}</td>
             </tr>
           {/each}
         </AppTable>

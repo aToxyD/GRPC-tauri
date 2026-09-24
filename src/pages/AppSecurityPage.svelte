@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { saveFile, getAppWindow, createLogicalSize } from '../lib/tauri';
+  import { saveFile, openFile, showAsk, getAppWindow, createLogicalSize } from '../lib/tauri';
   import {
     getSecurityStatus,
     initializeAppKey,
+    importAppKey,
     unlockAppKey,
+    forgetRememberedAppKey,
+    exportAppKeyBackupToPath,
     type AppKeyStatusDto,
   } from '../lib/contracts';
   import { showSuccess } from '../lib/notifications';
@@ -38,6 +41,28 @@
   let exportBackup = false;
   // @category TransientState
   let localError = '';
+  // @category TransientState
+  let importPassphrase = '';
+  // @category TransientState
+  let importArtifactPath = '';
+  // @category UiState
+  let importSuccess = false;
+  // @category TransientState
+  let importError = '';
+  // ADR-0041 §11.4 (SEC-013 Phase 2): remember-on-device — persists the
+  // validated App Key to the OS keyring. Explicit opt-in, default false.
+  // @category UiState
+  let remember = false;
+  // @category TransientState
+  let forgetResult = '';
+  // @category TransientState
+  let forgetting = false;
+  // SEC-017: secure backup re-export — the renderer sends only the destination
+  // path; the backend writes the raw identity directly (never crosses IPC/DOM).
+  // @category TransientState
+  let exportBackupResult = '';
+  // @category UiState
+  let exportingBackup = false;
 
   // @category UiState
   $: unlocked = status?.requires_action === false;
@@ -45,6 +70,51 @@
   $: setupMode = status !== null && !status.provisioned;
   // @category UiState
   $: displayError = $error || localError;
+
+  async function handleForget() {
+    const confirmed = await showAsk(
+      'سيتم نسيان مفتاح التطبيق المحفوظ على هذا الجهاز. ستظل ملفات التشفير كما هي — لن تحتاج إلا لإدخال كلمة المرور عند التشغيل القادم.',
+      { kind: 'warning', title: 'نسيان المفتاح المحفوظ' },
+    );
+    if (!confirmed) return;
+    forgetting = true;
+    forgetResult = '';
+    try {
+      const removed = await forgetRememberedAppKey();
+      forgetResult = removed
+        ? 'تم نسيان المفتاح المحفوظ — سيُطلب إدخال كلمة المرور في التشغيل القادم.'
+        : 'لا يوجد مفتاح محفوظ على هذا الجهاز.';
+    } catch (e) {
+      forgetResult = 'تعذر نسيان المفتاح: ' + formatErrorMessage(e);
+    } finally {
+      forgetting = false;
+      status = await getSecurityStatus().catch(() => status);
+    }
+  }
+
+  // SEC-017: guarded backup re-export (ADR-0041 §11.3-I7 recovery path).
+  // Native save dialog → destination path only; the backend validates the
+  // path and writes the raw identity itself. Success/failure messaging only —
+  // no key material is ever received, rendered, or logged. Authorization is
+  // backend-authoritative (`AdminOnly`): a forged invocation still fails.
+  async function handleExportBackup() {
+    const selected = await saveFile({
+      defaultPath: 'grpc-app-key.age',
+      filters: [{ name: 'نسخة احتياطية للمفتاح (age)', extensions: ['age'] }],
+    });
+    if (!selected) return;
+    exportingBackup = true;
+    exportBackupResult = '';
+    try {
+      await exportAppKeyBackupToPath(selected as string);
+      exportBackupResult = 'تم تصدير نسخة المفتاح الاحتياطية بنجاح.';
+      showSuccess('تم تصدير نسخة احتياطية من مفتاح التطبيق.');
+    } catch (e) {
+      exportBackupResult = 'تعذر التصدير: ' + formatErrorMessage(e);
+    } finally {
+      exportingBackup = false;
+    }
+  }
 
   onMount(async () => {
     try {
@@ -67,8 +137,11 @@
     }
     checking = false;
 
-    // Backend projection: no action needed → normal login flow.
-    if (status && !status.requires_action) {
+    // Backend projection: no action needed → normal login flow. Exception: a
+    // remembered key (keyring source) keeps the operator on this page so the
+    // "auto-unlock enabled / forget" management UI stays reachable — the key
+    // itself is never displayed.
+    if (status && !status.requires_action && status.source !== 'keyring') {
       push('/login');
     }
   });
@@ -80,7 +153,7 @@
     }
     localError = '';
     await op.run(async () => {
-      await unlockAppKey(passphrase);
+      await unlockAppKey(passphrase, remember);
       passphrase = '';
       showSuccess('تم فتح التطبيق بنجاح. يمكنك الآن تسجيل الدخول.');
       push('/login');
@@ -107,12 +180,51 @@
         if (!selected) return;
         backupPath = selected as string;
       }
-      await initializeAppKey(passphrase, backupPath);
+      await initializeAppKey(passphrase, backupPath, remember);
       passphrase = '';
       confirmPassphrase = '';
       showSuccess('تم إعداد مفتاح التطبيق بنجاح. احتفظ بنسخة المفتاح في مكان آمن.');
       push('/login');
     });
+  }
+
+  // APPKEY-003: fleet-path import — pick the WILAYA portable artifact; the
+  // backend reads, validates, and encrypts it into the local store. The raw
+  // identity never enters the DOM or IPC (only the path is sent).
+  async function pickArtifact() {
+    const selected = await openFile({
+      multiple: false,
+      filters: [{ name: 'مفتاح الأسطول المحمول (age)', extensions: ['age', 'key', 'txt'] }],
+    });
+    if (selected) {
+      importArtifactPath = selected as string;
+      importError = '';
+    }
+  }
+
+  async function handleImport() {
+    if (!importArtifactPath) {
+      importError = 'اختر ملف grpc-app-key.age أولاً';
+      return;
+    }
+    if (importPassphrase.length < 8) {
+      importError = 'كلمة مرور التخزين المحلي يجب أن تكون 8 أحرف على الأقل';
+      return;
+    }
+    importError = '';
+    importSuccess = false;
+    try {
+      await op.run(async () => {
+        await importAppKey(importPassphrase, importArtifactPath, remember);
+        importPassphrase = '';
+        importArtifactPath = '';
+        importSuccess = true;
+        showSuccess('تم استيراد مفتاح الأسطول وفتح التطبيق. يمكنك الآن تسجيل الدخول.');
+        push('/login');
+      });
+    } catch (e) {
+      importError = formatErrorMessage(e);
+    }
   }
 </script>
 
@@ -143,7 +255,58 @@
       {:else if unlocked}
         <AppAlert intent="success">
           <p class="text-sm font-semibold">مفتاح التطبيق مفتوح — لا إجراء مطلوب.</p>
+          {#if status?.source === 'env'}
+            <p class="text-xs mt-1">مفتاح الأسطول متوفر عبر GRPC_APP_KEY (لا يُعرض السر هنا).</p>
+          {:else if status?.source === 'keyring'}
+            <p class="text-xs mt-1">الفتح التلقائي مفعّل — المفتاح محفوظ على هذا الجهاز (لا يُعرض السر هنا).</p>
+          {:else if status?.source === 'cache'}
+            <p class="text-xs mt-1">المصدر: المخزن المحلي appkey.age.</p>
+          {:else if status?.source === 'dev'}
+            <p class="text-xs mt-1">المصدر: مفتاح تطوير مضمّن — ليس للإنتاج.</p>
+          {/if}
         </AppAlert>
+        {#if status?.source === 'keyring'}
+          <div class="mt-4">
+            <AppAlert intent="info">
+              <p class="text-sm leading-relaxed">
+                تذكير: فتح مفتاح التطبيق تلقائياً لا يعني تسجيل الدخول — ستظل هناك
+                حاجة لإدخال اسم المستخدم وكلمة المرور.
+              </p>
+            </AppAlert>
+            <div class="mt-3">
+              <AppButton
+                variant="secondary"
+                size="sm"
+                fullWidth
+                disabled={forgetting}
+                on:click={handleForget}
+              >
+                نسيان المفتاح المحفوظ على هذا الجهاز
+              </AppButton>
+              {#if forgetResult}
+                <p class="text-xs mt-2 text-gray-600 dark:text-gray-300">{forgetResult}</p>
+              {/if}
+            </div>
+            <div class="mt-4 border-t border-gray-200 dark:border-gray-700 pt-3">
+              <p class="text-xs text-gray-600 dark:text-gray-300 mb-2 leading-relaxed">
+                تصدير نسخة احتياطية من المفتاح (يتطلب تسجيل الدخول بحساب المسؤول).
+                تُكتب النسخة مباشرة من التطبيق إلى الموقع المحدد — لا تُعرض قيمة المفتاح.
+              </p>
+              <AppButton
+                variant="secondary"
+                size="sm"
+                fullWidth
+                disabled={exportingBackup}
+                on:click={handleExportBackup}
+              >
+                تصدير نسخة احتياطية من المفتاح…
+              </AppButton>
+              {#if exportBackupResult}
+                <p class="text-xs mt-2 text-gray-600 dark:text-gray-300">{exportBackupResult}</p>
+              {/if}
+            </div>
+          </div>
+        {/if}
         <div class="mt-6">
           <AppButton variant="primary" size="lg" fullWidth on:click={() => push('/login')}>
             الانتقال إلى تسجيل الدخول
@@ -169,6 +332,133 @@
           </div>
         {/if}
 
+        {#if status?.source === 'env'}
+          <div class="mb-4">
+            <AppAlert intent="success">
+              <p class="text-sm font-semibold">مفتاح الأسطول متوفر عبر GRPC_APP_KEY</p>
+              <p class="text-xs mt-1">
+                المفتاح مُوفَّر من بيئة التشغيل (نفس قيمة WILAYA) ولا يُعرض هنا — لا حاجة
+                لإعداد محلي.
+              </p>
+            </AppAlert>
+          </div>
+        {:else if status?.source === 'cache'}
+          <div class="mb-4">
+            <AppAlert intent="info">
+              <p class="text-sm font-semibold">مخزن المفتاح المحلي متوفر</p>
+              <p class="text-xs mt-1">أدخل كلمة المرور لفتح المخزن المحلي (appkey.age).</p>
+            </AppAlert>
+          </div>
+        {:else if status?.source === 'dev'}
+          <div class="mb-4">
+            <AppAlert intent="warning">
+              <p class="text-sm font-semibold">مفتاح تطوير مضمّن — ليس للإنتاج</p>
+              <p class="text-xs mt-1">وضع التطوير فقط؛ وفّر GRPC_APP_KEY أو أنشئ مخزناً محلياً للإنتاج.</p>
+            </AppAlert>
+          </div>
+        {/if}
+
+        {#if setupMode && status?.source === 'none'}
+          <div class="mb-4 space-y-3">
+            <AppAlert intent="danger">
+              <p class="text-sm font-semibold">لا يوجد مفتاح App متاح بعد</p>
+              <p class="text-xs mt-1 leading-relaxed">
+                إذا كانت هذه العقدة وحدة (UNIT) تابعة لـ WILAYA، يجب توفير
+                <code class="font-mono">GRPC_APP_KEY</code> بنفس قيمة مفتاح WILAYA
+                <b>قبل أول تشغيل</b>. إنشاء مفتاح محلي جديد يختلف عن مفتاح WILAYA
+                وسيؤدي إلى <b>فشل فك تشفير حزمة .unit</b> عند الاستيراد (Fail-Closed).
+              </p>
+            </AppAlert>
+            <AppCard>
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                مسار الأسطول — لديّ مفتاح WILAYA (موصى به لعقد UNIT)
+              </p>
+              <ol class="text-xs text-gray-600 dark:text-gray-300 mt-2 list-decimal list-inside space-y-1">
+                <li>
+                  احصل على قيمة مفتاح الأسطول من WILAYA (أداة التوفير المحمولة
+                  <code class="font-mono"> grpc-app-key.age</code>).
+                </li>
+                <li>
+                  اضبط متغير البيئة <code class="font-mono">GRPC_APP_KEY</code> بنفس
+                  القيمة تماماً.
+                </li>
+                <li>
+                  أعد تشغيل التطبيق — سيعرض هذا القسم حالة «مفتاح الأسطول متوفر عبر
+                  GRPC_APP_KEY».
+                </li>
+                <li>
+                  لا تنشئ مفتاحاً محلياً في مسار الأسطول: المفتاح المحلي الجديد مختلف
+                  عن مفتاح WILAYA ويفشل فك تشفير <code class="font-mono">.unit</code>.
+                </li>
+              </ol>
+              <div class="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+                <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                  أو استورد الملف المحمول مباشرة: يقرأ التطبيق
+                  <code class="font-mono">grpc-app-key.age</code> من WILAYA ويخزنه
+                  محلياً مشفراً بكلمة مرور — بدون تعديل الملف الأصلي.
+                </p>
+                {#if importSuccess}
+                  <AppAlert intent="success">
+                    <p class="text-sm">تم استيراد مفتاح الأسطول بنجاح.</p>
+                  </AppAlert>
+                {/if}
+                {#if importError}
+                  <AppAlert intent="danger">
+                    <p class="text-sm">{importError}</p>
+                  </AppAlert>
+                {/if}
+                <form class="space-y-2" on:submit|preventDefault={handleImport}>
+                  <div class="flex items-center gap-2">
+                    <AppButton
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={$loading}
+                      on:click={pickArtifact}
+                    >
+                      اختيار الملف…
+                    </AppButton>
+                    {#if importArtifactPath}
+                      <code class="text-xs text-gray-600 dark:text-gray-300 truncate flex-1" dir="ltr">
+                        {importArtifactPath}
+                      </code>
+                    {:else}
+                      <span class="text-xs text-gray-400 flex-1">لم يتم اختيار ملف بعد</span>
+                    {/if}
+                  </div>
+                  <AppInput
+                    id="security-import-passphrase"
+                    label="كلمة مرور التخزين المحلي"
+                    type="password"
+                    bind:value={importPassphrase}
+                    placeholder="8 أحرف على الأقل"
+                    autocomplete="new-password"
+                    disabled={$loading}
+                  />
+                  <label class="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      bind:checked={remember}
+                      class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+                    />
+                    <span class="text-sm text-gray-700 dark:text-gray-300">
+                      تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+                    </span>
+                  </label>
+                  <AppButton type="submit" variant="primary" size="sm" fullWidth loading={$loading}>
+                    استيراد المفتاح وفتح التطبيق
+                  </AppButton>
+                </form>
+              </div>
+            </AppCard>
+            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+              أو — إعداد مفتاح محلي (عقدة مستقلة / WILAYA)
+              <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+            </div>
+          </div>
+        {/if}
+
         {#if setupMode}
           <form class="space-y-4" on:submit|preventDefault={handleInitialize} novalidate>
             <AppAlert intent="warning">
@@ -176,6 +466,14 @@
                 سيتم توليد مفتاح تشفير جديد وتخزينه محمياً بكلمة مرور. <b>فقدان كلمة المرور
                 يعني فقدان البيانات</b> — احتفظ بها في مكان آمن.
               </p>
+              {#if status?.source === 'none'}
+                <p class="text-xs mt-2 leading-relaxed">
+                  هذا المسار صحيح فقط للعقد المستقلة أو عقدة WILAYA. إذا كانت العقدة UNIT
+                  تابعة للأسطول، استخدم مسار <code class="font-mono">GRPC_APP_KEY</code>
+                  أعلاه — المفتاح المحلي المتباين سيفشل فك تشفير حزمة
+                  <code class="font-mono">.unit</code>.
+                </p>
+              {/if}
             </AppAlert>
 
             <AppInput
@@ -211,6 +509,20 @@
               </span>
             </label>
 
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                bind:checked={remember}
+                class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+              />
+              <span class="text-sm text-gray-700 dark:text-gray-300">
+                تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+              </span>
+            </label>
+            <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+              لا يُخزَّن أي شيء متعلق بحساب المستخدم — يبقى تسجيل الدخول بكلمة المرور إلزامياً.
+            </p>
+
             <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
               إنشاء المفتاح وفتح التطبيق
             </AppButton>
@@ -234,6 +546,20 @@
               required
               disabled={$loading}
             />
+
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                bind:checked={remember}
+                class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+              />
+              <span class="text-sm text-gray-700 dark:text-gray-300">
+                تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+              </span>
+            </label>
+            <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+              لا يُخزَّن أي شيء متعلق بحساب المستخدم — يبقى تسجيل الدخول بكلمة المرور إلزامياً.
+            </p>
 
             <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
               فتح التطبيق

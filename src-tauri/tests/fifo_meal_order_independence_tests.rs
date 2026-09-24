@@ -46,11 +46,12 @@ fn seed_product_and_stock(
     year: i32,
 ) {
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,?2,0.0,0.0,?3,?4)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,?2,0.0,?3,?4,1,1,1,0)",
         rusqlite::params![product_id, name, year, now],
-    ).expect("insert product");
+    )
+    .expect("insert product");
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',?3,?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',1,?3,?3)",
         rusqlite::params![format!("stock-{}", product_id), product_id, now],
     ).expect("insert inventory_stocks");
 }
@@ -172,7 +173,7 @@ fn run_and_capture(
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, f64>(2)?,
+                    row.get::<_, i64>(2)? as f64 / 100.0,
                 ))
             },
         )
@@ -202,9 +203,9 @@ fn run_and_capture(
                 rusqlite::params![meal_id],
                 |row| {
                     Ok(MealItemSnapshot {
-                        quantity: row.get(0)?,
-                        unit_price: row.get(1)?,
-                        total_cost: row.get(2)?,
+                        quantity: row.get::<_, i64>(0)? as f64 / 1000.0,
+                        unit_price: row.get::<_, i64>(1)? as f64 / 100.0,
+                        total_cost: row.get::<_, i64>(2)? as f64 / 100.0,
                         fifo_layer_id: row.get(3)?,
                     })
                 },

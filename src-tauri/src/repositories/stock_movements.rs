@@ -5,6 +5,7 @@
 use crate::errors::AppError;
 use crate::models::{NewStockMovement, StockMovement, StockMovementDbRow, StockMovementQuery};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 
 /// Repository for stock movement-related database operations
@@ -32,6 +33,13 @@ impl<'a> StockMovementRepository<'a> {
         timestamp: &str,
         fiscal_year: i32,
     ) -> Result<(), AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(movement.quantity)?;
+        let unit_cost_scaled = match movement.unit_cost {
+            Some(cost) => Some(numeric_row::money_scaled(cost)?),
+            None => None,
+        };
+        let balance_before_scaled = numeric_row::qty_scaled(balance_before)?;
+        let balance_after_scaled = numeric_row::qty_scaled(balance_after)?;
         self.executor.execute(
             "INSERT INTO stock_movements 
              (id, product_id, movement_type, quantity, balance_before, balance_after, 
@@ -48,9 +56,9 @@ impl<'a> StockMovementRepository<'a> {
                 id,
                 &movement.product_id,
                 movement.movement_type.as_str(),
-                movement.quantity,
-                balance_before,
-                balance_after,
+                quantity_scaled,
+                balance_before_scaled,
+                balance_after_scaled,
                 movement.reference_type.as_deref(),
                 movement.reference_id.as_deref(),
                 movement.notes.as_deref(),
@@ -59,7 +67,7 @@ impl<'a> StockMovementRepository<'a> {
                 &movement.username,
                 movement.unit_id.as_deref(),
                 fiscal_year,
-                movement.unit_cost,
+                unit_cost_scaled,
             ],
         )?;
         Ok(())
@@ -125,9 +133,9 @@ impl<'a> StockMovementRepository<'a> {
                     product_id: row.get(1)?,
                     product_name: row.get(2)?,
                     movement_type: row.get(3)?,
-                    quantity: row.get(4)?,
-                    balance_before: row.get(5)?,
-                    balance_after: row.get(6)?,
+                    quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                    balance_before: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                    balance_after: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
                     reference_type: row.get(7)?,
                     reference_id: row.get(8)?,
                     notes: row.get(9)?,
@@ -136,7 +144,10 @@ impl<'a> StockMovementRepository<'a> {
                     username: row.get(12)?,
                     unit_id: row.get(13)?,
                     fiscal_year: row.get(14)?,
-                    unit_cost: row.get(15)?,
+                    unit_cost: match row.get::<_, Option<i64>>(15)? {
+                        Some(scaled) => Some(numeric_row::money_col(15, scaled)?),
+                        None => None,
+                    },
                 })
             },
         )?)
@@ -144,6 +155,13 @@ impl<'a> StockMovementRepository<'a> {
 
     /// Insert raw stock movement from external source (for UNIT to WILAYA sync)
     pub fn insert_raw_stock_movement(&self, movement: &StockMovement) -> Result<(), AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(movement.quantity)?;
+        let balance_before_scaled = numeric_row::qty_scaled(movement.balance_before)?;
+        let balance_after_scaled = numeric_row::qty_scaled(movement.balance_after)?;
+        let unit_cost_scaled = match movement.unit_cost {
+            Some(cost) => Some(numeric_row::money_scaled(cost)?),
+            None => None,
+        };
         // Use OR IGNORE to handle duplicates if the same movement is imported twice
         self.executor
             .execute(
@@ -156,9 +174,9 @@ impl<'a> StockMovementRepository<'a> {
                     movement.id,
                     movement.product_id,
                     movement.movement_type.as_str(),
-                    movement.quantity,
-                    movement.balance_before,
-                    movement.balance_after,
+                    quantity_scaled,
+                    balance_before_scaled,
+                    balance_after_scaled,
                     movement.reference_type,
                     movement.reference_id,
                     movement.notes,
@@ -167,12 +185,29 @@ impl<'a> StockMovementRepository<'a> {
                     movement.username,
                     movement.unit_id,
                     movement.fiscal_year,
-                    movement.unit_cost,
+                    unit_cost_scaled,
                 ],
             )
             .map_err(AppError::from)?;
 
         Ok(())
+    }
+
+    /// ADR-0058 stock-activity existence predicate (SQL only).
+    ///
+    /// `Frozen(product_id) ⇔ EXISTS(SELECT 1 FROM stock_movements WHERE
+    /// product_id = :product_id)`. A single `stock_movements` row for the
+    /// product freezes its unit/factor configuration tuple.
+    pub fn has_stock_activity(&self, product_id: &str) -> Result<bool, AppError> {
+        let exists = self
+            .executor
+            .query_row_optional(
+                "SELECT 1 FROM stock_movements WHERE product_id = ?1",
+                [product_id],
+                |_row| Ok(()),
+            )?
+            .is_some();
+        Ok(exists)
     }
 
     /// Check if a movement exists by its ID
@@ -214,9 +249,9 @@ impl<'a> StockMovementRepository<'a> {
                     product_id: row.get(1)?,
                     product_name: row.get(2)?,
                     movement_type: row.get(3)?,
-                    quantity: row.get(4)?,
-                    balance_before: row.get(5)?,
-                    balance_after: row.get(6)?,
+                    quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                    balance_before: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                    balance_after: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
                     reference_type: row.get(7)?,
                     reference_id: row.get(8)?,
                     notes: row.get(9)?,
@@ -225,7 +260,10 @@ impl<'a> StockMovementRepository<'a> {
                     username: row.get(12)?,
                     unit_id: row.get(13)?,
                     fiscal_year: row.get(14)?,
-                    unit_cost: row.get(15)?,
+                    unit_cost: match row.get::<_, Option<i64>>(15)? {
+                        Some(scaled) => Some(numeric_row::money_col(15, scaled)?),
+                        None => None,
+                    },
                 })
             },
         )?)
@@ -270,9 +308,9 @@ impl<'a> StockMovementRepository<'a> {
                         product_id: row.get(1)?,
                         product_name: row.get(2)?,
                         movement_type: row.get(3)?,
-                        quantity: row.get(4)?,
-                        balance_before: row.get(5)?,
-                        balance_after: row.get(6)?,
+                        quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                        balance_before: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                        balance_after: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
                         reference_type: row.get(7)?,
                         reference_id: row.get(8)?,
                         notes: row.get(9)?,
@@ -281,7 +319,10 @@ impl<'a> StockMovementRepository<'a> {
                         username: row.get(12)?,
                         unit_id: row.get(13)?,
                         fiscal_year: row.get(14)?,
-                        unit_cost: row.get(15)?,
+                        unit_cost: match row.get::<_, Option<i64>>(15)? {
+                            Some(scaled) => Some(numeric_row::money_col(15, scaled)?),
+                            None => None,
+                        },
                     })
                 },
                 consumer,

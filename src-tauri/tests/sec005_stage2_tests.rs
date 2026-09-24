@@ -296,7 +296,11 @@ fn sec005a_fiscal_scan_allowed_for_wilaya_admin() {
         report.ok,
         "fresh DB has exactly one seeded open fiscal year → clean scan, got {report:?}"
     );
-    assert_eq!(count_attempts(&state), 1, "allowed scan records the attempt row");
+    assert_eq!(
+        count_attempts(&state),
+        1,
+        "allowed scan records the attempt row"
+    );
 }
 
 #[test]
@@ -318,7 +322,11 @@ fn sec005a_inventory_verify_allowed_for_wilaya_admin() {
 
     let report = verify_inventory_integrity_impl(&state, 2026).expect("WILAYA Admin allowed");
     assert_eq!(report.mismatch_count, 0, "empty ledger is consistent");
-    assert_eq!(count_attempts(&state), 1, "allowed scan records the attempt row");
+    assert_eq!(
+        count_attempts(&state),
+        1,
+        "allowed scan records the attempt row"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -338,8 +346,11 @@ fn sec005b_wilaya_rotation_finalize_command_completes_and_records_audit() {
     };
     let signed = sign_with_root(&plan.certificate);
     let cert_path = dir.path().join("signed-wilaya-rotation.json");
-    std::fs::write(&cert_path, serde_json::to_string_pretty(&signed).expect("json"))
-        .expect("write cert file");
+    std::fs::write(
+        &cert_path,
+        serde_json::to_string_pretty(&signed).expect("json"),
+    )
+    .expect("write cert file");
     let package_path = dir.path().join("rotation.sync");
 
     // If the DB lock were still held across `log_rotation_audit`, this call
@@ -361,7 +372,10 @@ fn sec005b_wilaya_rotation_finalize_command_completes_and_records_audit() {
     assert_eq!(resp.entries[0].user_id, "u1");
     assert_eq!(resp.entries[0].action, AuditAction::IdentityRotated);
     assert_eq!(resp.entries[0].status, AuditStatus::Success);
-    assert!(resp.entries[0].session_id.is_some(), "actor session recorded");
+    assert!(
+        resp.entries[0].session_id.is_some(),
+        "actor session recorded"
+    );
 }
 
 #[test]
@@ -381,7 +395,10 @@ fn sec005b_unit_rotation_sign_command_completes_and_records_audit() {
         &node_key_store,
     )
     .expect("command-level UNIT rotation signing completes without hanging");
-    assert!(signed.certificate.signature.is_some(), "WILAYA must sign the CSR");
+    assert!(
+        signed.certificate.signature.is_some(),
+        "WILAYA must sign the CSR"
+    );
     assert_eq!(signed.operation, RotationOperation::ReIssue);
 
     let resp = audit_for_action(&state, "IdentityReissued");
@@ -550,12 +567,20 @@ fn sec005c_wilaya_finalize_rejects_non_root_issuer_before_persistence() {
     // unconsumed, no package file written, zero new identity rows.
     assert!(active_wilaya(&node).is_identical_to(&before));
     assert!(
-        node.node_key_store.read_pending().expect("read pending").is_some(),
+        node.node_key_store
+            .read_pending()
+            .expect("read pending")
+            .is_some(),
         "staged key must remain available for a corrected retry"
     );
     assert!(!package_path.exists(), "no trust package may be written");
     assert_eq!(
-        node.db.executor().identity_store().list_all().expect("list").len(),
+        node.db
+            .executor()
+            .identity_store()
+            .list_all()
+            .expect("list")
+            .len(),
         1,
         "identity store must be unchanged"
     );

@@ -40,11 +40,12 @@ fn seed_unit(ex: DbExecutor<'_>, id: &str, now: &str) {
 
 fn seed_product_and_stock(ex: DbExecutor<'_>, product_id: &str, name: &str, now: &str, year: i32) {
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,?2,0.0,0.0,?3,?4)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,?2,0.0,?3,?4,1,1,1,0)",
         rusqlite::params![product_id, name, year, now],
-    ).expect("insert product");
+    )
+    .expect("insert product");
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',?3,?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',1,?3,?3)",
         rusqlite::params![format!("stock-{}", product_id), product_id, now],
     ).expect("insert inventory_stocks");
 }
@@ -133,19 +134,25 @@ fn get_movement_id_for_product(ex: DbExecutor<'_>, reference_id: &str, product_i
 }
 
 fn get_layer_consumption_sum(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(quantity), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get::<_, f64>(0),
-    ).unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(quantity), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 1000.0
 }
 
 fn get_layer_consumption_cost(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(total_cost), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get(0),
-    ).unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(total_cost), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 fn close_year(db: &mut grpc_lib::db::Database, year: i32, next_year: i32) {
@@ -175,12 +182,14 @@ fn get_layer_origin_fy(ex: DbExecutor<'_>, layer_id: &str) -> i32 {
 }
 
 fn get_layer_qty(ex: DbExecutor<'_>, layer_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT qty_remaining FROM fifo_stock_layers WHERE id = ?1",
-        rusqlite::params![layer_id],
-        |row| row.get(0),
-    )
-    .expect("get qty_remaining")
+    let qty: i64 = ex
+        .query_row(
+            "SELECT qty_remaining FROM fifo_stock_layers WHERE id = ?1",
+            rusqlite::params![layer_id],
+            |row| row.get(0),
+        )
+        .expect("get qty_remaining");
+    qty as f64 / 1000.0
 }
 
 fn count_active_layers(ex: DbExecutor<'_>, product_id: &str) -> usize {

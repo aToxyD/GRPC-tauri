@@ -85,6 +85,22 @@ pub enum AuditAction {
     IdentityAccessBootstrapImportFailed,
     // Pre-auth first-admin provisioning ceremony (SEC-002)
     FirstAdminProvisioned,
+    // Contract-centric procurement (ADR-0055 / SEC-087-F)
+    CreateSupplier,
+    UpdateSupplier,
+    SetSupplierActive,
+    AssociateUnitSupplier,
+    DisassociateUnitSupplier,
+    CreateContract,
+    AddContractProduct,
+    SetAgreedPrice,
+    AcceptContract,
+    ActivateContract,
+    EndContract,
+    CancelContract,
+    ReleaseContractAllocation,
+    RevokeContractAllocationRelease,
+    SetTaxPolicy,
 }
 
 impl AuditAction {
@@ -152,6 +168,21 @@ impl AuditAction {
                 "IdentityAccessBootstrapImportFailed"
             }
             AuditAction::FirstAdminProvisioned => "FirstAdminProvisioned",
+            AuditAction::CreateSupplier => "CreateSupplier",
+            AuditAction::UpdateSupplier => "UpdateSupplier",
+            AuditAction::SetSupplierActive => "SetSupplierActive",
+            AuditAction::AssociateUnitSupplier => "AssociateUnitSupplier",
+            AuditAction::DisassociateUnitSupplier => "DisassociateUnitSupplier",
+            AuditAction::CreateContract => "CreateContract",
+            AuditAction::AddContractProduct => "AddContractProduct",
+            AuditAction::SetAgreedPrice => "SetAgreedPrice",
+            AuditAction::AcceptContract => "AcceptContract",
+            AuditAction::ActivateContract => "ActivateContract",
+            AuditAction::EndContract => "EndContract",
+            AuditAction::CancelContract => "CancelContract",
+            AuditAction::ReleaseContractAllocation => "ReleaseContractAllocation",
+            AuditAction::RevokeContractAllocationRelease => "RevokeContractAllocationRelease",
+            AuditAction::SetTaxPolicy => "SetTaxPolicy",
         }
     }
 
@@ -218,6 +249,21 @@ impl AuditAction {
                 Some(AuditAction::IdentityAccessBootstrapImportFailed)
             }
             "FirstAdminProvisioned" => Some(AuditAction::FirstAdminProvisioned),
+            "CreateSupplier" => Some(AuditAction::CreateSupplier),
+            "UpdateSupplier" => Some(AuditAction::UpdateSupplier),
+            "SetSupplierActive" => Some(AuditAction::SetSupplierActive),
+            "AssociateUnitSupplier" => Some(AuditAction::AssociateUnitSupplier),
+            "DisassociateUnitSupplier" => Some(AuditAction::DisassociateUnitSupplier),
+            "CreateContract" => Some(AuditAction::CreateContract),
+            "AddContractProduct" => Some(AuditAction::AddContractProduct),
+            "SetAgreedPrice" => Some(AuditAction::SetAgreedPrice),
+            "AcceptContract" => Some(AuditAction::AcceptContract),
+            "ActivateContract" => Some(AuditAction::ActivateContract),
+            "EndContract" => Some(AuditAction::EndContract),
+            "CancelContract" => Some(AuditAction::CancelContract),
+            "ReleaseContractAllocation" => Some(AuditAction::ReleaseContractAllocation),
+            "RevokeContractAllocationRelease" => Some(AuditAction::RevokeContractAllocationRelease),
+            "SetTaxPolicy" => Some(AuditAction::SetTaxPolicy),
             _ => None,
         }
     }
@@ -285,6 +331,21 @@ impl AuditAction {
             AuditAction::IdentityAccessBootstrapImported => "أول استيراد حزم حسابات (B8)",
             AuditAction::IdentityAccessBootstrapImportFailed => "فشل أول استيراد حزم حسابات (B8)",
             AuditAction::FirstAdminProvisioned => "إصدار أول حساب مسؤول",
+            AuditAction::CreateSupplier => "إنشاء مورد",
+            AuditAction::UpdateSupplier => "تحديث مورد",
+            AuditAction::SetSupplierActive => "تفعيل/تعطيل مورد",
+            AuditAction::AssociateUnitSupplier => "ربط مورد بوحدة",
+            AuditAction::DisassociateUnitSupplier => "فك ربط مورد بوحدة",
+            AuditAction::CreateContract => "إنشاء عقد",
+            AuditAction::AddContractProduct => "إضافة منتج لعقد",
+            AuditAction::SetAgreedPrice => "تثبيت سعر اتفاق",
+            AuditAction::AcceptContract => "قبول عقد",
+            AuditAction::ActivateContract => "تفعيل عقد",
+            AuditAction::EndContract => "إنهاء عقد",
+            AuditAction::CancelContract => "إلغاء عقد",
+            AuditAction::ReleaseContractAllocation => "تحرير رصيد عقد",
+            AuditAction::RevokeContractAllocationRelease => "إلغاء تحرير رصيد عقد",
+            AuditAction::SetTaxPolicy => "ضبط سياسة الضريبة",
         }
     }
 
@@ -352,6 +413,22 @@ impl AuditAction {
             AuditAction::SignUnitIdentityRequest => EntityType::System,
             // Pre-auth first-admin provisioning is a node bootstrap fact (SEC-002).
             AuditAction::FirstAdminProvisioned => EntityType::System,
+            // Contract-centric procurement (ADR-0055 / SEC-087-F).
+            AuditAction::CreateSupplier
+            | AuditAction::UpdateSupplier
+            | AuditAction::SetSupplierActive
+            | AuditAction::AssociateUnitSupplier
+            | AuditAction::DisassociateUnitSupplier => EntityType::Supplier,
+            AuditAction::CreateContract
+            | AuditAction::AddContractProduct
+            | AuditAction::SetAgreedPrice
+            | AuditAction::AcceptContract
+            | AuditAction::ActivateContract
+            | AuditAction::EndContract
+            | AuditAction::CancelContract
+            | AuditAction::ReleaseContractAllocation
+            | AuditAction::RevokeContractAllocationRelease => EntityType::Contract,
+            AuditAction::SetTaxPolicy => EntityType::Financial,
         }
     }
 }
@@ -384,6 +461,51 @@ mod audit_action_tests {
             "حل تعارض مزامنة"
         );
     }
+
+    #[test]
+    fn procurement_actions_round_trip_as_str_parse() {
+        use super::EntityType;
+        for action in [
+            AuditAction::CreateSupplier,
+            AuditAction::UpdateSupplier,
+            AuditAction::SetSupplierActive,
+            AuditAction::AssociateUnitSupplier,
+            AuditAction::DisassociateUnitSupplier,
+            AuditAction::CreateContract,
+            AuditAction::AddContractProduct,
+            AuditAction::SetAgreedPrice,
+            AuditAction::AcceptContract,
+            AuditAction::ActivateContract,
+            AuditAction::EndContract,
+            AuditAction::CancelContract,
+            AuditAction::ReleaseContractAllocation,
+            AuditAction::RevokeContractAllocationRelease,
+            AuditAction::SetTaxPolicy,
+        ] {
+            assert_eq!(AuditAction::parse(action.as_str()), Some(action.clone()));
+            let j = serde_json::to_string(&action).unwrap();
+            let back: AuditAction = serde_json::from_str(&j).unwrap();
+            assert_eq!(back, action);
+            assert!(!action.as_str().is_empty());
+            assert!(!action.display_arabic().is_empty());
+        }
+        for entity in [EntityType::Supplier, EntityType::Contract] {
+            assert_eq!(EntityType::parse(entity.as_str()), Some(entity.clone()));
+            assert!(!entity.display_arabic().is_empty());
+        }
+        assert_eq!(
+            AuditAction::SetTaxPolicy.default_entity_type(),
+            EntityType::Financial
+        );
+        assert_eq!(
+            AuditAction::CreateSupplier.default_entity_type(),
+            EntityType::Supplier
+        );
+        assert_eq!(
+            AuditAction::CreateContract.default_entity_type(),
+            EntityType::Contract
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -397,6 +519,8 @@ pub enum EntityType {
     System,
     Backup,
     Financial,
+    Supplier,
+    Contract,
 }
 
 impl EntityType {
@@ -411,6 +535,8 @@ impl EntityType {
             EntityType::System => "System",
             EntityType::Backup => "Backup",
             EntityType::Financial => "Financial",
+            EntityType::Supplier => "Supplier",
+            EntityType::Contract => "Contract",
         }
     }
 
@@ -425,6 +551,8 @@ impl EntityType {
             "System" => Some(EntityType::System),
             "Backup" => Some(EntityType::Backup),
             "Financial" => Some(EntityType::Financial),
+            "Supplier" => Some(EntityType::Supplier),
+            "Contract" => Some(EntityType::Contract),
             _ => None,
         }
     }
@@ -440,6 +568,8 @@ impl EntityType {
             EntityType::System => "نظام",
             EntityType::Backup => "نسخة احتياطية",
             EntityType::Financial => "مالي",
+            EntityType::Supplier => "مورد",
+            EntityType::Contract => "عقد",
         }
     }
 }
@@ -981,6 +1111,22 @@ pub fn audit_action_to_event_type(action: &AuditAction) -> AuditEventType {
         AuditAction::SignUnitIdentityRequest => AuditEventType::SystemEvent,
         // Pre-auth first-admin provisioning (SEC-002) → SystemEvent (bootstrap)
         AuditAction::FirstAdminProvisioned => AuditEventType::SystemEvent,
+        // Contract-centric procurement (ADR-0055 / SEC-087-F) → UserAction
+        AuditAction::CreateSupplier
+        | AuditAction::UpdateSupplier
+        | AuditAction::SetSupplierActive
+        | AuditAction::AssociateUnitSupplier
+        | AuditAction::DisassociateUnitSupplier
+        | AuditAction::CreateContract
+        | AuditAction::AddContractProduct
+        | AuditAction::SetAgreedPrice
+        | AuditAction::AcceptContract
+        | AuditAction::ActivateContract
+        | AuditAction::EndContract
+        | AuditAction::CancelContract
+        | AuditAction::ReleaseContractAllocation
+        | AuditAction::RevokeContractAllocationRelease
+        | AuditAction::SetTaxPolicy => AuditEventType::UserAction,
     }
 }
 

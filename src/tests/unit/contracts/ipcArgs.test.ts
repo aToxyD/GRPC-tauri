@@ -25,16 +25,12 @@ import {
   beginChallenge,
   completeChallenge,
 } from '../../../lib/contracts/identity.contract';
-import {
-  getLicensingStatus,
-  importTrustAnchor,
-  importLicense,
-  dryRunVerifyLicense,
-  verifyLicense,
-} from '../../../lib/contracts/licensing.contract';
 import { calculateMealRate } from '../../../lib/contracts/consumption.contract';
 import { updateFiscalPackageRetentionStatus } from '../../../lib/contracts/fiscal.contract';
 import { initializeAppKey } from '../../../lib/contracts/security.contract';
+import {
+  setFleetAdminPassword,
+} from '../../../lib/contracts/sync.contract';
 
 const SNAKE_CASE_KEY = /^[a-z]+_[a-z]/;
 
@@ -71,9 +67,6 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
     await signUnitRotationRequest('{"cert":"y"}');
     await finalizeUnitRotation('/tmp/unit-rot-signed.json');
     await completeChallenge('session-1', 'passphrase');
-    await importTrustAnchor('{"format":"provisioning-v1"}');
-    await importLicense('{"artifact":1}');
-    await dryRunVerifyLicense('{"artifact":2}');
     await calculateMealRate(100, 2, 3, 4, 5, 6);
     await updateFiscalPackageRetentionStatus('t1', 'ARCHIVED', 'confirm');
     await initializeAppKey('passphrase', '/tmp/backup.json');
@@ -106,21 +99,6 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
     expectExactKeys('complete_challenge', ['sessionId', 'passphrase']);
   });
 
-  it('import_trust_anchor -> packageJson', async () => {
-    await importTrustAnchor('{"format":"provisioning-v1"}');
-    expectExactKeys('import_trust_anchor', ['packageJson']);
-  });
-
-  it('import_license -> artifactJson', async () => {
-    await importLicense('{"artifact":1}');
-    expectExactKeys('import_license', ['artifactJson']);
-  });
-
-  it('dry_run_verify_license -> artifactJson', async () => {
-    await dryRunVerifyLicense('{"artifact":2}');
-    expectExactKeys('dry_run_verify_license', ['artifactJson']);
-  });
-
   it('calculate_meal_rate -> camelCase count keys', async () => {
     await calculateMealRate(100, 2, 3, 4, 5, 6);
     expectExactKeys('calculate_meal_rate', [
@@ -142,9 +120,9 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
     ]);
   });
 
-  it('initialize_app_key -> passphrase + exportBackup', async () => {
+  it('initialize_app_key -> passphrase + exportBackup + remember', async () => {
     await initializeAppKey('secret', '/tmp/backup.json');
-    expectExactKeys('initialize_app_key', ['passphrase', 'exportBackup']);
+    expectExactKeys('initialize_app_key', ['passphrase', 'exportBackup', 'remember']);
   });
 
   it('identity file-path commands all use camelCase keys', async () => {
@@ -172,11 +150,14 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
   });
 
   it('arg-less commands are invoked without an args object', async () => {
-    await getLicensingStatus();
-    await verifyLicense();
     await beginChallenge();
     for (const [name, args] of mockInvoke.mock.calls) {
       expect(args, `${name} should carry no arguments`).toBeUndefined();
     }
+  });
+
+  it('B8 sync commands use camelCase keys (SEC-013 Phase 3)', async () => {
+    await setFleetAdminPassword('FleetPass123');
+    expectExactKeys('set_fleet_admin_password', ['password']);
   });
 });

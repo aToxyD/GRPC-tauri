@@ -1,3 +1,4 @@
+use crate::domain::units::{ProductUnitConfig, TvaClassification, UnitMeasure};
 use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::*;
 use chrono::{NaiveDate, Utc};
@@ -12,9 +13,6 @@ static SPACE_REGEX: LazyLock<Regex> =
 
 static CODE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9]+$").expect("Invalid code regex pattern"));
-
-static USERNAME_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_]+$").expect("Invalid username regex pattern"));
 
 /// Sanitize a string input by trimming and removing dangerous patterns
 pub fn sanitize_string(input: &str) -> String {
@@ -76,6 +74,78 @@ pub fn is_sql_safe(input: &str) -> bool {
 /// Validation result type
 pub type ValidationResult = Result<(), AppError>;
 
+/// Map a wire `Option<i32>` unit code to the closed-set [`UnitMeasure`], fail
+/// closed on absence or an unknown code.
+fn unit_from_option(field: &str, code: Option<i32>) -> Result<UnitMeasure, AppError> {
+    let code = code.ok_or_else(|| {
+        AppError::Validation(ValidationError::Required {
+            field: field.to_string(),
+        })
+    })?;
+    UnitMeasure::try_from(code).map_err(|_| {
+        AppError::Validation(ValidationError::InvalidFormat {
+            field: field.to_string(),
+            message: format!("كود وحدة غير صالح: {code}"),
+        })
+    })
+}
+
+/// Map a wire `Option<i32>` TVA code to the closed-set [`TvaClassification`],
+/// fail closed on absence or an unknown code.
+fn tva_from_option(code: Option<i32>) -> Result<TvaClassification, AppError> {
+    let code = code.ok_or_else(|| {
+        AppError::Validation(ValidationError::Required {
+            field: "tva_classification".to_string(),
+        })
+    })?;
+    TvaClassification::try_from(code).map_err(|_| {
+        AppError::Validation(ValidationError::InvalidFormat {
+            field: "tva_classification".to_string(),
+            message: format!("تصنيف TVA غير صالح: {code}"),
+        })
+    })
+}
+
+/// Validate the product unit/TVA configuration (SEC-087) and return the typed
+/// value set. **Single authoritative** unit/factor/TVA validation: the domain
+/// validator, `ProductService`, and any future write path must source their
+/// enforcement here so an invalid combination cannot reach a write path.
+pub fn validate_product_units(
+    purchase_unit: Option<i32>,
+    consumption_unit: Option<i32>,
+    conversion_factor: Option<i32>,
+    tva_classification: Option<i32>,
+) -> Result<ProductUnitConfig, AppError> {
+    let purchase_unit = unit_from_option("purchase_unit", purchase_unit)?;
+    let consumption_unit = unit_from_option("consumption_unit", consumption_unit)?;
+    let tva_classification = tva_from_option(tva_classification)?;
+    let conversion_factor = conversion_factor.ok_or_else(|| {
+        AppError::Validation(ValidationError::Required {
+            field: "conversion_factor".to_string(),
+        })
+    })?;
+    if conversion_factor <= 0 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "conversion_factor".to_string(),
+            value: conversion_factor.to_string(),
+        }));
+    }
+    // SEC-087 rule G: identical units require factor == 1.
+    if purchase_unit == consumption_unit && conversion_factor != 1 {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "conversion_factor".to_string(),
+            message: "عندما تتطابق وحدة الشراء ووحدة الاستهلاك يجب أن يكون معامل التحويل 1"
+                .to_string(),
+        }));
+    }
+    Ok(ProductUnitConfig {
+        purchase_unit,
+        consumption_unit,
+        conversion_factor,
+        tva_classification,
+    })
+}
+
 /// Validate product creation request
 pub fn validate_create_product_request(req: &CreateProductRequest, year: i32) -> ValidationResult {
     // Validate name
@@ -111,14 +181,6 @@ pub fn validate_create_product_request(req: &CreateProductRequest, year: i32) ->
         }));
     }
 
-    // Validate TVA
-    if req.tva < 0.0 || req.tva > 100.0 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "tva".to_string(),
-            value: req.tva.to_string(),
-        }));
-    }
-
     // Validate year
     if !(2020..=2100).contains(&year) {
         return Err(AppError::Validation(ValidationError::OutOfRange {
@@ -127,24 +189,15 @@ pub fn validate_create_product_request(req: &CreateProductRequest, year: i32) ->
         }));
     }
 
-    // Validate supplier_name if present
-    if let Some(ref supplier) = req.supplier_name {
-        let supplier = sanitize_string(supplier);
-        if !supplier.is_empty() {
-            if supplier.len() < 2 || supplier.len() > 100 {
-                return Err(AppError::Validation(ValidationError::OutOfRange {
-                    field: "supplier_name".to_string(),
-                    value: format!("الطول: {}", supplier.len()),
-                }));
-            }
-            if !is_sql_safe(&supplier) {
-                return Err(AppError::Validation(ValidationError::InvalidFormat {
-                    field: "supplier_name".to_string(),
-                    message: "اسم المورد يحتوي على محتوى غير آمن".to_string(),
-                }));
-            }
-        }
-    }
+    // SEC-087: units, conversion factor and TVA classification are required and
+    // must be a valid closed-set combination; fail closed so no invalid product
+    // can be created.
+    validate_product_units(
+        req.purchase_unit,
+        req.consumption_unit,
+        req.conversion_factor,
+        req.tva_classification,
+    )?;
 
     Ok(())
 }
@@ -189,33 +242,6 @@ pub fn validate_update_product_request(req: &UpdateProductRequest) -> Validation
             field: "base_price".to_string(),
             value: req.base_price.to_string(),
         }));
-    }
-
-    // Validate TVA
-    if req.tva < 0.0 || req.tva > 100.0 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "tva".to_string(),
-            value: req.tva.to_string(),
-        }));
-    }
-
-    // Validate supplier_name if present
-    if let Some(ref supplier) = req.supplier_name {
-        let supplier = sanitize_string(supplier);
-        if !supplier.is_empty() {
-            if supplier.len() < 2 || supplier.len() > 100 {
-                return Err(AppError::Validation(ValidationError::OutOfRange {
-                    field: "supplier_name".to_string(),
-                    value: format!("الطول: {}", supplier.len()),
-                }));
-            }
-            if !is_sql_safe(&supplier) {
-                return Err(AppError::Validation(ValidationError::InvalidFormat {
-                    field: "supplier_name".to_string(),
-                    message: "اسم المورد يحتوي على محتوى غير آمن".to_string(),
-                }));
-            }
-        }
     }
 
     Ok(())
@@ -354,24 +380,15 @@ fn validate_consumption_item(item: &ConsumptionItemInput) -> ValidationResult {
 
 /// Validate order creation request
 pub fn validate_create_order_request(req: &CreateOrderRequest) -> ValidationResult {
-    // Validate supplier_name
-    let supplier_name = sanitize_string(&req.supplier_name);
-    if supplier_name.is_empty() {
-        return Err(AppError::Validation(ValidationError::Required {
-            field: "supplier_name".to_string(),
-        }));
-    }
-    if supplier_name.len() < 2 || supplier_name.len() > 100 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "supplier_name".to_string(),
-            value: format!("الطول: {}", supplier_name.len()),
-        }));
-    }
-    if !is_sql_safe(&supplier_name) {
-        return Err(AppError::Validation(ValidationError::InvalidFormat {
-            field: "supplier_name".to_string(),
-            message: "اسم المورد يحتوي على محتوى غير آمن".to_string(),
-        }));
+    // Validate reference_number if present
+    if let Some(ref reference) = req.reference_number {
+        let reference = sanitize_string(reference);
+        if !reference.is_empty() && !is_sql_safe(&reference) {
+            return Err(AppError::Validation(ValidationError::InvalidFormat {
+                field: "reference_number".to_string(),
+                message: "رقم المرجع يحتوي على محتوى غير آمن".to_string(),
+            }));
+        }
     }
 
     // Validate items
@@ -396,13 +413,12 @@ pub fn validate_update_order_request(req: &UpdateOrderRequest) -> ValidationResu
         }));
     }
     validate_create_order_request(&CreateOrderRequest {
-        supplier_name: req.supplier_name.clone(),
         reference_number: req.reference_number.clone(),
         items: req.items.clone(),
     })
 }
 
-/// Validate order item input
+/// Validate order item input (product + quantity only; price is backend-resolved)
 fn validate_order_item_input(item: &OrderItemInput) -> ValidationResult {
     // Validate product_id
     if item.product_id.trim().is_empty() {
@@ -424,19 +440,167 @@ fn validate_order_item_input(item: &OrderItemInput) -> ValidationResult {
         }));
     }
 
-    // Validate unit_price
-    if item.unit_price < 0.0 {
-        return Err(AppError::Validation(ValidationError::InvalidPrice {
-            value: item.unit_price,
-        }));
-    }
-    if item.unit_price > 1_000_000.0 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "unit_price".to_string(),
-            value: item.unit_price.to_string(),
-        }));
-    }
+    Ok(())
+}
 
+// ------------------------------------------------------------------
+// Supplier / Contract / Fiscal Tax Policy validation
+// (ADR-0055 / SEC-087-F)
+// ------------------------------------------------------------------
+
+/// Supplier name: trimmed, non-empty, SQL-safe, ≤200 chars.
+pub fn validate_create_supplier_request(req: &CreateSupplierRequest) -> ValidationResult {
+    let name = sanitize_string(&req.name);
+    if name.is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "name".to_string(),
+        }));
+    }
+    if !is_sql_safe(&name) {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "name".to_string(),
+            message: "اسم المورد يحتوي على محتوى غير آمن".to_string(),
+        }));
+    }
+    if name.len() > 200 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "name".to_string(),
+            value: name.len().to_string(),
+        }));
+    }
+    Ok(())
+}
+
+pub fn validate_update_supplier_request(req: &UpdateSupplierRequest) -> ValidationResult {
+    if req.id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "id".to_string(),
+        }));
+    }
+    validate_create_supplier_request(&CreateSupplierRequest {
+        name: req.name.clone(),
+        contact_info: req.contact_info.clone(),
+    })
+}
+
+/// Contract reference and fiscal year range.
+pub fn validate_create_contract_request(req: &CreateContractRequest) -> ValidationResult {
+    let reference = sanitize_string(&req.contract_reference);
+    if reference.is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "contract_reference".to_string(),
+        }));
+    }
+    if !is_sql_safe(&reference) {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "contract_reference".to_string(),
+            message: "مرجع العقد يحتوي على محتوى غير آمن".to_string(),
+        }));
+    }
+    if reference.len() > 100 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "contract_reference".to_string(),
+            value: reference.len().to_string(),
+        }));
+    }
+    if req.unit_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "unit_id".to_string(),
+        }));
+    }
+    if req.supplier_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "supplier_id".to_string(),
+        }));
+    }
+    if req.fiscal_year < 2020 || req.fiscal_year > 2099 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "fiscal_year".to_string(),
+            value: req.fiscal_year.to_string(),
+        }));
+    }
+    Ok(())
+}
+
+pub fn validate_add_contract_product_request(req: &AddContractProductRequest) -> ValidationResult {
+    if req.contract_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "contract_id".to_string(),
+        }));
+    }
+    if req.product_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "product_id".to_string(),
+        }));
+    }
+    if req.proposed_price_ht < 0.0 {
+        return Err(AppError::Validation(ValidationError::InvalidPrice {
+            value: req.proposed_price_ht,
+        }));
+    }
+    if let Some(price) = req.agreed_price_ht {
+        if price < 0.0 {
+            return Err(AppError::Validation(ValidationError::InvalidPrice {
+                value: price,
+            }));
+        }
+    }
+    if req.contracted_quantity <= 0.0 || req.contracted_quantity > 1_000_000.0 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "contracted_quantity".to_string(),
+            value: req.contracted_quantity.to_string(),
+        }));
+    }
+    Ok(())
+}
+
+/// Freeze agreed HT price: contract must still be in `proposed` state
+/// (enforced at repo level), price must be non-negative.
+pub fn validate_set_agreed_price_ht_request(req: &SetAgreedPriceHtRequest) -> ValidationResult {
+    if req.contract_product_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "contract_product_id".to_string(),
+        }));
+    }
+    if req.agreed_price_ht < 0.0 {
+        return Err(AppError::Validation(ValidationError::InvalidPrice {
+            value: req.agreed_price_ht,
+        }));
+    }
+    Ok(())
+}
+
+pub fn validate_release_contract_allocation_request(
+    req: &ReleaseContractAllocationRequest,
+) -> ValidationResult {
+    if req.allocation_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::Required {
+            field: "allocation_id".to_string(),
+        }));
+    }
+    if req.released_quantity <= 0.0 || req.released_quantity > 1_000_000.0 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "released_quantity".to_string(),
+            value: req.released_quantity.to_string(),
+        }));
+    }
+    Ok(())
+}
+
+/// Fiscal-year TVA policy: one rate per FY, 0.0–100.0 inclusive.
+pub fn validate_set_tax_policy_request(req: &SetTaxPolicyRequest) -> ValidationResult {
+    if req.fiscal_year < 2020 || req.fiscal_year > 2099 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "fiscal_year".to_string(),
+            value: req.fiscal_year.to_string(),
+        }));
+    }
+    if req.tva_rate < 0.0 || req.tva_rate > 100.0 {
+        return Err(AppError::Validation(ValidationError::OutOfRange {
+            field: "tva_rate".to_string(),
+            value: req.tva_rate.to_string(),
+        }));
+    }
     Ok(())
 }
 
@@ -482,24 +646,8 @@ pub fn validate_create_unit_request(req: &CreateUnitRequest) -> ValidationResult
         }));
     }
 
-    // Validate username (3-50 alphanumeric characters)
-    let username = sanitize_string(&req.username);
-    if username.is_empty() {
-        return Err(AppError::Validation(ValidationError::Required {
-            field: "username".to_string(),
-        }));
-    }
-    if username.len() < 3 || username.len() > 50 {
-        return Err(AppError::Validation(ValidationError::OutOfRange {
-            field: "username".to_string(),
-            value: format!("الطول: {}", username.len()),
-        }));
-    }
-    if !USERNAME_REGEX.is_match(&username) {
-        return Err(AppError::Validation(ValidationError::InvalidUsername {
-            reason: "اسم المستخدم يجب أن يحتوي على حروف وأرقام فقط".to_string(),
-        }));
-    }
+    // ADR-0052: there is no caller-supplied username to validate — the
+    // operator username is derived server-side as the canonical `user`.
 
     // Validate password (8+ characters, must contain uppercase, lowercase, and digit)
     if req.password.len() < 8 {
@@ -834,8 +982,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج صالح".to_string(),
             base_price: 100.0,
-            tva: 19.0,
-            supplier_name: Some("مورد".to_string()),
+            purchase_unit: Some(2),
+            consumption_unit: Some(1),
+            conversion_factor: Some(2),
+            tva_classification: Some(2),
         };
         assert!(validate_create_product_request(&req, 2024).is_ok());
     }
@@ -845,8 +995,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "".to_string(),
             base_price: 100.0,
-            tva: 19.0,
-            supplier_name: None,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
@@ -857,23 +1009,44 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: -10.0,
-            tva: 19.0,
-            supplier_name: None,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_validate_create_product_request_invalid_tva() {
+    fn test_validate_create_product_request_unknown_tva_fails_closed() {
+        // SEC-087: TVA classification is again a product property; an unknown
+        // code must fail closed (never default, never fall back).
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: 100.0,
-            tva: 150.0,
-            supplier_name: None,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(99),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_product_units_fail_closed_invariants() {
+        // Missing unit codes are rejected.
+        assert!(validate_product_units(None, Some(1), Some(1), Some(2)).is_err());
+        // Unknown unit codes are rejected.
+        assert!(validate_product_units(Some(0), Some(1), Some(1), Some(2)).is_err());
+        // Factor 0 / negative is rejected.
+        assert!(validate_product_units(Some(1), Some(1), Some(0), Some(2)).is_err());
+        assert!(validate_product_units(Some(1), Some(1), Some(-1), Some(2)).is_err());
+        // Identical units require factor == 1 (SEC-087 rule G).
+        assert!(validate_product_units(Some(1), Some(1), Some(2), Some(2)).is_err());
+        // Distinct units with a positive factor pass.
+        assert!(validate_product_units(Some(2), Some(1), Some(2), Some(2)).is_ok());
     }
 
     #[test]
@@ -881,7 +1054,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة الاختبار".to_string(),
-            username: "testuser".to_string(),
             password: "Test1234".to_string(),
         };
         assert!(validate_create_unit_request(&req).is_ok());
@@ -892,7 +1064,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "U1".to_string(),
             name: "وحدة".to_string(),
-            username: "testuser".to_string(),
             password: "Test1234".to_string(),
         };
         let result = validate_create_unit_request(&req);
@@ -904,7 +1075,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة".to_string(),
-            username: "testuser".to_string(),
             password: "weak".to_string(),
         };
         let result = validate_create_unit_request(&req);
@@ -916,7 +1086,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة".to_string(),
-            username: "testuser".to_string(),
             password: "test1234".to_string(),
         };
         let result = validate_create_unit_request(&req);
@@ -989,8 +1158,10 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: -1_000_000.0,
-            tva: 19.0,
-            supplier_name: None,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
@@ -999,29 +1170,24 @@ mod tests {
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: 10_000_000.0,
-            tva: 19.0,
-            supplier_name: None,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         let result = validate_create_product_request(&req, 2024);
         assert!(result.is_err());
 
-        // TVA قصوى
+        // سعر معقول ضمن الحدود
         let req = CreateProductRequest {
             name: "منتج".to_string(),
             base_price: 100.0,
-            tva: 100.0, // الحد الأقصى
-            supplier_name: None,
+            purchase_unit: Some(1),
+            consumption_unit: Some(1),
+            conversion_factor: Some(1),
+            tva_classification: Some(2),
         };
         assert!(validate_create_product_request(&req, 2024).is_ok());
-
-        // TVA تتجاوز الحد
-        let req = CreateProductRequest {
-            name: "منتج".to_string(),
-            base_price: 100.0,
-            tva: 100.01,
-            supplier_name: None,
-        };
-        assert!(validate_create_product_request(&req, 2024).is_err());
     }
 
     #[test]

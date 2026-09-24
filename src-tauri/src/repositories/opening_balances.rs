@@ -1,7 +1,9 @@
 //! SQL-only access to `opening_balance_snapshots`.
 
 use crate::errors::AppError;
+use crate::models::OpeningBalanceSnapshot;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 
 pub struct OpeningBalanceRepository<'a> {
@@ -36,6 +38,10 @@ impl<'a> OpeningBalanceRepository<'a> {
         }
         let now = chrono::Utc::now().to_rfc3339();
 
+        let quantity_scaled = numeric_row::qty_scaled(params.quantity)?;
+        let unit_cost_scaled = numeric_row::money_scaled(params.unit_cost)?;
+        let total_value_scaled = numeric_row::money_scaled(params.total_value)?;
+
         self.executor
             .execute(
                 "INSERT INTO opening_balance_snapshots \
@@ -46,9 +52,9 @@ impl<'a> OpeningBalanceRepository<'a> {
                     params.id,
                     params.product_id,
                     params.fiscal_year,
-                    params.quantity,
-                    params.unit_cost,
-                    params.total_value,
+                    quantity_scaled,
+                    unit_cost_scaled,
+                    total_value_scaled,
                     params.snapshot_reason,
                     params.carried_from,
                     now,
@@ -70,13 +76,13 @@ impl<'a> OpeningBalanceRepository<'a> {
              FROM opening_balance_snapshots WHERE fiscal_year = ?1",
                 params![year],
                 |row| {
-                    Ok(crate::models::OpeningBalanceSnapshot {
+                    Ok(OpeningBalanceSnapshot {
                         id: row.get(0)?,
                         product_id: row.get(1)?,
                         fiscal_year: row.get(2)?,
-                        opening_quantity: row.get(3)?,
-                        unit_cost: row.get(4)?,
-                        total_value: row.get(5)?,
+                        opening_quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
+                        unit_cost: numeric_row::money_col(4, row.get::<_, i64>(4)?)?,
+                        total_value: numeric_row::money_col(5, row.get::<_, i64>(5)?)?,
                         snapshot_reason: row.get(6)?,
                         carried_from_year: row.get(7)?,
                         created_at: row.get(8)?,

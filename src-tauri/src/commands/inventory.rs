@@ -13,6 +13,7 @@ use crate::commands::common::{
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
+use crate::domain::validation;
 use crate::errors::into_command_error;
 use crate::models::{
     ComputeSnapshotResult, FifoStockLayer, InventoryLayerConsumption, InventoryStockPageView,
@@ -72,6 +73,7 @@ pub fn export_stock_movements_excel(
 ) -> Result<XlsxExportResult, String> {
     let (_session, _settings) = authorize_command(&state, Action::ExportStockMovements, None)
         .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(into_command_error)?;
     state.touch_session();
 
     let guard = state.get_db().map_err(into_command_error)?;
@@ -181,6 +183,7 @@ pub fn export_unit_inventory_excel(
 ) -> Result<XlsxExportResult, String> {
     let (_session, _settings) = authorize_command(&state, Action::ReadInventory, Some(&unit_id))
         .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(into_command_error)?;
     state.touch_session();
 
     let guard = state.get_db().map_err(into_command_error)?;
@@ -332,8 +335,8 @@ pub fn get_fifo_layers(
     unit_id: String,
     product_id: String,
 ) -> Result<Vec<FifoStockLayer>, String> {
-    let (_session, _settings) =
-        authorize_command(&state, Action::ReadInventory, None).map_err(into_command_error)?;
+    let (_session, _settings) = authorize_command(&state, Action::ReadInventory, Some(&unit_id))
+        .map_err(into_command_error)?;
 
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;

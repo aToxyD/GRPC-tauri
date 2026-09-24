@@ -5,6 +5,7 @@
 use crate::errors::AppError;
 use crate::models::{InventoryStock, StockSummary};
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::numeric_row;
 use rusqlite::params;
 
 /// Repository for inventory-related database operations
@@ -18,43 +19,42 @@ impl<'a> InventoryRepository<'a> {
         Self { executor }
     }
 
-    /// Get stock for a specific product
-    pub fn get_stock(&self, product_id: &str) -> Result<Option<InventoryStock>, AppError> {
+    /// Get stock for a product keyed by its consumption-unit identity
+    /// (SEC-087 Phase 6C). Every stock row carries a REQUIRED non-NULL
+    /// consumption-unit key; there is no legacy NULL-keyed row.
+    pub fn get_stock_typed(
+        &self,
+        product_id: &str,
+        consumption_unit: i32,
+    ) -> Result<Option<InventoryStock>, AppError> {
         let result = self.executor.query_row_optional(
-            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated 
-                   FROM inventory_stocks s 
-                   JOIN products p ON s.product_id = p.id 
-                   WHERE s.product_id = ?1"#,
-            [product_id],
-            |row| {
-                let last_updated_str: String = row.get(5)?;
-                let last_updated = crate::errors::parse_datetime_rfc3339(&last_updated_str)
-                    .map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    })?;
-                Ok(InventoryStock {
-                    id: row.get(0)?,
-                    product_id: row.get(1)?,
-                    product_name: row.get(2)?,
-                    quantity: row.get(3)?,
-                    unit: row.get(4)?,
-                    last_updated,
-                })
-            },
+            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated,
+                      s.consumption_unit
+                 FROM inventory_stocks s
+                 JOIN products p ON s.product_id = p.id
+                 WHERE s.product_id = ?1 AND s.consumption_unit = ?2"#,
+            params![product_id, consumption_unit],
+            Self::map_stock_row,
         )?;
         Ok(result)
     }
 
-    /// Check if stock exists for a given product
+    /// Check if stock exists for a given product keyed by its authoritative
+    /// consumption-unit identity (SEC-087 Phase 6C).
+    ///
+    /// The existence check matches the row keyed by the product's configured
+    /// consumption unit — never a guessed key. The unit is resolved from the
+    /// product configuration — never from the caller — so identity stays under
+    /// single ownership (AGENTS.md A1/A3).
     pub fn stock_exists_for_product(&self, product_id: &str) -> Result<bool, AppError> {
         let exists = self
             .executor
             .query_row_optional(
-                "SELECT 1 FROM inventory_stocks WHERE product_id = ?1",
+                "SELECT 1
+                   FROM inventory_stocks s
+                   JOIN products p ON p.id = s.product_id
+                  WHERE s.product_id = ?1
+                    AND s.consumption_unit = p.consumption_unit",
                 [product_id],
                 |_row| Ok(()),
             )?
@@ -62,32 +62,21 @@ impl<'a> InventoryRepository<'a> {
         Ok(exists)
     }
 
-    /// Insert empty stock record for sync
-    pub fn insert_empty_stock(
-        &self,
-        stock_id: &str,
-        product_id: &str,
-        updated_at: &str,
-        node_id: &str,
-    ) -> Result<(), AppError> {
-        self.executor.execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, last_updated, updated_at, node_id, deleted) 
-             VALUES (?1, ?2, 0, ?3, ?3, ?4, 0)",
-            rusqlite::params![stock_id, product_id, updated_at, node_id],
-        )?;
-        Ok(())
-    }
-
-    /// Create initial empty stock for a newly imported product
+    /// Create initial empty stock for a newly created product.
+    ///
+    /// `consumption_unit` is the product's authoritative consumption-unit key
+    /// (SEC-087 Phase 6C), resolved by the caller from product configuration —
+    /// this repository never invents unit codes, and no NULL-keyed row exists.
     pub fn create_initial_stock_for_product(
         &self,
         stock_id: &str,
         product_id: &str,
+        consumption_unit: i32,
         now: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated) VALUES (?1, ?2, 0.0, 'unit', ?3)",
-            rusqlite::params![stock_id, product_id, now],
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated, consumption_unit) VALUES (?1, ?2, 0, 'unit', ?3, ?4)",
+            rusqlite::params![stock_id, product_id, now, consumption_unit],
         )?;
         Ok(())
     }
@@ -95,40 +84,73 @@ impl<'a> InventoryRepository<'a> {
     /// Get all stocks
     pub fn get_all_stocks(&self) -> Result<Vec<InventoryStock>, AppError> {
         Ok(self.executor.query_all(
-            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated
+            r#"SELECT s.id, s.product_id, p.name, s.quantity, s.unit, s.last_updated,
+                      s.consumption_unit
                FROM inventory_stocks s
                JOIN products p ON s.product_id = p.id
                ORDER BY p.name"#,
             [],
-            |row| {
-                let last_updated_str: String = row.get(5)?;
-                let last_updated = crate::errors::parse_datetime_rfc3339(&last_updated_str)
-                    .map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    })?;
-                Ok(InventoryStock {
-                    id: row.get(0)?,
-                    product_id: row.get(1)?,
-                    product_name: row.get(2)?,
-                    quantity: row.get(3)?,
-                    unit: row.get(4)?,
-                    last_updated,
-                })
-            },
+            Self::map_stock_row,
         )?)
     }
 
-    /// Update stock quantity for a product
-    pub fn update_stock(&self, product_id: &str, quantity: f64) -> Result<(), AppError> {
+    /// Upsert a stock quantity for a product keyed by consumption-unit identity
+    /// (SEC-087 Phase 6C).
+    ///
+    /// An insert-on-miss guarantees the keyed row exists before the quantity is
+    /// written, so stock writes never disappear silently.
+    pub fn update_stock_typed(
+        &self,
+        product_id: &str,
+        consumption_unit: i32,
+        quantity: f64,
+    ) -> Result<(), AppError> {
+        let quantity_scaled = numeric_row::qty_scaled(quantity)?;
+        let now = chrono::Utc::now().to_rfc3339();
         self.executor.execute(
-            "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2 WHERE product_id = ?3",
-            params![&quantity, &chrono::Utc::now().to_rfc3339(), &product_id],
+            "INSERT OR IGNORE INTO inventory_stocks (id, product_id, quantity, unit, last_updated, consumption_unit)
+             VALUES (?1, ?2, 0, 'unit', ?3, ?4)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                product_id,
+                now,
+                consumption_unit
+            ],
+        )?;
+        self.executor.execute(
+            "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2, consumption_unit = ?3
+             WHERE product_id = ?4 AND consumption_unit = ?5",
+            params![
+                quantity_scaled,
+                now,
+                consumption_unit,
+                product_id,
+                consumption_unit
+            ],
         )?;
         Ok(())
+    }
+
+    /// Shared row mapper for `inventory_stocks` reads.
+    fn map_stock_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InventoryStock> {
+        let last_updated_str: String = row.get(5)?;
+        let last_updated =
+            crate::errors::parse_datetime_rfc3339(&last_updated_str).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+        Ok(InventoryStock {
+            id: row.get(0)?,
+            product_id: row.get(1)?,
+            product_name: row.get(2)?,
+            quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
+            unit: row.get(4)?,
+            last_updated,
+            consumption_unit: row.get::<_, i32>(6)?,
+        })
     }
 
     /// Get stock summary for all products.
@@ -136,6 +158,12 @@ impl<'a> InventoryRepository<'a> {
     /// When `fiscal_year` is `Some`, movement-based statistics (total_in,
     /// total_out, movement_count) are scoped to that fiscal year only.
     /// `current_quantity` is always the real inventory stock, unfiltered.
+    ///
+    /// The `inventory_stocks` join is aligned on the product's authoritative
+    /// consumption-unit key (SEC-087 Phase 6C): a product reads only its
+    /// `(product_id, consumption_unit)` row — the one identity that exists.
+    /// Exactly one stock identity is joined per product, so a summary never
+    /// produces duplicates.
     pub fn get_stock_summary(
         &self,
         fiscal_year: Option<i32>,
@@ -144,13 +172,14 @@ impl<'a> InventoryRepository<'a> {
             SELECT
                 p.id as product_id,
                 p.name as product_name,
-                COALESCE(s.quantity, 0.0) as current_quantity,
-                COALESCE(sm.total_in, 0.0) as total_in,
-                COALESCE(sm.total_out, 0.0) as total_out,
+                COALESCE(s.quantity, 0) as current_quantity,
+                COALESCE(sm.total_in, 0) as total_in,
+                COALESCE(sm.total_out, 0) as total_out,
                 sm.last_movement,
                 COALESCE(sm.movement_count, 0) as movement_count
             FROM products p
             LEFT JOIN inventory_stocks s ON p.id = s.product_id
+                AND s.consumption_unit = p.consumption_unit
             LEFT JOIN (
                 SELECT 
                     product_id,
@@ -169,9 +198,9 @@ impl<'a> InventoryRepository<'a> {
             Ok(StockSummary {
                 product_id: row.get(0)?,
                 product_name: row.get(1)?,
-                current_quantity: row.get(2)?,
-                total_in: row.get(3)?,
-                total_out: row.get(4)?,
+                current_quantity: numeric_row::qty_col(2, row.get::<_, i64>(2)?)?,
+                total_in: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
+                total_out: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
                 last_movement: row.get(5)?,
                 movement_count: row.get(6)?,
             })
@@ -247,12 +276,12 @@ impl<'a> InventoryRepository<'a> {
         unit_id: &str,
         month_start: &str,
     ) -> Result<f64, AppError> {
-        let stock: f64 = self.executor.query_row(
-            "SELECT COALESCE((SELECT sm.balance_after FROM stock_movements sm LEFT JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = ?1 AND sm.timestamp < ?2 AND (dr.unit_id = ?3 OR sm.unit_id = ?3) ORDER BY sm.timestamp DESC LIMIT 1), 0.0)",
+        let stock: i64 = self.executor.query_row(
+            "SELECT COALESCE((SELECT sm.balance_after FROM stock_movements sm LEFT JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = ?1 AND sm.timestamp < ?2 AND (dr.unit_id = ?3 OR sm.unit_id = ?3) ORDER BY sm.timestamp DESC LIMIT 1), 0)",
             rusqlite::params![product_id, month_start, unit_id],
             |row| row.get(0),
         )?;
-        Ok(stock)
+        Ok(numeric_row::qty_scaled_i64_to_f64(stock)?)
     }
 
     pub fn get_total_in(
@@ -262,12 +291,12 @@ impl<'a> InventoryRepository<'a> {
         month_start: &str,
         month_end: &str,
     ) -> Result<f64, AppError> {
-        let total: f64 = self.executor.query_row(
-            "SELECT COALESCE(SUM(sm.quantity),0.0) FROM stock_movements sm WHERE sm.product_id = ?1 AND sm.timestamp >= ?2 AND sm.timestamp <= ?3 AND sm.movement_type='IN' AND sm.unit_id = ?4",
+        let total: i64 = self.executor.query_row(
+            "SELECT COALESCE(SUM(sm.quantity),0) FROM stock_movements sm WHERE sm.product_id = ?1 AND sm.timestamp >= ?2 AND sm.timestamp <= ?3 AND sm.movement_type='IN' AND sm.unit_id = ?4",
             rusqlite::params![product_id, month_start, month_end, unit_id],
             |row| row.get(0),
         )?;
-        Ok(total)
+        Ok(numeric_row::qty_scaled_i64_to_f64(total)?)
     }
 
     pub fn get_total_out(
@@ -277,12 +306,12 @@ impl<'a> InventoryRepository<'a> {
         month_start: &str,
         month_end: &str,
     ) -> Result<f64, AppError> {
-        let total: f64 = self.executor.query_row(
-            "SELECT COALESCE(SUM(sm.quantity), 0.0) FROM stock_movements sm LEFT JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = ?1 AND sm.timestamp >= ?2 AND sm.timestamp <= ?3 AND sm.movement_type = 'OUT' AND (dr.unit_id = ?4 OR sm.unit_id = ?4)",
+        let total: i64 = self.executor.query_row(
+            "SELECT COALESCE(SUM(sm.quantity), 0) FROM stock_movements sm LEFT JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = ?1 AND sm.timestamp >= ?2 AND sm.timestamp <= ?3 AND sm.movement_type = 'OUT' AND (dr.unit_id = ?4 OR sm.unit_id = ?4)",
             rusqlite::params![product_id, month_start, month_end, unit_id],
             |row| row.get(0),
         )?;
-        Ok(total)
+        Ok(numeric_row::qty_scaled_i64_to_f64(total)?)
     }
 
     pub fn get_reported_closing(
@@ -291,14 +320,14 @@ impl<'a> InventoryRepository<'a> {
         unit_id: &str,
         month_start: &str,
         month_end: &str,
-        default_val: f64,
+        default_val_scaled: i64,
     ) -> Result<f64, AppError> {
-        let closing: f64 = self.executor.query_row(
+        let closing: i64 = self.executor.query_row(
             "SELECT COALESCE((SELECT sm.balance_after FROM stock_movements sm LEFT JOIN daily_reports dr ON sm.reference_id = dr.id WHERE sm.product_id = ?1 AND sm.timestamp >= ?2 AND sm.timestamp <= ?3 AND sm.movement_type = 'OUT' AND (dr.unit_id = ?4 OR sm.unit_id = ?4) ORDER BY sm.timestamp DESC LIMIT 1), ?5)",
-            rusqlite::params![product_id, month_start, month_end, unit_id, default_val],
+            rusqlite::params![product_id, month_start, month_end, unit_id, default_val_scaled],
             |row| row.get(0),
         )?;
-        Ok(closing)
+        Ok(numeric_row::qty_scaled_i64_to_f64(closing)?)
     }
 
     // INTENTIONAL: uses timestamp ranges instead of fiscal_year.
@@ -334,16 +363,21 @@ impl<'a> InventoryRepository<'a> {
         total_out: f64,
         computed_closing: f64,
         reported_closing: f64,
-        variance: f64,
+        variance_scaled: i64,
         has_balance_anomaly: bool,
         avg_consumption_3months: Option<f64>,
         has_consumption_anomaly: bool,
         is_stale: bool,
         computed_at: &str,
     ) -> Result<(), AppError> {
+        let opening_stock_scaled = numeric_row::qty_scaled(opening_stock)?;
+        let total_in_scaled = numeric_row::qty_scaled(total_in)?;
+        let total_out_scaled = numeric_row::qty_scaled(total_out)?;
+        let computed_closing_scaled = numeric_row::qty_scaled(computed_closing)?;
+        let reported_closing_scaled = numeric_row::qty_scaled(reported_closing)?;
         self.executor.execute(
             "INSERT OR REPLACE INTO unit_monthly_snapshots (id, unit_id, unit_name, report_year, report_month, product_id, product_name, opening_stock, total_in, total_out, computed_closing, reported_closing, variance, has_balance_anomaly, avg_consumption_3months, has_consumption_anomaly, is_stale, computed_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
-            rusqlite::params![snapshot_id, unit_id, unit_name, year, month, product_id, product_name, opening_stock, total_in, total_out, computed_closing, reported_closing, variance, has_balance_anomaly as i32, avg_consumption_3months, has_consumption_anomaly as i32, is_stale as i32, computed_at],
+            rusqlite::params![snapshot_id, unit_id, unit_name, year, month, product_id, product_name, opening_stock_scaled, total_in_scaled, total_out_scaled, computed_closing_scaled, reported_closing_scaled, variance_scaled, has_balance_anomaly as i32, avg_consumption_3months, has_consumption_anomaly as i32, is_stale as i32, computed_at],
         )?;
         Ok(())
     }
@@ -381,12 +415,12 @@ impl<'a> InventoryRepository<'a> {
                 report_month: row.get(4)?,
                 product_id: row.get(5)?,
                 product_name: row.get(6)?,
-                opening_stock: row.get(7)?,
-                total_in: row.get(8)?,
-                total_out: row.get(9)?,
-                computed_closing: row.get(10)?,
-                reported_closing: row.get(11)?,
-                variance: row.get(12)?,
+                opening_stock: numeric_row::qty_col(7, row.get::<_, i64>(7)?)?,
+                total_in: numeric_row::qty_col(8, row.get::<_, i64>(8)?)?,
+                total_out: numeric_row::qty_col(9, row.get::<_, i64>(9)?)?,
+                computed_closing: numeric_row::qty_col(10, row.get::<_, i64>(10)?)?,
+                reported_closing: numeric_row::qty_col(11, row.get::<_, i64>(11)?)?,
+                variance: numeric_row::signed_qty_col(12, row.get::<_, i64>(12)?)?,
                 has_balance_anomaly: row.get::<_, i32>(13)? != 0,
                 avg_consumption_3months: row.get(14)?,
                 has_consumption_anomaly: row.get::<_, i32>(15)? != 0,
@@ -435,10 +469,10 @@ impl<'a> InventoryRepository<'a> {
                 |r| {
                     Ok((
                         r.get::<_, String>(0)?,
-                        r.get::<_, f64>(1)?,
-                        r.get::<_, f64>(2)?,
-                        r.get::<_, f64>(3)?,
-                        r.get::<_, f64>(4)?,
+                        numeric_row::qty_col(1, r.get::<_, i64>(1)?)?,
+                        numeric_row::qty_col(2, r.get::<_, i64>(2)?)?,
+                        numeric_row::qty_col(3, r.get::<_, i64>(3)?)?,
+                        numeric_row::qty_col(4, r.get::<_, i64>(4)?)?,
                     ))
                 },
             )
@@ -446,7 +480,10 @@ impl<'a> InventoryRepository<'a> {
     }
 
     pub fn get_total_inventory_value(&self) -> Result<f64, AppError> {
-        let total: f64 = self
+        // Scaled-2 Money aggregate: SUM(qty_scaled * unit_cost_scaled) equals
+        // value_DA × 100000; `/1000` with MidpointAwayFromZero yields centimes,
+        // entirely in exact INTEGER arithmetic (see numeric_row::money_sum_col).
+        let sum: i64 = self
             .executor
             .query_row(
                 r#"
@@ -457,7 +494,7 @@ impl<'a> InventoryRepository<'a> {
                 [],
                 |r| r.get(0),
             )
-            .unwrap_or(0.0);
-        Ok(total)
+            .map_err(AppError::from)?;
+        Ok(numeric_row::money_sum_col(sum)?)
     }
 }

@@ -86,7 +86,6 @@ impl CredentialGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::super::transport_guard::{TransportGuard, TransportVerdict};
     use super::*;
 
     #[test]
@@ -170,13 +169,9 @@ mod tests {
     }
 
     #[test]
-    fn rfc_342_example_rollback_rejected_despite_valid_transport() {
-        // Package 402 arrives in perfect transport order (last applied = 401) but carries
-        // Credential X Generation 8 while the stored generation is 9. The Credential Guard
-        // rejects it even though the Transport Guard accepts the ordering.
-        let transport = TransportGuard::check("issuer-a", 402, Some(401));
-        assert!(matches!(transport, TransportVerdict::Accept { .. }));
-
+    fn rfc_342_example_rollback_rejected() {
+        // Package carrying Credential X Generation 8 while the stored generation
+        // is 9. The Credential Guard rejects it regardless of any ordering state.
         let credential = CredentialGuard::check("credential-x", 8, Some(9));
         assert_eq!(
             credential,

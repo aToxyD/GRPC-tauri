@@ -3,6 +3,22 @@
 # Status
 Accepted (2026-08-08)
 
+**Amended 2026-08-19 (§11 — Post-Provisioning Startup Model, SEC-013 Phase 0):**
+the post-provisioning startup model is ratified (non-interactive App-Key
+resolution before Login; user authentication remains mandatory). The OS
+secret-storage / keyring resolution source is documented as a **proposed
+future amendment — NOT yet approved**; implementation requires a separate
+approved architecture decision. All certified sections (§1–§10) remain
+unchanged.
+
+**Amended 2026-08-20 (§11.4 — OS secret storage / keyring, SEC-013 Phase 2):**
+the OS secret-storage / keyring App-Key source is **implemented and approved**
+per the constraints ratified in §11.4 below (provider abstraction, resolution
+rank, operator consent, deletion, failure semantics, unlock ≠ authentication,
+no `appkey.age` format change, no new `age::scrypt` site, env precedence
+preserved). All other certified sections (§1–§10, §11.1–11.3, §11.5) remain
+unchanged.
+
 # Date
 2026-08-08
 
@@ -126,12 +142,22 @@ is a deliberate contract amendment, not an `[arch:allow-*]` exception.
 - Generation requires a strong passphrase (minimum length enforced at the boundary;
   policy mirrors `.adminkey`).
 
-## 7. Optional offline backup export
+## 7. Optional offline portable export (`grpc-app-key.age`)
 
 - On first `initialize_app_key`, the operator may **opt-in** to export the raw identity
   once, to a destination they choose, with an explicit warning that anyone with the
   exported key can decrypt node data. No automatic export, no persistence of the raw key,
   no inclusion in provisioning packages.
+- This export is the **portable provisioning artifact** conventionally named
+  `grpc-app-key.age`. It contains the **raw plaintext** `AGE-SECRET-KEY-1...` App Key:
+  the `.age` extension does NOT mean the artifact is itself age-encrypted.
+- `grpc-app-key.age` is **not** the node-local store `appkey.age` (§2) and is **not**
+  subject to the store's `0600` filesystem invariant. It is an operator-controlled
+  interchange artifact; its security boundary is operator custody and trusted offline
+  transfer (§10.6), not file permissions.
+- WILAYA is the parent node and operational source of the fleet App Key; UNIT nodes
+  obtain the shared value from this artifact (currently via `GRPC_APP_KEY`, §10.3)
+  rather than independently generating a divergent key.
 
 ## 8. Failure semantics (fail-closed)
 
@@ -152,8 +178,134 @@ pre-auth lifecycle):
 
 - `get_security_status` → `{ provisioned, unlocked, store_path, source }`
 - `initialize_app_key(passphrase, export_backup?)` → `AppKeyInitializeResult`
+- `import_app_key(passphrase, artifact_path)` → `AppKeyImportResult` (fleet
+  artifact import, APPKEY-003 Design B; ratified in §10.4)
 - `unlock_app_key(passphrase)` → `AppKeyUnlockResult`
 - `export_app_key_backup()` → guarded re-export path (requires unlocked state)
+
+## 10. Interchange Encryption Key Scope (WILAYA ↔ UNIT bootstrap) — Model C
+
+> Decision record for the previously open App Key interchange question
+> (ADR-0044 §12 / A44-13): the current architecture resolves it as **Model C**
+> — a shared App Key between WILAYA and its UNIT fleet. This section is the
+> canonical scope definition.
+
+### 10.1 Confidentiality root, not identity/signing credential
+
+- The App Key (`age::x25519` identity) is an **encryption / confidentiality
+  root only**. It carries no node identity, no authorization, and no signing
+  authority.
+- It MUST NOT be treated as an Ed25519 signing credential. Package authenticity
+  is bound to node identity (`signature_version = 2`, RFC
+  `2026-08-04-node-identity-trust`), the WILAYA trust anchor, and the Root
+  chain — never to the App Key.
+- The App Key and the retired `GRPC_PACKAGE_SIGNING_KEY` remain unrelated
+  secrets (ADR-0044 §12 / ADR-0045 §22.2): no derivation, no shared root.
+  (SEC-008/ADR-0048: the signing key was removed entirely — package signing
+  is identity-bound Ed25519; this clause is historical.)
+
+### 10.2 Shared key requirement (bootstrap)
+
+- `.unit` and all encrypted interchange use the **exporter's** App Key
+  (`file_encryption.rs`, `AgeFileEncryptionProvider`), not a recipient-targeted
+  key. There is no recipient-targeted encryption mechanism in the current
+  architecture.
+- Consequently, WILAYA ↔ UNIT bootstrap **requires the same App Key material**
+  on the WILAYA node and the intended UNIT fleet: the shared value is what
+  decrypts the `.unit` package (and every encrypted `.sync` / backup artifact).
+- Recipient-targeted encryption (B5) remains a **future** architectural
+  decision for post-bootstrap packages; it is NOT implemented here.
+
+### 10.3 Approved deployment/bootstrap mechanism: `GRPC_APP_KEY`
+
+- WILAYA is the **parent node** and the operational source of fleet security: it holds
+  the fleet App Key and provisions it to UNIT child nodes. UNIT nodes do not
+  independently generate a different App Key for `.unit` provisioning.
+- The approved mechanism for supplying the shared value is the **`GRPC_APP_KEY`
+  environment variable** (rank 1 in the resolution hierarchy, §1), set by the
+  operator to the **same** valid `age` identity on the WILAYA node and every
+  target UNIT at deployment/bootstrap time. As a project-native convenience,
+  `import_app_key` (§9, §10.4) imports the same value from the portable
+  artifact into a fresh local store — the store remains rank 2 in the
+  resolution hierarchy.
+- The operator-controlled value is typically the one-time **portable provisioning
+  artifact** `grpc-app-key.age` (§7) exported from the WILAYA node — raw plaintext
+  App-Key material, carried on the same trusted offline channel as the provisioning
+  ceremony.
+- The store (`appkey.age`) remains the primary path for interactive single-node
+  onboarding (§1 rank 2); `GRPC_APP_KEY` is the fleet-deployment path.
+
+### 10.4 Prohibited operations
+
+- **Copying `appkey.age` between nodes is PROHIBITED.** The store is a
+  passphrase-protected node-local artifact (§2); it is not an interchange
+  vehicle. Interchange uses the approved `GRPC_APP_KEY` mechanism (§10.3) or
+  the ratified `import_app_key` command (below).
+- **`import_app_key` (APPKEY-003, Design B — ratified amendment)** is the
+  project-native provisioning command for the fleet path: it reads the
+  WILAYA-sourced portable artifact `grpc-app-key.age` (§7) on the backend
+  (the renderer sends only the artifact path), validates it (extension
+  `age`/`key`/`txt`, 64 KiB cap, single line, `AGE-SECRET-KEY-1` prefix),
+  wraps the App Key with the operator passphrase into a **fresh** local
+  `appkey.age` store via the standard `AppKeyStore` write path (scrypt +
+  atomic write + `0600`), primes the runtime cache, and runs the deferred
+  DB bootstrap (`finish_unlock`). Constraints:
+  - Refuses in ALL cases when `appkey.age` already exists — existing stores
+    are never overwritten, replaced, rotated, or deleted; the local
+    generation path (`initialize_app_key`) and the import path are mutually
+    exclusive per node.
+  - The artifact is never modified, renamed, or deleted; no `0600` is applied
+    to it (plaintext portable-artifact semantics, §10.4 artifact
+    distinction); its raw value never crosses IPC, the DOM, or logs.
+  - Import is confidentiality/decryption material provisioning only — it
+    introduces no identity, trust, signing, or B8 semantics (no role
+    detection, no UNIT-only authorization, no import for identity/certs/
+    trust/`.unit`).
+  - The `GRPC_APP_KEY` resolution rank (env rank 1, §1) is unchanged: while
+    the env var is set, it wins over the imported store; an imported store is
+    inert until then.
+- **Artifact distinction (authoritative)**: `appkey.age` (node-local protected
+  store) and `grpc-app-key.age` (portable plaintext provisioning/export artifact)
+  are NOT the same kind of artifact. The portable artifact is intentionally
+  plaintext App-Key material; its `.age` extension does not imply encryption, it
+  is NOT a node-local credential store, and no mandatory `0600` filesystem
+  invariant applies to it. The `0600` requirement applies to the local
+  `appkey.age` store only and is unchanged.
+
+### 10.5 Node binding (operational, not cryptographic)
+
+- App Key equality **cannot be cryptographically node-bound**: the `age`
+  x25519 identity carries no node identity, so the app cannot prove "this key
+  belongs to this node". Enforcement is operational:
+  - same operator-controlled value supplied consistently to WILAYA and the
+    intended UNIT fleet (§10.3);
+  - mismatched keys surface as undecryptable material (fail-closed, §8);
+  - operator-custody rules (below).
+
+### 10.6 Operational controls
+
+- Operator custody: the shared key is operator-managed and operator-carried; it
+  is never written into source, never committed to git, never logged by CI, and
+  never included in provisioning packages (§7).
+- The portable artifact `grpc-app-key.age` is **plaintext**: possession of the
+  artifact exposes the fleet App Key. Its security depends on operator custody,
+  trusted offline transfer, avoiding Git/CI/public/untrusted storage, limiting
+  unnecessary copies, and deleting temporary copies when provisioning is
+  complete where operationally appropriate. Filesystem mode is NOT the primary
+  security boundary for this artifact; no `0600` invariant is imposed on it.
+- The node-local `appkey.age` store keeps its protected handling: file mode
+  `0600`, atomic writes (§2), secrets only via environment / protected secret
+  storage.
+- The same value must be supplied consistently to WILAYA and the intended UNIT
+  fleet; divergent per-node values produce fail-closed decryption failures.
+
+### 10.7 Scope exclusions
+
+- App Key **rotation is outside the current scope** (as in §"Out of scope").
+- Recipient-targeted encryption (B5) and any `.unit` / package format change are
+  out of scope for this decision.
+- The Ed25519 trust chain, the WILAYA trust anchor, and the B8 anchor-first
+  gate are unchanged by this decision.
 
 ### 10.8 Packaged-identity exception — UNIT node secret transport (2026-08-15)
 
@@ -178,6 +330,159 @@ explicit exception for the **packaged UNIT identity**:
   credential; the packaged UNIT certificate is Ed25519-authenticated via the
   WILAYA trust anchor (RFC §3.10), independent of the App Key.
 
+## 11. Post-Provisioning Startup Model — Amendment (2026-08-19, SEC-013 Phase 0)
+
+> Amendment synchronized with ADR-0050 (WILAYA Admin normal authentication
+> model) and the SEC-013 analysis. Architectural ratification only —
+> implementation is NOT AUTHORIZED by this amendment.
+
+### 11.1 Approved target startup model
+
+For a provisioned node (WILAYA or UNIT), the intended post-provisioning
+startup is:
+
+```
+application start
+    ↓
+App-Key resolves non-interactively (approved resolver)
+    ↓
+runtime bootstrap (deferred-bootstrap sequence runs)
+    ↓
+Login screen
+    ↓
+username + password
+    ↓
+local CurrentSession
+```
+
+- **Normal user authentication remains mandatory.** Automatic login is never
+  part of this model; no App-Key material ever authenticates a user.
+- The interactive App-Key passphrase prompt is eliminated from **normal
+  post-provisioning startup only**. Recovery, first provisioning, and
+  fail-closed flows (§8) are unchanged and may require the passphrase.
+- `appkey.age` format, `age::scrypt` wrapping, atomic write semantics,
+  `0600` permissions, fail-closed behavior, and all approved recovery
+  mechanisms (§8, §10.3, §10.4) are unchanged.
+
+### 11.2 Approved lifecycle states
+
+```
+UNPROVISIONED
+    ↓
+initial App-Key setup/import (initialize_app_key / import_app_key)
+    ↓
+PROVISIONED
+    ↓
+App-Key available through the approved resolver
+    ↓
+runtime bootstrap
+    ↓
+LOGIN (username + password)
+    ↓
+local CurrentSession
+```
+
+If App-Key resolution fails:
+
+```
+startup
+    ↓
+locked state (DB bootstrap deferred, §5)
+    ↓
+existing recovery/unlock flow (§4 UnlockFailed / §8 fail-closed)
+```
+
+### 11.3 Security invariants (normative)
+
+I1. App-Key unlock ≠ authentication.
+I2. App-Key resolution ≠ session creation.
+I3. User login remains mandatory after App-Key resolution.
+I4. App-Key plaintext MUST NOT be persisted in ordinary files or the database.
+I5. `appkey.age` remains the protected-at-rest artifact (scrypt, atomic, `0600`).
+I6. Fail-closed behavior remains (wrong passphrase / corrupt store / mismatched
+    key → locked or undecryptable material, §8).
+I7. Recovery remains possible through existing approved mechanisms (env
+    override, portable artifact import, guarded re-export).
+I8. No user password is used as a replacement App-Key root unless an
+    independently approved architecture decision explicitly says so.
+I9. No App-Key material is transported between WILAYA and UNIT as part of
+    authentication/session state.
+I10. Session portability remains forbidden.
+
+### 11.4 OS secret storage / keyring — IMPLEMENTED / APPROVED (2026-08-20, SEC-013 Phase 2)
+
+The repository's certified architecture (§1 resolution order: env → unlocked
+store cache → dev fallback → fail-closed) is **extended** by an OS keyring
+source at rank 2. §10.6 ("secrets only via environment / protected secret
+storage") is satisfied: the OS keyring is a protected secret-storage backend,
+and the store's custody class is unchanged.
+
+Approved resolution order (normative, fixed):
+
+```
+environment override (GRPC_APP_KEY — rank 1, unchanged, terminal when present)
+    ↓
+OS secret storage / keyring (rank 2 — implemented)
+    ↓
+in-memory unlocked state (existing cache, rank 3, unchanged)
+    ↓
+development fallback (debug only, rank 4, unchanged)
+    ↓
+fail closed (rank 5, unchanged)
+```
+
+Implementation contract (normative):
+
+- **Provider abstraction** — `domain/ports/secret_storage.rs` defines
+  `SecretStoragePort` (`get_secret` / `set_secret` / `delete_secret`).
+  `infrastructure/security/keyring_secret_storage.rs` supplies the concrete
+  OS provider (`keyring` crate, target-specific features: Linux = Secret
+  Service over DBus with pure-Rust transport encryption, Windows/macOS =
+  native stores; no default features). The domain port remains
+  infrastructure-agnostic; the application layer consumes the port.
+- **Namespace** — service `dz-grpc`, account `app-key`. The stored value is
+  the validated decrypted App Key only; no username, password, session,
+  database content, node credential, or authentication state is ever stored.
+- **Consent (opt-in)** — remember-on-device defaults to `false` on
+  `initialize_app_key` / `import_app_key` / `unlock_app_key`. Persistence
+  occurs only after the App Key is validated (full `age::x25519` parse) and
+  the operation succeeds; it is best-effort and never rolls back an unlock.
+- **Deletion** — `forget_remembered_app_key` removes only the `dz-grpc`
+  `app-key` entry. `appkey.age`, the database, identities, users, sessions,
+  and provisioning state are untouched.
+- **Failure semantics** — absent entry → next rank; store unavailable →
+  rank skipped (interactive unlock / fail-closed path unchanged); malformed
+  or unusable stored value → rejected, never accepted, no plaintext fallback.
+- **Unlock ≠ authentication** — the keyring NEVER creates a user session,
+  NEVER identifies the user as Admin, NEVER bypasses Login, NEVER authorizes
+  commands, and NEVER replaces username + password authentication. Startup
+  always lands on the Login screen; the keyring source merely removes the
+  manual App-Key unlock step.
+- **No format change** — `appkey.age` on-disk format, at-rest encryption,
+  and the passphrase unlock path are unchanged. No new `age::scrypt` site is
+  introduced (ADR-0039 two-tier protection unchanged).
+- **Env precedence preserved** — an explicitly supplied but invalid
+  `GRPC_APP_KEY` remains terminal (rank 1 fail-closed; the keyring is never
+  consulted when the environment variable is present).
+- **Deterministic testing** — the resolver and remember/forget cores are
+  port-parameterized; a TEST-ONLY provider override
+  (`install_test_keyring_port`, default = real provider, never used by
+  application code) lets integration tests drive rank-2 resolution through an
+  in-memory fake. Tests never depend on — and never write to — the machine's
+  ambient desktop keyring.
+- **E2E limitation** — headless CI cannot exercise a live desktop keyring;
+  E2E coverage of the keyring source is therefore documented as environment-
+  dependent and excluded from the deterministic gate; the resolver precedence
+  is fully covered by the deterministic unit/integration layer above.
+
+### 11.5 Relationship to ADR-0050
+
+App-Key resolution remains strictly separated from user authentication
+(§11.3 I1–I3). ADR-0050 governs which credential authenticates the user after
+startup (username + password on WILAYA and UNIT; `.adminkey` reserved for
+recovery/high-assurance); this section governs how the App-Key becomes
+available before Login. The two decisions are independent by design.
+
 # Consequences
 
 - A clean release node reaches a UI on first run and can be provisioned in-product;
@@ -193,7 +498,8 @@ explicit exception for the **packaged UNIT identity**:
 
 # Out of scope
 
-- `GRPC_PACKAGE_SIGNING_KEY` provisioning — stays env-only, lazy-resolved, fleet secret.
+- `GRPC_PACKAGE_SIGNING_KEY` provisioning — removed entirely by ADR-0048
+  (SEC-008); no shared signing secret exists. (Historical scope clause.)
 - Key rotation (ADR-0006 scope) — this ADR provisions the first key only.
 - Changing `AgeFileEncryptionProvider` encryption semantics (x25519 unchanged).
 - Any change to `grpc-licensing` (addressed separately by ADR-0042).

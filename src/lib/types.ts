@@ -39,29 +39,43 @@ export interface NodeConfiguration {
 }
 
 // Product Types
+/** SEC-087 Phase 6D: `list_products`/`get_product` return the backend product
+ *  read projection (`ProductRead`) which includes the unit/TVA configuration
+ *  codes. All four codes are authoritative numbers supplied by the backend. */
 export interface Product {
   id: string;
   name: string;
   base_price: number;
-  tva: number;
-  supplier_name: string | null;
   year: number;
   created_at: string;
+  // UnitMeasure wire codes 1..=10 (see `domain/units.rs`).
+  purchase_unit: number;
+  consumption_unit: number;
+  // Integer purchase→consumption factor (1 when units match).
+  conversion_factor: number;
+  // TvaClassification wire code 0..=2 (see `domain/units.rs`).
+  tva_classification: number;
+  // Authoritative percent-domain TVA rate (`Rate`), backend-derived from the
+  // product fiscal classification — SEC-087 Task 2. Display verbatim; never map
+  // `tva_classification` codes to percentages here.
+  tva_rate: number;
 }
 
 export interface CreateProductRequest {
   name: string;
   base_price: number;
-  tva: number;
-  supplier_name: string | null;
+  // SEC-087 Phase 6D: unit/TVA configuration is mandatory for newly created
+  // Products (validated fail-closed by the backend validator).
+  purchase_unit: number;
+  consumption_unit: number;
+  conversion_factor: number;
+  tva_classification: number;
 }
 
 export interface UpdateProductRequest {
   id: string;
   name: string;
   base_price: number;
-  tva: number;
-  supplier_name: string | null;
 }
 
 // Unit Types
@@ -77,7 +91,6 @@ export interface Unit {
 export interface CreateUnitRequest {
   code: string;
   name: string;
-  username: string;
   password: string;
 }
 
@@ -89,6 +102,9 @@ export interface InventoryStock {
   quantity: number;
   unit: string;
   last_updated: string;
+  /** SEC-087 Phase 6C: consumption-unit key of the stock row — the inventory
+   *  identity unit (REQUIRED, NOT NULL in the schema; no legacy NULL-keyed row). */
+  consumption_unit: number;
 }
 
 export interface StockCheckResult {
@@ -104,11 +120,14 @@ export interface StockCheckResult {
 export interface SupplierOrder {
   id: string;
   order_date: string;
+  supplier_id: string;
   supplier_name: string;
   reference_number: string | null;
   total_amount: number | null;
-  status: 'Draft' | 'Confirmed' | 'Received' | 'Cancelled';
+  status: 'Draft' | 'Confirmed';
   created_at: string;
+  unit_id?: string | null;
+  fiscal_year?: number | null;
 }
 
 export interface SupplierOrderItem {
@@ -116,20 +135,28 @@ export interface SupplierOrderItem {
   order_id: string;
   product_id: string;
   product_name: string;
+  // Purchase quantity (the agreed contract unit).
   quantity: number;
+  // TTC price per purchase unit.
   unit_price: number;
   total_cost: number;
+  unit_id?: string | null;
+  fiscal_year?: number | null;
+  // SEC-087 Phase 5: purchase-to-consumption unit snapshot (all-or-nothing).
+  purchase_unit?: number | null;
+  consumption_unit?: number | null;
+  conversion_factor?: number | null;
+  // Purchase amount expressed in consumption units at creation.
+  consumption_quantity?: number | null;
 }
 
 export interface CreateOrderRequest {
-  supplier_name: string;
   reference_number: string | null;
   items: OrderItemInput[];
 }
 
 export interface UpdateOrderRequest {
   id: string;
-  supplier_name: string;
   reference_number: string | null;
   items: OrderItemInput[];
 }
@@ -137,7 +164,179 @@ export interface UpdateOrderRequest {
 export interface OrderItemInput {
   product_id: string;
   quantity: number;
-  unit_price: number;
+}
+
+// Procurement Types (SEC-087-F / ADR-0055 — WILAYA-administered)
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_info: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface CreateSupplierRequest {
+  name: string;
+  contact_info: string | null;
+}
+
+export interface UpdateSupplierRequest {
+  id: string;
+  name: string;
+  contact_info: string | null;
+}
+
+export interface SetSupplierActiveRequest {
+  supplier_id: string;
+  active: boolean;
+}
+
+export interface AssociateUnitSupplierRequest {
+  unit_id: string;
+  supplier_id: string;
+}
+
+export type ContractStatus =
+  | 'Proposed'
+  | 'Accepted'
+  | 'Active'
+  | 'Ended'
+  | 'Cancelled';
+
+export interface Contract {
+  id: string;
+  contract_reference: string;
+  unit_id: string;
+  supplier_id: string;
+  fiscal_year: number;
+  status: ContractStatus;
+  proposed_at: string | null;
+  accepted_at: string | null;
+  activated_at: string | null;
+  ended_at: string | null;
+  cancelled_at: string | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface ContractProduct {
+  id: string;
+  contract_id: string;
+  product_id: string;
+  product_name: string;
+  proposed_price_ht: number;
+  agreed_price_ht: number | null;
+  // SEC-087 Phase 3: authoritative ordered-price snapshot persisted at
+  // agreement (backend ContractProduct projection — nullable until agreed).
+  tva_classification: number | null;
+  tva_rate: number | null;
+  tva_amount: number | null;
+  price_ttc: number | null;
+  purchase_unit: number | null;
+  consumption_unit: number | null;
+  conversion_factor: number | null;
+}
+
+export interface ContractAllocation {
+  id: string;
+  contract_id: string;
+  contract_product_id: string;
+  unit_id: string;
+  product_id: string;
+  fiscal_year: number;
+  contracted_quantity: number;
+  fulfilled_quantity: number;
+  released_quantity: number;
+  reserved_quantity: number;
+  entitlement_state: string;
+  version: number;
+  /** Backend-derived projection (A5) — never re-derived in the frontend. */
+  effective_remaining: number;
+}
+
+/** Read-only UNIT ContractCatalog entitlement projection (Phase 4).
+ *  All values (including `effective_remaining`) are returned authoritative from
+ *  the backend and MUST NOT be recomputed in the frontend (A5/P2). */
+export interface UnitContractEntitlement {
+  product_id: string;
+  product_name: string;
+  supplier_id: string;
+  supplier_name: string;
+  fiscal_year: number;
+  contracted_quantity: number;
+  fulfilled_quantity: number;
+  released_quantity: number;
+  reserved_quantity: number;
+  effective_remaining: number;
+  entitlement_state: string;
+  contract_status: string;
+  price_ttc: number | null;
+}
+
+export type ReleaseReasonCode =
+  | 'SupplierNonPerformance'
+  | 'SupplierDelay'
+  | 'ServiceContinuity'
+  | 'OtherAuthorized';
+
+export interface ContractAllocationException {
+  id: string;
+  allocation_id: string;
+  released_quantity: number;
+  reason_code: string;
+  reason_note: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CreateContractRequest {
+  unit_id: string;
+  supplier_id: string;
+  fiscal_year: number;
+  contract_reference: string;
+  notes: string | null;
+}
+
+export interface AddContractProductRequest {
+  contract_id: string;
+  product_id: string;
+  proposed_price_ht: number;
+  agreed_price_ht: number | null;
+  contracted_quantity: number;
+}
+
+export interface SetAgreedPriceHtRequest {
+  contract_product_id: string;
+  agreed_price_ht: number;
+}
+
+export interface ContractTransitionRequest {
+  contract_id: string;
+}
+
+export interface ReleaseContractAllocationRequest {
+  allocation_id: string;
+  released_quantity: number;
+  reason_code: ReleaseReasonCode;
+  reason_note: string | null;
+}
+
+export interface RevokeContractAllocationReleaseRequest {
+  exception_id: string;
+}
+
+// Fiscal-year TVA policy (single rate per fiscal year, WILAYA-owned)
+export interface FiscalYearTaxPolicy {
+  fiscal_year: number;
+  tva_rate: number;
+  frozen: boolean;
+  set_by: string;
+  created_at: string;
+}
+
+export interface SetTaxPolicyRequest {
+  fiscal_year: number;
+  tva_rate: number;
 }
 
 // Daily consumption report (one per date + unit, three meal sections)
@@ -364,17 +563,13 @@ export interface SystemMetrics {
   active_users: number;
 }
 
+// SEC-007 (ADR-0047) / SEC-008 (ADR-0048): V1/HMAC diagnostics fields and the
+// fiscal closure HMAC key fields were removed — package signing uses node
+// identities (Ed25519), never shared env secrets.
 export interface SyncSecurityDiagnostics {
   production_mode: boolean;
   has_app_key_env: boolean;
-  has_package_signing_key_env: boolean;
   bootstrap_would_fail: boolean;
-  active_signing_key_id: string;
-  accepted_verification_key_ids: string[];
-  deprecated_signing_key_ids: string[];
-  deprecation_deadline_utc: string | null;
-  enforce_trusted_signers: boolean;
-  trusted_signer_ids: string[];
 }
 
 export interface SyncPreflightCheck {
@@ -432,7 +627,16 @@ export interface StockMovementsImportResult {
 export interface IdentityAccessImportResult {
   admin_updated: boolean;
   user_updated: boolean;
-  user_renamed: boolean;
+  package_id: string;
+  imported_by: string;
+  timestamp: string;
+}
+
+// Admin-Only account synchronization result (admin_access, ADR-0051).
+// Carries synchronization status ONLY — never credential material; the UNIT
+// operator account is structurally out of scope for this kind.
+export interface AdminAccessImportResult {
+  admin_updated: boolean;
   package_id: string;
   imported_by: string;
   timestamp: string;
@@ -656,6 +860,15 @@ export interface InventoryStockPageView {
   total_inventory_value: number;
   total_products: number;
   total_active_layers: number;
+  /** SEC-087 Phase 5 advisory snapshot-coverage warnings (display only). */
+  warnings?: InventoryCoverageWarning[];
+}
+
+export interface InventoryCoverageWarning {
+  code: 'STOCK_WITHOUT_PURCHASE_SNAPSHOT' | 'PURCHASE_SNAPSHOT_WITHOUT_STOCK';
+  product_id: string;
+  product_name: string;
+  message: string;
 }
 
 // ─── Observability Types ──────────────────────────────────────────────────────
@@ -786,11 +999,13 @@ export interface FiscalClosurePackage {
   opened_year: number;
   closure_timestamp_utc: string;
   closure_authority_node_id: string;
+  issuer_identity_id: string;
   closure_authority_username: string;
   fiscal_transition_id: string;
   package_created_at: string;
   signing_key_id: string | null;
   authorized_execution_window: AuthorizedExecutionWindow;
+  package_fingerprint: string;
 }
 
 export interface FiscalClosurePreview {

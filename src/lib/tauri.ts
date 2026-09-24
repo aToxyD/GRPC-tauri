@@ -139,9 +139,11 @@ export async function checkStockAvailability(items: ConsumptionItemInput[]): Pro
 }
 
 // Orders
-export async function createSupplierOrder(request: CreateOrderRequest): Promise<{ orderId: string; totalAmount: number }> {
-  const [orderId, totalAmount] = await safeInvoke<[string, number]>('create_supplier_order', { request });
-  return { orderId, totalAmount };
+export type CreateOrderResult = { orderId: string; totalAmount: number };
+
+export async function createSupplierOrder(request: CreateOrderRequest): Promise<CreateOrderResult[]> {
+  const created = await safeInvoke<Array<[string, number]>>('create_supplier_order', { request });
+  return created.map(([orderId, totalAmount]) => ({ orderId, totalAmount }));
 }
 
 export async function confirmOrder(orderId: string): Promise<void> {
@@ -166,11 +168,6 @@ export async function getSupplierOrderItems(orderId: string): Promise<SupplierOr
 
 export async function listSupplierOrders(): Promise<SupplierOrder[]> {
   return await safeInvoke('list_supplier_orders');
-}
-
-export async function createOrder(request: CreateOrderRequest): Promise<{ orderId: string; totalAmount: number }> {
-  const [orderId, totalAmount] = await safeInvoke<[string, number]>('create_order', { request });
-  return { orderId, totalAmount };
 }
 
 // Daily Reports
@@ -239,10 +236,6 @@ export async function calculateMealRate(
     mission_count: missionCount,
     guest_count: guestCount,
   });
-}
-
-export async function calculateProductPriceWithTva(basePrice: number, tva: number): Promise<number> {
-  return await safeInvoke('calculate_product_price_with_tva', { basePrice, tva });
 }
 
 export async function getMonthlySummary(year: number, month?: number): Promise<MonthlySummary> {
@@ -353,11 +346,13 @@ export async function restoreBackup(
   backupPath: string,
   confirmation: string,
   executionToken: string,
+  olderStateConfirmation?: string | null,
 ): Promise<void> {
   return await safeInvoke('restore_backup', {
     backupPath,
     confirmation,
     executionToken,
+    olderStateConfirmation: olderStateConfirmation ?? null,
   });
 }
 
@@ -583,7 +578,7 @@ export async function updateFiscalPackageRetentionStatus(
   confirmation: string,
 ): Promise<void> {
   return await safeInvoke('update_fiscal_package_retention_status', {
-    transition_id: transitionId,
+    transitionId,
     status,
     confirmation,
   });

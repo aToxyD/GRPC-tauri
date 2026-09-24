@@ -5,16 +5,52 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Product definition with pricing
+/// Product definition with reference pricing only (ADR-0055 / SEC-087-F).
+/// `base_price` is `ReferencePrice`: informational/default, NEVER authoritative
+/// order pricing and NEVER a fallback when no contract agreed price exists.
+/// Product-level TVA and supplier ownership are removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
     pub id: String,
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
     pub year: i32,
     pub created_at: DateTime<Utc>,
+}
+
+/// Local read-projection of a [`Product`] plus its SEC-087 unit/TVA
+/// configuration (Phase 6D).
+///
+/// **LOCAL READ ONLY**: returned by the `get_product` / `list_products` IPC
+/// commands so the WILAYA Products UI can display the persisted configuration.
+/// It MUST NOT enter any sync, persistence, create/update/delete, FIFO, order,
+/// or domain contract: the V3 sync export keeps embedding the config-free
+/// [`Product`] inside [`crate::models::ProductExportRow`] and continues to use
+/// `ProductRepository::list_products()` unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductRead {
+    pub id: String,
+    pub name: String,
+    pub base_price: f64,
+    pub year: i32,
+    pub created_at: DateTime<Utc>,
+    /// Purchase-unit wire code (`UnitMeasure`, `1..=10`).
+    pub purchase_unit: i32,
+    /// Consumption-unit wire code (`UnitMeasure`, `1..=10`) — the keyed
+    /// inventory identity unit.
+    pub consumption_unit: i32,
+    /// Integer purchase→consumption factor (always `1` when units match).
+    pub conversion_factor: i32,
+    /// TVA classification wire code (`TvaClassification`, `0..=2`).
+    pub tva_classification: i32,
+    /// Authoritative numeric TVA rate in percent domain (`Rate`, `0.0..=100.0`);
+    /// e.g. 19% → `19.0`. Produced ONLY at the backend fiscal boundary via the
+    /// existing `rate_to_f64(&TvaClassification::rate())` conversion — the
+    /// single code→rate authority. The frontend must display this verbatim and
+    /// must never map `tva_classification` codes to percentages itself.
+    /// SEC-087 Phase 7 (Task 2): non-null projection derived from the product
+    /// fiscal classification, never persisted (no DB column, no migration).
+    pub tva_rate: f64,
 }
 
 /// Current inventory stock level for a product
@@ -26,6 +62,10 @@ pub struct InventoryStock {
     pub quantity: f64,
     pub unit: String,
     pub last_updated: DateTime<Utc>,
+    /// SEC-087 Phase 6C: consumption-unit key of the stock row — the inventory
+    /// identity unit (REQUIRED, NOT NULL in the schema; there is no legacy
+    /// NULL-keyed row).
+    pub consumption_unit: i32,
 }
 
 /// Request to create a new product
@@ -33,8 +73,15 @@ pub struct InventoryStock {
 pub struct CreateProductRequest {
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
+    /// SEC-087: purchase/consumption unit split, conversion factor and TVA
+    /// classification (wire integer codes; see `domain::units`). Absent codes
+    /// (`None`) are rejected fail-closed by the application validation layer
+    /// so no invalid product can be created. `UnitMeasure` codes `1..=10`,
+    /// `TvaClassification` codes `0..=2`.
+    pub purchase_unit: Option<i32>,
+    pub consumption_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
+    pub tva_classification: Option<i32>,
 }
 
 /// Request to update an existing product
@@ -43,8 +90,6 @@ pub struct UpdateProductRequest {
     pub id: String,
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
 }
 
 /// Stock availability check result
@@ -103,13 +148,38 @@ impl StockCheckResult {
     }
 }
 
-/// Helper for product export containing sync information
+/// Helper for product export containing sync information.
+///
+/// SEC-087 Phase 6B (ADR-0057 §3.4): the V3 Product sync record carries the
+/// WILAYA-authoritative unit/TVA configuration as wire codes
+/// (`UnitMeasure` `1..=10`, `TvaClassification` `0..=2`). The `Option` +
+/// `#[serde(default)]` shape is the deserializer shape-compatibility shim:
+/// a config-free 6A-era payload deserializes to `None` here and is rejected
+/// fail-closed by the semantic validator (`validate_product_units`) BEFORE any
+/// Product mutation. `convertion_factor` is an integer, and the purchase →
+/// consumption factor invariant is enforced by the domain validator, never
+/// normalized here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductExportRow {
     pub product: Product,
     pub updated_at: String,
     pub node_id: String,
     pub deleted: i32,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): purchase unit code.
+    #[serde(default)]
+    pub purchase_unit: Option<i32>,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): consumption unit
+    /// code — the keyed inventory identity unit.
+    #[serde(default)]
+    pub consumption_unit: Option<i32>,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): integer
+    /// purchase → consumption factor (`1` when the units match).
+    #[serde(default)]
+    pub conversion_factor: Option<i32>,
+    /// SEC-087 V3 config (REQUIRED, validated pre-mutation): TVA
+    /// classification code (`0..=2`).
+    #[serde(default)]
+    pub tva_classification: Option<i32>,
 }
 
 #[cfg(test)]

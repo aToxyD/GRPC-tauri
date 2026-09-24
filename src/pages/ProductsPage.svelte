@@ -4,6 +4,7 @@
   import { saveFile, openFile, showAsk } from '../lib/tauri';
   import { exportProductsPackage, importProductsPackage } from '../lib/contracts';
   import { listProducts, createProduct, updateProduct, deleteProduct, getSettings, exportProductsExcel } from '../lib/contracts';
+  import { unitLabel, UNIT_CODES } from '../lib/unitLabels';
   import type { Product, Settings, CreateProductRequest, UpdateProductRequest } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -16,7 +17,9 @@
   import AppDialog from '../lib/components/ui/AppDialog.svelte';
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const productsOp = createOperation({ scope });
@@ -35,9 +38,22 @@
   let success = $state('');
   // @category UiState
   let currentYear = $state(new Date().getFullYear());
+  // @category UiState
+  let productSearch = $state('');
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
+
+  // Search is presentation/filtering only — it narrows the product/prices list
+  // by product name and never alters product definitions or prices.
+  // @category UiState
+  let filteredProducts = $derived(
+    productSearch.trim()
+      ? products.filter((p) =>
+          p.name.toLowerCase().includes(productSearch.trim().toLowerCase())
+        )
+      : products
+  );
 
   // Form fields
   // @category TransientState
@@ -45,9 +61,40 @@
   // @category TransientState
   let basePrice = $state('');
   // @category TransientState
-  let tva = $state('');
+  let purchaseUnit = $state<number | ''>('');
   // @category TransientState
-  let supplierName = $state('');
+  let consumptionUnit = $state<number | ''>('');
+  // @category TransientState
+  let conversionFactor = $state<string>('1');
+  // @category TransientState
+  let tvaClassification = $state<number | ''>('');
+
+  // SEC-087 Phase 6D: presentation-only label maps for the backend TVA
+  // classification codes (TvaClassification 0..=2). Display only — canonical
+  // codes are the wire contract (A5/F3). Unit labels/codes come from
+  // ../lib/unitLabels.
+  const TVA_OPTIONS: { code: number; label: string }[] = [
+    { code: 0, label: 'معفى' },
+    { code: 1, label: '9 %' },
+    { code: 2, label: '19 %' },
+  ];
+  const TVA_LABELS: Record<number, string> = {
+    0: 'معفى',
+    1: '9 %',
+    2: '19 %',
+  };
+
+  // Same-unit config forces the conversion factor to 1 (domain rule).
+  // @category DerivedState
+  const unitsEqual = $derived(
+    purchaseUnit !== '' && consumptionUnit !== '' && purchaseUnit === consumptionUnit,
+  );
+
+  function syncConversionFactor() {
+    if (unitsEqual) {
+      conversionFactor = '1';
+    }
+  }
 
   onMount(async () => {
     await loadData();
@@ -71,8 +118,10 @@
     editingProduct = null;
     productName = '';
     basePrice = '';
-    tva = '0';
-    supplierName = '';
+    purchaseUnit = '';
+    consumptionUnit = '';
+    conversionFactor = '1';
+    tvaClassification = '';
     showModal = true;
     productsOp.error.set(null);
   }
@@ -81,8 +130,6 @@
     editingProduct = product;
     productName = product.name;
     basePrice = product.base_price.toString();
-    tva = product.tva.toString();
-    supplierName = product.supplier_name || '';
     showModal = true;
     productsOp.error.set(null);
   }
@@ -99,17 +146,30 @@
       return;
     }
 
-    await productsOp.run(async () => {
-      const price = parseFloat(basePrice);
-      const tvaValue = parseFloat(tva) || 0;
+    const price = parseFloat(basePrice);
+    if (!editingProduct) {
+      // SEC-087: unit/TVA config is mandatory for newly created products.
+      if (purchaseUnit === '' || consumptionUnit === '' || tvaClassification === '') {
+        productsOp.error.set('Veuillez sélectionner les unités et la classification TVA');
+        return;
+      }
+      const factor = parseInt(conversionFactor, 10);
+      if (!Number.isInteger(factor) || factor <= 0) {
+        productsOp.error.set('Le facteur de conversion doit être un entier supérieur à 0');
+        return;
+      }
+      if (purchaseUnit === consumptionUnit && factor !== 1) {
+        productsOp.error.set('Le facteur de conversion doit être 1 lorsque les unités sont identiques');
+        return;
+      }
+    }
 
+    await productsOp.run(async () => {
       if (editingProduct) {
         const request: UpdateProductRequest = {
           id: editingProduct.id,
           name: productName,
           base_price: price,
-          tva: tvaValue,
-          supplier_name: supplierName || null
         };
         await updateProduct(request);
         setSuccessWithTimeout('تم تحديث المنتج بنجاح');
@@ -117,8 +177,10 @@
         const request: CreateProductRequest = {
           name: productName,
           base_price: price,
-          tva: tvaValue,
-          supplier_name: supplierName || null
+          purchase_unit: Number(purchaseUnit),
+          consumption_unit: Number(consumptionUnit),
+          conversion_factor: parseInt(conversionFactor, 10),
+          tva_classification: Number(tvaClassification),
         };
         await createProduct(request);
         setSuccessWithTimeout('تم إنشاء المنتج بنجاح');
@@ -250,36 +312,53 @@
     {/if}
 
     <AppCard padding="none">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
+        <h3 class="font-semibold text-lg text-gray-800 dark:text-white">المنتجات والأسعار</h3>
+        <AppProductSearch bind:search={productSearch} />
+      </div>
+
       <AppTable
         loading={$loading}
-        empty={!$loading && products.length === 0}
+        empty={!$loading && filteredProducts.length === 0}
       >
         <svelte:fragment slot="empty">
-          <AppEmptyState
-            title="لا يوجد منتجات مسجلة لـ {currentYear}"
-            description="أنشئ أول منتج أو قم بالاستيراد."
-            icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-          >
-            <svelte:fragment slot="action">
-              <AppButton variant="primary" on:click={openCreateModal}>إنشاء أول منتج</AppButton>
-            </svelte:fragment>
-          </AppEmptyState>
+          {#if products.length > 0}
+            <AppEmptyState
+              title="لا توجد نتائج مطابقة"
+              description="لم يتم العثور على منتج مطابق لبحثك."
+              icon="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          {:else}
+            <AppEmptyState
+              title="لا يوجد منتجات مسجلة لـ {currentYear}"
+              description="أنشئ أول منتج أو قم بالاستيراد."
+              icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+            >
+              <svelte:fragment slot="action">
+                <AppButton variant="primary" on:click={openCreateModal}>إنشاء أول منتج</AppButton>
+              </svelte:fragment>
+            </AppEmptyState>
+          {/if}
         </svelte:fragment>
 
         <svelte:fragment slot="head">
           <th class="table-header">الاسم</th>
-          <th class="table-header">السعر الأساسي</th>
-          <th class="table-header">الضريبة %</th>
-          <th class="table-header">المورد</th>
+          <th class="table-header">السعر المرجعي</th>
+          <th class="table-header">وحدة الشراء</th>
+          <th class="table-header">وحدة الاستهلاك</th>
+          <th class="table-header">معامل التحويل</th>
+          <th class="table-header">TVA</th>
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
 
-        {#each products as product (product.id)}
+        {#each filteredProducts as product (product.id)}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{product.name}</td>
             <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
-            <td class="table-cell">{product.tva}%</td>
-            <td class="table-cell">{product.supplier_name || '-'}</td>
+            <td class="table-cell text-xs">{unitLabel(product.purchase_unit)}</td>
+            <td class="table-cell text-xs">{unitLabel(product.consumption_unit)}</td>
+            <td class="table-cell text-xs">×{product.conversion_factor}</td>
+            <td class="table-cell text-xs">{TVA_LABELS[product.tva_classification] ?? product.tva_classification}</td>
             <td class="table-cell text-left space-x-2 space-x-reverse">
               <AppButton variant="ghost" size="sm" on:click={() => openEditModal(product)} ariaLabel="تعديل">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -316,29 +395,72 @@
         bind:value={productName}
       />
 
-      <div class="grid grid-cols-2 gap-4">
-        <AppInput
-          id="basePrice"
-          label="السعر الأساسي (دج) *"
-          type="number"
-          placeholder="0.00"
-          bind:value={basePrice}
-        />
-        <AppInput
-          id="tva"
-          label="الضريبة (%)"
-          type="number"
-          placeholder="0"
-          bind:value={tva}
-        />
-      </div>
-
       <AppInput
-        id="supplierName"
-        label="المورد"
-        placeholder="اسم المورد (اختياري)"
-        bind:value={supplierName}
+        id="basePrice"
+        label="السعر المرجعي (دج) *"
+        type="number"
+        placeholder="0.00"
+        bind:value={basePrice}
       />
+      <AppAlert intent="info">
+        السعر المرجعي أساس قياسي فقط ولا يمثل سعر الشراء. أسعار الشراء الفعلية محددة في عقود التموين (agreed price) ضمن كتالوج العقود.
+      </AppAlert>
+
+      {#if editingProduct}
+        <AppAlert intent="info">
+          وحدات القياس وتصنيف TVA ثابتة بعد إنشاء المنتج ولا يمكن تعديلها في نموذج التعديل.
+        </AppAlert>
+      {/if}
+
+      {#if !editingProduct}
+        <AppSelect
+          id="purchaseUnit"
+          label="وحدة الشراء *"
+          bind:value={purchaseUnit}
+          required
+          on:change={syncConversionFactor}
+        >
+          <option value="">-- اختر وحدة الشراء --</option>
+          {#each UNIT_CODES as code}
+            <option value={code}>{unitLabel(code)}</option>
+          {/each}
+        </AppSelect>
+
+        <AppSelect
+          id="consumptionUnit"
+          label="وحدة الاستهلاك *"
+          bind:value={consumptionUnit}
+          required
+          on:change={syncConversionFactor}
+        >
+          <option value="">-- اختر وحدة الاستهلاك --</option>
+          {#each UNIT_CODES as code}
+            <option value={code}>{unitLabel(code)}</option>
+          {/each}
+        </AppSelect>
+
+        <AppInput
+          id="conversionFactor"
+          label="معامل التحويل *"
+          type="number"
+          min="1"
+          placeholder="1"
+          disabled={unitsEqual}
+          bind:value={conversionFactor}
+        />
+        {#if unitsEqual}
+          <AppAlert intent="info">
+            عندما تتطابق وحدة الشراء ووحدة الاستهلاك، يكون معامل التحويل 1.
+          </AppAlert>
+        {/if}
+
+        <AppSelect id="tvaClassification" label="تصنيف TVA *" bind:value={tvaClassification} required>
+          <option value="">-- اختر تصنيف TVA --</option>
+          {#each TVA_OPTIONS as opt}
+            <option value={opt.code}>{opt.label}</option>
+          {/each}
+        </AppSelect>
+      {/if}
     </div>
   </div>
 

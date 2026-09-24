@@ -2,6 +2,7 @@
   import AppInput from '../../lib/components/ui/AppInput.svelte';
   import AppTable from '../../lib/components/ui/AppTable.svelte';
   import AppEmptyState from '../../lib/components/ui/AppEmptyState.svelte';
+  import { unitLabel } from '../../lib/unitLabels';
   import type { MealType } from '../../lib/types';
   import type { ConsumptionProductRow } from './types';
 
@@ -51,6 +52,7 @@
     <AppTable caption="منتجات الوجبة">
       <svelte:fragment slot="head">
         <th class="table-header">المنتج</th>
+        <th class="table-header text-right">وحدة الاستهلاك</th>
         <th class="table-header text-right w-28">الكمية</th>
         <th class="table-header text-right w-36">
           {isPreview ? 'تكلفة الوحدة (FIFO)' : 'تكلفة الوحدة'}
@@ -68,6 +70,11 @@
               <span class={row.stock < 10 ? 'text-red-600 font-semibold' : 'text-green-600 dark:text-green-400'}>
                 {row.stock.toFixed(2)}
               </span>
+            </span>
+          </td>
+          <td class="table-cell text-right">
+            <span class="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
+              {unitLabel(row.product.consumption_unit)}
             </span>
           </td>
           <td class="table-cell text-right">

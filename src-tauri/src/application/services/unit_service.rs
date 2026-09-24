@@ -11,6 +11,12 @@ use uuid::Uuid;
 
 use crate::domain::security::PasswordHashPort;
 
+/// Canonical UNIT operator username (ADR-0052). Every UNIT operator account
+/// is named `user`; uniqueness is node-scoped to the unit code, so operators
+/// of different units coexist. The value is derived server-side and is never
+/// caller-supplied.
+pub const OPERATOR_USERNAME: &str = "user";
+
 /// Service for unit management business logic
 pub struct UnitService<'a> {
     executor: DbExecutor<'a>,
@@ -26,7 +32,11 @@ impl<'a> UnitService<'a> {
         }
     }
 
-    /// Create a unit with its associated user.
+    /// Create a unit with its associated operator account.
+    ///
+    /// ADR-0052: the operator username is the canonical [`OPERATOR_USERNAME`]
+    /// (`user`), persisted with `node_id = code` — one operator per unit,
+    /// many across the fleet, independent node-bound password hashes.
     ///
     /// The password is hashed node-bound to the unit code.
     /// The caller is responsible for wrapping in a transaction:
@@ -52,7 +62,7 @@ impl<'a> UnitService<'a> {
         let now = Utc::now().to_rfc3339();
         user_repo.upsert_user(
             &user_id,
-            &req.username,
+            OPERATOR_USERNAME,
             &password_hash,
             UserRole::User,
             node_id,
@@ -77,12 +87,14 @@ impl<'a> UnitService<'a> {
         Ok((unit, user_id))
     }
 
-    /// Update unit info and its associated user credentials.
+    /// Update unit info and rotate its operator password.
     ///
     /// Business rules:
     /// - Update code/name always
-    /// - Update username of associated user always (if user exists)
-    /// - Update password only if non-empty
+    /// - Rotate the operator password only if non-empty (via `unit.user_id`)
+    ///
+    /// ADR-0052: there is NO username mutation capability — the canonical
+    /// operator username is structurally immutable.
     pub fn update_unit(&self, unit_id: &str, req: &CreateUnitRequest) -> Result<Unit, AppError> {
         let user_repo = self.executor.users();
         let unit_repo = self.executor.units();
@@ -91,23 +103,17 @@ impl<'a> UnitService<'a> {
         let now = Utc::now().to_rfc3339();
         unit_repo.update_unit(unit_id, &req.code, &req.name, &now)?;
 
-        // Update associated user if exists
+        // Rotate the associated operator's password if a new one is provided.
+        // The username is never touched (ADR-0052).
         if let Some(user_id) = unit_repo.get_unit_user_id(unit_id)? {
-            if user_repo.get_user_by_id(&user_id)?.is_some() {
-                // Update username
+            if !req.password.is_empty() && user_repo.get_user_by_id(&user_id)?.is_some() {
+                let node_id = &req.code;
+                let password_hash = self
+                    .password_port
+                    .hash_node(&req.password, node_id)
+                    .map_err(crate::errors::AppError::Internal)?;
                 let now = Utc::now().to_rfc3339();
-                user_repo.update_username(&user_id, &req.username, &now)?;
-
-                // Update password only if a new one is provided
-                if !req.password.is_empty() {
-                    let node_id = &req.code;
-                    let password_hash = self
-                        .password_port
-                        .hash_node(&req.password, node_id)
-                        .map_err(crate::errors::AppError::Internal)?;
-                    let now = Utc::now().to_rfc3339();
-                    user_repo.change_password(&user_id, &password_hash, &now)?;
-                }
+                user_repo.change_password(&user_id, &password_hash, &now)?;
             }
         }
 

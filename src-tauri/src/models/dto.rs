@@ -268,11 +268,14 @@ pub struct RegistryPackageImportResult {
     pub timestamp: String,
 }
 
+/// Result of an `admin_access` package import (ADR-0051).
+///
+/// Contains no credential material — only synchronization status metadata.
+/// The UNIT operator account is never part of this result: the kind cannot
+/// touch it by construction.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct IdentityAccessPackageImportResult {
+pub struct AdminAccessPackageImportResult {
     pub admin_updated: bool,
-    pub user_updated: bool,
-    pub user_renamed: bool,
     pub package_id: String,
     pub imported_by: String,
     pub timestamp: String,
@@ -309,34 +312,37 @@ pub struct UnitNodePackageImportResult {
     pub success: bool,
 }
 
+/// Live sync/security diagnostics (SEC-007 ADR-0047 / SEC-008 ADR-0048).
+///
+/// V1/HMAC fields (accepted/deprecated verification keys, trusted signers,
+/// deprecation deadline) were removed with the V1 sync-package machinery, and
+/// the fiscal closure HMAC key fields (`has_package_signing_key_env` /
+/// `active_signing_key_id`) were removed with the Ed25519 migration — package
+/// signing now uses node identities, never shared env secrets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSecurityDiagnostics {
     pub production_mode: bool,
     pub has_app_key_env: bool,
-    pub has_package_signing_key_env: bool,
     pub bootstrap_would_fail: bool,
-    pub active_signing_key_id: String,
-    pub accepted_verification_key_ids: Vec<String>,
-    pub deprecated_signing_key_ids: Vec<String>,
-    pub deprecation_deadline_utc: Option<String>,
-    pub enforce_trusted_signers: bool,
-    pub trusted_signer_ids: Vec<String>,
 }
 
 // ============================================================================
 // Application-key provisioning (ADR-0041)
 // ============================================================================
 
-/// Live app-key provisioning status (ADR-0041 §9 `get_security_status`).
+/// Live app-key provisioning status (ADR-0041 §9 `get_security_status`, as
+/// amended by §11.4).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppKeyStatus {
     /// `appkey.age` store exists on disk.
     pub provisioned: bool,
-    /// An app key resolves now (env, unlocked store cache, or dev fallback).
+    /// An app key resolves now (env, OS keyring, unlocked store cache, or dev
+    /// fallback).
     pub unlocked: bool,
     /// Absolute path of the store file (`appkey.age`).
     pub store_path: String,
-    /// `env` | `store` | `dev` | `none` — the active resolution source.
+    /// `env` | `keyring` | `cache` | `dev` | `none` — the active resolution
+    /// source (ADR-0041 §1 + §11.4). Never carries the key itself.
     pub source: String,
     /// Backend projection: the operator must act (unlock or first-run setup).
     pub requires_action: bool,
@@ -355,6 +361,16 @@ pub struct AppKeyInitializeResult {
 /// Result of `unlock_app_key` (ADR-0041 §4 `Unlocked`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppKeyUnlockResult {
+    pub provisioned: bool,
+    pub unlocked: bool,
+    pub store_path: String,
+}
+
+/// Result of `import_app_key` (APPKEY-003, ADR-0041 §10.4 amendment): the
+/// WILAYA-sourced portable artifact `grpc-app-key.age` was imported into the
+/// encrypted local store. Metadata only — the App Key value never crosses IPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppKeyImportResult {
     pub provisioned: bool,
     pub unlocked: bool,
     pub store_path: String,

@@ -2,8 +2,11 @@
 
 use chrono::{Datelike, NaiveDate};
 
+use crate::domain::numeric::legacy_float;
+use crate::domain::numeric::Money;
 use crate::errors::{AppError, ValidationError};
 use crate::models::{DailyReport, DailyReportMeal, MealType};
+use crate::repositories::numeric_row;
 use crate::repositories::DbExecutor;
 
 #[derive(Clone, Copy, Debug)]
@@ -103,7 +106,7 @@ fn map_report_row(row: &rusqlite::Row<'_>) -> Result<DailyReport, rusqlite::Erro
         id: row.get(0)?,
         date,
         unit_id: row.get(2)?,
-        total_daily_cost: row.get(3)?,
+        total_daily_cost: numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
         total_daily_average: row.get(4)?,
         total_daily_beneficiaries: row.get(5)?,
         created_at,
@@ -135,7 +138,7 @@ fn map_meal_row(row: &rusqlite::Row<'_>) -> Result<DailyReportMeal, rusqlite::Er
         mission_count: row.get(6)?,
         guest_count: row.get(7)?,
         total_beneficiaries: row.get(8)?,
-        total_meal_cost: row.get(9)?,
+        total_meal_cost: numeric_row::money_col(9, row.get::<_, i64>(9)?)?,
         meal_average: row.get(10)?,
     })
 }
@@ -172,6 +175,34 @@ pub fn count_daily_reports_by_month(
     Ok(count as u32)
 }
 
+/// Enforce the SEC-057 monthly completeness gate: a monthly summary for
+/// `(year, month)` — scoped to `unit_id` when `Some` — is admissible ONLY for
+/// a full calendar month (every day of the month has a daily report). A
+/// partial month is rejected on both the UNIT export path and the WILAYA
+/// import path, so a monthly total can never be silently built from
+/// incomplete daily data.
+pub fn assert_complete_calendar_month(
+    executor: DbExecutor<'_>,
+    year: i32,
+    month: u32,
+    unit_id: Option<&str>,
+) -> Result<(), AppError> {
+    let win = monthly_window(year, month)?;
+    let expected_days = win.end.day();
+    let actual = count_daily_reports_by_month(executor, year, month, unit_id)?;
+    if actual != expected_days {
+        return Err(AppError::Validation(
+            crate::errors::ValidationError::InvalidFormat {
+                field: "month".into(),
+                message: format!(
+                    "البيانات الشهرية غير مكتملة: يتطلب شهرًا كاملًا ({expected_days} يومًا) لكن وُجد {actual} تقريرًا يوميًا ({year:04}-{month:02})"
+                ),
+            },
+        ));
+    }
+    Ok(())
+}
+
 pub fn load_monthly_summary_projection(
     executor: DbExecutor<'_>,
     window: MonthlyWindow,
@@ -188,7 +219,15 @@ pub fn load_monthly_summary_projection(
         map_report_row,
     )?;
 
-    let total_cost: f64 = reports.iter().map(|r| r.total_daily_cost).sum();
+    // Authoritative monthly consumption value: aggregate the per-day Money
+    // values exactly (no accounting arithmetic in f64), convert once at the
+    // wire boundary. Each per-day value is already a cent-scale wire f64.
+    let mut total_cost = Money::zero();
+    for r in &reports {
+        let daily = legacy_float::money_from_f64(r.total_daily_cost)?;
+        total_cost = total_cost.checked_add(daily)?;
+    }
+    let total_cost = legacy_float::money_to_f64(&total_cost)?;
     let total_beneficiaries: i32 = reports.iter().map(|r| r.total_daily_beneficiaries).sum();
 
     let mut breakfast_avgs: Vec<f64> = Vec::new();
@@ -266,7 +305,7 @@ pub fn load_wilaya_reports_projection(
     Ok(executor.query_all(
         r#"SELECT u.id, u.name,
                   COALESCE(mr.total_beneficiaries, 0),
-                  COALESCE(mr.total_consumption_value, 0.0),
+                  COALESCE(mr.total_consumption_value, 0),
                   COALESCE(mr.daily_average, 0.0),
                   CASE WHEN mr.id IS NOT NULL THEN 1 ELSE 0 END as is_imported
            FROM units u
@@ -279,7 +318,7 @@ pub fn load_wilaya_reports_projection(
                 unit_id: row.get(0)?,
                 unit_name: row.get(1)?,
                 total_beneficiaries: row.get(2)?,
-                total_cost: row.get(3)?,
+                total_cost: numeric_row::money_col(3, row.get::<_, i64>(3)?)?,
                 daily_average: row.get(4)?,
                 is_imported: row.get::<_, i32>(5)? != 0,
             })

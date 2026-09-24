@@ -93,16 +93,15 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
+        // ADR-0052: identity is pinned per node class — no free-text field.
         const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
         const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
 
-        await fireEvent.input(usernameInput, { target: { value: 'civil_admin' } });
         await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
         await fireEvent.click(submitBtn);
 
         await waitFor(() => {
-            expect(mockLogin).toHaveBeenCalledWith({ username: 'civil_admin', password: 'supersecret' });
+            expect(mockLogin).toHaveBeenCalledWith({ username: 'admin', password: 'supersecret' });
             expect(get(currentUser)).toEqual(user);
             expect(mockPush).toHaveBeenCalledWith('/wilaya');
         });
@@ -119,11 +118,10 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
+        // ADR-0052: only the credential varies — the identity stays pinned.
         const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
         const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
 
-        await fireEvent.input(usernameInput, { target: { value: 'invalid_user' } });
         await fireEvent.input(passwordInput, { target: { value: 'wrongpass' } });
         await fireEvent.click(submitBtn);
 
@@ -133,13 +131,21 @@ describe('Login Page Integration Flow', () => {
         });
     });
 
-    it('should hide the password tab and default to admin-key when the node has an ACTIVE ADMIN identity', async () => {
+    it('keeps the password tab as the default path when the node has an ACTIVE ADMIN identity (ADR-0050)', async () => {
+        // ADR-0050: the presence of an ACTIVE ADMIN identity and `.adminkey`
+        // MUST NOT disable the normal password login path. Challenge–Response
+        // remains available as the recovery / high-assurance tab.
         mockGetIdentityStatus.mockResolvedValue('READY');
 
         render(LoginPage);
 
         await waitFor(() => {
-            expect(screen.queryByText('كلمة المرور')).not.toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'كلمة المرور' })).toBeInTheDocument();
+            expect(screen.getByPlaceholderText(/أدخل كلمة المرور/i)).toBeInTheDocument();
+        });
+
+        await fireEvent.click(screen.getByRole('tab', { name: 'المفتاح الإداري' }));
+        await waitFor(() => {
             expect(screen.getByPlaceholderText(/أدخل كلمة مرور المفتاح/i)).toBeInTheDocument();
         });
     });
@@ -155,11 +161,9 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const usernameInput = screen.getByPlaceholderText(/اسم المستخدم/i);
         const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
         const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
 
-        await fireEvent.input(usernameInput, { target: { value: 'civil_admin' } });
         await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
         await fireEvent.click(submitBtn);
 

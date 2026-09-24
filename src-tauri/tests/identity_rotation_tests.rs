@@ -295,6 +295,14 @@ fn wilaya_full_rotation_emits_old_key_signed_trust_package_and_promotes() {
     let package_path = dir.path().join("rotation.sync");
     let crypto = AgeFileEncryptionProvider::new();
 
+    // ADR-0053: trust packages are emitted PER authoritative UNIT target.
+    // Register one UNIT so the ceremony has a delivery target (single-target
+    // case keeps the operator-requested path unchanged).
+    node.db.get_connection().execute(
+        "INSERT INTO units (id, code, name, wilaya_code, created_at) VALUES ('21111111-2222-4333-8444-555555555555', 'UNIT-R', 'Rotation Unit', '16', '2026-08-04T00:00:00Z')",
+        [],
+    ).expect("register target unit");
+
     let outcome = IdentityRotationCoordinator::new(&mut node.db, &node.node_key_store)
         .finalize_wilaya(&signed, &package_path, &wilaya_settings(), &crypto)
         .expect("finalize wilaya rotation");
@@ -330,7 +338,6 @@ fn wilaya_full_rotation_emits_old_key_signed_trust_package_and_promotes() {
 
     // Trust package exists, carries the new certificate, and is sequence 1.
     let package = read_trust_package_from_file(&package_path, &crypto).expect("read trust package");
-    assert_eq!(package.metadata.package_sequence, Some(1));
     assert!(package
         .payload
         .certificates

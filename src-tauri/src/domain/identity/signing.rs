@@ -19,8 +19,9 @@ use crate::domain::identity::{ChallengeMessage, Ed25519CertificateSignature, Ide
 
 /// `signature_version` / `algorithm_version` value for Ed25519 (RFC 8032).
 ///
-/// HMAC V1 packages remain readable during the deprecation window (ADR-0007
-/// pattern); this constant is the extension point guarded by check_arch
+/// SEC-007 (ADR-0047) / SEC-008 (ADR-0048): HMAC V1 was permanently removed —
+/// Ed25519 is the ONLY supported signature scheme (sync V2 and fiscal closure
+/// packages). This constant is the extension point guarded by check_arch
 /// Rule 129 via `package_metadata::signature_version: Option<u16>`.
 pub const SIGNATURE_VERSION_ED25519: u16 = 2;
 

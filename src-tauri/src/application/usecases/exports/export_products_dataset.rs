@@ -1,5 +1,5 @@
 use crate::application::usecases::exports::types::{ExportProductsInput, ProductsExportDataset};
-use crate::errors::AppResult;
+use crate::errors::{AppError, AppResult};
 use crate::repositories::{DbExecutor, ProductRepository};
 
 pub fn execute<'a>(
@@ -12,10 +12,25 @@ pub fn execute<'a>(
     let mut product_rows = Vec::with_capacity(products.len());
     for p in products {
         let (updated_at_val, node_id_val, deleted_val) = product_repo.get_sync_info(&p.id)?;
+        // SEC-087 Phase 6C (ADR-0057 §3.4): the exporter emits the
+        // WILAYA-authoritative unit/TVA configuration wire codes. Every
+        // persisted Product carries a REQUIRED config (NOT NULL schema), so the
+        // codes are always present; a missing row is an internal integrity
+        // failure and the export fails closed rather than fabricating or
+        // normalizing a configuration.
+        let codes = product_repo
+            .get_product_sync_config(&p.id)?
+            .ok_or_else(|| {
+                AppError::Internal(format!("Product {} has no unit/TVA configuration", p.id))
+            })?;
         product_rows.push(crate::models::ProductExportRow {
             updated_at: updated_at_val.unwrap_or_else(|| p.created_at.to_rfc3339()),
             node_id: node_id_val.unwrap_or_else(|| "legacy".to_string()),
             deleted: deleted_val.unwrap_or(0),
+            purchase_unit: Some(codes.purchase_unit),
+            consumption_unit: Some(codes.consumption_unit),
+            conversion_factor: Some(codes.conversion_factor),
+            tva_classification: Some(codes.tva_classification),
             product: p,
         });
     }

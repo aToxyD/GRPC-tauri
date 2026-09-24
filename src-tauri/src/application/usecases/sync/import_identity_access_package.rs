@@ -6,14 +6,15 @@
 //! `user`); UNIT nodes apply payloads canonically (rename + canonical upserts).
 //! There is no reverse path.
 //!
-//! Replay protection is owned exclusively by `run_import_pipeline`
-//! (`ImportedPackageRegistry` + Transport Guard) — this usecase deliberately
-//! performs no `has_imported`/`mark_imported` bookkeeping.
+//! Replay protection is owned by the registry via exact `package_id` dedup
+//! (SEC-056D/SEC-057): replaying the same package_id is rejected before any
+//! mutation; a fresh package_id from the trusted issuer is applied and
+//! registered.
 
 use crate::application::services::UserAccountSyncService;
 use crate::application::sync::SyncPackage;
 use crate::domain::security::PasswordHashPort;
-use crate::errors::{AppError, AppResult, ValidationError};
+use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
 use crate::models::IdentityAccessPayload;
 use crate::repositories::DbExecutor;
 
@@ -29,13 +30,12 @@ pub struct ImportIdentityAccessPackageInput {
 pub struct ImportIdentityAccessPackageOutcome {
     pub admin_updated: bool,
     pub user_updated: bool,
-    pub user_renamed: bool,
     pub package_id: String,
 }
 
 pub fn execute(
     executor: DbExecutor<'_>,
-    _registry: &impl crate::application::sync::ImportedPackageRegistry,
+    registry: &impl crate::application::sync::ImportedPackageRegistry,
     password_port: &dyn PasswordHashPort,
     input: ImportIdentityAccessPackageInput,
 ) -> AppResult<ImportIdentityAccessPackageOutcome> {
@@ -47,13 +47,21 @@ pub fn execute(
     }
 
     let package_id = input.package.metadata.package_id.clone();
+    if registry.has_imported(&package_id)? {
+        return Err(AppError::BusinessLogic(
+            BusinessLogicError::DuplicateSyncPackage {
+                package_id: package_id.0.clone(),
+            },
+        ));
+    }
+
     let outcome =
         UserAccountSyncService::new(executor, password_port).apply(&input.package.payload)?;
+    registry.mark_imported(&package_id)?;
 
     Ok(ImportIdentityAccessPackageOutcome {
         admin_updated: outcome.admin_updated,
         user_updated: outcome.user_updated,
-        user_renamed: outcome.user_renamed,
         package_id: package_id.0.clone(),
     })
 }

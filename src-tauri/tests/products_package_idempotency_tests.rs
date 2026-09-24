@@ -21,8 +21,6 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
         id: "p1".into(),
         name: "Prod 1".into(),
         base_price: 10.0,
-        tva: 0.0,
-        supplier_name: None,
         year: 2026,
         created_at: Utc::now(),
     };
@@ -31,13 +29,14 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: source.into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId(pkg_id.into()),
             signature_version: None,
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: ProductsExportDataset {
             product_rows: vec![ProductExportRow {
@@ -45,6 +44,12 @@ fn fixture_products_package(pkg_id: &str, source: &str) -> SyncPackage<ProductsE
                 updated_at: Utc::now().to_rfc3339(),
                 node_id: "wilaya".into(),
                 deleted: 0,
+                // SEC-087 Phase 6B: conforming V3 config (purchase=consumption,
+                // factor 1, tva 0).
+                purchase_unit: Some(1),
+                consumption_unit: Some(1),
+                conversion_factor: Some(1),
+                tva_classification: Some(0),
             }],
         },
     }
@@ -78,14 +83,8 @@ fn products_package_same_id_is_rejected_second_time() {
 
     db.with_transaction(|tx| {
         let src_opt = (!source_for_reg.is_empty()).then_some(source_for_reg.as_str());
-        let reg = SqliteImportedPackageRegistry::new(
-            tx,
-            PRODUCTS_PACKAGE_KIND,
-            src_opt,
-            "admin",
-            None,
-            None,
-        );
+        let reg =
+            SqliteImportedPackageRegistry::new(tx, PRODUCTS_PACKAGE_KIND, src_opt, "admin", None);
         apply_products_package(tx, &reg, input.clone())
     })
     .expect("first ok");
@@ -98,7 +97,6 @@ fn products_package_same_id_is_rejected_second_time() {
                 PRODUCTS_PACKAGE_KIND,
                 src_opt,
                 "admin",
-                None,
                 None,
             );
             apply_products_package(tx, &reg, input)

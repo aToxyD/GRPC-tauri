@@ -2,13 +2,14 @@
   import { onMount, onDestroy } from 'svelte';
   import { closeFiscalYear, getFiscalYearStatus, exportFiscalClosurePackage, previewFiscalClosurePackage, applyFiscalClosurePackage, getFiscalTransitionHistory, listFiscalPackageRegistry, updateFiscalPackageRetentionStatus } from '../lib/contracts';
   import { saveFile, openFile, showAsk } from '../lib/tauri';
-  import { listProducts, getSettings } from '../lib/contracts';
+  import { listProducts, getSettings, listFiscalTaxPolicies, setFiscalTaxPolicy } from '../lib/contracts';
   import type { 
     FiscalYearStatus, 
     FiscalClosurePreview, 
     FiscalClosureApplyResult,
     FiscalTransitionHistoryEntry,
-    FiscalPackageRegistryEntry
+    FiscalPackageRegistryEntry,
+    FiscalYearTaxPolicy
   } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -44,6 +45,10 @@
   let productCount = 0;
   // @category ProjectionState
   let fiscalStatus: FiscalYearStatus | null = null;
+  // @category ProjectionState
+  let taxPolicies: FiscalYearTaxPolicy[] = [];
+  // @category TransientState
+  let taxRateInput = '';
 
   // Import/Preview state
   // @category ProjectionState
@@ -81,7 +86,31 @@
     const products = await listProducts();
     productCount = products.length;
 
+    if (nodeType === 'WILAYA') {
+      taxPolicies = await listFiscalTaxPolicies();
+    }
+
     await refreshHistory();
+  }
+
+  async function saveTaxPolicy() {
+    const rate = parseFloat(taxRateInput);
+    if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+      message = 'يرجى إدخال نسبة ضريبية صحيحة (0 - 100).';
+      return;
+    }
+
+    await guard(async () => {
+      message = '';
+      try {
+        await setFiscalTaxPolicy({ fiscal_year: currentYear, tva_rate: rate });
+        message = `تم تحديث سياسة الضريبة (TVA) للسنة ${currentYear} إلى ${rate}%.`;
+        taxRateInput = '';
+        taxPolicies = await listFiscalTaxPolicies();
+      } catch (error) {
+        message = formatErrorMessage(error);
+      }
+    });
   }
 
   async function refreshHistory() {
@@ -240,7 +269,7 @@
   // @category UiState
   $: isReplay = preview && preview.validation_issues.some(i => i.includes('replay'));
   // @category UiState
-  $: isInvalidSignature = message.includes('HMAC verification failed');
+  $: isInvalidSignature = message.includes('فشل التحقق من توقيع حزمة الإغلاق المالي') || message.includes('رُفضت الحزمة');
 </script>
 
 <Layout {nodeType} title="إدارة السنة المالية">
@@ -327,8 +356,65 @@
           </AppButton>
         </AppCard>
       {/if}
+
+      <!-- TVA Policy (WILAYA) -->
+      <AppCard padding="md">
+        <h2 class="font-semibold border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-800 dark:text-white mb-4">سياسة الضريبة (TVA)</h2>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          نسبة الضريبة على القيمة المضافة موحّدة لكل سنة مالية (سعر واحد لكل ولاية). تُجمّد عند إغلاق السنة المالية ولا يمكن تعديلها بعدها.
+        </p>
+
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="flex-1 min-w-[180px]">
+            <AppInput
+              id="tva-rate"
+              label={`نسبة TVA للسنة ${currentYear} (%)`}
+              type="number"
+              min="0"
+              max="100"
+              placeholder="0"
+              bind:value={taxRateInput}
+            />
+          </div>
+          <AppButton
+            variant="primary"
+            loading={$opLoading}
+            disabled={fiscalStatus?.status !== 'open' || $opLoading}
+            on:click={saveTaxPolicy}
+          >
+            تطبيق السياسة
+          </AppButton>
+        </div>
+
+        {#if taxPolicies.length > 0}
+          <div class="mt-4">
+            <AppTable
+              empty={taxPolicies.length === 0}
+              emptyMessage="لا توجد سياسة ضريبية محددة بعد"
+            >
+            <svelte:fragment slot="head">
+              <th class="table-header">السنة المالية</th>
+              <th class="table-header">النسبة (%)</th>
+              <th class="table-header">الحالة</th>
+              <th class="table-header">المُحدِّث</th>
+            </svelte:fragment>
+            {#each taxPolicies as policy}
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="table-cell font-bold text-gray-800 dark:text-white">{policy.fiscal_year}</td>
+                <td class="table-cell tabular-nums">{policy.tva_rate.toFixed(2)}%</td>
+                <td class="table-cell">
+                  <AppBadge intent={policy.frozen ? 'warning' : 'success'} size="sm">
+                    {policy.frozen ? 'مجمّدة' : 'قابلة للتعديل'}
+                  </AppBadge>
+                </td>
+                <td class="table-cell">{policy.set_by}</td>
+              </tr>
+            {/each}
+            </AppTable>
+          </div>
+        {/if}
+      </AppCard>
     {:else}
-      <!-- UNIT MODE: IMPORT & APPLY -->
       <AppCard padding="lg">
         <div class="flex items-start gap-4 mb-6">
           <div class="bg-indigo-100 dark:bg-indigo-900/40 p-3 rounded-xl text-indigo-600 dark:text-indigo-400 shrink-0">

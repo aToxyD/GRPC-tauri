@@ -49,10 +49,15 @@ impl IdentityBootstrapStatusService {
         let admin_cert = store.get_active_by_subject_type(SubjectType::Admin)?;
 
         if wilaya.is_some() && admin_cert.is_some() {
+            use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+            let node_scope =
+                crate::infrastructure::security::SettingsNodeIdentityProvider::new(db.executor())
+                    .current_node_id()
+                    .unwrap_or_else(|_| "WILAYA".to_string());
             let admin_user = db
                 .executor()
                 .users()
-                .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME)?;
+                .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME, &node_scope)?;
             // Ready vs AdminProvisioned: Ready requires the operator to be able
             // to authenticate — an identity-only (empty hash) admin user AND the
             // portable `.adminkey` present on the node. A legacy password hash,

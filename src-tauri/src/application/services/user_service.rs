@@ -46,8 +46,11 @@ impl<'a> UserService<'a> {
     pub fn get_user_by_username(
         &self,
         username: &str,
+        node_scope: &str,
     ) -> Result<Option<crate::models::User>, AppError> {
-        self.executor.users().get_user_by_username(username)
+        self.executor
+            .users()
+            .get_user_by_username(username, node_scope)
     }
 
     pub fn get_user_by_id(&self, id: &str) -> Result<Option<crate::models::User>, AppError> {

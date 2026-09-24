@@ -3,10 +3,18 @@ mod common;
 
 #[cfg(test)]
 mod tests {
+    use super::common::seed_wilaya_identity;
     use super::common::{clear_fiscal_status, create_test_state, seed_fiscal_year_open};
     use grpc_lib::application::services::FiscalClosurePackageService;
+    use grpc_lib::infrastructure::sync::packages::signing::Ed25519PackageSigner;
     use grpc_lib::repositories::RepositoryProvider;
     use std::fs;
+
+    const WILAYA_SIGNING_SECRET: [u8; 32] = [42u8; 32];
+
+    fn wilaya_signer() -> Ed25519PackageSigner {
+        Ed25519PackageSigner::new(WILAYA_SIGNING_SECRET)
+    }
 
     #[test]
     fn test_fiscal_transition_retention_lifecycle() {
@@ -24,6 +32,8 @@ mod tests {
 
         let db_guard = state.db.lock().unwrap();
         let db = db_guard.as_ref().unwrap();
+        let wilaya_identity_id = seed_wilaya_identity(db, WILAYA_SIGNING_SECRET);
+        let signer = wilaya_signer();
 
         let package_path = _temp_dir.path().join("test.sync");
         let package_path_str = package_path.to_str().unwrap();
@@ -35,12 +45,16 @@ mod tests {
             2025,
             2026,
             "2026-01-01T00:00:00Z",
+            &grpc_lib::application::services::FiscalClosurePackageSignerInfo {
+                issuer_identity_id: wilaya_identity_id.to_string(),
+                signing_key_id: signer.public_key_hex(),
+            },
             None,
         )
         .expect("build package");
 
         FiscalClosurePackageService::new(db.executor())
-            .export_to_file(&pkg, package_path_str)
+            .export_to_file(&pkg, &signer, package_path_str)
             .expect("export package");
 
         let registry = db
@@ -111,6 +125,8 @@ mod tests {
         let (state, _temp_dir) = create_test_state();
         let db_guard = state.db.lock().unwrap();
         let db = db_guard.as_ref().unwrap();
+        let wilaya_identity_id = seed_wilaya_identity(db, WILAYA_SIGNING_SECRET);
+        let signer = wilaya_signer();
 
         let pkg = FiscalClosurePackageService::build_closure_package(
             "WILAYA-TEST",
@@ -118,6 +134,10 @@ mod tests {
             2025,
             2026,
             "2026-01-01T00:00:00Z",
+            &grpc_lib::application::services::FiscalClosurePackageSignerInfo {
+                issuer_identity_id: wilaya_identity_id.to_string(),
+                signing_key_id: signer.public_key_hex(),
+            },
             None,
         )
         .unwrap();
@@ -126,7 +146,7 @@ mod tests {
         let path2 = _temp_dir.path().join("pkg2.sync");
 
         FiscalClosurePackageService::new(db.executor())
-            .export_to_file(&pkg, path1.to_str().unwrap())
+            .export_to_file(&pkg, &signer, path1.to_str().unwrap())
             .unwrap();
 
         let content1 = fs::read_to_string(&path1).unwrap();

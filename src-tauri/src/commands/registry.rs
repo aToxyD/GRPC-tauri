@@ -6,8 +6,10 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         // Application-key provisioning (ADR-0041, pre-auth lifecycle)
         commands::get_security_status,
         commands::initialize_app_key,
+        commands::import_app_key,
         commands::unlock_app_key,
-        commands::export_app_key_backup,
+        commands::forget_remembered_app_key,
+        commands::export_app_key_backup_to_path,
         // Authentication
         commands::login,
         commands::get_current_user,
@@ -63,6 +65,36 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_supplier_order,
         commands::get_supplier_order_items,
         commands::list_supplier_orders,
+        // Procurement — Suppliers (ADR-0055 / SEC-087-F)
+        commands::create_supplier,
+        commands::update_supplier,
+        commands::set_supplier_active,
+        commands::associate_supplier_with_unit,
+        commands::disassociate_supplier_from_unit,
+        commands::get_supplier,
+        commands::list_suppliers,
+        commands::list_unit_suppliers,
+        // Procurement — Contracts (ADR-0055 / SEC-087-F)
+        commands::create_contract,
+        commands::add_contract_product,
+        commands::set_contract_product_agreed_price_ht,
+        commands::accept_contract,
+        commands::activate_contract,
+        commands::end_contract,
+        commands::cancel_contract,
+        commands::release_contract_allocation,
+        commands::revoke_contract_allocation_release,
+        commands::get_contract,
+        commands::list_contracts,
+        commands::get_contract_products,
+        commands::list_contract_allocations,
+        commands::list_allocation_exceptions,
+        // Procurement — UNIT local read-only entitlement projection (Phase 4)
+        commands::list_unit_contract_entitlements,
+        // Procurement — Fiscal-year TVA policy (ADR-0055 / SEC-087-F)
+        commands::set_fiscal_tax_policy,
+        commands::get_fiscal_tax_policy,
+        commands::list_fiscal_tax_policies,
         // Daily Reports
         commands::preview_daily_consumption_fifo,
         commands::create_daily_report,
@@ -86,6 +118,7 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_orders,
         // Sync Package Export
         commands::export_products_package,
+        commands::export_contract_catalog_to_units,
         commands::export_daily_report_package,
         commands::export_monthly_summary_package,
         commands::export_unit_node_package,
@@ -94,8 +127,13 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::export_daily_report_excel,
         commands::export_monthly_summary_excel,
         commands::export_all_units_monthly_status_excel,
+        // Procurement Excel Export (ADR-0055 / SEC-087-F)
+        commands::export_suppliers_xlsx,
+        commands::export_contracts_xlsx,
+        commands::export_contract_allocations_xlsx,
         // Sync Package Import (SECURE - with file hash verification)
         commands::import_products_package,
+        commands::import_contract_catalog_package,
         commands::import_daily_report_package,
         commands::import_unit_node_package,
         commands::import_monthly_summary_package,
@@ -106,8 +144,9 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::set_fleet_admin_password,
         commands::set_unit_user_password,
         commands::set_account_status,
-        commands::export_identity_access_package,
-        commands::import_identity_access_package,
+        // Admin-Only Account Synchronization (`admin_access`, ADR-0051 / D1)
+        commands::export_admin_access_package,
+        commands::import_admin_access_package,
         commands::export_stock_movements_package,
         commands::get_import_audit_events,
         commands::record_consumption,
@@ -179,11 +218,5 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::verify_integrity,
         commands::get_system_maintenance_state,
         commands::list_operational_sessions,
-        // Licensing (ADR-0042)
-        commands::get_licensing_status,
-        commands::import_trust_anchor,
-        commands::import_license,
-        commands::dry_run_verify_license,
-        commands::verify_license,
     ]
 }

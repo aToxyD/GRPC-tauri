@@ -62,6 +62,38 @@ All `[arch:allow-*]` architectural exceptions must be registered here with ADR l
 | 27 | `commands/backup.rs` | 45 | 117 | ADR-0043 | `create_backup` offloads blocking DB-copy + encryption via `tauri::async_runtime::spawn_blocking` to avoid UI freeze on the Tauri main thread — sanctioned exception, no async beyond the two backup command handlers | 2026-08-09 | Permanent | Architecture |
 | 28 | `commands/backup.rs` | 357 | 117 | ADR-0043 | `restore_backup` offloads blocking DB restore + verification via `tauri::async_runtime::spawn_blocking` to avoid UI freeze on the Tauri main thread — sanctioned exception, no async beyond the two backup command handlers | 2026-08-09 | Permanent | Architecture |
 
+## Exception: `[arch:allow-hmac-fiscal]` — **CLOSED 2026-08-18 (ADR-0048 / SEC-008)**
+
+| # | File | Line | Rule | ADR | Reason | Created | Renewed | Expires | Owner |
+|---|------|------|------|-----|--------|---------|---------|---------|-------|
+| 29 | `infrastructure/security/mod.rs` | ~202-295 | — | ADR-0047 | Fiscal closure package (`.fiscal-close.sync`) retains its own HMAC envelope — `resolve_package_signing_key_32(_impl)` / `resolve_active_signing_key_id` + zero-key debug fallback kept for `fiscal_closure_package_service`/`export_reproducibility_helper`/`D_signing_key` after sync-V1 removal; follow-up ADR-0048 migrates fiscal closure to Ed25519 and removes this exception | 2026-08-18 | — | 2026-11-16 | Architecture / Security |
+
+> **CLOSED (2026-08-18, SEC-008):** ADR-0048 implemented the migration — the
+> fiscal closure package is now signed with the WILAYA node identity's Ed25519
+> key; all HMAC machinery (`resolve_package_signing_key_32(_impl)`,
+> `resolve_active_signing_key_id`, env reads, prod gate clause, diagnostics
+> fields, zero-key fallback) was removed from the codebase. No active
+> `[arch:allow-hmac-fiscal]` tags remain. History is preserved in this row;
+> the tag section above is retained for auditability with zero live rows.
+
+---
+
+## Exception: `[arch:allow-fe141]` / `[arch:allow-fe146]` — Frontend Projection & Presentation (ADR-0054)
+
+| # | File | Line | Rule | ADR | Reason | Created | Renewed | Expires | Owner |
+|---|------|------|------|-----|--------|---------|---------|---------|-------|
+| 30 | `components/consumption/MealSection.svelte` | 9 | FE-146 | ADR-0054 | Presentation type mirror of backend projection shape (`mealAverage:` type field) — not business computation | 2026-08-30 | — | 2026-11-28 | Architecture |
+| 31 | `components/consumption/MealSummaryCard.svelte` | 4 | FE-146 | ADR-0054 | Presentation type mirror of backend projection shape (`mealAverage:` type field) — not business computation | 2026-08-30 | — | 2026-11-28 | Architecture |
+| 32 | `lib/telemetry.ts` | 154 | FE-146 | ADR-0054 | Telemetry latency average — infrastructure metric, not business logic | 2026-08-30 | — | 2026-11-28 | Architecture |
+| 33 | `pages/SyncTopologyPage.svelte` | 201 | FE-141 | ADR-0054 | UI percentage progress bar — presentation-only, not business division | 2026-08-30 | — | 2026-11-28 | Architecture |
+| 34 | `pages/SyncTopologyPage.svelte` | 217 | FE-141 | ADR-0054 | UI severity percentage bar — presentation-only, not business division | 2026-08-30 | — | 2026-11-28 | Architecture |
+
+> **Note (ADR-0054):** `src/pages/UnitDashboard.svelte:131` is a scanner false-positive
+> caused by CSS opacity slash syntax (`bg-red-50/50`), **not** arithmetic division. It is
+> intentionally NOT registered; the FE-141 scanner is narrowed in
+> `scripts/governance/invariants/projectionIntegrity.ts` so a `/` immediately followed by a
+> digit is no longer classified as FE-141. Accepted per ADR-0054 (Owner Ratification, 2026-09-01).
+
 ---
 
 ## Summary
@@ -75,6 +107,8 @@ All `[arch:allow-*]` architectural exceptions must be registered here with ADR l
 | `[arch:allow-sql]` | 1 | ADR-011 |
 | `[arch:allow-memory-unsafe]` | 1 | ADR-017 |
 | `[arch:allow-async]` (Permanent) | 2 | ADR-0043 |
-| **Total** | **21** | |
+| `[arch:allow-hmac-fiscal]` (CLOSED 2026-08-18, ADR-0048) | 0 active | ADR-0047 → ADR-0048 |
+| `[arch:allow-fe141]` / `[arch:allow-fe146]` | 5 | ADR-0054 |
+| **Total** | **26 active** | |
 
 **Review cadence:** All exceptions must be reviewed at least every 90 days. Expired exceptions must be renewed or closed. All rows renewed 2026-08-09; next review window closes 2026-11-07. `[arch:allow-async]` is **Permanent** per ADR-0043 — exempt from the 90-day renewal cycle.

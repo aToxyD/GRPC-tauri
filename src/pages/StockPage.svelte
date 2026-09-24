@@ -4,9 +4,10 @@
   import { createOperation } from "../lib/operationGuard";
   import { formatErrorMessage } from "../lib/errors";
   import { openFile, saveFile } from "../lib/tauri";
-  import { importProductsPackage, exportStockMovementsPackage, importStockMovementsPackage } from "../lib/contracts";
-  import { getAllStocks, getStockSummary, getStockMovements, exportStockMovementsExcel, getSettings, getInventoryFifoView } from "../lib/contracts";
+  import { importProductsPackage, exportStockMovementsPackage, importStockMovementsPackage, importContractCatalogPackage } from "../lib/contracts";
+  import { getAllStocks, getStockSummary, getStockMovements, exportStockMovementsExcel, getSettings, getInventoryFifoView, listProducts } from "../lib/contracts";
   import { showSuccess, showError } from "../lib/notifications";
+  import { unitLabel } from "../lib/unitLabels";
   import type {
     InventoryStock,
     StockSummary,
@@ -17,6 +18,7 @@
     Settings,
     InventoryStockPageView,
     InventoryProductView,
+    Product,
   } from "../lib/types";
   import Layout from "../components/Layout.svelte";
 
@@ -29,6 +31,7 @@
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const summaryOp = createOperation({ scope });
@@ -47,6 +50,20 @@
   // Section 2 & 3: Summary
   // @category ProjectionState
   let summary: StockSummary[] = $state([]);
+
+  // Search is presentation/filtering only — it narrows the current-stock rows
+  // by product name and never alters quantities, valuation, or FIFO layers.
+  // @category UiState
+  let stockSearch = $state('');
+
+  // @category UiState
+  let filteredSummary = $derived(
+    stockSearch.trim()
+      ? summary.filter((p) =>
+          p.product_name.toLowerCase().includes(stockSearch.trim().toLowerCase())
+        )
+      : summary
+  );
 
   // Computed stats from summary
   // @category ProjectionState
@@ -98,6 +115,8 @@
   // Fallback stocks
   // @category ProjectionState
   let stocks: InventoryStock[] = $state([]);
+  // @category ProjectionState
+  let products: Product[] = $state([]);
 
   // Section 2.5: FIFO Inventory View
   // @category ProjectionState
@@ -117,9 +136,18 @@
     }
   }
 
+  // Presentation-only consumption unit of a product from the WILAYA catalog,
+  // used to label the displayed quantities. Never a numeric conversion.
+  // @category UiState
+  function consumptionUnitFor(productId: string): string {
+    const p = products.find((prod) => prod.id === productId);
+    return p ? unitLabel(p.consumption_unit) : "—";
+  }
+
   onMount(async () => {
     try {
       settings = await getSettings();
+      products = await listProducts();
     } catch (e) {
       console.error("Failed to load settings", e);
     }
@@ -239,6 +267,32 @@
     }
   }
 
+  async function handleImportContractCatalog() {
+    try {
+      importError = "";
+      importSuccess = "";
+
+      const selected = await openFile({
+        multiple: false,
+        filters: [
+          {
+            name: "حزمة المزامنة",
+            extensions: ["sync"],
+          },
+        ],
+      });
+
+      if (selected) {
+        const result = await importContractCatalogPackage(selected as string);
+        setImportSuccessTransient(
+          `تم استيراد كتالوج العقود بنجاح (${result.added} إضافة / ${result.updated} تحديث)`,
+        );
+      }
+    } catch (e) {
+      importError = "خطأ في استيراد كتالوج العقود: " + formatErrorMessage(e);
+    }
+  }
+
 
   async function handleExportMovementsPackage() {
     try {
@@ -351,6 +405,13 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
               </svg>
               استيراد منتجات الولاية
+            </AppButton>
+
+            <AppButton variant="secondary" on:click={handleImportContractCatalog} ariaLabel="استيراد كتالوج عقود التموين الرسمي من الولاية">
+              <svg class="w-4 h-4 mr-2 inline-block text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04a11.367 11.367 0 01-1.091 5.496c.002.314.05.628.143.933a11.503 11.503 0 001.371 3.513c.176.326.362.641.551.944A12.026 12.026 0 0011.962 21.01a12.02 12.02 0 008.474-5.991c.401-.736.745-1.515 1.022-2.322a10.107 10.107 0 00.395-1.842 11.233 11.233 0 00-1.091-5.496z"/>
+              </svg>
+              استيراد كتالوج العقود
             </AppButton>
           </div>
         </svelte:fragment>
@@ -506,28 +567,59 @@
       </div>
     {/if}
 
+    <!-- SEC-087 Phase 5: advisory snapshot-coverage warnings (display only) -->
+    {#if fifoView && fifoView.warnings && fifoView.warnings.length > 0}
+      <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/30 p-4">
+        <div class="flex items-start gap-3">
+          <svg class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <div>
+            <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">تنبيهات تغطية سندات الشراء</p>
+            <ul class="mt-1 space-y-1">
+              {#each fifoView.warnings as warning (warning.product_id)}
+                <li class="text-sm text-amber-700 dark:text-amber-400">
+                  <span class="font-medium">{warning.product_name}</span> — {warning.message}
+                </li>
+              {/each}
+            </ul>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     <!-- SECTION 3: Stock Table -->
     <div class="mb-8">
       <AppCard padding="none">
-        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
           <h3 class="font-semibold text-lg text-gray-800 dark:text-white">المخزون الحالي</h3>
+          <AppProductSearch bind:search={stockSearch} />
         </div>
 
         <AppTable
           loading={$summaryLoading}
-          empty={!$summaryLoading && summary.length === 0 && stocks.length === 0}
+          empty={!$summaryLoading && filteredSummary.length === 0 && (summary.length > 0 || stocks.length === 0)}
         >
           <svelte:fragment slot="empty">
-            <AppEmptyState
-              title="لا يوجد منتجات في المخزون"
-              description="استورد قائمة منتجات الولاية"
-              icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-            />
+            {#if summary.length > 0 && stocks.length === 0}
+              <AppEmptyState
+                title="لا توجد نتائج مطابقة"
+                description="لم يتم العثور على منتج مطابق لبحثك في المخزون الحالي."
+                icon="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            {:else}
+              <AppEmptyState
+                title="لا يوجد منتجات في المخزون"
+                description="استورد قائمة منتجات الولاية"
+                icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+              />
+            {/if}
           </svelte:fragment>
 
           <svelte:fragment slot="head">
             <th class="table-header">المنتج</th>
             <th class="table-header">الكمية الحالية</th>
+            <th class="table-header">وحدة الاستهلاك</th>
             <th class="table-header">قيمة المخزون</th>
             <th class="table-header">الطبقات</th>
             <th class="table-header">إجمالي الدخول</th>
@@ -538,7 +630,7 @@
             <th class="table-header text-left">إجراءات</th>
           </svelte:fragment>
 
-          {#each summary as product}
+          {#each filteredSummary as product}
             {@const status = getStatusBadge(product.current_quantity)}
             {@const isHighlighted = highlightedProductId === product.product_id}
             {@const fp = fifoView?.products.find(p => p.product_id === product.product_id)}
@@ -546,6 +638,9 @@
               <td class="table-cell font-medium">{product.product_name}</td>
               <td class="table-cell {product.current_quantity < 10 ? 'text-red-700 dark:text-red-400 font-bold' : ''}">
                 {product.current_quantity.toFixed(2)}
+              </td>
+              <td class="table-cell">
+                {consumptionUnitFor(product.product_id)}
               </td>
               <td class="table-cell text-sm font-medium text-purple-700 dark:text-purple-400">
                 {fp ? fp.total_value.toFixed(2) + " د.ج" : "-"}
@@ -581,7 +676,7 @@
             </tr>
             {#if fp && expandedProductId === product.product_id && fp.layers.length > 0}
               <tr class="bg-gray-50 dark:bg-gray-800/50">
-                <td colspan="10" class="p-0">
+                <td colspan="11" class="p-0">
                   <div class="px-6 py-3">
                     <table class="w-full text-sm">
                       <thead>
@@ -630,7 +725,7 @@
                 label="المنتج"
                 bind:value={filterProductId}
               >
-                <option value="">كل المنتجات</option>
+<option value="">كل المنتجات</option>
                 {#each summary as product}
                   <option value={product.product_id}>{product.product_name}</option>
                 {/each}

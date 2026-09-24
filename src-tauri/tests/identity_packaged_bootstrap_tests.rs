@@ -185,10 +185,7 @@ fn apply_packaged_import(
 }
 
 /// A valid packaged `.unit` payload (unit + user + cert + secret).
-fn packaged_payload(
-    secret: &[u8; 32],
-    certificate: &IdentityCertificate,
-) -> UnitNodePackage {
+fn packaged_payload(secret: &[u8; 32], certificate: &IdentityCertificate) -> UnitNodePackage {
     UnitNodePackage {
         unit: Unit {
             id: UNIT_ID.into(),
@@ -232,7 +229,10 @@ fn packaged_keypair_generated_in_memory_without_touching_wilaya_store() {
     assert_eq!(request.subject_type, SubjectType::Unit);
     assert_eq!(request.subject_id, unit_uuid());
     assert_eq!(request.signature, None, "request is a CSR (unsigned)");
-    assert_eq!(request.issuer_identity_id, None, "issuer unbound at CSR time");
+    assert_eq!(
+        request.issuer_identity_id, None,
+        "issuer unbound at CSR time"
+    );
 
     let after = wilaya.node_key_store.read().expect("wilaya node key");
     assert_eq!(
@@ -305,7 +305,8 @@ fn re_export_is_rejected_once_active_unit_identity_exists() {
         .sign_unit_bootstrap_request(&request2, &wilaya.node_key_store, FIXED_NOW)
         .expect_err("second export must be rejected (RE-EXPORT = REJECT)");
     assert!(
-        err.to_string().contains("ACTIVE UNIT identity already exists"),
+        err.to_string()
+            .contains("ACTIVE UNIT identity already exists"),
         "got {err:?}"
     );
 }
@@ -508,10 +509,7 @@ fn extraction_rejects_secret_not_binding_the_certificate() {
         &e.wilaya_cert.identity_id,
     )
     .expect_err("secret/public-key mismatch must fail closed");
-    assert!(
-        err.to_string().contains("does not match"),
-        "got {err:?}"
-    );
+    assert!(err.to_string().contains("does not match"), "got {err:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -608,11 +606,11 @@ fn install_node_key_rejects_secret_not_binding_the_certificate() {
         &e.certificate.public_key,
     )
     .expect_err("non-binding secret must fail BEFORE any write");
+    assert!(err.to_string().contains("does not match"), "got {err:?}");
     assert!(
-        err.to_string().contains("does not match"),
-        "got {err:?}"
+        !store.exists(),
+        "no key may be written on a binding failure"
     );
-    assert!(!store.exists(), "no key may be written on a binding failure");
 }
 
 // ---------------------------------------------------------------------------
@@ -625,8 +623,7 @@ fn packaged_import_reaches_unit_active() {
     let mut unit = fresh_node();
     let package = packaged_payload(&e.secret, &e.certificate);
 
-    apply_packaged_import(&mut unit, &e.wilaya_cert, &package)
-        .expect("packaged import succeeds");
+    apply_packaged_import(&mut unit, &e.wilaya_cert, &package).expect("packaged import succeeds");
     assert_eq!(status(&unit), IdentityBootstrapState::UnitActive);
 }
 
@@ -635,8 +632,7 @@ fn packaged_import_matches_unit_key_binding_inside_store() {
     let e = export_packaged_identity();
     let mut unit = fresh_node();
     let package = packaged_payload(&e.secret, &e.certificate);
-    apply_packaged_import(&mut unit, &e.wilaya_cert, &package)
-        .expect("packaged import succeeds");
+    apply_packaged_import(&mut unit, &e.wilaya_cert, &package).expect("packaged import succeeds");
 
     assert_eq!(
         unit.node_key_store.read().expect("unit node key"),
@@ -658,8 +654,7 @@ fn identical_reimport_is_idempotent_zero_writes() {
     let e = export_packaged_identity();
     let mut unit = fresh_node();
     let package = packaged_payload(&e.secret, &e.certificate);
-    apply_packaged_import(&mut unit, &e.wilaya_cert, &package)
-        .expect("first import");
+    apply_packaged_import(&mut unit, &e.wilaya_cert, &package).expect("first import");
 
     let before = unit
         .db
@@ -733,8 +728,7 @@ fn install_rejects_certificate_not_matching_installed_key() {
     let e = export_packaged_identity();
     let mut unit = fresh_node();
     let package = packaged_payload(&e.secret, &e.certificate);
-    apply_packaged_import(&mut unit, &e.wilaya_cert, &package)
-        .expect("import");
+    apply_packaged_import(&mut unit, &e.wilaya_cert, &package).expect("import");
 
     // Present a DIFFERENT cert (re-signed by the WILAYA, same subject) whose
     // public key does not match the installed node key → cross-device swap.
@@ -760,8 +754,7 @@ fn install_rejects_non_ed25519_algorithm_profile() {
     let e = export_packaged_identity();
     let mut unit = fresh_node();
     let package = packaged_payload(&e.secret, &e.certificate);
-    apply_packaged_import(&mut unit, &e.wilaya_cert, &package)
-        .expect("import");
+    apply_packaged_import(&mut unit, &e.wilaya_cert, &package).expect("import");
 
     // WILAYA-signed cert with a non-Ed25519 algorithm profile.
     let mut wrong = e.certificate.clone();
@@ -774,10 +767,7 @@ fn install_rejects_non_ed25519_algorithm_profile() {
         FIXED_NOW,
     )
     .expect_err("non-Ed25519 profile must fail closed");
-    assert!(
-        err.to_string().contains("algorithm profile"),
-        "got {err:?}"
-    );
+    assert!(err.to_string().contains("algorithm profile"), "got {err:?}");
 }
 
 #[test]
@@ -785,8 +775,7 @@ fn install_rejects_identity_conflict_with_different_active_credential() {
     let e = export_packaged_identity();
     let mut unit = fresh_node();
     let package = packaged_payload(&e.secret, &e.certificate);
-    apply_packaged_import(&mut unit, &e.wilaya_cert, &package)
-        .expect("import");
+    apply_packaged_import(&mut unit, &e.wilaya_cert, &package).expect("import");
 
     // A DIFFERENT ACTIVE UNIT credential for the same subject (new credential
     // id, re-signed by the WILAYA) → conflict, fail closed.

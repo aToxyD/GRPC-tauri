@@ -21,10 +21,11 @@
 use std::sync::{Arc, Mutex};
 
 use crate::db::Database;
+use crate::domain::audit::{AuditAction, EntityType};
 use crate::domain::identity::{
     AdminKeyFile, ChallengeMessage, CredentialStatus, IdentityCertificate, IdentityChallengeState,
-    IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, MAX_OUTSTANDING_CHALLENGES,
-    SubjectType,
+    IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, SubjectType,
+    MAX_OUTSTANDING_CHALLENGES,
 };
 use crate::domain::rate_limiter::RateLimiter;
 use crate::domain::security::PasswordHashPort;
@@ -34,7 +35,7 @@ use crate::repositories::{identity_store::IdentityStoreRepository, RepositoryPro
 
 use super::identity_provisioning_service::BOOTSTRAP_ADMIN_USERNAME;
 use super::session_establishment_service::{EstablishedSession, SessionEstablishmentService};
-use super::UserService;
+use super::{AuditService, UserService};
 
 /// Rate-limit key for Admin Challenge–Response (SEC-001-A).
 ///
@@ -144,6 +145,13 @@ impl IdentityChallengeService {
     ) -> AppResult<EstablishedSession> {
         self.guard_rate_limit()?;
         let result = self.try_complete_with_passphrase(db, session_id, passphrase);
+        if result.is_err() {
+            // SEC-001-10: the attempt reached the completion decision and
+            // failed — record a failure audit event (fail-soft). This runs
+            // AFTER the decision and never touches the challenge state, so
+            // one-shot consumption semantics are unchanged.
+            self.audit_failure(db, session_id);
+        }
         self.record_outcome(&result);
         result
     }
@@ -152,9 +160,10 @@ impl IdentityChallengeService {
     /// blocked principals receive the same user-safe Arabic message and the
     /// pending challenge is NOT consumed by a blocked attempt.
     fn guard_rate_limit(&self) -> AppResult<()> {
-        let rate_limiter = self.rate_limiter.lock().map_err(|e| {
-            AppError::Internal(format!("Failed to lock rate limiter: {e}"))
-        })?;
+        let rate_limiter = self
+            .rate_limiter
+            .lock()
+            .map_err(|e| AppError::Internal(format!("Failed to lock rate limiter: {e}")))?;
         if rate_limiter.is_allowed(CHALLENGE_RATE_LIMIT_KEY) {
             return Ok(());
         }
@@ -194,6 +203,38 @@ impl IdentityChallengeService {
         }
     }
 
+    /// Emit a fail-soft `LoginFailed` audit event for a Challenge–Response
+    /// attempt that reached the authentication completion decision and failed
+    /// (SEC-001-10).
+    ///
+    /// The record carries only the challenge session id and the same coarse
+    /// reason string used by the password path (`commands/auth.rs`): the
+    /// challenge service's error taxonomy is deliberately fail-closed and
+    /// coarse (user-caused and internal failures are intentionally
+    /// indistinguishable), so a single category is the honest representation.
+    /// It is emitted AFTER the failure decision, does not modify the challenge
+    /// state (one-shot consumption semantics unchanged), and never alters the
+    /// authentication outcome. Never contains the passphrase, the challenge
+    /// nonce, the challenge signature, or any key material.
+    fn audit_failure(&self, db: &Database, session_id: &uuid::Uuid) {
+        if let Err(e) = AuditService::new(db.executor()).log_failure(
+            BOOTSTRAP_ADMIN_USERNAME,
+            BOOTSTRAP_ADMIN_USERNAME,
+            AuditAction::LoginFailed,
+            EntityType::User,
+            Some(&session_id.to_string()),
+            "بيانات الدخول غير صحيحة",
+            Some(&session_id.to_string()),
+        ) {
+            log::error!(
+                target: "grpc::audit",
+                "AUDIT WRITE FAILED [challenge_login_failure] session={} err={:?}",
+                session_id,
+                e
+            );
+        }
+    }
+
     /// Authentication attempt proper (after the rate-limit guard).
     fn try_complete_with_passphrase(
         &self,
@@ -225,6 +266,9 @@ impl IdentityChallengeService {
     ) -> AppResult<EstablishedSession> {
         self.guard_rate_limit()?;
         let result = self.try_complete(db, session_id, passphrase, challenge_signature);
+        if result.is_err() {
+            self.audit_failure(db, session_id);
+        }
         self.record_outcome(&result);
         result
     }
@@ -279,8 +323,13 @@ impl IdentityChallengeService {
             self.verify_issuer_and_challenge(challenge, &presented, &store, challenge_signature)?;
         }
 
+        use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+        let node_scope =
+            crate::infrastructure::security::SettingsNodeIdentityProvider::new(db.executor())
+                .current_node_id()
+                .unwrap_or_else(|_| "WILAYA".to_string());
         let user = UserService::new(db.executor(), self.password_port.as_ref())
-            .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME)?
+            .get_user_by_username(BOOTSTRAP_ADMIN_USERNAME, &node_scope)?
             .ok_or_else(|| AppError::Internal("Local admin user is not provisioned".into()))?;
 
         SessionEstablishmentService::establish(

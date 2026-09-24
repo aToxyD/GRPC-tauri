@@ -16,3 +16,4 @@ export { default as AppLoadingState } from './AppLoadingState.svelte';
 export { default as AppEmptyState }  from './AppEmptyState.svelte';
 export { default as AppPageHeader }  from './AppPageHeader.svelte';
 export { default as AppSection }     from './AppSection.svelte';
+export { default as AppProductSearch } from './AppProductSearch.svelte';

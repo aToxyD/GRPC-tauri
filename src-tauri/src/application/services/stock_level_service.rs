@@ -44,11 +44,34 @@ impl<'a> StockLevelService<'a> {
         self.get_stock_summary(fiscal_year)
     }
 
+    /// Authoritative consumption-unit key for a product (SEC-087 Phase 6C),
+    /// resolved from backend product configuration — the single source of truth
+    /// for stock identity (AGENTS.md A1/A3).
+    ///
+    /// `get_product_config_codes()` returns `None` when the product row is
+    /// missing or soft-deleted — never because a persistent Product lacks a
+    /// config (the canonical schema is NOT NULL). The `None` output must
+    /// therefore be interpreted as "no readable product", and the caller treats
+    /// it as "no stock", never as a legacy NULL-keyed identity. Missing products
+    /// cannot expose inventory rows regardless of the resolved key.
+    fn resolve_consumption_unit(&self, product_id: &str) -> Result<Option<i32>, AppError> {
+        Ok(self
+            .executor
+            .products()
+            .get_product_config_codes(product_id)?
+            .map(|c| c.consumption_unit))
+    }
+
     pub fn get_stock(&self, product_id: &str) -> Result<Option<InventoryStock>, AppError> {
         if product_id.trim().is_empty() {
             return Err(AppError::Internal("product_id is required".to_string()));
         }
-        self.executor.inventory().get_stock(product_id)
+        let key = match self.resolve_consumption_unit(product_id)? {
+            Some(k) => k,
+            // Missing or soft-deleted product: no readable inventory identity.
+            None => return Ok(None),
+        };
+        self.executor.inventory().get_stock_typed(product_id, key)
     }
 
     pub fn get_all_stocks(&self) -> Result<Vec<InventoryStock>, AppError> {
@@ -64,7 +87,15 @@ impl<'a> StockLevelService<'a> {
                 "quantity cannot be negative".to_string(),
             ));
         }
-        self.executor.inventory().update_stock(product_id, quantity)
+        let key = self.resolve_consumption_unit(product_id)?.ok_or_else(|| {
+            AppError::Internal(format!(
+                "product {} has no unit/TVA configuration",
+                product_id
+            ))
+        })?;
+        self.executor
+            .inventory()
+            .update_stock_typed(product_id, key, quantity)
     }
 
     pub fn check_stock_availability(
@@ -73,7 +104,15 @@ impl<'a> StockLevelService<'a> {
     ) -> Result<Vec<StockCheckResult>, AppError> {
         let mut results = Vec::new();
         for item in items {
-            let stock = self.executor.inventory().get_stock(&item.product_id)?;
+            let key = self.resolve_consumption_unit(&item.product_id)?;
+            let stock = match key {
+                // Missing or soft-deleted product: no stock.
+                None => None,
+                Some(k) => self
+                    .executor
+                    .inventory()
+                    .get_stock_typed(&item.product_id, k)?,
+            };
             let (available_qty, product_name) = match stock {
                 Some(s) => (s.quantity, s.product_name),
                 None => (0.0, "غير معروف".to_string()),
@@ -120,11 +159,20 @@ impl<'a> StockLevelService<'a> {
     }
 
     /// Full inventory FIFO view for the UNIT StockPage.
+    ///
+    /// SEC-087 Phase 5: advisory snapshot-coverage warnings surface stock rows
+    /// that exist without a persisted purchase snapshot (legacy/manual stock).
+    /// These are display-only and never block operations. The "vice versa"
+    /// direction (purchase snapshot with fully-consumed stock) is by-construction
+    /// normal for FIFO layers and is intentionally NOT reported.
     pub fn get_inventory_fifo_view(
         &self,
         unit_id: &str,
     ) -> Result<crate::models::InventoryStockPageView, AppError> {
-        use crate::models::{InventoryLayerView, InventoryProductView, InventoryStockPageView};
+        use crate::models::{
+            InventoryCoverageWarning, InventoryLayerView, InventoryProductView,
+            InventoryStockPageView,
+        };
         use std::collections::HashMap;
 
         let rows = self
@@ -132,54 +180,85 @@ impl<'a> StockLevelService<'a> {
             .fifo_layers()
             .get_inventory_fifo_view(unit_id)?;
 
-        let mut product_map: HashMap<
-            String,
-            (String, Vec<InventoryLayerView>, f64, Option<String>),
-        > = HashMap::new();
+        struct RowAcc {
+            product_name: Option<String>,
+            layers: Vec<InventoryLayerView>,
+            total_qty: f64,
+            oldest: Option<String>,
+            order_without_snapshot: bool,
+        }
+
+        let mut product_map: HashMap<String, RowAcc> = HashMap::new();
 
         for row in rows {
-            let entry = product_map
-                .entry(row.product_id)
-                .or_insert_with(|| (row.product_name, Vec::new(), 0.0, None));
+            let entry = product_map.entry(row.product_id).or_insert_with(|| RowAcc {
+                product_name: None,
+                layers: Vec::new(),
+                total_qty: 0.0,
+                oldest: None,
+                order_without_snapshot: false,
+            });
 
-            let received_at = row.received_at;
-            entry.1.push(InventoryLayerView {
+            let received_at = row.received_at.clone();
+            let source_type = row.source_type.clone();
+            entry.layers.push(InventoryLayerView {
                 layer_id: row.layer_id,
-                source_type: Some(row.source_type),
+                source_type: Some(source_type.clone()),
                 received_at: received_at.clone(),
                 qty_remaining: row.qty_remaining,
                 unit_cost: row.unit_cost,
                 layer_value: row.qty_remaining * row.unit_cost,
             });
-            entry.2 += row.qty_remaining;
+            entry.total_qty += row.qty_remaining;
+            if !entry.order_without_snapshot
+                && source_type == "ORDER"
+                && row.purchase_unit_cost.is_none()
+            {
+                entry.order_without_snapshot = true;
+            }
+            if entry.product_name.is_none() {
+                entry.product_name = Some(row.product_name);
+            }
 
-            match &entry.3 {
-                None => entry.3 = Some(received_at),
+            match &entry.oldest {
+                None => entry.oldest = Some(received_at),
                 Some(old) => {
                     if received_at < *old {
-                        entry.3 = Some(received_at);
+                        entry.oldest = Some(received_at);
                     }
                 }
             }
         }
 
         let mut products = Vec::new();
+        let mut warnings = Vec::new();
         let mut total_value = 0.0f64;
         let mut total_layers = 0usize;
 
-        for (_pid, (pname, layers, total_qty, oldest)) in product_map {
-            let product_value: f64 = layers.iter().map(|l| l.layer_value).sum();
+        for (pid, acc) in product_map {
+            let product_value: f64 = acc.layers.iter().map(|l| l.layer_value).sum();
             total_value += product_value;
-            let layer_count = layers.len();
+            let layer_count = acc.layers.len();
             total_layers += layer_count;
+
+            if acc.order_without_snapshot {
+                warnings.push(InventoryCoverageWarning {
+                    code: "STOCK_WITHOUT_PURCHASE_SNAPSHOT".to_string(),
+                    product_id: pid.clone(),
+                    product_name: acc.product_name.clone().unwrap_or_default(),
+                    message: "المخزون موجود دون سند شراء مسجّل (طريقة قديمة أو إدخال يدوي)"
+                        .to_string(),
+                });
+            }
+
             products.push(InventoryProductView {
-                product_id: _pid,
-                product_name: pname,
-                total_quantity: total_qty,
+                product_id: pid,
+                product_name: acc.product_name.unwrap_or_default(),
+                total_quantity: acc.total_qty,
                 total_value: product_value,
-                oldest_layer_date: oldest,
+                oldest_layer_date: acc.oldest,
                 layer_count,
-                layers,
+                layers: acc.layers,
             });
         }
 
@@ -190,6 +269,7 @@ impl<'a> StockLevelService<'a> {
             total_products: products.len(),
             total_active_layers: total_layers,
             products,
+            warnings,
         })
     }
 

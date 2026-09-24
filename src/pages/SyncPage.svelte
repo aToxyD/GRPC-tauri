@@ -1,8 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { importDailyReportPackage, importMonthlySummaryPackage, importStockMovementsPackage } from '../lib/contracts';
-  import { openFile } from '../lib/tauri';
-  import { listUnits, getSettings } from '../lib/contracts';
+  import {
+    importDailyReportPackage,
+    importMonthlySummaryPackage,
+    importStockMovementsPackage,
+    listUnits,
+    getSettings,
+  } from '../lib/contracts';
+  import { openFile, saveFile } from '../lib/tauri';
   import type { Unit, Settings } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -307,6 +312,7 @@
               </ul>
             </li>
             <li><strong>من عقدة الولاية:</strong> اختر الوحدة المناسبة ثم استورد كل ملف</li>
+            <li><strong>كتالوج العقود:</strong> صدّره من صفحة "العقود" (.sync) وسيستورده كل منشأة من صفحة "المخزون" ← استيراد كتالوج العقود. حزم العقود مبنية من المصدر الرسمي (WILAYA) وموقعة رقمياً.</li>
           </ol>
         </AppAlert>
       </div>

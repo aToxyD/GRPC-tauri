@@ -34,11 +34,12 @@ fn seed_unit(ex: DbExecutor<'_>, id: &str, now: &str) {
 
 fn seed_product_and_stock(ex: DbExecutor<'_>, product_id: &str, name: &str, now: &str, year: i32) {
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, year, created_at) VALUES (?1,?2,0.0,0.0,?3,?4)",
+        "INSERT INTO products (id, name, base_price, year, created_at, purchase_unit, consumption_unit, conversion_factor, tva_classification) VALUES (?1,?2,0.0,?3,?4,1,1,1,0)",
         rusqlite::params![product_id, name, year, now],
-    ).expect("insert product");
+    )
+    .expect("insert product");
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',?3,?3)",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at) VALUES (?1,?2,0.0,'unit',1,?3,?3)",
         rusqlite::params![format!("stock-{}", product_id), product_id, now],
     ).expect("insert inventory_stocks");
 }
@@ -113,23 +114,28 @@ fn get_movement_id_for_product(ex: DbExecutor<'_>, reference_id: &str, product_i
 }
 
 fn get_layer_consumption_sum(ex: DbExecutor<'_>, movement_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(total_cost), 0.0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
-        rusqlite::params![movement_id],
-        |row| row.get(0),
-    ).unwrap_or(0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(total_cost), 0) FROM inventory_layer_consumptions WHERE movement_id = ?1",
+            rusqlite::params![movement_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 fn get_meal_item_sum(ex: DbExecutor<'_>, report_id: &str, product_id: &str) -> f64 {
-    ex.query_row(
-        "SELECT COALESCE(SUM(drmi.total_cost), 0.0)
+    let sum: i64 = ex
+        .query_row(
+            "SELECT COALESCE(SUM(drmi.total_cost), 0)
          FROM daily_report_meal_items drmi
          INNER JOIN daily_report_meals drm ON drmi.meal_id = drm.id
          WHERE drm.daily_report_id = ?1 AND drmi.product_id = ?2",
-        rusqlite::params![report_id, product_id],
-        |row| row.get(0),
-    )
-    .unwrap_or(0.0)
+            rusqlite::params![report_id, product_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    sum as f64 / 100.0
 }
 
 fn sync_inventory_from_fifo(ex: DbExecutor<'_>, unit_id: &str, product_id: &str) {

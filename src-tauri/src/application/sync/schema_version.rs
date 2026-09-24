@@ -8,6 +8,8 @@ impl SchemaVersion {
     pub const V1: Self = Self(1);
     /// Canonical sorted-key JSON for integrity/signature (ADR 0009).
     pub const V2: Self = Self(2);
+    /// SEC-087 Phase 6A (ADR-0057): the current interchange envelope version.
+    pub const V3: Self = Self(3);
 
     pub const fn new(value: u16) -> Self {
         Self(value)

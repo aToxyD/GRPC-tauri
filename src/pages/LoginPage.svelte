@@ -28,6 +28,7 @@
   import AppButton from '../lib/components/ui/AppButton.svelte';
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
+  import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
 
   const scope = createRuntimeScope();
@@ -40,8 +41,9 @@
   const importOp = createOperationGuard({ scope });
   const importLoading = importOp.loading;
 
-  // @category TransientState
-  let username = '';
+  // @category TransientState — ADR-0052: the operator identity is chosen from
+  // a fixed set (UNIT) or pinned (WILAYA); free-text entry is gone.
+  let username = 'user';
   // @category TransientState
   let password = '';
   // @category TransientState
@@ -51,6 +53,10 @@
   // @category ProjectionState
   let isUnitNode = false;
 
+  // ADR-0052: WILAYA nodes authenticate exclusively as `admin`; the identity
+  // field state mirrors the rendered (readonly) field at all times.
+  $: if (!isUnitNode) username = 'admin';
+
   // @category ProjectionState
   let loginAttempts = 0;
   // @category ProjectionState
@@ -59,6 +65,12 @@
   let lockoutTimeRemaining: number | null = null;
   // @category ProjectionState
   let isRateLimited = false;
+
+  // ADR-0041 §11.4 (SEC-013 Phase 2): when the app key resolves from the OS
+  // keyring, show a notice that auto-unlock is enabled + a link to the
+  // security surface (manage / forget). The key itself is never displayed.
+  // @category ProjectionState
+  let appKeySource: string | null = null;
 
   // B5 identity bootstrap (RFC 2026-08-04 §3.6–3.7 / ADR-0038)
   // @category ProjectionState
@@ -77,15 +89,11 @@
   const bootstrapOp = createOperationGuard({ scope });
   const bootstrapLoading = bootstrapOp.loading;
 
-  // B6-A (ADR-0038): the legacy password path is available only while no ACTIVE
-  // ADMIN identity exists. Once the admin identity is present (ADMIN_PROVISIONED
-  // or READY) Challenge–Response is the mandatory login path — the password tab
-  // is hidden and the admin-key tab becomes the default.
-  // @category UiState
-  $: passwordLoginAvailable =
-    identityState !== 'ADMIN_PROVISIONED' && identityState !== 'READY';
-  // @category UiState
-  $: effectiveAuthTab = passwordLoginAvailable ? authTab : 'adminkey';
+  // ADR-0050 (SEC-013): password is the normal login path on every node —
+  // WILAYA Admin authenticates with the B8 fleet credential. Challenge–
+  // Response (`.adminkey`) remains available as the recovery / high-assurance
+  // path (admin-key tab). The backend gate still routes accounts without a
+  // usable password credential (identity-only ADMIN ceremony) to the challenge.
   // @category UiState
   $: adminkeyAvailable =
     identityState === 'WILAYA_ACTIVE' ||
@@ -103,6 +111,13 @@
     (identityState === 'UNINITIALIZED' ||
       identityState === 'UNIT_WAITING_FOR_CERTIFICATE' ||
       identityState === 'UNIT_ACTIVE');
+  // B8 anchor-first (ADR-0045): on a fresh (unconfigured) node the identity
+  // projection walks the default WILAYA chain, so an ACTIVE WILAYA certificate
+  // — the local trust anchor — is present exactly when `identityState` reports
+  // WILAYA_ACTIVE. Presentation-only gate; the backend B8 predicate remains the
+  // authoritative enforcement.
+  // @category UiState
+  $: unitAnchorInstalled = identityState === 'WILAYA_ACTIVE';
 
   // @category UiState
   $: displayError = $loginError || localError;
@@ -133,6 +148,9 @@
     } catch {
       isUnitNode = false;
     }
+    // ADR-0052: seed the identity field per node class — the canonical UNIT
+    // operator by default, or the pinned fleet admin on WILAYA.
+    username = isUnitNode ? 'user' : 'admin';
   }
 
   async function refreshIdentityStatus() {
@@ -149,6 +167,7 @@
     // command below can run yet.
     try {
       const security = await getSecurityStatus();
+      appKeySource = security.source;
       if (security.requires_action) {
         push('/security');
         return;
@@ -388,7 +407,8 @@
       const request: LoginRequest = { username, password };
       const response: LoginResponse = await login(request);
       if (response.identity_challenge_required) {
-        // The backend gate closed the password path (ACTIVE ADMIN identity).
+        // The backend gate routed an account WITHOUT a usable password
+        // credential (identity-only ADMIN ceremony) to Challenge–Response.
         // Route the operator to the admin-key challenge.
         authTab = 'adminkey';
         authTabDirty = true;
@@ -444,6 +464,26 @@
       </div>
     {/if}
 
+    <!-- فتح تلقائي للمفتاح (ADR-0041 §11.4): مصدر keyring — إشعار + إدارة -->
+    {#if appKeySource === 'keyring'}
+      <div class="mb-4">
+        <AppAlert intent="info">
+          <p class="text-sm font-semibold">فتح تلقائي لمفتاح التطبيق مفعّل</p>
+          <p class="text-xs mt-1">
+            المفتاح محفوظ على هذا الجهاز. هذا لا يعني تسجيل الدخول — أدخل اسم
+            المستخدم وكلمة المرور للمتابعة.
+          </p>
+          <button
+            type="button"
+            class="text-xs underline mt-2 text-civil-blue dark:text-civil-blue"
+            on:click={() => push('/security')}
+          >
+            إدارة / نسيان المفتاح المحفوظ
+          </button>
+        </AppAlert>
+      </div>
+    {/if}
+
     <!-- مؤشر محاولات الدخول -->
     {#if loginAttempts > 0}
       <div class="mb-4">
@@ -468,23 +508,21 @@
 
     <!-- التبويبات -->
     <div class="flex mb-4 border-b border-gray-200 dark:border-gray-700" role="tablist">
-      {#if passwordLoginAvailable}
       <button
         type="button"
         role="tab"
-        aria-selected={effectiveAuthTab === 'password'}
-        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {effectiveAuthTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        aria-selected={authTab === 'password'}
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 {authTab === 'password' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
         on:click={() => { authTab = 'password'; authTabDirty = true; localError = ''; }}
       >
         كلمة المرور
       </button>
-      {/if}
       <button
         type="button"
         role="tab"
-        aria-selected={effectiveAuthTab === 'adminkey'}
+        aria-selected={authTab === 'adminkey'}
         disabled={!adminkeyAvailable}
-        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {effectiveAuthTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
+        class="flex-1 pb-2 text-sm font-medium transition-colors border-b-2 disabled:cursor-not-allowed disabled:opacity-50 {authTab === 'adminkey' ? 'text-civil-blue border-civil-blue' : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300'}"
         on:click={() => { authTab = 'adminkey'; authTabDirty = true; localError = ''; }}
       >
         المفتاح الإداري
@@ -492,19 +530,24 @@
     </div>
 
     <!-- نموذج الدخول بكلمة المرور -->
-    {#if effectiveAuthTab === 'password'}
+    {#if authTab === 'password'}
     <form class="space-y-4" on:submit|preventDefault={handleLogin} novalidate>
-      <AppInput
-        id="username"
-        label="اسم المستخدم"
-        type="text"
-        bind:value={username}
-        placeholder="أدخل اسم المستخدم"
-        autocomplete="username"
-        required
-        disabled={$loginLoading || isRateLimited}
-        on:keydown={handleKeydown}
-      />
+      {#if isUnitNode}
+        <AppSelect id="username" label="المستخدم" bind:value={username} disabled={$loginLoading || isRateLimited}>
+          <option value="user">مشغّل الوحدة (user)</option>
+          <option value="admin">المسؤول العام (admin)</option>
+        </AppSelect>
+      {:else}
+        <AppInput
+          id="username"
+          label="المسؤول العام (admin)"
+          type="text"
+          value="admin"
+          readonly
+          autocomplete="username"
+          on:keydown={handleKeydown}
+        />
+      {/if}
 
       <AppInput
         id="password"
@@ -517,6 +560,12 @@
         disabled={$loginLoading || isRateLimited}
         on:keydown={handleKeydown}
       />
+
+      <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 leading-relaxed">
+        ملاحظة: حساب <code class="font-mono">admin</code> يستخدم <b>كلمة مرور المسؤول العام</b>
+        — وليست كلمة مرور المفتاح الإداري. يتم تعيين كلمة مرور المسؤول العام من صفحة الإعدادات،
+        ومستخدم الوحدة ثابت باسم <code class="font-mono" dir="ltr">user</code>.
+      </p>
 
       <AppButton
         type="submit"
@@ -532,7 +581,7 @@
     {/if}
 
     <!-- نموذج الدخول بالمفتاح الإداري (Challenge–Response) -->
-    {#if effectiveAuthTab === 'adminkey'}
+    {#if authTab === 'adminkey'}
     <form class="space-y-4" on:submit|preventDefault={handleChallengeLogin} novalidate>
       <AppInput
         id="passphrase"
@@ -544,6 +593,11 @@
         required
         disabled={$loginLoading || isRateLimited || !adminkeyAvailable}
       />
+
+      <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 leading-relaxed">
+        كلمة مرور المفتاح الإداري هي التي أنشأتها عند إصدار المفتاح على عقدة WILAYA — وهي
+        <b>مختلفة</b> عن كلمة مرور الحساب (المسؤول العام).
+      </p>
 
       <AppButton
         type="submit"
@@ -560,19 +614,35 @@
 
     <!-- استيراد حزمة التكوين -->
     {#if !isAppConfigured}
-      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3 text-center">لم يتم تكوين العقدة بعد</p>
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
+        <p class="text-sm text-gray-500 dark:text-gray-400 text-center">لم يتم تكوين العقدة بعد</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
+          الخطوة 1: ثبّت شهادة WILAYA كمرساة ثقة قبل استيراد الحزمة (ADR-0045)
+        </p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
+          تُعدّ عقدة WILAYA هوية الوحدة ضمن حزمة .unit وتضمّنها فيها، ويتضمن التصدير مادة هوية الوحدة. المفتاح الخاص محمي ولا يُعرَض للمستخدم، وتُفعَّل هوية الوحدة على هذه العقدة بعد التحقق من الحزمة.
+        </p>
+        <AppButton
+          variant="secondary"
+          size="lg"
+          fullWidth
+          loading={$bootstrapLoading}
+          on:click={handleInstallWilayaCert}
+        >
+          الخطوة 1: تثبيت شهادة WILAYA (مرساة الثقة)
+        </AppButton>
         <AppButton
           variant="secondary"
           size="lg"
           fullWidth
           loading={$importLoading}
+          disabled={!unitAnchorInstalled}
           on:click={handleImportPackage}
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
           </svg>
-          استيراد حزمة التكوين (.unit)
+          الخطوة 2: استيراد حزمة التكوين (.unit)
         </AppButton>
       </div>
     {/if}
@@ -668,8 +738,7 @@
         <AppAlert intent="info">
           <div class="space-y-1">
             <p class="text-sm font-semibold">{bootstrapStatusLabel(identityState)}</p>
-            <p class="text-xs">توقّع عقدة WILAYA شهادة الوحدة. المفتاح السري لا يغادر العقدة، وشهادة WILAYA (مرساة الثقة) تُثبَّت في خطوة مستقلة.</p>
-            <p class="text-xs">عند استيراد حزمة .unit بهوية مضمّنة، تُنشأ مفاتيح الوحدة على عقدة WILAYA وتنتقل مشفّرة داخل الحزمة فقط، ولا تُخزَّن في متجر مفاتيح WILAYA.</p>
+            <p class="text-xs">توقّع عقدة WILAYA شهادة الوحدة وتُعدّ هويتها ضمن حزمة .unit. المفتاح الخاص محمي ولا يُعرَض للمستخدم، وشهادة WILAYA (مرساة الثقة) تُثبَّت في خطوة مستقلة.</p>
           </div>
         </AppAlert>
 

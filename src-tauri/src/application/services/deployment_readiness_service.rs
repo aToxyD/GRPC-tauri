@@ -1,11 +1,13 @@
 //! Read-only deployment readiness verification — no auto-fix, no directory creation.
 
 use crate::db::migrations::expected_schema_version;
+use crate::db::Database;
 use crate::errors::AppError;
 use crate::infrastructure::backup::SqliteBackupAdapter;
+use crate::infrastructure::identity::NodeKeyStore;
 use crate::infrastructure::logging::resolve_log_dir;
-use crate::infrastructure::security::resolve_active_signing_key_id;
 use crate::repositories::executor::DbExecutor;
+use crate::repositories::RepositoryProvider;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -39,11 +41,23 @@ pub struct DeploymentReadinessReport {
 pub struct DeploymentReadinessService<'a> {
     executor: DbExecutor<'a>,
     db_path: PathBuf,
+    db: &'a Database,
+    node_key_store: &'a NodeKeyStore,
 }
 
 impl<'a> DeploymentReadinessService<'a> {
-    pub fn new(executor: DbExecutor<'a>, db_path: PathBuf) -> Self {
-        Self { executor, db_path }
+    pub fn new(
+        executor: DbExecutor<'a>,
+        db_path: PathBuf,
+        db: &'a Database,
+        node_key_store: &'a NodeKeyStore,
+    ) -> Self {
+        Self {
+            executor,
+            db_path,
+            db,
+            node_key_store,
+        }
     }
 
     pub fn verify(&self) -> Result<DeploymentReadinessReport, AppError> {
@@ -219,29 +233,46 @@ impl<'a> DeploymentReadinessService<'a> {
         blocking: &mut Vec<String>,
         warnings: &mut Vec<String>,
     ) {
-        let is_prod = std::env::var("GRPC_ENV").is_ok()
-            && std::env::var("GRPC_ENV")
-                .unwrap()
-                .eq_ignore_ascii_case("production");
+        use crate::application::services::NodeIdentityResolver;
+        use crate::domain::identity::SubjectType;
 
-        let key_present = resolve_active_signing_key_id().is_some();
-        let key_resolves =
-            crate::infrastructure::security::resolve_package_signing_key_32().is_ok();
-        let passed = if is_prod {
-            key_present && key_resolves
-        } else {
-            key_present || key_resolves
+        let is_prod = matches!(
+            std::env::var("GRPC_ENV"),
+            Ok(v) if v.eq_ignore_ascii_case("production")
+        );
+
+        // SEC-008 (ADR-0048): fiscal closure packages are signed with the
+        // WILAYA node identity's Ed25519 key — no shared-secret env key exists.
+        // The check only applies to WILAYA nodes; UNIT/UNCONFIGURED nodes never
+        // export fiscal closure packages.
+        let node_type = self.executor.settings().get_node_type().unwrap_or_default();
+
+        let (passed, msg) = match node_type.as_str() {
+            "WILAYA" => match NodeIdentityResolver::resolve_local_signer(
+                self.db,
+                self.node_key_store,
+                SubjectType::Wilaya,
+            ) {
+                Ok(Some(resolved)) => (
+                    true,
+                    format!(
+                        "WILAYA signing identity available (identity_id={} key={})",
+                        resolved.certificate.identity_id,
+                        hex::encode(&resolved.certificate.public_key[..resolved.certificate.public_key.len().min(8)])
+                    ),
+                ),
+                Ok(None) => (
+                    false,
+                    "WILAYA signing identity not provisioned (node key or ACTIVE WILAYA certificate missing)".into(),
+                ),
+                Err(e) => (false, format!("WILAYA signing identity resolution failed: {}", e)),
+            },
+            _ => (
+                true,
+                "signing identity not applicable for this node type (WILAYA only)".into(),
+            ),
         };
-        let msg = if passed {
-            format!(
-                "signing key available (id={})",
-                resolve_active_signing_key_id().unwrap_or_else(|| "implicit".into())
-            )
-        } else if is_prod {
-            "active signing key required in production (GRPC_PACKAGE_SIGNING_KEY / GRPC_ACTIVE_SIGNING_KEY_ID)".into()
-        } else {
-            "package signing key not configured".into()
-        };
+
         Self::push_check(
             checks,
             blocking,

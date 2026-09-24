@@ -1,22 +1,28 @@
-//! Identity authentication policy (B6-A → B6-B).
+//! Identity authentication policy (B6-A → B6-B → ADR-0050).
 //!
-//! RFC 2026-08-04-node-identity-trust / ADR-0038.
+//! RFC 2026-08-04-node-identity-trust / ADR-0038, as amended by ADR-0050
+//! (WILAYA Admin Normal Authentication Model).
 //!
-//! Sole decision source for whether the legacy password login path is
-//! permitted on the local node. The rule is derived from the SECURITY FACT —
-//! an ACTIVE ADMIN identity exists — and NEVER from the derived
-//! `IdentityBootstrapState` projection (which is a UI / bootstrap concern only,
-//! B6-A refinement 1). A derived state may legitimately evolve; this policy is
-//! an independent, testable security rule.
+//! Sole decision source for whether the password login path is permitted for a
+//! LOCAL ACCOUNT on this node. The rule is derived from the ACCOUNT CREDENTIAL
+//! FACT — does this account carry a usable password hash? — and NEVER from the
+//! derived `IdentityBootstrapState` projection (which is a UI / bootstrap
+//! concern only, B6-A refinement 1). A derived state may legitimately evolve;
+//! this policy is an independent, testable security rule.
 //!
-//! B6-B closes the deprecation window: the temporary `GRPC_LEGACY_AUTH` opt-in
-//! (Introduced B6-A) is removed and MUST NOT survive. The gate is now
-//! PERMANENT — the password path stays open only while no ACTIVE ADMIN identity
-//! exists. This preserves Application User Authentication for nodes that have
-//! no node identity at all (UNIT local users created from the `.unit` package's
-//! `UserExport { username, password_hash, role }`), while WILAYA nodes with an
-//! ACTIVE ADMIN identity route exclusively to Operator Authentication
-//! (Challenge–Response / `.adminkey`).
+//! ADR-0050 supersedes the B6-B permanent gate for normal login: the presence
+//! of an ACTIVE ADMIN identity or a `.adminkey` no longer closes the password
+//! path. Normal WILAYA Admin login is username + password (the B8 fleet-admin
+//! credential); Challenge–Response (`.adminkey`) is retained as the recovery /
+//! high-assurance path. The password gate is now an ACCOUNT-LEVEL predicate:
+//! an account whose hash is empty (identity-only ADMIN ceremony) has no usable
+//! password credential and is routed to Challenge–Response; unknown or
+//! soft-deleted accounts fall through to the generic invalid-credentials
+//! response (no account enumeration).
+//!
+//! This preserves Application User Authentication for UNIT local users created
+//! from the `.unit` package's `UserExport { username, password_hash, role }`
+//! while WILAYA Admin authenticates with the fleet credential (B8).
 
 use crate::db::Database;
 use crate::domain::identity::{IdentityStorePort, SubjectType};
@@ -94,19 +100,36 @@ impl IdentityAuthenticationPolicy {
         db: &Database,
         adminkey_provider: &AdminKeyProvider,
     ) -> AppResult<bool> {
-        Ok(Self::admin_credential_state(db, adminkey_provider)?
-            == AdminCredentialState::Usable)
+        Ok(Self::admin_credential_state(db, adminkey_provider)? == AdminCredentialState::Usable)
     }
 
-    /// Whether the legacy password login path is permitted on this node.
+    /// Whether the password login path is permitted for the given local
+    /// account.
     ///
-    /// Permanent gate (B6-B): the password path is permitted ONLY while the
-    /// ADMIN identity is not usable. The temporary `GRPC_LEGACY_AUTH` override
-    /// that could re-open the path during the B6-A window is removed.
+    /// ADR-0050 (supersedes B6-B for normal login): the password path is
+    /// permitted whenever the LOCAL ACCOUNT carries a usable password
+    /// credential — an ACTIVE ADMIN identity or `.adminkey` does NOT close it.
+    /// An account with an EMPTY password hash (identity-only ADMIN ceremony)
+    /// has no usable password credential and is routed to Challenge–Response.
+    /// Unknown and soft-deleted (`deleted = 1`) accounts return `true` so the
+    /// command falls through to the generic invalid-credentials response — the
+    /// gate must never reveal which usernames exist (no enumeration) nor turn
+    /// account absence into a distinguishable `challenge_required` signal.
+    /// ADR-0052: lookups are scoped to the local node identity, so a foreign
+    /// scope's accounts (e.g. another unit's shadow operator) behave exactly
+    /// like unknown accounts.
     pub fn password_login_allowed(
         db: &Database,
-        adminkey_provider: &AdminKeyProvider,
+        username: &str,
+        node_scope: &str,
     ) -> AppResult<bool> {
-        Ok(!Self::has_active_admin_identity(db, adminkey_provider)?)
+        let user = db
+            .executor()
+            .users()
+            .get_user_by_username_raw(username, node_scope)?;
+        Ok(match user {
+            Some(u) => !u.deleted && !u.password_hash.is_empty(),
+            None => true,
+        })
     }
 }

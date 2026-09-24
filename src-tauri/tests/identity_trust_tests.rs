@@ -19,6 +19,7 @@ use tempfile::TempDir;
 
 use grpc_lib::application::services::{IdentityChallengeService, IdentityProvisioningService};
 use grpc_lib::db::{ConnectionFactory, Database};
+use grpc_lib::domain::audit::{AuditAction, AuditFilters};
 use grpc_lib::domain::identity::{
     ChallengeMessage, ChallengeState, CredentialStatus, IdentityChallengeState, IdentitySigner,
     IdentityStorePort, SubjectType, MAX_OUTSTANDING_CHALLENGES,
@@ -427,7 +428,10 @@ fn auth01_repeated_failures_trigger_rate_limiting() {
     );
     assert_lockout_error(blocked);
     assert_eq!(
-        state.lock().expect("state lock").state(&challenge.session_id),
+        state
+            .lock()
+            .expect("state lock")
+            .state(&challenge.session_id),
         Some(ChallengeState::Pending),
         "a blocked attempt must not consume the challenge"
     );
@@ -469,7 +473,12 @@ fn auth03_valid_passphrase_succeeds_before_lockout() {
     let challenge = begin_challenge(&service, &device);
     let signature = operator_sign(&challenge, &device.adminkey_provider);
     let established = service
-        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
         .expect("valid passphrase succeeds before lockout");
     assert_eq!(established.session.username, "admin");
 }
@@ -530,7 +539,12 @@ fn auth06_expired_challenge_is_removed() {
     backdate_challenge(&state, &challenge);
 
     let signature = operator_sign(&challenge, &device.adminkey_provider);
-    let _ = service.complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature);
+    let _ = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        ADMIN_PASSPHRASE,
+        &signature,
+    );
 
     let guard = state.lock().expect("state lock");
     assert_eq!(
@@ -549,7 +563,12 @@ fn auth07_challenge_cannot_be_used_twice() {
     let challenge = begin_challenge(&service, &device);
     let signature = operator_sign(&challenge, &device.adminkey_provider);
     service
-        .complete(&mut device.db, &challenge.session_id, ADMIN_PASSPHRASE, &signature)
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
         .expect("first completion succeeds");
 
     let replay = service.complete(
@@ -584,7 +603,10 @@ fn auth08_failed_authentication_consumes_the_challenge() {
     );
     assert!(failed.is_err(), "wrong passphrase must fail");
     assert_eq!(
-        state.lock().expect("state lock").state(&challenge.session_id),
+        state
+            .lock()
+            .expect("state lock")
+            .state(&challenge.session_id),
         Some(ChallengeState::Consumed),
         "a failed attempt must consume the challenge (one-shot fail-closed)"
     );
@@ -624,14 +646,15 @@ fn auth10_expired_challenges_do_not_consume_capacity() {
     for _ in 0..MAX_OUTSTANDING_CHALLENGES {
         let expired =
             ChallengeMessage::new(uuid::Uuid::new_v4(), device.wilaya_identity_id, [1u8; 32]);
-        assert!(
-            state
-                .lock()
-                .expect("state lock")
-                .try_begin(expired, now_epoch_secs() - 100_000)
-        );
+        assert!(state
+            .lock()
+            .expect("state lock")
+            .try_begin(expired, now_epoch_secs() - 100_000));
     }
-    assert_eq!(state.lock().expect("state lock").len(), MAX_OUTSTANDING_CHALLENGES);
+    assert_eq!(
+        state.lock().expect("state lock").len(),
+        MAX_OUTSTANDING_CHALLENGES
+    );
 
     // A fresh begin prunes the expired entries and succeeds.
     let fresh = try_begin_challenge(&service, &device).expect("fresh challenge accepted");
@@ -720,4 +743,142 @@ fn auth12_concurrent_attempts_respect_cap_and_limiter() {
         !limiter.lock().expect("rl lock").is_allowed("admin"),
         "concurrent failures must still lock the principal out"
     );
+}
+
+// ───────────────────── SEC-001-10: Challenge–Response failure audit ─────────────────────
+
+/// Every `LoginFailed` audit entry recorded on this device's audit log.
+fn login_failed_audits(db: &Database) -> Vec<grpc_lib::domain::audit::AuditEntry> {
+    grpc_lib::application::services::AuditService::new(db.executor())
+        .get_audit_entries(
+            &AuditFilters {
+                action: Some(AuditAction::LoginFailed.as_str().to_string()),
+                ..Default::default()
+            },
+            0,
+            1000,
+        )
+        .expect("audit query")
+        .entries
+}
+
+/// SEC-001-10: a Challenge–Response attempt that reaches the completion
+/// decision and fails MUST leave a `LoginFailed` audit record carrying only
+/// the session id and a coarse reason — never the passphrase or signature.
+#[test]
+fn sec00110_failed_challenge_is_audited() {
+    let mut device = provision_device();
+    seed_admin_user(&mut device.db);
+    let (_state, service) = challenge_service(&device);
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let failed = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        "wrong passphrase",
+        &signature,
+    );
+    assert!(failed.is_err(), "wrong passphrase must fail");
+
+    let entries = login_failed_audits(&device.db);
+    assert_eq!(entries.len(), 1, "exactly one LoginFailed audit expected");
+    let entry = &entries[0];
+    assert_eq!(entry.username, "admin", "bootstrap admin principal");
+    assert_eq!(
+        entry.entity_id.as_deref(),
+        Some(challenge.session_id.to_string().as_str()),
+        "entity_id must be the challenge session id"
+    );
+    assert_eq!(
+        entry.session_id.as_deref(),
+        Some(challenge.session_id.to_string().as_str()),
+        "session_id must be the challenge session id"
+    );
+    assert_eq!(
+        entry.error_message.as_deref(),
+        Some("بيانات الدخول غير صحيحة"),
+        "coarse reason category only"
+    );
+    let rendered = serde_json::to_string(entry).expect("serialize entry");
+    assert!(
+        !rendered.contains("wrong passphrase") && !rendered.contains(ADMIN_PASSPHRASE),
+        "no passphrase material may leak into the audit record"
+    );
+}
+
+/// SEC-001-10: a successful completion must NOT emit a failure audit.
+#[test]
+fn sec00110_successful_challenge_is_not_audited_as_failure() {
+    let mut device = provision_device();
+    seed_admin_user(&mut device.db);
+    let (_state, service) = challenge_service(&device);
+
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    service
+        .complete(
+            &mut device.db,
+            &challenge.session_id,
+            ADMIN_PASSPHRASE,
+            &signature,
+        )
+        .expect("valid credentials succeed");
+
+    assert_eq!(
+        login_failed_audits(&device.db).len(),
+        0,
+        "successful authentication must not be audited as a failure"
+    );
+}
+
+/// SEC-001-10: an attempt blocked by the rate limiter never reaches the
+/// completion decision — it must neither consume the challenge nor emit an
+/// audit record (no-consume semantics preserved).
+#[test]
+fn sec00110_rate_limited_attempt_is_neither_consumed_nor_audited() {
+    let mut device = provision_device();
+    seed_admin_user(&mut device.db);
+    let (_state, service) = challenge_service(&device);
+
+    // 5 failed attempts (each consumes its own challenge) → lockout.
+    for _ in 0..5 {
+        fail_challenge_attempt(&service, &mut device);
+    }
+
+    // The 6th attempt is blocked before any decision.
+    let challenge = begin_challenge(&service, &device);
+    let signature = operator_sign(&challenge, &device.adminkey_provider);
+    let blocked = service.complete(
+        &mut device.db,
+        &challenge.session_id,
+        "wrong passphrase",
+        &signature,
+    );
+    assert_lockout_error(blocked);
+    assert_eq!(
+        _state
+            .lock()
+            .expect("state lock")
+            .state(&challenge.session_id),
+        Some(ChallengeState::Pending),
+        "a blocked attempt must not consume the challenge"
+    );
+    assert_eq!(
+        login_failed_audits(&device.db).len(),
+        5,
+        "only the 5 attempts that reached a decision may be audited"
+    );
+}
+
+/// Repoint the bootstrap admin `users` row id to `'admin'` so the audit_log
+/// FK (user_id → users.id) accepts the audit writes emitted by the challenge
+/// service, which address the canonical admin by `BOOTSTRAP_ADMIN_USERNAME`.
+fn seed_admin_user(db: &mut Database) {
+    db.get_connection()
+        .execute(
+            "UPDATE users SET id = 'admin' WHERE username = 'admin' AND deleted = 0",
+            [],
+        )
+        .expect("repoint admin user id");
 }

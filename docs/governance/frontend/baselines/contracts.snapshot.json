@@ -494,12 +494,6 @@
         },
         {
           "name": "setAccountStatus"
-        },
-        {
-          "name": "exportIdentityAccessPackage"
-        },
-        {
-          "name": "importIdentityAccessPackage"
         }
       ],
       "commands": [
@@ -541,17 +535,11 @@
         },
         {
           "command": "set_account_status"
-        },
-        {
-          "command": "export_identity_access_package"
-        },
-        {
-          "command": "import_identity_access_package"
         }
       ],
       "loc": 82,
-      "exportCount": 15,
-      "commandCount": 15
+      "exportCount": 13,
+      "commandCount": 13
     },
     {
       "name": "orders",
@@ -576,9 +564,6 @@
         },
         {
           "name": "listSupplierOrders"
-        },
-        {
-          "name": "createOrder"
         }
       ],
       "commands": [
@@ -602,14 +587,11 @@
         },
         {
           "command": "list_supplier_orders"
-        },
-        {
-          "command": "create_order"
         }
       ],
       "loc": 39,
-      "exportCount": 8,
-      "commandCount": 8
+      "exportCount": 7,
+      "commandCount": 7
     },
     {
       "name": "user",
@@ -638,9 +620,6 @@
         },
         {
           "name": "unlockAppKey"
-        },
-        {
-          "name": "exportAppKeyBackup"
         }
       ],
       "commands": [
@@ -652,14 +631,11 @@
         },
         {
           "command": "unlock_app_key"
-        },
-        {
-          "command": "export_app_key_backup"
         }
       ],
       "loc": 61,
-      "exportCount": 4,
-      "commandCount": 4
+      "exportCount": 3,
+      "commandCount": 3
     },
     {
       "name": "session",
@@ -907,44 +883,182 @@
       "commandCount": 7
     },
     {
-      "name": "licensing",
+      "name": "procurement",
       "exports": [
         {
-          "name": "getLicensingStatus"
+          "name": "createSupplier"
         },
         {
-          "name": "importTrustAnchor"
+          "name": "updateSupplier"
         },
         {
-          "name": "importLicense"
+          "name": "setSupplierActive"
         },
         {
-          "name": "dryRunVerifyLicense"
+          "name": "associateSupplierWithUnit"
         },
         {
-          "name": "verifyLicense"
+          "name": "disassociateSupplierFromUnit"
+        },
+        {
+          "name": "createContract"
+        },
+        {
+          "name": "addContractProduct"
+        },
+        {
+          "name": "setContractProductAgreedPriceHt"
+        },
+        {
+          "name": "acceptContract"
+        },
+        {
+          "name": "activateContract"
+        },
+        {
+          "name": "endContract"
+        },
+        {
+          "name": "cancelContract"
+        },
+        {
+          "name": "releaseContractAllocation"
+        },
+        {
+          "name": "revokeContractAllocationRelease"
+        },
+        {
+          "name": "setFiscalTaxPolicy"
+        },
+        {
+          "name": "getFiscalTaxPolicy"
+        },
+        {
+          "name": "listFiscalTaxPolicies"
+        },
+        {
+          "name": "getSupplier"
+        },
+        {
+          "name": "listSuppliers"
+        },
+        {
+          "name": "listUnitSuppliers"
+        },
+        {
+          "name": "getContract"
+        },
+        {
+          "name": "listContracts"
+        },
+        {
+          "name": "getContractProducts"
+        },
+        {
+          "name": "listContractAllocations"
+        },
+        {
+          "name": "listAllocationExceptions"
+        },
+        {
+          "name": "exportSuppliersExcel"
+        },
+        {
+          "name": "exportContractsExcel"
+        },
+        {
+          "name": "exportContractAllocationsExcel"
         }
       ],
       "commands": [
         {
-          "command": "get_licensing_status"
+          "command": "create_supplier"
         },
         {
-          "command": "import_trust_anchor"
+          "command": "update_supplier"
         },
         {
-          "command": "import_license"
+          "command": "set_supplier_active"
         },
         {
-          "command": "dry_run_verify_license"
+          "command": "associate_supplier_with_unit"
         },
         {
-          "command": "verify_license"
+          "command": "disassociate_supplier_from_unit"
+        },
+        {
+          "command": "create_contract"
+        },
+        {
+          "command": "add_contract_product"
+        },
+        {
+          "command": "set_contract_product_agreed_price_ht"
+        },
+        {
+          "command": "accept_contract"
+        },
+        {
+          "command": "activate_contract"
+        },
+        {
+          "command": "end_contract"
+        },
+        {
+          "command": "cancel_contract"
+        },
+        {
+          "command": "release_contract_allocation"
+        },
+        {
+          "command": "revoke_contract_allocation_release"
+        },
+        {
+          "command": "set_fiscal_tax_policy"
+        },
+        {
+          "command": "get_fiscal_tax_policy"
+        },
+        {
+          "command": "list_fiscal_tax_policies"
+        },
+        {
+          "command": "get_supplier"
+        },
+        {
+          "command": "list_suppliers"
+        },
+        {
+          "command": "list_unit_suppliers"
+        },
+        {
+          "command": "get_contract"
+        },
+        {
+          "command": "list_contracts"
+        },
+        {
+          "command": "get_contract_products"
+        },
+        {
+          "command": "list_contract_allocations"
+        },
+        {
+          "command": "list_allocation_exceptions"
+        },
+        {
+          "command": "export_suppliers_xlsx"
+        },
+        {
+          "command": "export_contracts_xlsx"
+        },
+        {
+          "command": "export_contract_allocations_xlsx"
         }
       ],
-      "loc": 92,
-      "exportCount": 5,
-      "commandCount": 5
+      "loc": 204,
+      "exportCount": 28,
+      "commandCount": 28
     }
   ]
 }

@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getDailyReport, listUnits, listWilayaReports, getSettings, type ReportType } from '../lib/contracts';
-  import type { DailyReport, DailyReportResult, MonthlySummary, Settings, Unit, StockMovement, WilayaReportList } from '../lib/types';
+  import { getDailyReport, listUnits, listWilayaReports, getSettings, listProducts, type ReportType } from '../lib/contracts';
+  import type { DailyReport, DailyReportResult, MonthlySummary, Settings, Unit, StockMovement, WilayaReportList, Product } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import DailyReportModal from '../components/reports/DailyReportModal.svelte';
   import MonthlySummaryModal from '../components/reports/MonthlySummaryModal.svelte';
   import StockMovementModal from '../components/reports/StockMovementModal.svelte';
   import { saveFile } from '../lib/tauri';
   import { exportAllUnitsMonthlyStatusExcel } from '../lib/contracts';
+  import { unitLabel } from '../lib/unitLabels';
   import { showSuccess, showError } from '../lib/notifications';
   import { formatErrorMessage } from '../lib/errors';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
@@ -43,6 +44,8 @@
   let settings: Settings | null = null;
   // @category ProjectionState
   let units: Unit[] = [];
+  // @category ProjectionState
+  let products: Product[] = [];
   // @category UiState
   let selectedReport: DailyReportResult | null = null;
   // @category UiState
@@ -111,12 +114,21 @@
     await loadData();
   });
 
+  // Presentation-only consumption unit of a product from the WILAYA catalog,
+  // used to label the displayed quantities. Never a numeric conversion.
+  // @category UiState
+  function consumptionUnitFor(productId: string): string {
+    const p = products.find((prod) => prod.id === productId);
+    return p ? unitLabel(p.consumption_unit) : '—';
+  }
+
   async function loadData() {
     await reportsOp.run(async () => {
       settings = await getSettings();
 
       if (settings?.wilaya_code) {
         units = await listUnits(settings.wilaya_code);
+        products = await listProducts();
         if (units.length > 0 && !selectedUnitId) {
           selectedUnitId = units[0].id;
         }
@@ -387,6 +399,7 @@
               <th class="table-header">المنتج</th>
               <th class="table-header">نوع الحركة</th>
               <th class="table-header">الكمية</th>
+              <th class="table-header">وحدة الاستهلاك</th>
               <th class="table-header">تكلفة الاستحواذ</th>
               <th class="table-header">الرصيد بعد</th>
               <th class="table-header text-left">الإجراءات</th>
@@ -408,6 +421,7 @@
                   {/if}
                 </td>
                 <td class="table-cell">{movement.quantity.toFixed(2)}</td>
+                <td class="table-cell">{consumptionUnitFor(movement.product_id)}</td>
                 <td class="table-cell">
                   {movement.unit_cost !== null && movement.unit_cost !== undefined ? movement.unit_cost.toFixed(2) + " دج" : "-"}
                 </td>
@@ -469,6 +483,7 @@
 {#if viewingDetails && selectedReport}
   <DailyReportModal 
     {selectedReport} 
+    {products}
     on:close={closeDetails} 
   />
 {/if}
@@ -490,6 +505,7 @@
 {#if viewingStockMovement && selectedStockMovement}
   <StockMovementModal 
     movement={selectedStockMovement} 
+    {products}
     on:close={closeStockMovement} 
   />
 {/if}

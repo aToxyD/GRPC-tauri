@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/tauriApp';
+import { ensureLoginIdentity } from '../helpers/login';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
 
 test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
@@ -8,7 +9,7 @@ test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
     const { page } = tauriApp;
 
     // Login and configure to initialize database settings context
-    await page.locator('input[placeholder*="اسم المستخدم"]').fill('admin');
+    await ensureLoginIdentity(page, 'admin');
     await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
     await page.locator('button:has-text("تسجيل الدخول")').click();
 
@@ -42,7 +43,7 @@ test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
   test('malformed IPC payloads are rejected gracefully by Rust types', async ({ tauriApp }) => {
     const { page } = tauriApp;
 
-    await page.waitForSelector('input[placeholder*="اسم المستخدم"]');
+    await page.waitForSelector('#username');
     // Send malformed payload to a command and assert error propagation
     const ipcError = await page.evaluate(async () => {
       for (let i = 0; i < 50; i++) {

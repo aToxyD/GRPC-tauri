@@ -27,13 +27,14 @@ fn fixture_daily_package(
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: source_node_id.to_string(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId(pkg_id.to_string()),
             signature_version: None,
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: DailyReportExportDataset {
             snapshot: DailyReportSyncSnapshot {
@@ -103,7 +104,6 @@ fn daily_report_package_same_id_is_rejected_second_time() {
             src_opt,
             "admin",
             None,
-            None,
         );
         apply_daily_report_package(tx, &reg, input.clone())
     })
@@ -117,7 +117,6 @@ fn daily_report_package_same_id_is_rejected_second_time() {
                 DAILY_REPORT_PACKAGE_KIND,
                 src_opt,
                 "admin",
-                None,
                 None,
             );
             apply_daily_report_package(tx, &reg, input)

@@ -2,7 +2,8 @@
 //!
 //! Handles inserting and retrieving stock movements.
 
-use crate::errors::AppError;
+use crate::domain::numeric::legacy_float;
+use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::{
     NewStockMovement, StockMovement, StockMovementFilters, StockMovementResponse, StockMovementType,
 };
@@ -30,27 +31,70 @@ impl<'a> StockMovementService<'a> {
             .assert_fiscal_year_open(fiscal_year)?;
 
         let inventory_repo = self.executor.inventory();
-        let balance_before = match inventory_repo.get_stock(&movement.product_id)? {
-            Some(s) => s.quantity,
-            None => 0.0,
-        };
+
+        // SEC-087 Phase 6C: the stock identity is `(product_id, consumption_unit)`.
+        // The consumption-unit key comes from the product configuration (single
+        // source of truth). Every persistent Product carries a REQUIRED config,
+        // so an absent config (missing/soft-deleted product) fails closed — there
+        // is no legacy NULL-keyed row and no fallback.
+        let consumption_unit = self
+            .executor
+            .products()
+            .get_product_config_codes(&movement.product_id)?
+            .map(|c| c.consumption_unit)
+            .ok_or_else(|| {
+                AppError::Validation(ValidationError::InvalidFormat {
+                    field: "product_id".to_string(),
+                    message: format!(
+                        "Product «{}» has no unit/TVA configuration — stock cannot be traced",
+                        movement.product_id
+                    ),
+                })
+            })?;
+
+        let held_before =
+            match inventory_repo.get_stock_typed(&movement.product_id, consumption_unit)? {
+                Some(s) => s.quantity,
+                None => 0.0,
+            };
+        // ADR-0048: balances computed exactly on `Decimal`; `f64` values are
+        // converted only at the repo read and write boundaries. An OUT that
+        // would overdraft the stock fails closed (no silent `max(0.0)` clamp).
+        let balance_before = legacy_float::quantity_from_f64(held_before)?;
+        let movement_quantity = legacy_float::quantity_from_f64(movement.quantity)?;
         let balance_after = match movement.movement_type {
             StockMovementType::In | StockMovementType::Opening => {
-                balance_before + movement.quantity
+                balance_before.checked_add(movement_quantity)?
             }
-            StockMovementType::Out => (balance_before - movement.quantity).max(0.0),
+            StockMovementType::Out => match balance_before.checked_sub(movement_quantity) {
+                Ok(v) => v,
+                Err(_) => {
+                    return Err(AppError::BusinessLogic(
+                        BusinessLogicError::InsufficientStock(format!(
+                            "Stock overdraft prevented: attempted to move {} out of {} available for product {}",
+                            movement.quantity, held_before, movement.product_id
+                        )),
+                    ))
+                }
+            },
         };
+        let balance_before_wire = legacy_float::quantity_to_f64(&balance_before)?;
+        let balance_after_wire = legacy_float::quantity_to_f64(&balance_after)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.executor.stock_movements().insert_stock_movement(
             &id,
             movement,
-            balance_before,
-            balance_after,
+            balance_before_wire,
+            balance_after_wire,
             &now,
             fiscal_year,
         )?;
-        inventory_repo.update_stock(&movement.product_id, balance_after)?;
+        inventory_repo.update_stock_typed(
+            &movement.product_id,
+            consumption_unit,
+            balance_after_wire,
+        )?;
         Ok(id)
     }
 

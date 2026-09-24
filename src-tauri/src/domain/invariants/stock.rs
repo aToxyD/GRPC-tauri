@@ -143,7 +143,7 @@ mod tests {
         match &v[0] {
             StockNonNegativeViolation::NegativeLayerQuantity { layer_id, quantity } => {
                 assert_eq!(layer_id, "layer-1");
-                assert!((*quantity - -5.0).abs() < 1e-9);
+                assert_eq!(*quantity, -5.0);
             }
             _ => panic!("wrong violation type"),
         }
@@ -159,7 +159,7 @@ mod tests {
                 balance,
             } => {
                 assert_eq!(product_label, "product-xyz");
-                assert!((*balance - -1.0).abs() < 1e-9);
+                assert_eq!(*balance, -1.0);
             }
             _ => panic!("wrong violation type"),
         }

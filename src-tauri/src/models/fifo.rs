@@ -17,12 +17,26 @@ pub struct FifoStockLayer {
     /// - The same FIFO layer record is preserved; no new layer is created.
     pub source_type: String,
     pub source_id: Option<String>,
+    /// TTC unit cost in CONSUMPTION units (scale-2), rounded once at creation.
     pub unit_cost: f64,
+    /// Quantities are in CONSUMPTION units.
     pub qty_original: f64,
     pub qty_remaining: f64,
     pub received_at: String,
     pub created_by: String,
     pub origin_fiscal_year: i32,
+    /// SEC-087 Phase 5: exact historical purchase-side snapshot of the layer
+    /// (null for legacy/OPENING layers without a purchase origin).
+    #[serde(default)]
+    pub purchase_quantity: Option<f64>,
+    #[serde(default)]
+    pub purchase_unit_cost: Option<f64>,
+    #[serde(default)]
+    pub purchase_unit: Option<i32>,
+    #[serde(default)]
+    pub consumption_unit: Option<i32>,
+    #[serde(default)]
+    pub conversion_factor: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +84,19 @@ pub struct InventoryLayerView {
     pub layer_value: f64,
 }
 
+/// Advisory snapshot-coverage warning for the UNIT stock overview (SEC-087
+/// Phase 5): stock that exists without a persisted purchase snapshot backing
+/// it, or vice versa. Informational only — never blocks operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryCoverageWarning {
+    /// Distinct phase-5 warning code: `STOCK_WITHOUT_PURCHASE_SNAPSHOT`,
+    /// `PURCHASE_SNAPSHOT_WITHOUT_STOCK`.
+    pub code: String,
+    pub product_id: String,
+    pub product_name: String,
+    pub message: String,
+}
+
 /// Per-product FIFO summary in the inventory view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryProductView {
@@ -89,6 +116,9 @@ pub struct InventoryStockPageView {
     pub total_inventory_value: f64,
     pub total_products: usize,
     pub total_active_layers: usize,
+    /// SEC-087 Phase 5 advisory snapshot-coverage warnings (empty normally).
+    #[serde(default)]
+    pub warnings: Vec<InventoryCoverageWarning>,
 }
 
 /// Full daily consumption FIFO preview (matches execution aggregation).

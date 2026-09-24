@@ -10,6 +10,7 @@ use crate::commands::common::{db_mut_or_command_error, db_ref_or_command_error};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::{AuditEntry, AuditFilters, AuditLogResponse, AuditStats};
+use crate::domain::validation;
 use crate::errors::into_command_error;
 use crate::models::XlsxExportResult;
 use tauri::State;
@@ -96,6 +97,7 @@ pub fn export_audit_log_excel(
 ) -> Result<XlsxExportResult, String> {
     let (_session, _settings) =
         authorize_command(&state, Action::ReadAuditLog, None).map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["xlsx"]).map_err(into_command_error)?;
 
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;

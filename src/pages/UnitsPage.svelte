@@ -49,8 +49,6 @@
   // @category TransientState
   let unitName = "";
   // @category TransientState
-  let username = "";
-  // @category TransientState
   let password = "";
   // @category TransientState
   let confirmPassword = "";
@@ -71,7 +69,6 @@
   function openCreateModal() {
     unitCode = "";
     unitName = "";
-    username = "";
     password = "";
     confirmPassword = "";
     showModal = true;
@@ -82,7 +79,6 @@
     editingUnit = unit;
     unitCode = unit.code;
     unitName = unit.name;
-    username = "";
     password = "";
     confirmPassword = "";
     showEditModal = true;
@@ -105,7 +101,7 @@
   }
 
   async function saveUnit() {
-    if (!unitCode || !unitName || !username || !password) {
+    if (!unitCode || !unitName || !password) {
       unitsOp.error.set("الرجاء إدخال رمز واسم الوحدة");
       return;
     }
@@ -124,7 +120,6 @@
       const request: CreateUnitRequest = {
         code: unitCode,
         name: unitName,
-        username,
         password,
       };
       await createUnit(request, settings.wilaya_code);
@@ -151,7 +146,6 @@
       const request: CreateUnitRequest = {
         code: unitCode,
         name: unitName,
-        username: username || "",
         password: password || "",
       };
       await updateUnit(editingUnit.id, request);
@@ -381,13 +375,9 @@
         ستستخدم هذه البيانات من قبل الوحدة للاتصال بالنظام.
       </p>
 
-      <AppInput
-        id="username"
-        label="اسم المستخدم *"
-        placeholder="اسم المستخدم"
-        bind:value={username}
-        class="mb-4"
-      />
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        اسم مستخدم مشغّل الوحدة ثابت: <span class="font-semibold" dir="ltr">user</span>
+      </p>
 
       <div class="grid grid-cols-2 gap-4">
         <AppInput
@@ -444,14 +434,9 @@
         اترك الحقول فارغة إذا لم تريد تغيير بيانات تسجيل الدخول.
       </p>
 
-      <AppInput
-        id="editUsername"
-        label="اسم المستخدم"
-        placeholder="اسم المستخدم الجديد"
-        bind:value={username}
-        class="mb-4"
-      />
-
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        اسم المستخدم ثابت ولا يمكن تغييره: <span class="font-semibold" dir="ltr">user</span>
+      </p>
       <div class="grid grid-cols-2 gap-4">
         <AppInput
           id="editPassword"

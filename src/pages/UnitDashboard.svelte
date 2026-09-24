@@ -4,6 +4,7 @@
   import { getSettings, getAllStocks } from '../lib/contracts';
   import type { Settings, InventoryStock, SupplierOrder } from '../lib/types';
   import Layout from '../components/Layout.svelte';
+  import { unitLabel } from '../lib/unitLabels';
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppLoadingState from '../lib/components/ui/AppLoadingState.svelte';
@@ -38,7 +39,7 @@
   });
 
   // @category UiState
-  $: confirmedOrders = orders.filter(o => o.status === 'Confirmed' || o.status === 'Received');
+  $: confirmedOrders = orders.filter(o => o.status === 'Confirmed');
   // @category UiState
   $: lowStockItems = stocks.filter(s => s.quantity < 10);
   // @category UiState
@@ -47,8 +48,7 @@
   function getOrderStatusIntent(status: string): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
     switch (status) {
       case 'Confirmed': return 'success';
-      case 'Received': return 'info';
-      case 'Cancelled': return 'danger';
+      case 'Draft': return 'warning';
       default: return 'neutral';
     }
   }
@@ -128,7 +128,6 @@
         </svelte:fragment>
 
         {#each stocks.slice(0, 5) as stock}
-          <!-- [arch:allow-fe141] Reason: Tailwind CSS opacity class (bg-red-50/50) — not business division; Date: 2026-06-01; Owner: governance-team -->
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors {stock.quantity < 10 ? 'bg-red-50/50 dark:bg-red-900/10' : ''}">
             <td class="table-cell font-medium">{stock.product_name}</td>
             <td class="table-cell">
@@ -136,7 +135,7 @@
                 {stock.quantity.toFixed(2)}
               </span>
             </td>
-            <td class="table-cell">{stock.unit}</td>
+            <td class="table-cell">{unitLabel(stock.consumption_unit)}</td>
             <td class="table-cell text-sm text-gray-500 dark:text-gray-400">{new Date(stock.last_updated).toLocaleDateString('fr-FR')}</td>
           </tr>
         {/each}

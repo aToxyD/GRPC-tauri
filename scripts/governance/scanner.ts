@@ -59,26 +59,26 @@ export const DOMAIN_REGISTRY: Record<string, {
   orders: {
     contract: "orders.contract.ts",
     pages: ["OrdersPage"],
-    functions: ["createSupplierOrder", "confirmOrder", "updateSupplierOrder", "deleteSupplierOrder", "getSupplierOrder", "getSupplierOrderItems", "listSupplierOrders", "createOrder"],
-    crossDomainExceptions: ["listProducts"],
+    functions: ["createSupplierOrder", "confirmOrder", "updateSupplierOrder", "deleteSupplierOrder", "getSupplierOrder", "getSupplierOrderItems", "listSupplierOrders"],
+    crossDomainExceptions: ["listProducts", "listUnitContractEntitlements"],
   },
   report: {
     contract: "report.contract.ts",
     pages: ["UnitReportsPage", "WilayaReportsPage"],
     functions: ["getMonthlySummary", "listFiscalYears", "listWilayaReports", "generateReports", "getReportData", "exportDailyReportExcel", "exportMonthlySummaryExcel", "exportAllUnitsMonthlyStatusExcel"],
-    crossDomainExceptions: ["listUnits", "listDailyReports", "getDailyReport", "exportDailyReportPackage", "exportMonthlySummaryPackage"],
+    crossDomainExceptions: ["listUnits", "listDailyReports", "getDailyReport", "exportDailyReportPackage", "exportMonthlySummaryPackage", "listProducts"],
   },
   fiscal: {
     contract: "fiscal.contract.ts",
     pages: ["FiscalManagementPage", "FiscalDiagnosticsPage"],
     functions: ["closeFiscalYear", "getFiscalYearStatus", "exportFiscalClosurePackage", "previewFiscalClosurePackage", "applyFiscalClosurePackage", "getFiscalTransitionHistory", "listFiscalPackageRegistry", "updateFiscalPackageRetentionStatus", "getAdvancedDiagnosticsBundle", "verifyInventoryIntegrity", "createFiscalOperationalSnapshot"],
-    crossDomainExceptions: ["listProducts", "getSystemHealth"],
+    crossDomainExceptions: ["listProducts", "getSystemHealth", "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies"],
   },
   sync: {
     contract: "sync.contract.ts",
-    pages: ["SyncPage"],
-    functions: ["exportProductsPackage", "exportDailyReportPackage", "exportMonthlySummaryPackage", "exportUnitNodePackage", "exportStockMovementsPackage", "importProductsPackage", "importDailyReportPackage", "importUnitNodePackage", "importMonthlySummaryPackage", "importStockMovementsPackage"],
-    crossDomainExceptions: ["listUnits"],
+    pages: ["SyncPage", "SettingsPage"],
+    functions: ["exportProductsPackage", "exportDailyReportPackage", "exportMonthlySummaryPackage", "exportUnitNodePackage", "exportStockMovementsPackage", "importProductsPackage", "importDailyReportPackage", "importUnitNodePackage", "importMonthlySummaryPackage", "importStockMovementsPackage", "setFleetAdminPassword"],
+    crossDomainExceptions: ["listUnits", "getSettings", "login"],
   },
   backup: {
     contract: "backup.contract.ts",
@@ -125,8 +125,21 @@ export const DOMAIN_REGISTRY: Record<string, {
   security: {
     contract: "security.contract.ts",
     pages: ["AppSecurityPage"],
-    functions: ["getSecurityStatus", "initializeAppKey", "unlockAppKey", "exportAppKeyBackup"],
+    functions: ["getSecurityStatus", "initializeAppKey", "unlockAppKey", "exportAppKeyBackupToPath"],
     crossDomainExceptions: ["login"],
+  },
+  procurement: {
+    contract: "procurement.contract.ts",
+    pages: ["SuppliersPage", "ContractsPage", "UnitEntitlementsPage"],
+    functions: [
+      "createSupplier", "updateSupplier", "setSupplierActive", "associateSupplierWithUnit", "disassociateSupplierFromUnit",
+      "createContract", "addContractProduct", "setContractProductAgreedPriceHt", "acceptContract", "activateContract", "endContract", "cancelContract",
+      "releaseContractAllocation", "revokeContractAllocationRelease",
+      "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies", "listUnitContractEntitlements",
+      "getSupplier", "listSuppliers", "listUnitSuppliers", "getContract", "listContracts", "getContractProducts", "listContractAllocations", "listAllocationExceptions",
+      "exportSuppliersExcel", "exportContractsExcel", "exportContractAllocationsExcel",
+    ],
+    crossDomainExceptions: ["listProducts", "listUnits", "calculateProductPriceWithTva"],
   },
 };
 

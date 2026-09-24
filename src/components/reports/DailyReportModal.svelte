@@ -1,11 +1,13 @@
 <script lang="ts">
-  import type { DailyReportResult, MealType } from '../../lib/types';
+  import type { DailyReportResult, MealType, Product } from '../../lib/types';
   import { createEventDispatcher } from 'svelte';
+  import { unitLabel } from '../../lib/unitLabels';
   import AppDialog from '../../lib/components/ui/AppDialog.svelte';
   import AppTable from '../../lib/components/ui/AppTable.svelte';
   import AppButton from '../../lib/components/ui/AppButton.svelte';
 
   export let selectedReport: DailyReportResult;
+  export let products: Product[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -14,6 +16,14 @@
     lunch: 'غداء',
     dinner: 'عشاء',
   };
+
+  // Presentation-only consumption unit of a product from the WILAYA catalog,
+  // used to label the displayed quantities. Never a numeric conversion.
+  // @category UiState
+  function consumptionUnitFor(productId: string): string {
+    const p = products.find((prod) => prod.id === productId);
+    return p ? unitLabel(p.consumption_unit) : '—';
+  }
 
   function close() {
     dispatch('close');
@@ -69,6 +79,7 @@
       <AppTable empty={section.items.length === 0}>
         <svelte:fragment slot="head">
           <th class="table-header">المنتج</th>
+          <th class="table-header">وحدة الاستهلاك</th>
           <th class="table-header text-right">الكمية</th>
           <th class="table-header text-right">سعر الوحدة</th>
           <th class="table-header text-right">الإجمالي</th>
@@ -76,6 +87,7 @@
         {#each section.items as item}
           <tr>
             <td class="table-cell">{item.product_name}</td>
+            <td class="table-cell">{consumptionUnitFor(item.product_id)}</td>
             <td class="table-cell text-right">{item.quantity.toFixed(2)}</td>
             <td class="table-cell text-right">{item.unit_price.toFixed(2)} دج</td>
             <td class="table-cell text-right font-medium">{item.total_cost.toFixed(2)} دج</td>

@@ -28,10 +28,10 @@ actual execution (not inference). The full governance gate set is **100% green**
 
 Commits: `209ac8d`, `930b9bd`, `733b4f9`, `17b3409`
 
-- Release builds fail closed when `GRPC_APP_KEY` / `GRPC_PACKAGE_SIGNING_KEY`
-  are missing or malformed (`AppError::Configuration`).
-- Dev-key fallbacks are `#[cfg(debug_assertions)]`-only; the all-zero signing
-  key is forbidden outside debug builds.
+- Release builds fail closed when `GRPC_APP_KEY` is missing or malformed
+  (`AppError::Configuration`). (`GRPC_PACKAGE_SIGNING_KEY` was removed in
+  ADR-0048 — package signing is identity-bound Ed25519 only.)
+- Dev-key fallbacks are `#[cfg(debug_assertions)]`-only.
 - Missing vs malformed key separation enforced (missing → `Configuration`,
   malformed → `ValidationError::InvalidFormat`).
 - 17 regression tests added (28 key-resolution tests total, all passing).

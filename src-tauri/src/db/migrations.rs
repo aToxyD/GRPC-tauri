@@ -11,48 +11,8 @@ fn migrations_vec() -> Vec<(i32, &'static str, &'static str)> {
     vec![
         (
             1,
-            "Initial schema creation",
+            "Canonical fresh-install baseline (consolidated: core schema, Identity Store incl. signature [002/003/008], registry snapshots [005], B4 sync transport ledger [004], unified producer transport sequence [011])",
             include_str!("migrations/001_initial.sql"),
-        ),
-        (
-            2,
-            "Identity Store (RFC 2026-08-04-node-identity-trust, ADR-0038)",
-            include_str!("migrations/002_identity_store.sql"),
-        ),
-        (
-            3,
-            "Identity certificate signature (ADR-0039 §6)",
-            include_str!("migrations/003_certificate_signature.sql"),
-        ),
-        (
-            4,
-            "Sync transport ordering ledger (RFC 2026-08-04 §3.4.1, ADR-0038, B4)",
-            include_str!("migrations/004_sync_issuer_sequence.sql"),
-        ),
-        (
-            5,
-            "Registry fleet-state snapshots (RFC 2026-08-04 §3.9, B4)",
-            include_str!("migrations/005_registry_snapshots.sql"),
-        ),
-        (
-            6,
-            "Producer sequence state ledger (RFC 2026-08-04 §3.4.1, ADR-0038, B6-B Commit ④)",
-            include_str!("migrations/006_issuer_sequence_state.sql"),
-        ),
-        (
-            7,
-            "Licensing consumer derived view (ADR-0042, Phase B)",
-            include_str!("migrations/007_licensing.sql"),
-        ),
-        (
-            8,
-            "Single ACTIVE ADMIN invariant (SEC-002)",
-            include_str!("migrations/008_single_active_admin.sql"),
-        ),
-        (
-            9,
-            "identity_access per-target producer sequence stream (RFC 2026-08-04 §3.4.1 amendment, ADR-0045 §26.9 F-1 Option A)",
-            include_str!("migrations/009_identity_access_export_sequence.sql"),
         ),
     ]
 }

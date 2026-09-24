@@ -180,9 +180,18 @@ impl NodeKeyStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::security::test_support::lock_security_test_env;
+
+    /// The store encrypts/decrypts against the process-global `GRPC_APP_KEY`
+    /// env var; security tests elsewhere mutate it. Hold the shared lock so
+    /// writes and reads within a test always observe the same key.
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        lock_security_test_env()
+    }
 
     #[test]
     fn write_and_read_roundtrip() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let key = [42u8; 32];
@@ -193,6 +202,7 @@ mod tests {
 
     #[test]
     fn read_if_exists_returns_none_when_absent() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         assert_eq!(store.read_if_exists().unwrap(), None);
@@ -200,6 +210,7 @@ mod tests {
 
     #[test]
     fn node_public_key_matches_derived_key() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         assert_eq!(store.node_public_key().unwrap(), None);
@@ -214,6 +225,7 @@ mod tests {
 
     #[test]
     fn read_rejects_malformed_key_file() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(NODE_KEY_FILE_NAME), "garbage").unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
@@ -222,6 +234,7 @@ mod tests {
 
     #[test]
     fn write_pending_does_not_touch_active_key() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let active = [1u8; 32];
@@ -239,6 +252,7 @@ mod tests {
 
     #[test]
     fn write_pending_roundtrip() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let staged = [9u8; 32];
@@ -248,6 +262,7 @@ mod tests {
 
     #[test]
     fn read_pending_returns_none_when_absent() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         assert_eq!(store.read_pending().unwrap(), None);
@@ -256,6 +271,7 @@ mod tests {
 
     #[test]
     fn promote_pending_activates_staged_key() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let active = [1u8; 32];
@@ -270,6 +286,7 @@ mod tests {
 
     #[test]
     fn promote_pending_is_idempotent_noop_without_staged_key() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let active = [3u8; 32];
@@ -282,6 +299,7 @@ mod tests {
 
     #[test]
     fn promote_pending_twice_keeps_promoted_key() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let staged = [4u8; 32];
@@ -293,6 +311,7 @@ mod tests {
 
     #[test]
     fn discard_pending_removes_staged_key_keeping_active() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         let active = [5u8; 32];
@@ -305,6 +324,7 @@ mod tests {
 
     #[test]
     fn discard_pending_is_noop_when_absent() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         store.discard_pending().unwrap();
@@ -313,6 +333,7 @@ mod tests {
 
     #[test]
     fn restage_overwrites_previous_pending_key() {
+        let _g = env_guard();
         let dir = tempfile::tempdir().unwrap();
         let store = NodeKeyStore::new(dir.path().to_path_buf());
         store.write_pending(&[7u8; 32]).unwrap();

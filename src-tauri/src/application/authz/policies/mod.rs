@@ -33,6 +33,27 @@ pub fn resolve_identity_access_import_path(
     }
 }
 
+/// Admin-Access import pipeline selection for `admin_access` imports
+/// (ADR-0051 §8 — Accepted 2026-08-22).
+///
+/// Parallel to [`resolve_identity_access_import_path`]: only UNIT-node
+/// sessions resolve to a path. Admin keeps the AdminOnly pipeline; User is
+/// admitted ONLY through the fail-closed first-import pipeline whose
+/// predicates (`anchor_installed`, `anchor_is_issuer`, `no_active_admin`) are
+/// enforced inside the import transaction. There is deliberately NO target
+/// binding predicate — the package is fleet-wide and carries no target.
+/// WILAYA nodes and any other session are denied outright.
+pub fn resolve_admin_access_import_path(
+    role: &UserRole,
+    node_type: NodeType,
+) -> Result<IdentityAccessImportPath, AuthorizationError> {
+    match (node_type, role) {
+        (NodeType::Unit, UserRole::Admin) => Ok(IdentityAccessImportPath::AdminOnly),
+        (NodeType::Unit, UserRole::User) => Ok(IdentityAccessImportPath::FirstImportBootstrap),
+        _ => Err(AuthorizationError::InsufficientPermissions),
+    }
+}
+
 /// Top-level authorization dispatcher.
 /// Every Action variant MUST appear in exactly one arm — the compiler enforces exhaustiveness.
 pub fn authorize(
@@ -57,7 +78,11 @@ pub fn authorize(
         | Action::ImportStockMovementsPackage
         | Action::ImportStockMovements
         | Action::ImportTrustPackage
-        | Action::ImportRegistryPackage => reports::authorize_reports(principal, action, resource),
+        | Action::ImportRegistryPackage
+        | Action::ExportContractCatalogPackage
+        | Action::ImportContractCatalogPackage => {
+            reports::authorize_reports(principal, action, resource)
+        }
 
         // ── Strict system / admin-only actions ───────────────────────────
         Action::ReadImportAudit | Action::ConfigureAsWilaya | Action::ReadAuditLog => {
@@ -78,6 +103,19 @@ pub fn authorize(
                 system::authorize_system(principal, Action::AdminOnly, resource)
             } else {
                 Err(AuthorizationError::InsufficientPermissions)
+            }
+        }
+
+        // ── UNIT local read of its own ContractCatalog entitlement projection ─
+        // Read-only UNIT consumer read. Requires the caller to be on its own
+        // UNIT node (identity derived server-side in the command; see
+        // `list_unit_contract_entitlements`). This is NOT the WILAYA projection
+        // owner read (`ReadContractProjection`), which remains WILAYA-only.
+        Action::ReadUnitEntitlements => {
+            if let ResourceContext::UnitNode { .. } = resource {
+                Ok(())
+            } else {
+                Err(AuthorizationError::RequiresUnitNode)
             }
         }
 
@@ -143,31 +181,65 @@ pub fn authorize(
         // ── Identity & Access Synchronization (B8) ─────────────────────────
         // Account management and package export are Wilaya-side authorities:
         // the Wilaya is the single source of truth for the two synced accounts.
-        Action::ManageAccountSync | Action::ExportIdentityAccessPackage => {
+        Action::ManageAccountSync => {
             if let ResourceContext::WilayaNode = resource {
                 system::authorize_system(principal, Action::AdminOnly, resource)
             } else {
                 Err(AuthorizationError::InsufficientPermissions)
             }
         }
-        // Package import is a UNIT-side apply (one-way Wilaya→UNIT, no reverse path).
-        // SEC-003-06-b: UNIT Admin-only — applying a WILAYA-issued account-sync
-        // package carries credential-overwrite authority and must not be reachable
-        // by a non-admin role on the UNIT node.
-        Action::ImportIdentityAccessPackage => {
+        // ── Admin-Only B8 Account Synchronization (ADR-0051) ────────────────
+        // Export is a WILAYA-side Admin-only authority: the fleet `admin`
+        // credential state is WILAYA-owned. There is NO unit selector in the
+        // export path — the package is fleet-wide by construction.
+        Action::ExportAdminAccessPackage => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::RequiresWilayaNode)
+            }
+        }
+        // Import post-bootstrap is a UNIT-side Admin-only apply: the payload
+        // carries credential-overwrite authority for the canonical `admin`
+        // account only. The first-import bootstrap exemption is resolved
+        // separately through [`resolve_admin_access_import_path`] and remains
+        // fail-closed inside the import transaction.
+        Action::ImportAdminAccessPackage => {
             if let ResourceContext::UnitNode { .. } = resource {
                 system::authorize_system(principal, Action::AdminOnly, resource)
             } else {
-                Err(AuthorizationError::InsufficientPermissions)
+                Err(AuthorizationError::RequiresUnitNode)
             }
         }
-
-        // ── Licensing management (ADR-0042 / B7-licensing) ─────────────────
-        // Status is readable by any authenticated user; installing the trust
-        // anchor and importing licenses is an Admin authority on any node
-        // (per-node licenses are imported directly on the node they bind to).
-        Action::ReadLicensingStatus => system::authorize_authenticated(principal, resource),
-        Action::ManageLicensing => system::authorize_system(principal, Action::AdminOnly, resource),
+        // ── Contract-centric procurement (ADR-0055 / SEC-087-F) ─────────────
+        // WILAYA is the single source of truth for procurement authority.
+        // Every write/projection authority is WILAYA-node Admin-only.
+        Action::ManageSuppliers
+        | Action::ManageContracts
+        | Action::ApproveContractPrice
+        | Action::CloseContract
+        | Action::ManageTaxPolicy
+        | Action::ReleaseContractAllocation
+        | Action::RevokeContractAllocationRelease
+        | Action::ExportSuppliers
+        | Action::ExportContracts
+        | Action::ExportContractAllocations => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::RequiresWilayaNode)
+            }
+        }
+        // The authoritative contract/supplier entitlement projection is
+        // WILAYA-admin to read (it is the projection owner). UNIT nodes are
+        // read-only consumers via the ContractCatalog sync, not via this action.
+        Action::ReadContractProjection => {
+            if let ResourceContext::WilayaNode = resource {
+                system::authorize_system(principal, Action::AdminOnly, resource)
+            } else {
+                Err(AuthorizationError::RequiresWilayaNode)
+            }
+        }
     }
 }
 
@@ -186,63 +258,47 @@ mod tests {
     }
 
     #[test]
-    fn import_identity_access_package_requires_unit_admin() {
-        let unit_node = ResourceContext::UnitNode {
-            unit_id: "unit-a".to_string(),
-        };
-
-        assert!(authorize(
-            &principal(UserRole::Admin),
-            Action::ImportIdentityAccessPackage,
-            &unit_node,
-        )
-        .is_ok());
-
-        let denied = authorize(
-            &principal(UserRole::User),
-            Action::ImportIdentityAccessPackage,
-            &unit_node,
-        );
-        assert!(
-            matches!(denied, Err(AuthorizationError::RequiresAdmin)),
-            "UNIT User must be denied identity_access import, got: {denied:?}"
-        );
-    }
-
-    #[test]
-    fn import_identity_access_package_is_never_allowed_on_wilaya() {
-        let denied = authorize(
-            &principal(UserRole::Admin),
-            Action::ImportIdentityAccessPackage,
-            &ResourceContext::WilayaNode,
-        );
-        assert!(denied.is_err());
-    }
-
-    #[test]
-    fn export_identity_access_package_remains_wilaya_admin_only() {
+    fn trust_package_import_remains_wilaya_admin_only() {
+        // SEC-010: trust distribution is a WILAYA authority duty. A UNIT node
+        // must NEVER be able to import a trust package (Unit stores stay
+        // unreachable through this path).
         let ok = authorize(
             &principal(UserRole::Admin),
-            Action::ExportIdentityAccessPackage,
+            Action::ImportTrustPackage,
             &ResourceContext::WilayaNode,
         );
         assert!(ok.is_ok());
 
-        let denied = authorize(
+        let denied_user = authorize(
             &principal(UserRole::User),
-            Action::ExportIdentityAccessPackage,
+            Action::ImportTrustPackage,
             &ResourceContext::WilayaNode,
         );
-        assert!(denied.is_err());
+        assert!(
+            matches!(denied_user, Err(AuthorizationError::RequiresAdmin)),
+            "WILAYA non-admin must be denied trust import, got: {denied_user:?}"
+        );
 
         let denied_unit = authorize(
             &principal(UserRole::Admin),
-            Action::ExportIdentityAccessPackage,
+            Action::ImportTrustPackage,
             &ResourceContext::UnitNode {
                 unit_id: "unit-a".to_string(),
             },
         );
-        assert!(denied_unit.is_err());
+        assert!(
+            matches!(denied_unit, Err(AuthorizationError::RequiresWilayaNode)),
+            "UNIT nodes must never import trust packages, got: {denied_unit:?}"
+        );
+
+        let denied_unit_scope = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportTrustPackage,
+            &ResourceContext::UnitScope {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(denied_unit_scope.is_err());
     }
 
     #[test]
@@ -255,8 +311,243 @@ mod tests {
             resolve_identity_access_import_path(&UserRole::User, NodeType::Unit),
             Ok(IdentityAccessImportPath::FirstImportBootstrap)
         ));
-        assert!(resolve_identity_access_import_path(&UserRole::Admin, NodeType::Wilaya)
-            .is_err());
+        assert!(resolve_identity_access_import_path(&UserRole::Admin, NodeType::Wilaya).is_err());
         assert!(resolve_identity_access_import_path(&UserRole::User, NodeType::Wilaya).is_err());
+    }
+
+    #[test]
+    fn export_admin_access_package_is_wilaya_admin_only() {
+        // ADR-0051 §8: export is a WILAYA-side Admin-only authority with NO
+        // unit selector anywhere in the path.
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ExportAdminAccessPackage,
+            &ResourceContext::WilayaNode,
+        )
+        .is_ok());
+
+        let denied_user = authorize(
+            &principal(UserRole::User),
+            Action::ExportAdminAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(
+            matches!(denied_user, Err(AuthorizationError::RequiresAdmin)),
+            "WILAYA non-admin must be denied admin_access export, got: {denied_user:?}"
+        );
+
+        let denied_unit = authorize(
+            &principal(UserRole::Admin),
+            Action::ExportAdminAccessPackage,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(denied_unit, Err(AuthorizationError::RequiresWilayaNode)),
+            "UNIT nodes must never export admin_access, got: {denied_unit:?}"
+        );
+    }
+
+    #[test]
+    fn import_admin_access_package_requires_unit_admin_post_bootstrap() {
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ImportAdminAccessPackage,
+            &unit_node,
+        )
+        .is_ok());
+
+        let denied = authorize(
+            &principal(UserRole::User),
+            Action::ImportAdminAccessPackage,
+            &unit_node,
+        );
+        assert!(
+            matches!(denied, Err(AuthorizationError::RequiresAdmin)),
+            "UNIT User must be denied admin_access import post-bootstrap, got: {denied:?}"
+        );
+
+        let denied_wilaya = authorize(
+            &principal(UserRole::Admin),
+            Action::ImportAdminAccessPackage,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(denied_wilaya.is_err());
+    }
+
+    #[test]
+    fn resolve_admin_access_import_path_unit_routes_by_role() {
+        // ADR-0051 §8: same routing shape as identity_access — Admin keeps the
+        // AdminOnly pipeline; User reaches ONLY the fail-closed first-import
+        // pipeline; WILAYA sessions are denied outright.
+        assert!(matches!(
+            resolve_admin_access_import_path(&UserRole::Admin, NodeType::Unit),
+            Ok(IdentityAccessImportPath::AdminOnly)
+        ));
+        assert!(matches!(
+            resolve_admin_access_import_path(&UserRole::User, NodeType::Unit),
+            Ok(IdentityAccessImportPath::FirstImportBootstrap)
+        ));
+        assert!(resolve_admin_access_import_path(&UserRole::Admin, NodeType::Wilaya).is_err());
+        assert!(resolve_admin_access_import_path(&UserRole::User, NodeType::Wilaya).is_err());
+    }
+
+    #[test]
+    fn procurement_write_actions_are_wilaya_admin_only() {
+        // ADR-0055 §3.9: suppliers, contracts, agreed-price approval, closing,
+        // TVA policy, and obligation release/revoke are WILAYA authorities.
+        // UNIT nodes and WILAYA non-admins are denied before any evaluation.
+        let write_actions = [
+            Action::ManageSuppliers,
+            Action::ManageContracts,
+            Action::ApproveContractPrice,
+            Action::CloseContract,
+            Action::ManageTaxPolicy,
+            Action::ReleaseContractAllocation,
+            Action::RevokeContractAllocationRelease,
+            Action::ExportContractCatalogPackage,
+            Action::ExportSuppliers,
+            Action::ExportContracts,
+            Action::ExportContractAllocations,
+        ];
+
+        for action in write_actions {
+            assert!(
+                authorize(
+                    &principal(UserRole::Admin),
+                    action,
+                    &ResourceContext::WilayaNode,
+                )
+                .is_ok(),
+                "WILAYA Admin must be authorized for {action:?}"
+            );
+
+            let denied_unit = authorize(
+                &principal(UserRole::Admin),
+                action,
+                &ResourceContext::UnitNode {
+                    unit_id: "unit-a".to_string(),
+                },
+            );
+            assert!(
+                matches!(denied_unit, Err(AuthorizationError::RequiresWilayaNode)),
+                "UNIT nodes must never {action:?}, got: {denied_unit:?}"
+            );
+
+            let denied_user = authorize(
+                &principal(UserRole::User),
+                action,
+                &ResourceContext::WilayaNode,
+            );
+            assert!(
+                matches!(denied_user, Err(AuthorizationError::RequiresAdmin)),
+                "WILAYA non-admin must never {action:?}, got: {denied_user:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn read_contract_projection_is_wilaya_admin_only() {
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ReadContractProjection,
+            &ResourceContext::WilayaNode,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ReadContractProjection,
+                &ResourceContext::UnitNode {
+                    unit_id: "unit-a".to_string(),
+                },
+            ),
+            Err(AuthorizationError::RequiresWilayaNode)
+        ));
+    }
+
+    #[test]
+    fn contract_catalog_import_is_operational_on_unit_nodes() {
+        // ADR-0055 / SEC-087-F ContractCatalog sync: the UNIT node applies the
+        // WILAYA projection operationally (any role), mirroring
+        // ImportProductsPackage. WILAYA non-admins stay denied.
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+        let unit_scope = ResourceContext::UnitScope {
+            unit_id: "unit-a".to_string(),
+        };
+
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ImportContractCatalogPackage,
+            &unit_node,
+        )
+        .is_ok());
+        assert!(authorize(
+            &principal(UserRole::User),
+            Action::ImportContractCatalogPackage,
+            &unit_scope,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::User),
+                Action::ImportContractCatalogPackage,
+                &ResourceContext::WilayaNode,
+            ),
+            Err(AuthorizationError::RequiresAdmin)
+        ));
+    }
+
+    #[test]
+    fn read_unit_entitlements_is_unit_node_scoped() {
+        // Phase 4: the UNIT local ContractCatalog entitlement read is a
+        // UNIT-node-scoped, read-only consumer projection. Allowed for any
+        // authenticated role on its own UNIT node; denied on WILAYA nodes and
+        // on the WILAYA projection owner read.
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ReadUnitEntitlements,
+            &unit_node,
+        )
+        .is_ok());
+        assert!(authorize(
+            &principal(UserRole::User),
+            Action::ReadUnitEntitlements,
+            &unit_node,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ReadUnitEntitlements,
+                &ResourceContext::WilayaNode,
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
+
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ReadUnitEntitlements,
+                &ResourceContext::UnitScope {
+                    unit_id: "unit-a".to_string(),
+                },
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
     }
 }

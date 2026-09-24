@@ -1,13 +1,23 @@
 <script lang="ts">
-  import type { StockMovement } from '../../lib/types';
+  import type { StockMovement, Product } from '../../lib/types';
   import { createEventDispatcher } from 'svelte';
+  import { unitLabel } from '../../lib/unitLabels';
   import AppDialog from '../../lib/components/ui/AppDialog.svelte';
   import AppButton from '../../lib/components/ui/AppButton.svelte';
   import AppBadge from '../../lib/components/ui/AppBadge.svelte';
 
   export let movement: StockMovement;
+  export let products: Product[] = [];
 
   const dispatch = createEventDispatcher();
+
+  // Presentation-only consumption unit of a product from the WILAYA catalog,
+  // used to label the displayed quantities. Never a numeric conversion.
+  // @category UiState
+  function consumptionUnitFor(productId: string): string {
+    const p = products.find((prod) => prod.id === productId);
+    return p ? unitLabel(p.consumption_unit) : '—';
+  }
 
   function close() {
     dispatch('close');
@@ -52,6 +62,10 @@
     <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
       <p class="text-sm text-gray-500 dark:text-gray-400">الكمية</p>
       <p class="text-lg font-bold text-civil-blue">{movement.quantity.toFixed(2)}</p>
+    </div>
+    <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+      <p class="text-sm text-gray-500 dark:text-gray-400">وحدة الاستهلاك</p>
+      <p class="text-lg font-bold text-gray-900 dark:text-white">{consumptionUnitFor(movement.product_id)}</p>
     </div>
     <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
       <p class="text-sm text-gray-500 dark:text-gray-400">الرصيد بعد</p>

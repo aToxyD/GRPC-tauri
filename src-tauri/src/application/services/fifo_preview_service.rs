@@ -3,6 +3,8 @@
 use crate::domain::accounting::InventoryValue;
 use crate::domain::fifo_engine::{simulate_fifo_consumption, FifoLayerRow};
 use crate::domain::meal_cost_engine::compute_meal_fifo_costs;
+use crate::domain::numeric::legacy_float;
+use crate::domain::numeric::{Money, NumericError};
 use crate::domain::validation::validate_daily_report_input;
 use crate::errors::AppError;
 use crate::models::{
@@ -45,7 +47,8 @@ impl<'a> FifoPreviewService<'a> {
         Ok(DailyFifoConsumptionPreview {
             predicted_fifo_cost,
             predicted_consumption_layers: product_previews,
-            predicted_remaining_inventory_value: remaining_value.value(),
+            predicted_remaining_inventory_value:
+                crate::domain::numeric::legacy_float::money_to_f64(&remaining_value.value())?,
             meal_previews: vec![],
             daily_summary: DailyConsumptionSummary::default(),
         })
@@ -215,7 +218,8 @@ impl<'a> FifoPreviewService<'a> {
         Ok(DailyFifoConsumptionPreview {
             predicted_fifo_cost: computation.total_cost,
             predicted_consumption_layers: product_previews,
-            predicted_remaining_inventory_value: remaining_value.value(),
+            predicted_remaining_inventory_value:
+                crate::domain::numeric::legacy_float::money_to_f64(&remaining_value.value())?,
             meal_previews,
             daily_summary,
         })
@@ -255,11 +259,31 @@ impl<'a> FifoPreviewService<'a> {
         product_previews: &[ProductFifoPreview],
     ) -> Result<InventoryValue, AppError> {
         let fifo_repo = self.executor.fifo_layers();
-        let current_value = fifo_repo.get_inventory_value_fifo(unit_id)?;
-        let consumed_total: f64 = product_previews.iter().map(|p| p.predicted_fifo_cost).sum();
-        Ok(InventoryValue::new(
-            (current_value - consumed_total).max(0.0),
-        ))
+        // ADR-0048 (Target B): both sides are Money at scale 2 — the current
+        // persisted valuation and the exact sum of predicted consumption
+        // costs. The estimate is exact checked subtraction; a negative
+        // difference is floored at zero for display only. This is a
+        // presentation estimate, never authoritative accounting state: the
+        // persisted valuation is untouched, so the display clamp stays at the
+        // presentation boundary.
+        let current_value =
+            legacy_float::money_from_f64(fifo_repo.get_inventory_value_fifo(unit_id)?)?;
+        let mut consumed_total = Money::zero();
+        for preview in product_previews {
+            consumed_total = consumed_total
+                .checked_add(legacy_float::money_from_f64(preview.predicted_fifo_cost)?)?;
+        }
+        // Presentation-only estimate: if consumption exceeds the current
+        // valuation, the projected remainder floors at zero for display.
+        // This is never authoritative accounting state — the persisted
+        // valuation is untouched — so the floor lives at the presentation
+        // boundary and every other failure still fails closed.
+        let remaining = match current_value.checked_sub(consumed_total) {
+            Ok(value) => value,
+            Err(NumericError::NegativeNotAllowed) => Money::zero(),
+            Err(e) => return Err(e.into()),
+        };
+        Ok(InventoryValue::new(remaining))
     }
 }
 

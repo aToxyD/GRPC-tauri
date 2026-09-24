@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::domain::numeric::legacy_float::{money_to_f64, quantity_to_f64};
+use crate::domain::numeric::{Money, Quantity};
+use crate::repositories::numeric_row;
 use crate::repositories::DbExecutor;
 
 use super::{Report, ReportEnvelope, ReportMetadata};
@@ -60,7 +63,10 @@ impl Report for InventoryValuationReport {
         executor: DbExecutor<'_>,
         input: Self::Input,
     ) -> Result<ReportEnvelope<Self::Output>, Self::Error> {
-        let rows: Vec<(String, String, f64, f64, i64)> = executor
+        // INTEGER boundary: `SUM(f.qty_remaining)` is scale-3 quantity, and
+        // `SUM(f.qty_remaining * f.unit_cost)` equals value_DA × 100000.
+        // All valuation arithmetic below is exact Money/Quantity.
+        let rows: Vec<(String, String, i64, i64, i64)> = executor
             .query_all(
                 r#"SELECT f.product_id, p.name,
                           SUM(f.qty_remaining), SUM(f.qty_remaining * f.unit_cost), COUNT(*)
@@ -76,8 +82,8 @@ impl Report for InventoryValuationReport {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
-                        row.get::<_, f64>(2)?,
-                        row.get::<_, f64>(3)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
                         row.get::<_, i64>(4)?,
                     ))
                 },
@@ -85,23 +91,38 @@ impl Report for InventoryValuationReport {
             .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
 
         let mut products = Vec::with_capacity(rows.len());
-        let mut total_value = 0.0_f64;
+        let mut total_value = Money::zero();
         let mut total_layers: usize = 0;
 
-        for (product_id, product_name, qty, value, layer_count) in rows {
-            let weighted_cost = if qty > 0.0 {
-                super::round_money(value / qty)
+        for (product_id, product_name, qty_scaled, value_times_100000, layer_count) in rows {
+            let qty = Quantity::from_scaled_i64(qty_scaled)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
+            let value = numeric_row::money_sum(value_times_100000)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
+
+            // Weighted average unit cost = FIFO value ÷ remaining quantity
+            // (dedicated Money÷Quantity operation). Zero/empty quantity → zero.
+            let weighted_avg_unit_cost = if qty.is_positive() {
+                value
+                    .checked_div_quantity(&qty)
+                    .and_then(|cost| money_to_f64(&cost))
+                    .map_err(|e| InventoryValuationError::Internal(e.to_string()))?
             } else {
                 0.0
             };
-            let row_value = super::round_money(value);
-            total_value = super::round_money(total_value + row_value);
+
+            let row_value = money_to_f64(&value)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
+            total_value = total_value
+                .checked_add(value)
+                .map_err(|e| InventoryValuationError::Internal(e.to_string()))?;
             total_layers += layer_count as usize;
             products.push(ProductValuationRow {
                 product_id,
                 product_name,
-                total_quantity: super::round_money(qty),
-                weighted_avg_unit_cost: weighted_cost,
+                total_quantity: quantity_to_f64(&qty)
+                    .map_err(|e| InventoryValuationError::Internal(e.to_string()))?,
+                weighted_avg_unit_cost,
                 total_value: row_value,
                 layer_count: layer_count as usize,
             });
@@ -113,7 +134,8 @@ impl Report for InventoryValuationReport {
         Ok(ReportEnvelope {
             metadata,
             data: InventoryValuationOutput {
-                total_inventory_value: super::round_money(total_value),
+                total_inventory_value: money_to_f64(&total_value)
+                    .map_err(|e| InventoryValuationError::Internal(e.to_string()))?,
                 product_count: products.len(),
                 active_layer_count: total_layers,
                 products,

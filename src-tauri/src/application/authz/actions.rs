@@ -60,10 +60,30 @@ pub enum Action {
 
     // Identity & Access Synchronization (B8)
     ManageAccountSync,
-    ExportIdentityAccessPackage,
-    ImportIdentityAccessPackage,
 
-    // Licensing (ADR-0042 / B7-licensing)
-    ReadLicensingStatus,
-    ManageLicensing,
+    // Admin-Only B8 Account Synchronization (ADR-0051 — Accepted 2026-08-22)
+    ExportAdminAccessPackage,
+    ImportAdminAccessPackage,
+
+    // Contract-centric procurement (ADR-0055 / SEC-087-F)
+    ManageSuppliers,
+    ManageContracts,
+    ApproveContractPrice,
+    CloseContract,
+    ManageTaxPolicy,
+    ReadContractProjection,
+    ReleaseContractAllocation,
+    RevokeContractAllocationRelease,
+    ExportContractCatalogPackage,
+    ImportContractCatalogPackage,
+
+    // UNIT local read of its own offline ContractCatalog entitlement projection.
+    // Distinct from `ReadContractProjection` (WILAYA-only projection owner): this
+    // is a UNIT-node-scoped, read-only consumer read over locally imported rows.
+    ReadUnitEntitlements,
+
+    // Contract-centric procurement Excel exports (ADR-0055 / SEC-087-F)
+    ExportSuppliers,
+    ExportContracts,
+    ExportContractAllocations,
 }

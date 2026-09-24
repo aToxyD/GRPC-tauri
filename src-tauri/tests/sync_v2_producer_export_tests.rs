@@ -3,16 +3,20 @@
 //! RFC 2026-08-04-node-identity-trust §3.4.1 / §3.10 / ADR-0038.
 //!
 //! Exercises `IdentitySignedExportService::export_v2_package` end-to-end:
-//! - full V2 metadata (signature_version, issuer_identity_id, package_sequence,
-//!   signing_key_id) with a signature that verifies against the issuer cert;
-//! - consumer round-trip: Transport Guard accepts the first package, rejects a
-//!   replay, defers an out-of-order package, and accepts the contiguous run;
-//! - advance-on-success: a failed export burns no sequence and the retry reuses
-//!   the same number;
-//! - rotation continuity: the producer ledger is keyed on `identity_id`, so a
-//!   re-issued credential (new credential_id/generation) continues the sequence;
-//! - fail-closed: an unprovisioned node (no key or no ACTIVE certificate) cannot
-//!   emit a V2 package — there is no HMAC fallback for production sync exports.
+//! - full V2 metadata (signature_version, issuer_identity_id, signing_key_id)
+//!   with a signature that verifies against the issuer cert; packages are
+//!   unique by exact `package_id` only — no transport sequence (SEC-057);
+//! - fail-closed: an unprovisioned node (no key or no ACTIVE certificate)
+//!   cannot emit a V2 package — there is no HMAC fallback for production
+//!   sync exports;
+//! - failed exports write nothing and the retry onto a valid path succeeds;
+//! - rotation continuity: the package stays bound to `identity_id` — a
+//!   re-issued credential (new credential_id/generation) keeps emitting V2
+//!   packages for the same identity whose signature verifies against the
+//!   unchanged public key.
+//!
+//! The consumer-side Transport Guard ordering tests were removed with
+//! SEC-057: there is no per-issuer sequence to guard anymore.
 //!
 //! The test authority Root uses the RFC 8032 §7.1 TEST 1 keypair — exactly the
 //! `#[cfg(debug_assertions)]` development Root fallback in `root_public_key.rs`.
@@ -28,7 +32,6 @@ use grpc_lib::application::services::{
     FinalizeWilayaProvisionResult, IdentityProvisioningService, IdentitySignedExportService,
     SyncPackageIdentityVerificationService,
 };
-use grpc_lib::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
 use grpc_lib::application::usecases::exports::types::ProductsExportDataset;
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
@@ -94,8 +97,9 @@ fn bootstrap_wilaya(node: &mut Node) -> IdentityCertificate {
     }
 }
 
-/// Export an empty products dataset as a V2 package; returns the issued sequence.
-fn export_products(node: &Node, crypto: &AgeFileEncryptionProvider, target: &Path) -> u64 {
+/// Export an empty products dataset as a V2 package (SEC-057: returns nothing
+/// — there is no sequence allocation to surface).
+fn export_products(node: &Node, crypto: &AgeFileEncryptionProvider, target: &Path) {
     IdentitySignedExportService::new(&node.db, &node.node_key_store)
         .export_v2_package(
             ProductsExportDataset {
@@ -103,6 +107,8 @@ fn export_products(node: &Node, crypto: &AgeFileEncryptionProvider, target: &Pat
             },
             "wilaya-test-node",
             "products",
+            None,
+            None,
             target,
             SubjectType::Wilaya,
             crypto,
@@ -129,14 +135,12 @@ fn producer_emits_v2_ed25519_package_with_full_metadata() {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("products.sync");
 
-    let sequence = export_products(&node, &crypto, &path);
-    assert_eq!(sequence, 1);
+    export_products(&node, &crypto, &path);
 
     let pkg = read_package(&crypto, &path);
     let meta = &pkg.metadata;
     assert_eq!(meta.signature_version, Some(SIGNATURE_VERSION_ED25519));
     assert_eq!(meta.issuer_identity_id, Some(wilaya_cert.identity_id));
-    assert_eq!(meta.package_sequence, Some(1));
     assert_eq!(
         meta.signing_key_id.as_deref(),
         Some(hex::encode(&wilaya_cert.public_key).as_str()),
@@ -152,115 +156,17 @@ fn producer_emits_v2_ed25519_package_with_full_metadata() {
 }
 
 // ---------------------------------------------------------------------------
-// Consumer round-trip: Transport Guard ordering
+// Fail-closed + retry semantics (no sequence ledger)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn consumer_accepts_then_rejects_replay_and_defers_out_of_order() {
-    let mut producer = fresh_node();
-    let wilaya_cert = bootstrap_wilaya(&mut producer);
-    let crypto = AgeFileEncryptionProvider::new();
-    let dir = TempDir::new().expect("temp dir");
-
-    let p1 = dir.path().join("p1.sync");
-    let p2 = dir.path().join("p2.sync");
-    let p3 = dir.path().join("p3.sync");
-    assert_eq!(export_products(&producer, &crypto, &p1), 1);
-    assert_eq!(export_products(&producer, &crypto, &p2), 2);
-    assert_eq!(export_products(&producer, &crypto, &p3), 3);
-
-    // Consumer: a fresh node with the WILAYA cert installed as trusted issuer.
-    let consumer = fresh_node();
-    IdentityStorePort::upsert(
-        &consumer.db.executor().identity_store(),
-        &wilaya_cert,
-        FIXED_NOW,
-    )
-    .expect("seed issuer cert");
-    let issuer = wilaya_cert.identity_id.to_string();
-
-    let pkg1 = read_package(&crypto, &p1);
-    SyncPackageIdentityVerificationService::verify_v2_signature(consumer.db.executor(), &pkg1)
-        .expect("pkg1 verifies");
-
-    // First package from the issuer: accept and advance.
-    let last = SyncPackageIdentityVerificationService::last_applied_sequence(
-        consumer.db.executor(),
-        &issuer,
-    )
-    .expect("last");
-    assert_eq!(last, None);
-    assert!(matches!(
-        TransportGuard::check(&issuer, 1, last),
-        TransportVerdict::Accept { .. }
-    ));
-    SyncPackageIdentityVerificationService::advance_issuer_sequence(
-        consumer.db.executor(),
-        &issuer,
-        1,
-    )
-    .expect("advance");
-
-    // Replay of pkg1 → Reject.
-    let last = SyncPackageIdentityVerificationService::last_applied_sequence(
-        consumer.db.executor(),
-        &issuer,
-    )
-    .expect("last");
-    assert_eq!(last, Some(1));
-    assert!(matches!(
-        TransportGuard::check(&issuer, 1, last),
-        TransportVerdict::Replay { .. }
-    ));
-
-    // Out-of-order: pkg3 presented before pkg2 → deferred gap.
-    let last = SyncPackageIdentityVerificationService::last_applied_sequence(
-        consumer.db.executor(),
-        &issuer,
-    )
-    .expect("last");
-    assert!(matches!(
-        TransportGuard::check(&issuer, 3, last),
-        TransportVerdict::OutOfOrder {
-            expected: 2,
-            got: 3,
-            ..
-        }
-    ));
-
-    // Contiguous continuation (pkg2) restores order.
-    let pkg2 = read_package(&crypto, &p2);
-    SyncPackageIdentityVerificationService::verify_v2_signature(consumer.db.executor(), &pkg2)
-        .expect("pkg2 verifies");
-    let last = SyncPackageIdentityVerificationService::last_applied_sequence(
-        consumer.db.executor(),
-        &issuer,
-    )
-    .expect("last");
-    assert!(matches!(
-        TransportGuard::check(&issuer, 2, last),
-        TransportVerdict::Accept { .. }
-    ));
-    SyncPackageIdentityVerificationService::advance_issuer_sequence(
-        consumer.db.executor(),
-        &issuer,
-        2,
-    )
-    .expect("advance");
-}
-
-// ---------------------------------------------------------------------------
-// Advance-on-success ledger semantics
-// ---------------------------------------------------------------------------
-
-#[test]
-fn failed_export_burns_no_sequence_and_retry_reuses_number() {
+fn failed_export_writes_nothing_and_retry_succeeds() {
     let mut node = fresh_node();
     bootstrap_wilaya(&mut node);
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
 
-    // Invalid target path (non-existent parent directory) → build fails.
+    // Invalid target path (non-existent parent directory) → build fails closed.
     let bad = dir.path().join("no_such_dir").join("bad.sync");
     let err = IdentitySignedExportService::new(&node.db, &node.node_key_store)
         .export_v2_package(
@@ -269,6 +175,8 @@ fn failed_export_burns_no_sequence_and_retry_reuses_number() {
             },
             "wilaya-test-node",
             "products",
+            None,
+            None,
             &bad,
             SubjectType::Wilaya,
             &crypto,
@@ -278,28 +186,46 @@ fn failed_export_burns_no_sequence_and_retry_reuses_number() {
         err.to_string().contains("Failed to create target file"),
         "got {err:?}"
     );
+    assert!(
+        !bad.exists(),
+        "no artifact may be written by a failed export"
+    );
 
-    // Retry on a valid path → the same sequence is reused (no burned gaps).
+    // Retry on a valid path succeeds — every successful export is a distinct
+    // exact package (no sequence to burn or reuse, SEC-057).
     let good1 = dir.path().join("good1.sync");
-    assert_eq!(export_products(&node, &crypto, &good1), 1);
+    export_products(&node, &crypto, &good1);
+    assert!(good1.exists());
 
     let good2 = dir.path().join("good2.sync");
-    assert_eq!(export_products(&node, &crypto, &good2), 2);
+    export_products(&node, &crypto, &good2);
+    assert!(good2.exists());
+
+    let p1 = read_package(&crypto, &good1);
+    let p2 = read_package(&crypto, &good2);
+    assert_ne!(
+        p1.metadata.package_id, p2.metadata.package_id,
+        "every export is a distinct exact package"
+    );
+    for pkg in [&p1, &p2] {
+        SyncPackageIdentityVerificationService::verify_v2_signature(node.db.executor(), pkg)
+            .expect("V2 signature verifies against issuer cert");
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Rotation continuity (ledger keyed on identity_id, not credential_id)
+// Rotation continuity (package bound to identity_id, not credential_id)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sequence_continues_across_credential_rotation() {
+fn identity_bound_signing_continues_across_credential_rotation() {
     let mut node = fresh_node();
     let cert_a = bootstrap_wilaya(&mut node);
     let crypto = AgeFileEncryptionProvider::new();
     let dir = TempDir::new().expect("temp dir");
 
     let p1 = dir.path().join("p1.sync");
-    assert_eq!(export_products(&node, &crypto, &p1), 1);
+    export_products(&node, &crypto, &p1);
 
     // Re-issue: same identity_id + same node public key, NEW credential_id +
     // higher generation. R5 still holds (public key unchanged).
@@ -315,17 +241,27 @@ fn sequence_continues_across_credential_rotation() {
         .expect("rotated cert upsert");
 
     let p2 = dir.path().join("p2.sync");
-    let seq2 = export_products(&node, &crypto, &p2);
-    assert_eq!(
-        seq2, 2,
-        "ledger must continue by identity_id across credential rotation"
-    );
+    export_products(&node, &crypto, &p2);
 
+    let pkg1 = read_package(&crypto, &p1);
     let pkg2 = read_package(&crypto, &p2);
-    assert_eq!(pkg2.metadata.issuer_identity_id, Some(cert_a.identity_id));
-    assert_eq!(pkg2.metadata.package_sequence, Some(2));
-    SyncPackageIdentityVerificationService::verify_v2_signature(node.db.executor(), &pkg2)
-        .expect("rotated package verifies against the (unchanged) public key");
+    assert_eq!(
+        pkg2.metadata.issuer_identity_id,
+        Some(cert_a.identity_id),
+        "the package stays bound to the identity across rotation (SEC-057)"
+    );
+    assert_eq!(
+        pkg1.metadata.issuer_identity_id, pkg2.metadata.issuer_identity_id,
+        "rotation does not change the issuer identity"
+    );
+    assert_ne!(
+        pkg1.metadata.package_id, pkg2.metadata.package_id,
+        "pre- and post-rotation exports are distinct exact packages"
+    );
+    for pkg in [&pkg1, &pkg2] {
+        SyncPackageIdentityVerificationService::verify_v2_signature(node.db.executor(), pkg)
+            .expect("package verifies against the (unchanged) public key");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +283,8 @@ fn unprovisioned_node_fails_closed_without_hmac_fallback() {
             },
             "n",
             "products",
+            None,
+            None,
             &path,
             SubjectType::Wilaya,
             &crypto,
@@ -369,6 +307,8 @@ fn unprovisioned_node_fails_closed_without_hmac_fallback() {
             },
             "n",
             "products",
+            None,
+            None,
             &path,
             SubjectType::Wilaya,
             &crypto,

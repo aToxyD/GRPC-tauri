@@ -103,6 +103,9 @@ pub fn assert_error<T: std::fmt::Debug>(result: Result<T, String>, expected_msg:
 }
 
 /// Insert a test product and its inventory_stocks row.
+/// The product carries a complete valid SEC-087 unit/TVA configuration
+/// (purchase=consumption=Kilogram, factor 1, TVA 0%) and the stock row is keyed
+/// by that consumption unit — the finalized Product/inventory model.
 /// Returns the product_id.
 #[allow(dead_code)]
 pub fn create_test_product(
@@ -118,13 +121,13 @@ pub fn create_test_product(
     let now = chrono::Utc::now().to_rfc3339();
     db.get_connection()
         .execute(
-            "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at)              VALUES (?1, ?2, ?3, 0.0, NULL, ?4, ?5, ?5)",
-            params![product_id, name, base_price, fiscal_year, now],
+            "INSERT INTO products (id, name, base_price, year, purchase_unit, consumption_unit, conversion_factor, tva_classification, created_at, updated_at)              VALUES (?1, ?2, ?3, ?4, 1, 1, 1, 0, ?5, ?5)",
+            params![product_id, name, base_price * 100.0, fiscal_year, now],
         )
         .expect("insert product");
     db.get_connection()
         .execute(
-            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)              VALUES (?1, ?2, 0.0, 'unit', ?3, ?3)",
+            "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at, consumption_unit)              VALUES (?1, ?2, 0.0, 'unit', ?3, ?3, 1)",
             params![format!("stock-{}", product_id), product_id, now],
         )
         .expect("insert inventory_stocks");
@@ -141,7 +144,7 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
     db.get_connection()
         .execute(
             "UPDATE inventory_stocks SET quantity = ?1, last_updated = ?2 WHERE product_id = ?3",
-            params![quantity, now, product_id],
+            params![quantity * 1000.0, now, product_id],
         )
         .expect("update inventory_stocks quantity");
 
@@ -167,7 +170,7 @@ pub fn set_test_stock(state: &grpc_lib::commands::AppState, product_id: &str, qu
             .execute(
                 "INSERT INTO fifo_stock_layers (id, unit_id, product_id, source_type, source_id, unit_cost, qty_original, qty_remaining, received_at, created_by, origin_fiscal_year)
                  VALUES (?1, 'test-unit', ?2, 'ORDER', 'test-source', ?3, ?4, ?4, ?5, 'system', ?6)",
-                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity, now, 2025],
+                params![uuid::Uuid::new_v4().to_string(), product_id, unit_cost, quantity * 1000.0, now, 2025],
             )
             .expect("insert fifo stock layer");
     }
@@ -203,3 +206,168 @@ pub fn clear_fiscal_status(state: &grpc_lib::commands::AppState) {
         .execute("DELETE FROM fiscal_year_status", [])
         .expect("clear fiscal_year_status");
 }
+
+/// Seed an ACTIVE WILAYA identity whose Ed25519 signing key is derived from
+/// `secret` (SEC-008 test pattern — the fiscal closure signer).
+///
+/// Returns the identity_id so callers can reference the issuer in packages.
+#[allow(dead_code)]
+pub fn seed_wilaya_identity(db: &grpc_lib::db::Database, secret: [u8; 32]) -> uuid::Uuid {
+    use grpc_lib::domain::identity::{
+        CredentialStatus, IdentityCertificate, IdentitySigner, IdentityStorePort, SubjectType,
+        SIGNATURE_VERSION_ED25519,
+    };
+    use grpc_lib::infrastructure::security::Ed25519SigningProvider;
+    use grpc_lib::repositories::RepositoryProvider;
+    let identity_id = uuid::Uuid::new_v4();
+    let certificate = IdentityCertificate {
+        identity_id,
+        subject_type: SubjectType::Wilaya,
+        subject_id: identity_id,
+        issuer_identity_id: None,
+        credential_id: uuid::Uuid::new_v4(),
+        generation: 1,
+        status: CredentialStatus::Active,
+        public_key: Ed25519SigningProvider::new(secret).public_key(),
+        algorithm_version: SIGNATURE_VERSION_ED25519,
+        not_after: None,
+        package_sequence: Some(1),
+        signature: None,
+    };
+    db.executor()
+        .identity_store()
+        .upsert(&certificate, &chrono::Utc::now().to_rfc3339())
+        .expect("seed wilaya identity");
+    identity_id
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-013 Phase 2 (ADR-0041 §11.4) — keyring test isolation
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Deterministic keyring tests MUST NOT touch the machine's ambient desktop
+// keyring: every test that exercises the rank-2 keyring source installs an
+// in-memory `SecretStoragePort` fake through the `install_test_keyring_port`
+// seam (production semantics unchanged) and serializes on `KEYRING_SEAM_LOCK`
+// (the override is process-global).
+
+use grpc_lib::domain::ports::SecretStoragePort;
+use grpc_lib::errors::AppResult;
+use std::collections::HashMap;
+
+static KEYRING_SEAM_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII guard: holds the seam lock, installs a fake port for the duration of
+/// the test, and restores the real provider on drop.
+#[allow(dead_code)]
+pub struct KeyringSeamGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl KeyringSeamGuard {
+    #[allow(dead_code)]
+    pub fn install(port: Arc<dyn SecretStoragePort + Send + Sync>) -> Self {
+        let lock = KEYRING_SEAM_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        grpc_lib::infrastructure::security::install_test_keyring_port(port);
+        Self { _lock: lock }
+    }
+
+    /// Keyring ABSENT — rank 2 falls through to the next rank (cache / dev).
+    #[allow(dead_code)]
+    pub fn absent() -> Self {
+        Self::install(Arc::new(InMemorySecretStorage::new()))
+    }
+}
+
+impl Drop for KeyringSeamGuard {
+    fn drop(&mut self) {
+        grpc_lib::infrastructure::security::uninstall_test_keyring_port();
+    }
+}
+
+/// In-memory `SecretStoragePort` fake with failure injection. TEST ONLY.
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct InMemorySecretStorage {
+    entries: Mutex<HashMap<String, String>>,
+    unavailable: bool,
+}
+
+impl InMemorySecretStorage {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[allow(dead_code)]
+    pub fn with_secret(key: &str, value: &str) -> Self {
+        let store = Self::new();
+        store
+            .entries
+            .lock()
+            .expect("entries lock")
+            .insert(key.to_string(), value.to_string());
+        store
+    }
+
+    #[allow(dead_code)]
+    pub fn unavailable() -> Self {
+        let mut store = Self::new();
+        store.unavailable = true;
+        store
+    }
+
+    #[allow(dead_code)]
+    pub fn entries_snapshot(&self) -> HashMap<String, String> {
+        self.entries.lock().expect("entries lock").clone()
+    }
+}
+
+impl SecretStoragePort for InMemorySecretStorage {
+    fn get_secret(&self, key: &str) -> AppResult<Option<String>> {
+        if self.unavailable {
+            return Err(grpc_lib::errors::AppError::Internal(
+                "keyring service unavailable (injected)".into(),
+            ));
+        }
+        Ok(self.entries.lock().expect("entries lock").get(key).cloned())
+    }
+
+    fn set_secret(&self, key: &str, value: &str) -> AppResult<()> {
+        if self.unavailable {
+            return Err(grpc_lib::errors::AppError::Internal(
+                "keyring write failed (injected)".into(),
+            ));
+        }
+        self.entries
+            .lock()
+            .expect("entries lock")
+            .insert(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    fn delete_secret(&self, key: &str) -> AppResult<bool> {
+        if self.unavailable {
+            return Err(grpc_lib::errors::AppError::Internal(
+                "keyring delete failed (injected)".into(),
+            ));
+        }
+        Ok(self
+            .entries
+            .lock()
+            .expect("entries lock")
+            .remove(key)
+            .is_some())
+    }
+}
+
+/// Two distinct, valid age x25519 identities for precedence tests (A = the
+/// "keyring" identity, B = the "cache" identity).
+#[allow(dead_code)]
+pub const IDENTITY_A: &str =
+    "AGE-SECRET-KEY-1L0CATH79GGL7DQN3E8ZWF63VWERZN5LJYYVHKM34E5P9QYLEDT6SZJA4MC";
+#[allow(dead_code)]
+pub const IDENTITY_B: &str =
+    "AGE-SECRET-KEY-1F9TAYLD8SCU6QNPRHDPUEGEY2EMDZLXDL5HGQ3M4NP6U6U8LQEMQCUQGCS";

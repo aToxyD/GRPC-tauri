@@ -27,13 +27,14 @@ fn fixture_package_with_id(
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: source_node_id.to_string(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId(package_id.to_string()),
             signature_version: None,
             signing_key_id: None,
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: MonthlySummaryExportDataset {
             summary: MonthlySummary {
@@ -80,6 +81,23 @@ fn importing_same_package_id_twice_is_rejected() {
         .upsert_raw_unit(&unit_id, "C01", "Alpha Base", "16", &now)
         .expect("unit");
 
+    // SEC-057 monthly completeness gate: a monthly import is admissible ONLY
+    // for a full calendar month. Seed a complete January 2026 (31 daily
+    // reports) for this unit so the first import clears the gate.
+    for day in 1..=31 {
+        db.get_connection()
+            .execute(
+                "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, fiscal_year, deleted) VALUES (?1, ?2, ?3, 0, 0, 0, ?4, 2026, 0)",
+                rusqlite::params![
+                    format!("dr-{day}"),
+                    format!("2026-01-{day:02}"),
+                    unit_id,
+                    now
+                ],
+            )
+            .expect("insert daily report");
+    }
+
     // Apply same package twice inside DB transactions.
     let pkg_id = "pkg-dup-001";
     let pkg = fixture_package_with_id(pkg_id, &unit_id); // source_node_id = unit_id (strongest match)
@@ -102,7 +120,6 @@ fn importing_same_package_id_twice_is_rejected() {
             src_opt,
             "admin",
             None,
-            None,
         );
         apply_monthly_summary_package(tx, &reg, input.clone())
     })
@@ -117,7 +134,6 @@ fn importing_same_package_id_twice_is_rejected() {
                 MONTHLY_SUMMARY_PACKAGE_KIND,
                 src_opt,
                 "admin",
-                None,
                 None,
             );
             apply_monthly_summary_package(tx, &reg, input)

@@ -16,11 +16,13 @@
   import SyncPage from './pages/SyncPage.svelte';
   import UnitDashboard from './pages/UnitDashboard.svelte';
   import OrdersPage from './pages/OrdersPage.svelte';
+  import UnitEntitlementsPage from './pages/UnitEntitlementsPage.svelte';
   import ConsumptionPage from './pages/ConsumptionPage.svelte';
   import WilayaReportsPage from './pages/WilayaReportsPage.svelte';
   import UnitReportsPage from './pages/UnitReportsPage.svelte';
   import StockPage from './pages/StockPage.svelte';
   import BackupPage from './pages/BackupPage.svelte';
+  import SettingsPage from './pages/SettingsPage.svelte';
   import WilayaStatisticsPage from './pages/WilayaStatisticsPage.svelte';
   import UnitStatisticsPage from './pages/UnitStatisticsPage.svelte';
   import UnitInventoryPage from './pages/UnitInventoryPage.svelte';
@@ -31,9 +33,10 @@
   import ConflictCenterPage from './pages/ConflictCenterPage.svelte';
   import FiscalManagementPage from './pages/FiscalManagementPage.svelte';
   import FiscalDiagnosticsPage from './pages/FiscalDiagnosticsPage.svelte';
+  import SuppliersPage from './pages/SuppliersPage.svelte';
+  import ContractsPage from './pages/ContractsPage.svelte';
   import NotFoundPage from './pages/NotFoundPage.svelte';
   import AppSecurityPage from './pages/AppSecurityPage.svelte';
-  import LicensingPage from './pages/LicensingPage.svelte';
   
   // Import components
   import Notifications from './components/Notifications.svelte';
@@ -66,11 +69,14 @@
     '/wilaya/dashboard': WilayaDashboard,
     '/wilaya/products': ProductsPage,
     '/wilaya/units': UnitsPage,
+    '/wilaya/suppliers': SuppliersPage,
+    '/wilaya/contracts': ContractsPage,
     '/wilaya/sync': SyncPage,
     '/unit': UnitDashboard,
     '/unit/dashboard': UnitDashboard,
     '/unit/stock': StockPage,
     '/unit/orders': OrdersPage,
+    '/unit/entitlements': UnitEntitlementsPage,
     '/unit/consumption': ConsumptionPage,
     '/unit/reports': UnitReportsPage,
     '/wilaya/reports': WilayaReportsPage,
@@ -78,6 +84,7 @@
     '/wilaya/unit-inventory': UnitInventoryPage,
     '/unit/statistics': UnitStatisticsPage,
     '/backup': BackupPage,
+    '/settings': SettingsPage,
     '/audit-log': AuditLogPage,
     '/admin/audit-integrity': AuditIntegrityPage,
     '/admin/system-health': SystemHealthPage,
@@ -85,7 +92,6 @@
     '/admin/conflicts': ConflictCenterPage,
     '/admin/fiscal': FiscalManagementPage,
     '/admin/diagnostics': FiscalDiagnosticsPage,
-    '/admin/licensing': LicensingPage,
     // Fallback to 404
     '*': NotFoundPage
   };

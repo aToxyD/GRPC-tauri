@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::repositories::numeric_row;
 use crate::repositories::DbExecutor;
 
 use super::{Report, ReportEnvelope, ReportMetadata};
@@ -129,9 +130,9 @@ impl Report for StockMovementLedgerReport {
                         product_id: row.get(1)?,
                         product_name: row.get(2)?,
                         movement_type: row.get(3)?,
-                        quantity: row.get(4)?,
-                        balance_before: row.get(5)?,
-                        balance_after: row.get(6)?,
+                        quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                        balance_before: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                        balance_after: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
                         reference_type: row.get(7)?,
                         reference_id: row.get(8)?,
                         notes: row.get(9)?,
@@ -139,7 +140,10 @@ impl Report for StockMovementLedgerReport {
                         user_id: row.get(11)?,
                         unit_id: row.get(12)?,
                         fiscal_year: row.get(13)?,
-                        unit_cost: row.get(14)?,
+                        unit_cost: match row.get::<_, Option<i64>>(14)? {
+                            Some(scaled) => Some(numeric_row::money_col(14, scaled)?),
+                            None => None,
+                        },
                     })
                 },
             )

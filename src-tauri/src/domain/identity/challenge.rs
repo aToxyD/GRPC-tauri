@@ -214,9 +214,8 @@ impl IdentityChallengeState {
     /// Deterministic variant of `prune_expired` for tests.
     pub fn prune_expired_at(&mut self, now_epoch_secs: i64) -> usize {
         let before = self.challenges.len();
-        self.challenges.retain(|_, entry| {
-            !Self::is_expired(entry.issued_at_epoch_secs, now_epoch_secs)
-        });
+        self.challenges
+            .retain(|_, entry| !Self::is_expired(entry.issued_at_epoch_secs, now_epoch_secs));
         before - self.challenges.len()
     }
 }
@@ -310,7 +309,10 @@ mod tests {
             state.consume_at(&challenge.session_id, FIXED_NOW + TTL_SECS - 1),
             None
         );
-        assert_eq!(state.state(&challenge.session_id), Some(ChallengeState::Consumed));
+        assert_eq!(
+            state.state(&challenge.session_id),
+            Some(ChallengeState::Consumed)
+        );
     }
 
     #[test]
@@ -369,7 +371,10 @@ mod tests {
         let fresh = sample_challenge();
         assert!(state.try_begin(fresh.clone(), FIXED_NOW));
         assert_eq!(state.len(), 1);
-        assert_eq!(state.state(&fresh.session_id), Some(ChallengeState::Pending));
+        assert_eq!(
+            state.state(&fresh.session_id),
+            Some(ChallengeState::Pending)
+        );
     }
 
     #[test]
@@ -386,7 +391,10 @@ mod tests {
         let removed = state.prune_expired_at(FIXED_NOW);
         assert_eq!(removed, 1);
         assert_eq!(state.len(), 1);
-        assert_eq!(state.state(&fresh.session_id), Some(ChallengeState::Pending));
+        assert_eq!(
+            state.state(&fresh.session_id),
+            Some(ChallengeState::Pending)
+        );
         assert_eq!(state.state(&old.session_id), None);
     }
 

@@ -198,7 +198,7 @@
               <div class="flex items-center gap-2 mb-1.5 text-sm">
                 <span class="min-w-[160px] text-gray-500 dark:text-gray-400">{t.conflictTypeDisplay}</span>
                   <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <!-- [arch:allow-fe141] Reason: UI percentage bar, not business division; Date: 2026-06-01; Owner: governance-team -->
+                  <!-- [arch:allow-fe141] see ADR-0054 — Reason: UI percentage bar, not business division; Date: 2026-08-30; Owner: governance-team -->
                   <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500" style="width:{Math.min((t.count/summary.total)*100,100)}%"></div>
                 </div>
                 <span class="min-w-[30px] text-left font-semibold text-gray-800 dark:text-white">{t.count}</span>
@@ -214,7 +214,7 @@
               <div class="flex items-center gap-2 mb-1.5 text-sm">
                 <span class="min-w-[160px] text-gray-500 dark:text-gray-400">{s.severity}</span>
                 <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <!-- [arch:allow-fe141] Reason: UI percentage bar, not business division; Date: 2026-06-01; Owner: governance-team -->
+                  <!-- [arch:allow-fe141] see ADR-0054 — Reason: UI percentage bar, not business division; Date: 2026-08-30; Owner: governance-team -->
                   <div class="h-full rounded-full transition-all duration-500 {s.severity==='CRITICAL'?'bg-red-500':s.severity==='ERROR'?'bg-orange-500':s.severity==='WARNING'?'bg-yellow-500':'bg-blue-50 dark:bg-blue-900/20'}" style="width:{Math.min((s.count/summary.total)*100,100)}%"></div>
                 </div>
                 <span class="min-w-[30px] text-left font-semibold text-gray-800 dark:text-white">{s.count}</span>

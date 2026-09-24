@@ -55,13 +55,25 @@ pub struct ProductSyncRecord {
     pub id: String,
     pub name: String,
     pub base_price: f64,
-    pub tva: f64,
-    pub supplier_name: Option<String>,
     pub year: i32,
     pub created_at: String,
     pub updated_at: String,
     pub node_id: String,
     pub deleted: i32,
+    /// SEC-087 Phase 6B (ADR-0057 §3.4): WILAYA-authoritative unit/TVA
+    /// configuration wire codes, carried by every conforming V3 Product record.
+    /// Guaranteed `Some` and mutually consistent by the pre-mutation validator
+    /// (`validate_products_package_for_import` → `validate_product_units`).
+    /// `#[serde(default)]` keeps the model deserializer shape-compatible; it
+    /// never satisfies the business requirement.
+    #[serde(default)]
+    pub purchase_unit: Option<i32>,
+    #[serde(default)]
+    pub consumption_unit: Option<i32>,
+    #[serde(default)]
+    pub conversion_factor: Option<i32>,
+    #[serde(default)]
+    pub tva_classification: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

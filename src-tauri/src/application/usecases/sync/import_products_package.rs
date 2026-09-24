@@ -3,7 +3,7 @@
 use crate::application::services::SyncImportExecutionService;
 use crate::application::sync::{
     products_source_allowed_for_unit, validate_products_package_for_import,
-    ImportedPackageRegistry, SyncPackage,
+    validate_products_package_unit_config_immutable, ImportedPackageRegistry, SyncPackage,
 };
 use crate::application::usecases::exports::types::ProductsExportDataset;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
@@ -33,6 +33,12 @@ pub fn execute(
     input: ImportProductsPackageInput,
 ) -> AppResult<ImportProductsPackageOutcome> {
     validate_products_package_for_import(&input.package)?;
+
+    // ADR-0058: DB-backed unit/factor immutability gate — runs inside the
+    // Product V3 validation/import boundary, before any Product/inventory
+    // mutation and before imported-package marking. A forbidden tuple change
+    // on a Product with stock movement history rejects the ENTIRE package.
+    validate_products_package_unit_config_immutable(&input.package, executor)?;
 
     let importer_wilaya = input.importer_wilaya_code.trim();
     if importer_wilaya.is_empty() {
@@ -70,13 +76,18 @@ pub fn execute(
             id: r.product.id,
             name: r.product.name,
             base_price: r.product.base_price,
-            tva: r.product.tva,
-            supplier_name: r.product.supplier_name,
             year: r.product.year,
             created_at: r.product.created_at.to_rfc3339(),
             updated_at: r.updated_at,
             node_id: r.node_id,
             deleted: r.deleted,
+            // SEC-087 Phase 6B: the record carries the V3 configuration just
+            // validated by validate_products_package_for_import (called at the
+            // top of this function) — these are Some and mutually consistent.
+            purchase_unit: r.purchase_unit,
+            consumption_unit: r.consumption_unit,
+            conversion_factor: r.conversion_factor,
+            tva_classification: r.tva_classification,
         })
         .collect();
 

@@ -13,10 +13,10 @@ pub mod identity;
 pub mod import_export;
 pub mod integrity;
 pub mod inventory;
-pub mod licensing;
 pub mod observability;
 pub mod operational;
 pub mod orders;
+pub mod procurement;
 pub mod products;
 pub mod registry;
 pub mod reports;
@@ -62,6 +62,9 @@ pub use backup::*;
 // Re-export import/export commands (including __cmd__ generated wrappers)
 pub use import_export::*;
 
+// Re-export procurement commands (ADR-0055 / SEC-087-F)
+pub use procurement::*;
+
 // Re-export integrity commands
 pub use integrity::*;
 
@@ -82,6 +85,3 @@ pub use operational::*;
 
 // Re-export application-key provisioning commands (ADR-0041)
 pub use security::*;
-
-// Re-export licensing commands (ADR-0042)
-pub use licensing::*;

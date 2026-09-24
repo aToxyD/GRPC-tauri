@@ -14,6 +14,7 @@ pub enum TelemetryEventType {
     IntegrityCheck,
     WalCheckpoint,
     RuntimeStartup,
+    AppKeyImport,
 }
 
 impl TelemetryEventType {
@@ -26,6 +27,7 @@ impl TelemetryEventType {
             Self::IntegrityCheck => "INTEGRITY_CHECK",
             Self::WalCheckpoint => "WAL_CHECKPOINT",
             Self::RuntimeStartup => "RUNTIME_STARTUP",
+            Self::AppKeyImport => "APP_KEY_IMPORT",
         }
     }
 

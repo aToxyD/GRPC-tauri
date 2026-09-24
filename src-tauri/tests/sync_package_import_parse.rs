@@ -1,131 +1,118 @@
-//! Parse + validate plaintext sync packages against golden fixtures.
+//! Parse + validate plaintext sync packages (SEC-007 + SEC-087 Phase 6A /
+//! ADR-0057: V3-only envelope, Ed25519).
 
-use std::path::Path;
+use chrono::{NaiveDate, TimeZone, Utc};
 
-use grpc_lib::application::sync::validate_monthly_summary_package_for_import;
+use grpc_lib::application::sync::{
+    validate_monthly_summary_package_for_import, CompatibilityPolicy, PackageId, SchemaVersion,
+    SupportedSchemaWindow, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+};
+use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
 use grpc_lib::errors::AppError;
-use grpc_lib::infrastructure::sync::SerdeJsonSyncPackageDeserializer;
+use grpc_lib::infrastructure::security::AgeFileEncryptionProvider;
+use grpc_lib::infrastructure::sync::packages::signing::{
+    Ed25519PackageSigner, DEFAULT_SIGNATURE_VERSION,
+};
+use grpc_lib::infrastructure::sync::{
+    read_monthly_summary_package_from_file, SerdeJsonSyncPackageDeserializer,
+};
+use grpc_lib::models::{DailyDetailSyncSnapshot, MonthlySummary};
 
-#[test]
-fn golden_monthly_plaintext_deserializes_and_validates() {
-    let golden_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/snapshots/sync/monthly_summary_package_plain.json");
-    let bytes = std::fs::read(&golden_path).expect("fixture");
-
-    let package =
-        SerdeJsonSyncPackageDeserializer::monthly_summary_from_reader(std::io::Cursor::new(&bytes))
-            .expect("deserialize SyncPackage JSON");
-
-    validate_monthly_summary_package_for_import(&package).expect("validate");
-}
-
-#[test]
-fn rejects_unsupported_schema_version() {
-    use chrono::{NaiveDate, TimeZone, Utc};
-
-    use grpc_lib::application::sync::{
-        PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
-    };
-    use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
-    use grpc_lib::models::{DailyDetailSyncSnapshot, MonthlySummary};
-
-    let created_at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    let dataset = MonthlySummaryExportDataset {
+fn monthly_dataset() -> MonthlySummaryExportDataset {
+    MonthlySummaryExportDataset {
         summary: MonthlySummary {
             month: 1,
             year: 2026,
-            total_beneficiaries: 0,
-            total_consumption_value: 0.0,
-            breakfast_average: 0.0,
+            total_beneficiaries: 1,
+            total_consumption_value: 10.0,
+            breakfast_average: 10.0,
             lunch_average: 0.0,
             dinner_average: 0.0,
-            daily_average: 0.0,
-            report_count: 0,
+            daily_average: 10.0,
+            report_count: 1,
         },
         daily_detail_rows: vec![DailyDetailSyncSnapshot {
-            date: NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
-            total_daily_beneficiaries: 0,
-            total_daily_cost: 0.0,
-            breakfast_average: 0.0,
+            date: NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            total_daily_beneficiaries: 1,
+            total_daily_cost: 10.0,
+            breakfast_average: 10.0,
             lunch_average: 0.0,
             dinner_average: 0.0,
-            daily_average: 0.0,
+            daily_average: 10.0,
         }],
-    };
-    let pkg = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::new(SYNC_PACKAGE_SCHEMA_VERSION.as_u16() + 99),
-            created_at,
-            source_node_id: "u".into(),
-            package_sequence: None,
-            issuer_identity_id: None,
-            package_id: PackageId("p1".into()),
-            signature_version: None,
-            signing_key_id: None,
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: dataset,
-    };
-
-    let err =
-        validate_monthly_summary_package_for_import(&pkg).expect_err("must reject future schema");
-    match err {
-        AppError::Validation(grpc_lib::errors::ValidationError::InvalidFormat {
-            message, ..
-        }) => {
-            assert!(message.contains("PACKAGE_TOO_NEW"));
-        }
-        other => panic!("unexpected error: {:?}", other),
     }
 }
 
 #[test]
-fn rejects_integrity_hash_mismatch() {
-    use chrono::{NaiveDate, TimeZone, Utc};
-
-    use grpc_lib::application::sync::{
-        PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+fn v2_package_roundtrips_encrypted_and_validates() {
+    // SEC-007 (ADR-0047): the V2 (Ed25519) package path is the only supported
+    // one; the legacy golden fixtures are removed.
+    let signer = Ed25519PackageSigner::new([42u8; 32]);
+    let pkg: SyncPackage<MonthlySummaryExportDataset> = SyncPackage {
+        metadata: SyncPackageMetadata {
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+            created_at: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
+            source_node_id: "u-1".into(),
+            issuer_identity_id: None,
+            package_id: PackageId("p-v2-rt".into()),
+            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
+            signing_key_id: Some(signer.public_key_hex()),
+            integrity_hash: None,
+            signature: None,
+            export_mode: None,
+            target_node_id: None,
+        },
+        payload: monthly_dataset(),
     };
-    use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
-    use grpc_lib::models::{DailyDetailSyncSnapshot, MonthlySummary};
 
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let path = temp_dir.path().join("monthly.sync");
+    let crypto_port = AgeFileEncryptionProvider;
+    let builder = grpc_lib::infrastructure::sync::PackageBuilder::new();
+    builder
+        .build_encrypted_stream_path(
+            &pkg,
+            &grpc_lib::infrastructure::sync::SerdeJsonSyncPackageSerializer,
+            &signer,
+            &crypto_port,
+            &path,
+        )
+        .expect("build");
+
+    let decoded = read_monthly_summary_package_from_file(&path, &crypto_port).expect("read+decode");
+    validate_monthly_summary_package_for_import(&decoded).expect("validate");
+    assert_eq!(decoded.payload.summary.month, 1);
+}
+
+#[test]
+fn rejects_unsupported_schema_version() {
+    // SEC-087 Phase 6A (ADR-0057): the ENVELOPE-SCHEMA window is the property
+    // of the centralized kind-blind gate (`SupportedSchemaWindow`), no longer
+    // of the per-kind validators. A future (V4+) envelope is rejected as
+    // PACKAGE_TOO_NEW.
+    let future = SchemaVersion::new(SYNC_PACKAGE_SCHEMA_VERSION.as_u16() + 99);
+    let err = SupportedSchemaWindow::can_import(future).expect_err("must reject future schema");
+    assert_eq!(err.code(), "PACKAGE_TOO_NEW");
+}
+
+#[test]
+fn rejects_integrity_hash_mismatch() {
     let created_at = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
     let pkg = SyncPackage {
         metadata: SyncPackageMetadata {
             schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at,
             source_node_id: "u-1".into(),
-            package_sequence: None,
             issuer_identity_id: None,
             package_id: PackageId("p2".into()),
-            signature_version: None,
+            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
             signing_key_id: None,
             integrity_hash: Some("deadbeef".into()),
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
-        payload: MonthlySummaryExportDataset {
-            summary: MonthlySummary {
-                month: 1,
-                year: 2026,
-                total_beneficiaries: 1,
-                total_consumption_value: 10.0,
-                breakfast_average: 10.0,
-                lunch_average: 0.0,
-                dinner_average: 0.0,
-                daily_average: 10.0,
-                report_count: 1,
-            },
-            daily_detail_rows: vec![DailyDetailSyncSnapshot {
-                date: NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
-                total_daily_beneficiaries: 1,
-                total_daily_cost: 10.0,
-                breakfast_average: 10.0,
-                lunch_average: 0.0,
-                dinner_average: 0.0,
-                daily_average: 10.0,
-            }],
-        },
+        payload: monthly_dataset(),
     };
 
     let plaintext = serde_json::to_vec(&pkg).expect("serialize");
@@ -137,72 +124,41 @@ fn rejects_integrity_hash_mismatch() {
 }
 
 #[test]
-fn accepts_package_without_integrity_hash_v1() {
-    let golden_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/snapshots/sync/monthly_summary_package_plain.json");
-    let bytes = std::fs::read(&golden_path).expect("fixture");
+fn rejects_package_without_integrity_hash() {
+    // SEC-007 (ADR-0047): a V2-shaped package without integrity_hash is
+    // refused fail-closed (legacy V1 shape is removed).
+    let created_at = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+    let pkg = SyncPackage {
+        metadata: SyncPackageMetadata {
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+            created_at,
+            source_node_id: "u-1".into(),
+            issuer_identity_id: None,
+            package_id: PackageId("p-no-hash".into()),
+            signature_version: Some(DEFAULT_SIGNATURE_VERSION),
+            signing_key_id: None,
+            integrity_hash: None,
+            signature: None,
+            export_mode: None,
+            target_node_id: None,
+        },
+        payload: monthly_dataset(),
+    };
 
-    // Old fixtures don't carry integrity_hash. They must remain importable.
-    let package =
-        SerdeJsonSyncPackageDeserializer::monthly_summary_from_reader(std::io::Cursor::new(&bytes))
-            .expect("deserialize without integrity hash");
-    validate_monthly_summary_package_for_import(&package).expect("validate");
+    let plaintext = serde_json::to_vec(&pkg).expect("serialize");
+    let err = SerdeJsonSyncPackageDeserializer::monthly_summary_from_reader(std::io::Cursor::new(
+        &plaintext,
+    ))
+    .expect_err("must reject package without integrity hash");
+    assert!(matches!(err, AppError::Validation(_)));
 }
 
 #[test]
 fn rejects_package_too_old_schema() {
-    use chrono::{NaiveDate, TimeZone, Utc};
-
-    use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
-    use grpc_lib::application::usecases::exports::types::MonthlySummaryExportDataset;
-    use grpc_lib::models::{DailyDetailSyncSnapshot, MonthlySummary};
-
-    let created_at = Utc.with_ymd_and_hms(2026, 1, 3, 0, 0, 0).unwrap();
-    let pkg = SyncPackage {
-        metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::new(0),
-            created_at,
-            source_node_id: "u".into(),
-            package_sequence: None,
-            issuer_identity_id: None,
-            package_id: PackageId("p-old".into()),
-            signature_version: None,
-            signing_key_id: None,
-            integrity_hash: None,
-            signature: None,
-        },
-        payload: MonthlySummaryExportDataset {
-            summary: MonthlySummary {
-                month: 1,
-                year: 2026,
-                total_beneficiaries: 0,
-                total_consumption_value: 0.0,
-                breakfast_average: 0.0,
-                lunch_average: 0.0,
-                dinner_average: 0.0,
-                daily_average: 0.0,
-                report_count: 0,
-            },
-            daily_detail_rows: vec![DailyDetailSyncSnapshot {
-                date: NaiveDate::from_ymd_opt(2026, 1, 4).unwrap(),
-                total_daily_beneficiaries: 0,
-                total_daily_cost: 0.0,
-                breakfast_average: 0.0,
-                lunch_average: 0.0,
-                dinner_average: 0.0,
-                daily_average: 0.0,
-            }],
-        },
-    };
-
-    let err =
-        validate_monthly_summary_package_for_import(&pkg).expect_err("must reject old schema");
-    match err {
-        AppError::Validation(grpc_lib::errors::ValidationError::InvalidFormat {
-            message, ..
-        }) => {
-            assert!(message.contains("PACKAGE_TOO_OLD"));
-        }
-        other => panic!("unexpected error: {:?}", other),
-    }
+    // SEC-087 Phase 6A (ADR-0057): envelope-schema oldness (V0/V1/V2 →
+    // PACKAGE_TOO_OLD) is decided by the centralized kind-blind gate
+    // (`SupportedSchemaWindow`), which is now the single owner of the rule.
+    let old = SchemaVersion::new(0);
+    let err = SupportedSchemaWindow::can_import(old).expect_err("must reject old schema");
+    assert_eq!(err.code(), "PACKAGE_TOO_OLD");
 }

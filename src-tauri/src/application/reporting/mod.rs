@@ -78,12 +78,6 @@ pub struct ReportEnvelope<T: Serialize> {
     pub data: T,
 }
 
-/// Round a monetary value to 2 decimal places (half-to-even).
-pub fn round_money(value: f64) -> f64 {
-    let scaled = (value * 100.0).round();
-    scaled / 100.0
-}
-
 /// Compute a report or return it from cache.
 ///
 /// 1. Compute cache key from slug, version, serialized input, fiscal_scope

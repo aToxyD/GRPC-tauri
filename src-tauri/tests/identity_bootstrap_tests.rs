@@ -93,10 +93,7 @@ fn bootstrap_wilaya(node: &mut Node) -> IdentityCertificate {
 /// `bootstrap_wilaya` core, parameterized over the store so the SEC-002-R
 /// command harness can provision through the SAME global paths the command
 /// resolves (`default_data_dir()`).
-fn bootstrap_wilaya_using(
-    db: &mut Database,
-    node_key_store: &NodeKeyStore,
-) -> IdentityCertificate {
+fn bootstrap_wilaya_using(db: &mut Database, node_key_store: &NodeKeyStore) -> IdentityCertificate {
     let mut provisioning = IdentityProvisioningService::new(db);
     let request = provisioning
         .generate_wilaya_request(uuid::Uuid::new_v4(), node_key_store)
@@ -126,7 +123,7 @@ fn remove_seeded_admin_using(db: &mut Database) {
     let admin = db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("seed query")
         .expect("seeded admin present");
     db.executor()
@@ -241,7 +238,7 @@ fn additive_window_keeps_legacy_password_until_hash_cleared() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin present");
     assert!(!admin.password_hash.is_empty());
@@ -616,7 +613,7 @@ fn identity_only_admin_has_empty_hash_and_no_password_path() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin present");
     assert!(
@@ -636,15 +633,22 @@ fn identity_only_admin_has_empty_hash_and_no_password_path() {
 
 #[test]
 fn password_login_gate_is_sole_security_fact() {
-    // No identity material → the password path stays open.
+    // No identity material → the password path stays open (seeded account has a
+    // usable password hash).
     let node = fresh_node();
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
-            .expect("policy"),
+        IdentityAuthenticationPolicy::password_login_allowed(
+            &node.db,
+            BOOTSTRAP_USERNAME,
+            "WILAYA"
+        )
+        .expect("policy"),
         "unprovisioned node must keep the password path"
     );
 
-    // Full bootstrap → ACTIVE ADMIN identity (cert + `.adminkey`) → password closed.
+    // Full bootstrap → ACTIVE ADMIN identity (cert + `.adminkey`) → the
+    // identity-only ADMIN (empty hash) has NO usable password credential, so
+    // the gate routes it to Challenge–Response (ADR-0050).
     let mut node = fresh_node();
     remove_seeded_admin(&mut node);
     bootstrap_wilaya(&mut node);
@@ -663,13 +667,15 @@ fn password_login_gate_is_sole_security_fact() {
         "ACTIVE ADMIN cert + `.adminkey` must be detected"
     );
     assert!(
-        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
-        "ACTIVE ADMIN identity must close the password path"
+        "an identity-only admin (empty hash) has no password credential and must route to Challenge–Response"
     );
 
-    // Fail-safe: ACTIVE ADMIN cert WITHOUT the `.adminkey` file must NOT lock
-    // the operator out — the password path stays open (B6-A refinement 1).
+    // Fail-safe: losing the `.adminkey` must NOT lock the operator out — the
+    // identity-only admin remains challenge-routed because it has NO password
+    // credential to fall back on, and a hash-bearing account keeps its
+    // password path (covered by `adr0050_wilaya_admin_password_login_allowed_*`).
     std::fs::remove_file(node.adminkey_provider.file_path()).expect("remove adminkey");
     assert!(
         !IdentityAuthenticationPolicy::has_active_admin_identity(
@@ -680,9 +686,89 @@ fn password_login_gate_is_sole_security_fact() {
         "missing `.adminkey` must disable the identity fact"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+        !IdentityAuthenticationPolicy::password_login_allowed(
+            &node.db,
+            BOOTSTRAP_USERNAME,
+            "WILAYA"
+        )
+        .expect("policy"),
+        "an identity-only account has no password credential regardless of `.adminkey` state"
+    );
+}
+
+#[test]
+fn adr0050_wilaya_admin_password_login_allowed_with_usable_identity() {
+    // ADR-0050 central regression: a WILAYA admin with a USABLE password hash
+    // (B8 fleet credential) must be able to log in with username + password
+    // EVEN WHEN the ACTIVE ADMIN identity and the `.adminkey` are both present.
+    let mut node = fresh_node();
+    remove_seeded_admin(&mut node);
+    bootstrap_wilaya(&mut node);
+    issue_admin(&mut node, BOOTSTRAP_USERNAME).expect("first admin");
+
+    UserAccountSyncService::new(node.db.executor(), &Argon2PasswordHashProvider)
+        .set_fleet_admin_password("AdminPass123")
+        .expect("fleet admin password set");
+
+    assert!(
+        IdentityAuthenticationPolicy::has_active_admin_identity(&node.db, &node.adminkey_provider)
+            .expect("fact"),
+        "ACTIVE ADMIN cert + `.adminkey` present"
+    );
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
-        "missing `.adminkey` must keep the password path open (no lockout)"
+        "a usable password credential must keep the password path open even with a usable ADMIN identity (ADR-0050)"
+    );
+    let admin = node
+        .db
+        .executor()
+        .users()
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
+        .expect("query")
+        .expect("admin row");
+    assert!(
+        Argon2PasswordHashProvider
+            .verify_admin("AdminPass123", &admin.password_hash)
+            .expect("verify"),
+        "fleet credential must verify in the global admin domain"
+    );
+}
+
+#[test]
+fn adr0050_unknown_and_deleted_accounts_fall_through_to_generic_failure() {
+    // ADR-0050 gate semantics: unknown usernames and soft-deleted accounts
+    // must NOT surface a distinguishable `challenge_required` signal (no
+    // account enumeration) — the gate lets them fall through to the generic
+    // invalid-credentials response.
+    let node = fresh_node();
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, "no-such-user", "WILAYA")
+            .expect("policy"),
+        "unknown accounts must fall through to the generic failure"
+    );
+
+    let node = fresh_node();
+    let admin = node
+        .db
+        .executor()
+        .users()
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
+        .expect("query")
+        .expect("seeded admin");
+    node.db
+        .executor()
+        .users()
+        .delete_user(&admin.id)
+        .expect("seeded admin deleted");
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed(
+            &node.db,
+            BOOTSTRAP_USERNAME,
+            "WILAYA"
+        )
+        .expect("policy"),
+        "soft-deleted accounts must fall through to the generic failure"
     );
 }
 
@@ -840,7 +926,7 @@ fn sec002_05_database_level_single_active_admin_invariant() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -922,7 +1008,7 @@ fn sec002_09_legacy_cert_without_adminkey_is_recoverable() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -939,7 +1025,11 @@ fn sec002_09_legacy_cert_without_adminkey_is_recoverable() {
     assert!(!node.adminkey_provider.exists());
 
     let cert = issue_admin(&mut node, BOOTSTRAP_USERNAME).expect("recovery succeeds");
-    assert_eq!(active_admin_count(&node), 1, "supersede keeps at most one ACTIVE ADMIN");
+    assert_eq!(
+        active_admin_count(&node),
+        1,
+        "supersede keeps at most one ACTIVE ADMIN"
+    );
     assert_ne!(cert.identity_id, dead.identity_id);
 
     let dead_row = node
@@ -968,7 +1058,7 @@ fn sec002_09_mismatched_adminkey_is_recoverable() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1078,12 +1168,18 @@ fn sec002_12_no_secrets_in_errors_or_audit() {
         .as_ref()
         .expect("metadata present")
         .to_string();
-    assert!(!serialized.contains(ADMIN_PASSPHRASE), "audit leaked passphrase");
+    assert!(
+        !serialized.contains(ADMIN_PASSPHRASE),
+        "audit leaked passphrase"
+    );
     assert!(
         !serialized.contains("encrypted_private_key"),
         "audit leaked key material"
     );
-    assert!(!serialized.contains("secret"), "audit leaked secret material");
+    assert!(
+        !serialized.contains("secret"),
+        "audit leaked secret material"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1104,9 +1200,7 @@ use grpc_lib::app::state::AppState;
 use grpc_lib::application::services::{
     identity_authentication_policy::AdminCredentialState, UserAccountSyncService,
 };
-use grpc_lib::commands::identity::{
-    issue_first_admin_key_impl, ADMIN_RECOVERY_RATE_LIMIT_KEY,
-};
+use grpc_lib::commands::identity::{issue_first_admin_key_impl, ADMIN_RECOVERY_RATE_LIMIT_KEY};
 use grpc_lib::domain::session::{CurrentSession, UserSnapshot};
 
 /// Serializes `XDG_DATA_HOME` mutation between env-dependent tests in THIS
@@ -1125,7 +1219,7 @@ fn sec002r_01_policy_mismatched_adminkey_opens_password_path() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1141,11 +1235,8 @@ fn sec002r_01_policy_mismatched_adminkey_opens_password_path() {
     write_stray_adminkey(&node, stray);
 
     assert_eq!(
-        IdentityAuthenticationPolicy::admin_credential_state(
-            &node.db,
-            &node.adminkey_provider
-        )
-        .expect("state"),
+        IdentityAuthenticationPolicy::admin_credential_state(&node.db, &node.adminkey_provider)
+            .expect("state"),
         AdminCredentialState::MismatchedAdminkey
     );
     assert!(!IdentityAuthenticationPolicy::has_active_admin_identity(
@@ -1154,24 +1245,29 @@ fn sec002r_01_policy_mismatched_adminkey_opens_password_path() {
     )
     .expect("fact"));
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
-            .expect("policy"),
-        "mismatched `.adminkey` must keep the password path open (no deadlock)"
+        IdentityAuthenticationPolicy::password_login_allowed(
+            &node.db,
+            BOOTSTRAP_USERNAME,
+            "WILAYA"
+        )
+        .expect("policy"),
+        "the ADR-0050 account-credential gate must not deadlock on a mismatched `.adminkey`"
     );
 }
 
 #[test]
-fn sec002r_02_policy_corrupt_adminkey_is_fail_closed() {
+fn sec002r_02_policy_corrupt_adminkey_fails_identity_classifier_closed() {
     // SEC-002-R-B: a corrupt/unreadable `.adminkey` is an ERROR (never "allow",
-    // never "recoverable silently"). The ceremony and the login gate share this
-    // fail-closed reading.
+    // never "recoverable silently") for the identity classifier and the
+    // ceremony. ADR-0050: the password gate is account-credential based and no
+    // longer reads the `.adminkey` — it must NOT error out on a corrupt file.
     let mut node = fresh_node();
     bootstrap_wilaya(&mut node);
     let admin = node
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("seeded admin");
     let subject_id = uuid::Uuid::parse_str(&admin.id).expect("uuid");
@@ -1188,28 +1284,30 @@ fn sec002r_02_policy_corrupt_adminkey_is_fail_closed() {
     assert!(
         IdentityAuthenticationPolicy::admin_credential_state(&node.db, &node.adminkey_provider)
             .is_err(),
-        "corrupt `.adminkey` must fail closed"
+        "corrupt `.adminkey` must fail the identity classifier closed"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+        IdentityAuthenticationPolicy::has_active_admin_identity(&node.db, &node.adminkey_provider)
             .is_err(),
-        "corrupt `.adminkey` must never be treated as a closed password path"
+        "corrupt `.adminkey` must fail the identity fact closed"
+    );
+    assert!(
+        IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
+            .expect("policy"),
+        "the ADR-0050 password gate is account-credential based and must ignore `.adminkey` corruption"
     );
 }
 
 #[test]
-fn sec002r_03_policy_matching_adminkey_is_usable_and_blocks_password() {
+fn sec002r_03_policy_matching_adminkey_is_usable() {
     let mut node = fresh_node();
     remove_seeded_admin(&mut node);
     bootstrap_wilaya(&mut node);
     issue_admin(&mut node, BOOTSTRAP_USERNAME).expect("first admin");
 
     assert_eq!(
-        IdentityAuthenticationPolicy::admin_credential_state(
-            &node.db,
-            &node.adminkey_provider
-        )
-        .expect("state"),
+        IdentityAuthenticationPolicy::admin_credential_state(&node.db, &node.adminkey_provider)
+            .expect("state"),
         AdminCredentialState::Usable
     );
     assert!(IdentityAuthenticationPolicy::has_active_admin_identity(
@@ -1218,9 +1316,9 @@ fn sec002r_03_policy_matching_adminkey_is_usable_and_blocks_password() {
     )
     .expect("fact"));
     assert!(
-        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
+        !IdentityAuthenticationPolicy::password_login_allowed(&node.db, BOOTSTRAP_USERNAME, "WILAYA")
             .expect("policy"),
-        "usable ADMIN identity must close the password path"
+        "an identity-only admin (empty hash) has no password credential and routes to Challenge–Response (ADR-0050)"
     );
 }
 
@@ -1229,6 +1327,8 @@ fn sec002r_04_password_path_usable_when_adminkey_missing() {
     // SEC-002-R scenario C/D premise: with the `.adminkey` lost, an operator who
     // set a fleet `admin` password (B8) CAN authenticate — the empty-hash
     // identity-only ceremony is the only case with no recoverable password.
+    // ADR-0050: the password gate is account-credential based, so a hash-bearing
+    // account keeps its password path with or without the `.adminkey`.
     let mut node = fresh_node();
     remove_seeded_admin(&mut node);
     bootstrap_wilaya(&mut node);
@@ -1236,11 +1336,8 @@ fn sec002r_04_password_path_usable_when_adminkey_missing() {
     std::fs::remove_file(node.adminkey_provider.file_path()).expect("remove adminkey");
 
     assert_eq!(
-        IdentityAuthenticationPolicy::admin_credential_state(
-            &node.db,
-            &node.adminkey_provider
-        )
-        .expect("state"),
+        IdentityAuthenticationPolicy::admin_credential_state(&node.db, &node.adminkey_provider)
+            .expect("state"),
         AdminCredentialState::MissingAdminkey
     );
 
@@ -1252,7 +1349,7 @@ fn sec002r_04_password_path_usable_when_adminkey_missing() {
         .db
         .executor()
         .users()
-        .get_user_by_username(BOOTSTRAP_USERNAME)
+        .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
         .expect("query")
         .expect("admin row");
     assert!(
@@ -1262,9 +1359,13 @@ fn sec002r_04_password_path_usable_when_adminkey_missing() {
         "fleet-set admin password must verify when the `.adminkey` is missing"
     );
     assert!(
-        IdentityAuthenticationPolicy::password_login_allowed(&node.db, &node.adminkey_provider)
-            .expect("policy"),
-        "missing `.adminkey` keeps the password path open"
+        IdentityAuthenticationPolicy::password_login_allowed(
+            &node.db,
+            BOOTSTRAP_USERNAME,
+            "WILAYA"
+        )
+        .expect("policy"),
+        "a hash-bearing account keeps the password path open regardless of `.adminkey` state"
     );
 }
 
@@ -1283,7 +1384,9 @@ struct CommandHarness {
 fn with_command_harness(f: impl FnOnce(&mut CommandHarness)) {
     // `unwrap_or_else(into_inner)`: a test panic must not poison the shared lock
     // and cascade into every subsequent env-dependent test.
-    let _lock = XDG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _lock = XDG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let xdg_dir = tempfile::TempDir::new().expect("xdg temp");
     std::env::set_var("XDG_DATA_HOME", xdg_dir.path());
     let grpc_dir = xdg_dir.path().join("GRPC");
@@ -1366,7 +1469,7 @@ impl CommandHarness {
         let admin = db
             .executor()
             .users()
-            .get_user_by_username(BOOTSTRAP_USERNAME)
+            .get_user_by_username(BOOTSTRAP_USERNAME, "WILAYA")
             .expect("query")
             .expect("admin user row");
         let snapshot = UserSnapshot {
@@ -1521,7 +1624,10 @@ fn sec002r_13_command_recovery_valid_admin_session_succeeds() {
         let cert = issue_first_admin_key_impl(h.state(), "admin".into(), ADMIN_PASSPHRASE.into())
             .expect("authorized recovery succeeds");
         assert_eq!(cert.subject_type, SubjectType::Admin);
-        assert_ne!(cert.identity_id, superseded_id, "unusable cert is superseded");
+        assert_ne!(
+            cert.identity_id, superseded_id,
+            "unusable cert is superseded"
+        );
         assert_eq!(h.active_admin_count(), 1, "at most one ACTIVE ADMIN");
         h.assert_admin_state(AdminCredentialState::Usable);
     });
@@ -1619,7 +1725,10 @@ fn sec002r_17_command_recovery_rate_limited() {
             err.contains("exceeded the limit"),
             "rate-limit error expected, got: {err}"
         );
-        assert_eq!(h.active_admin_count(), 1, "no credential change while locked");
+        assert_eq!(
+            h.active_admin_count(),
+            1,
+            "no credential change while locked"
+        );
     });
 }
-

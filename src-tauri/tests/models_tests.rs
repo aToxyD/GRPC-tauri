@@ -20,7 +20,7 @@ fn test_user_role_conversion() {
 fn test_order_status_lifecycle() {
     assert!(OrderStatus::Draft.can_confirm());
     assert!(!OrderStatus::Confirmed.can_confirm());
-    assert!(OrderStatus::Confirmed.can_receive());
+    // Phantom Received/Cancelled states removed (ADR-0055 / SEC-087-F).
 }
 
 /// Test product price calculations

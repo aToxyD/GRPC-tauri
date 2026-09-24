@@ -36,4 +36,22 @@ pub trait ExcelPort: Send + Sync {
     /// Export audit log to Excel
     fn export_audit_log(&self, entries: &[crate::domain::audit::AuditEntry])
         -> io::Result<Vec<u8>>;
+
+    /// Export suppliers to Excel (ADR-0055 / SEC-087-F)
+    fn export_suppliers(
+        &self,
+        suppliers: &[crate::models::supplier::Supplier],
+    ) -> io::Result<Vec<u8>>;
+
+    /// Export contract headers to Excel (ADR-0055 / SEC-087-F)
+    fn export_contracts(
+        &self,
+        contracts: &[crate::models::contract::Contract],
+    ) -> io::Result<Vec<u8>>;
+
+    /// Export contract allocation entitlements to Excel (ADR-0055 / SEC-087-F)
+    fn export_contract_allocations(
+        &self,
+        allocations: &[crate::models::contract::ContractAllocationView],
+    ) -> io::Result<Vec<u8>>;
 }

@@ -290,7 +290,8 @@ fn auth_sec006a_unit_user_foreign_unit_id_denied() {
     let s = common::create_test_session("u1", "unit-user", "User");
     set_session(&state, s);
 
-    let err = authorize_command(&state, Action::ReadInventory, Some("foreign-unit-id")).expect_err("deny");
+    let err = authorize_command(&state, Action::ReadInventory, Some("foreign-unit-id"))
+        .expect_err("deny");
     match err {
         AppError::Authorization(AuthorizationError::InsufficientPermissions) => {}
         e => panic!("unexpected: {:?}", e),
@@ -303,7 +304,8 @@ fn auth_sec006a_unit_admin_foreign_unit_id_denied() {
     let s = common::create_test_session("u1", "unit-admin", "Admin");
     set_session(&state, s);
 
-    let err = authorize_command(&state, Action::ReadInventory, Some("foreign-unit-id")).expect_err("deny");
+    let err = authorize_command(&state, Action::ReadInventory, Some("foreign-unit-id"))
+        .expect_err("deny");
     match err {
         AppError::Authorization(AuthorizationError::InsufficientPermissions) => {}
         e => panic!("unexpected: {:?}", e),

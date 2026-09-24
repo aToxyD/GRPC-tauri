@@ -8,6 +8,7 @@ pub mod constants;
 pub mod import;
 pub mod import_provenance;
 pub mod import_validation;
+pub mod unit_issuer_membership;
 
 mod package;
 mod package_kind;
@@ -25,10 +26,12 @@ pub use import_provenance::{
     source_id_allowed_for_unit,
 };
 pub use import_validation::{
-    validate_daily_report_package_for_import, validate_monthly_summary_package_for_import,
-    validate_products_package_for_import,
+    validate_contract_catalog_package_for_import, validate_daily_report_package_for_import,
+    validate_monthly_summary_package_for_import, validate_products_package_for_import,
+    validate_products_package_unit_config_immutable,
 };
 pub use package::SyncPackage;
 pub use package_kind::SyncPackageKind;
-pub use package_metadata::{PackageId, SyncPackageMetadata};
+pub use package_metadata::{PackageExportMode, PackageId, SyncPackageMetadata};
 pub use schema_version::SchemaVersion;
+pub use unit_issuer_membership::verify_unit_issuer_membership;

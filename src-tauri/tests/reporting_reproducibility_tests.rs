@@ -136,6 +136,222 @@ fn inventory_valuation_is_deterministic_on_identical_db() {
 }
 
 #[test]
+fn inventory_valuation_weighted_cost_and_totals_are_exact() {
+    use grpc_lib::models::Product;
+    use grpc_lib::repositories::{FifoLayerRepository, ProductRepository, UnitRepository};
+    use uuid::Uuid;
+
+    let db = ConnectionFactory::new_for_test().unwrap();
+    let executor = db.executor();
+    let now = chrono::Utc::now().to_rfc3339();
+    let unit_id = Uuid::new_v4().to_string();
+    UnitRepository::new(executor)
+        .upsert_raw_unit(&unit_id, "TV01", "Valuation", "01", &now)
+        .unwrap();
+    let product_id = Uuid::new_v4().to_string();
+    ProductRepository::new(executor)
+        .insert_raw_product(
+            &Product {
+                id: product_id.clone(),
+                name: "Flour".into(),
+                base_price: 100.0,
+                year: 2024,
+                created_at: chrono::Utc::now(),
+            },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
+            &now,
+        )
+        .unwrap();
+
+    let fifo = FifoLayerRepository::new(executor);
+    // Layer A: 10.000 @ 100.00 → 1000.00; Layer B: 20.000 @ 50.50 → 1010.00
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        100.0,
+        10.0,
+        &now,
+        "tester",
+        2024,
+    )
+    .unwrap();
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        50.5,
+        20.0,
+        &now,
+        "tester",
+        2024,
+    )
+    .unwrap();
+
+    let envelope = InventoryValuationReport::compute(
+        executor,
+        InventoryValuationInput {
+            fiscal_year: Some(2024),
+            unit_id: Some(unit_id),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(envelope.data.products.len(), 1);
+    let row = &envelope.data.products[0];
+    // Exact Money/Quantity: total quantity 30.000, value 2010.00, weighted
+    // average 2010.00 ÷ 30.000 = 67.00 exactly (no epsilon).
+    assert_eq!(row.total_quantity, 30.000);
+    assert_eq!(row.total_value, 2010.0);
+    assert_eq!(row.weighted_avg_unit_cost, 67.0);
+    assert_eq!(envelope.data.total_inventory_value, 2010.0);
+}
+
+#[test]
+fn inventory_valuation_non_terminating_weighted_cost_rounds_at_boundary() {
+    use grpc_lib::models::Product;
+    use grpc_lib::repositories::{FifoLayerRepository, ProductRepository, UnitRepository};
+    use uuid::Uuid;
+
+    let db = ConnectionFactory::new_for_test().unwrap();
+    let executor = db.executor();
+    let now = chrono::Utc::now().to_rfc3339();
+    let unit_id = Uuid::new_v4().to_string();
+    UnitRepository::new(executor)
+        .upsert_raw_unit(&unit_id, "TV02", "Valuation", "01", &now)
+        .unwrap();
+    let product_id = Uuid::new_v4().to_string();
+    ProductRepository::new(executor)
+        .insert_raw_product(
+            &Product {
+                id: product_id.clone(),
+                name: "Semolina".into(),
+                base_price: 100.0,
+                year: 2024,
+                created_at: chrono::Utc::now(),
+            },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
+            &now,
+        )
+        .unwrap();
+
+    let fifo = FifoLayerRepository::new(executor);
+    // Total value 0.10 across 3.000 units → 0.0333… per unit: Money is exact
+    // internally and rounds exactly once (MidpointAwayFromZero) at scale 2.
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        0.10,
+        1.0,
+        &now,
+        "tester",
+        2024,
+    )
+    .unwrap();
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        0.0,
+        2.0,
+        &now,
+        "tester",
+        2024,
+    )
+    .unwrap();
+
+    let envelope = InventoryValuationReport::compute(
+        executor,
+        InventoryValuationInput {
+            fiscal_year: Some(2024),
+            unit_id: Some(unit_id),
+        },
+    )
+    .unwrap();
+
+    let row = &envelope.data.products[0];
+    assert_eq!(row.total_value, 0.10);
+    assert_eq!(row.weighted_avg_unit_cost, 0.03);
+    assert_eq!(row.total_quantity, 3.000);
+}
+
+#[test]
+fn inventory_valuation_quantity_uses_scale_three() {
+    use grpc_lib::models::Product;
+    use grpc_lib::repositories::{FifoLayerRepository, ProductRepository, UnitRepository};
+    use uuid::Uuid;
+
+    let db = ConnectionFactory::new_for_test().unwrap();
+    let executor = db.executor();
+    let now = chrono::Utc::now().to_rfc3339();
+    let unit_id = Uuid::new_v4().to_string();
+    UnitRepository::new(executor)
+        .upsert_raw_unit(&unit_id, "TV03", "Valuation", "01", &now)
+        .unwrap();
+    let product_id = Uuid::new_v4().to_string();
+    ProductRepository::new(executor)
+        .insert_raw_product(
+            &Product {
+                id: product_id.clone(),
+                name: "Milk".into(),
+                base_price: 100.0,
+                year: 2024,
+                created_at: chrono::Utc::now(),
+            },
+            &grpc_lib::models::ProductUnitConfigCodes {
+                purchase_unit: 1,
+                consumption_unit: 1,
+                conversion_factor: 1,
+                tva_classification: 0,
+            },
+            &now,
+        )
+        .unwrap();
+
+    let fifo = FifoLayerRepository::new(executor);
+    // Quantity scale is 3: a 0.333-unit layer must surface as 0.333,
+    // never collapsed to the (old, money-oriented) scale-2 0.33.
+    fifo.create_layer(
+        &unit_id,
+        &product_id,
+        "ORDER",
+        None,
+        1.0,
+        0.333,
+        &now,
+        "tester",
+        2024,
+    )
+    .unwrap();
+
+    let envelope = InventoryValuationReport::compute(
+        executor,
+        InventoryValuationInput {
+            fiscal_year: Some(2024),
+            unit_id: Some(unit_id),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(envelope.data.products[0].total_quantity, 0.333);
+}
+
+#[test]
 fn metadata_contains_snapshot_source() {
     let envelope = InventoryValuationReport::compute(
         ConnectionFactory::new_for_test().unwrap().executor(),
@@ -198,20 +414,6 @@ fn cache_key_deterministic() {
     let k2 = CacheKey::new("r", 1, "{}", Some(2024));
     assert_eq!(k1, k2);
     assert_eq!(k1.to_string(), k2.to_string());
-}
-
-#[test]
-fn round_money_basic_cases() {
-    assert_eq!(grpc_lib::application::reporting::round_money(100.0), 100.0);
-    assert_eq!(
-        grpc_lib::application::reporting::round_money(100.456),
-        100.46
-    );
-    assert_eq!(
-        grpc_lib::application::reporting::round_money(100.454),
-        100.45
-    );
-    assert_eq!(grpc_lib::application::reporting::round_money(0.0), 0.0);
 }
 
 #[test]

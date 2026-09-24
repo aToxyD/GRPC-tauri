@@ -6,11 +6,17 @@
 // Re-export audit models
 pub use audit::*;
 
+// Re-export contract models
+pub use contract::*;
+
 // Re-export DTOs
 pub use dto::*;
 
 // Sync interchange snapshots (schema DTOs)
 pub use sync_snapshots::*;
+
+// Re-export fiscal tax policy models
+pub use fiscal_tax_policy::*;
 
 // Re-export inventory models
 pub use inventory::*;
@@ -35,27 +41,29 @@ pub use report::*;
 // Re-export settings models
 pub use settings::*;
 
+// Re-export supplier models
+pub use supplier::*;
+
 // Re-export unit models
 pub use unit::*;
 
 // Re-export user models
 pub use user::*;
 
-// Re-export licensing contract types & DTOs (ADR-0042)
-pub use licensing::*;
-
 // Sub-modules
 pub mod audit;
+pub mod contract;
 pub mod dto;
 pub mod fifo;
+pub mod fiscal_tax_policy;
 pub mod fiscal_year;
 pub mod identity_access;
 pub mod inventory;
-pub mod licensing;
 pub mod order;
 pub mod product;
 pub mod report;
 pub mod settings;
+pub mod supplier;
 pub mod sync_snapshots;
 pub mod unit;
 pub mod user;

@@ -106,6 +106,7 @@ pub fn authorize_reports(
         }
 
         Action::ImportProductsPackage
+        | Action::ImportContractCatalogPackage
         | Action::ExportDailyReport
         | Action::ExportMonthlySummary
         | Action::ExportStockMovements
@@ -120,6 +121,22 @@ pub fn authorize_reports(
                         return Err(AuthorizationError::RequiresAdmin);
                     }
                     Ok(())
+                }
+                _ => Err(AuthorizationError::InsufficientPermissions),
+            }
+        }
+
+        // ContractCatalog fleet export (ADR-0055 / SEC-087-F): the catalog is a
+        // WILAYA-owned projection — only the WILAYA node may emit it. UNIT nodes
+        // are read-only consumers via the sync apply path, never producers.
+        Action::ExportContractCatalogPackage => {
+            if principal.role != UserRole::Admin {
+                return Err(AuthorizationError::RequiresAdmin);
+            }
+            match resource {
+                ResourceContext::WilayaNode => Ok(()),
+                ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => {
+                    Err(AuthorizationError::RequiresWilayaNode)
                 }
                 _ => Err(AuthorizationError::InsufficientPermissions),
             }

@@ -8,7 +8,7 @@ use crate::application::services::{
     AuditService, AuditTxService, IdentityAuthenticationPolicy, OperationalSessionService,
     SessionEndReason, SessionEstablishmentService, UserService,
 };
-use crate::commands::common::{adminkey_provider, db_mut_or_command_error, user_ctx_from_parts};
+use crate::commands::common::{db_mut_or_command_error, user_ctx_from_parts};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
@@ -76,23 +76,35 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    // Identity auth gate (RFC 2026-08-04 / ADR-0038): the password path is
-    // permitted ONLY while no ACTIVE ADMIN identity exists. The decision comes
-    // exclusively from `IdentityAuthenticationPolicy` (a security fact — ACTIVE
-    // ADMIN cert + `.adminkey` present) — never from the derived bootstrap state.
-    //
-    // B6-B: this gate is now PERMANENT. The temporary `GRPC_LEGACY_AUTH` override
-    // (Introduced B6-A) is removed and MUST NOT survive. Nodes without an ACTIVE
-    // ADMIN identity (UNIT local users created from the `.unit` package, and
-    // unprovisioned nodes) keep Application User Authentication; WILAYA nodes
-    // with an ACTIVE ADMIN identity route exclusively to Challenge–Response.
+    // Identity auth gate (RFC 2026-08-04 / ADR-0038, as amended by ADR-0050):
+    // the password path is permitted whenever the local account carries a
+    // usable password credential. An ACTIVE ADMIN identity or a `.adminkey`
+    // does NOT close it — normal WILAYA Admin login is username + password
+    // (B8 fleet credential); Challenge–Response is the recovery / high-
+    // assurance path. Accounts with an EMPTY password hash (identity-only
+    // ADMIN ceremony) are routed to Challenge–Response; unknown or soft-deleted
+    // accounts fall through to the generic invalid-credentials response below
+    // (no account enumeration). The decision comes exclusively from
+    // `IdentityAuthenticationPolicy` (a security fact) — never from the
+    // derived bootstrap state.
+    // ADR-0052: username lookups are scoped to the local node identity —
+    // `"WILAYA"` on a WILAYA node, the local unit code on a UNIT node. A
+    // foreign-scope username (e.g. another unit's shadow operator) is
+    // indistinguishable from an unknown account.
+    use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
+    let node_scope =
+        crate::infrastructure::security::SettingsNodeIdentityProvider::new(db.executor())
+            .current_node_id()
+            .unwrap_or_else(|_| "WILAYA".to_string());
+
     let password_allowed =
-        IdentityAuthenticationPolicy::password_login_allowed(db, &adminkey_provider())
+        IdentityAuthenticationPolicy::password_login_allowed(db, &request.username, &node_scope)
             .map_err(into_command_error)?;
     if !password_allowed {
         log::warn!(
             target: "grpc::auth",
-            "password login rejected: node has an ACTIVE ADMIN identity; Challenge–Response is mandatory"
+            "password login rejected: user={} has no usable password credential; Challenge–Response is required",
+            request.username
         );
         return Ok(LoginResponse {
             success: false,
@@ -105,7 +117,7 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
 
     let password_port = state.password_port.as_ref();
     let user = UserService::new(db.executor(), password_port)
-        .get_user_by_username(&request.username)
+        .get_user_by_username(&request.username, &node_scope)
         .map_err(into_command_error)?;
 
     if let Some(user) = user {
@@ -113,6 +125,8 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
         // account authenticates exclusively through Challenge–Response
         // (`.adminkey`). The password path rejects it explicitly — a malformed
         // `PasswordHash::new("")` would otherwise surface as an internal error.
+        // Defense-in-depth: the ADR-0050 gate above already routes these
+        // accounts to `challenge_required`; this guard survives as a fail-safe.
         if user.password_hash.is_empty() {
             log::warn!(
                 target: "grpc::auth",
@@ -174,12 +188,12 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
                     *current_session = Some(established.session);
                 }
 
-                // Observability (B5–B6): the password path is now the permanent
-                // Application User Authentication for nodes without an ACTIVE
-                // ADMIN identity (UNIT local users / unprovisioned nodes).
+                // Observability (ADR-0050): password is the normal login path — WILAYA
+                // Admin authenticates with the B8 fleet credential; UNIT local
+                // users keep Application User Authentication.
                 log::warn!(
                     target: "grpc::auth",
-                    "PASSWORD_LOGIN: user={} auth_method=password (Application User Authentication — node has no ACTIVE ADMIN identity)",
+                    "PASSWORD_LOGIN: user={} auth_method=password (Application User Authentication — ADR-0050 normal path)",
                     request.username
                 );
 

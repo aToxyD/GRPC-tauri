@@ -4,7 +4,10 @@
 //!
 //! Exercises the full import-pipeline sequence against a real SQLite database
 //! and real crypto, mirroring `run_import_pipeline` ordering:
-//!   verify_v2_signature → Transport Guard → importer → ledger advance.
+//!   verify_v2_signature → importer (package_id dedup inside the importer via
+//!   the `ImportedPackageRegistry`).
+//! SEC-056D/SEC-057: no Transport Guard and no per-issuer transport ledger —
+//! replay protection is exact `package_id` dedup through the registry.
 //! Also covers authorization (Wilaya-admin only, Unit nodes are not trust
 //! distributors) and the audit mappings for the two new commands.
 
@@ -16,9 +19,12 @@ use std::path::Path;
 use uuid::Uuid;
 
 use grpc_lib::application::authz::Action;
-use grpc_lib::application::services::SyncPackageIdentityVerificationService;
-use grpc_lib::application::sync::{PackageId, SchemaVersion, SyncPackage, SyncPackageMetadata};
-use grpc_lib::application::sync_integrity::transport_guard::{TransportGuard, TransportVerdict};
+use grpc_lib::application::services::{
+    IdentityTrustAnchorService, SyncPackageIdentityVerificationService,
+};
+use grpc_lib::application::sync::{
+    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
+};
 use grpc_lib::application::usecases::sync::import_registry_package::{
     execute as apply_registry_package, ImportRegistryPackageInput, RegistryPackagePayload,
     UnitFleetEntry,
@@ -56,6 +62,55 @@ use grpc_lib::repositories::RepositoryProvider;
 const ISSUER_SECRET: [u8; 32] = [42u8; 32];
 /// A DIFFERENT key: used to prove that signature validity ≠ identity binding.
 const OTHER_SECRET: [u8; 32] = [7u8; 32];
+/// RFC 8032 §7.1 TEST 1 secret — matches the debug Root fallback
+/// (`DEV_ROOT_PUBLIC_KEY` in `infrastructure/identity/root_public_key.rs`).
+const TEST_ROOT_SECRET: [u8; 32] = [
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
+];
+
+fn root_signed(cert: &IdentityCertificate) -> IdentityCertificate {
+    let signature = Ed25519SigningProvider::new(TEST_ROOT_SECRET)
+        .sign_certificate(cert)
+        .expect("root sign");
+    let mut signed = cert.clone();
+    signed.signature = Some(Ed25519CertificateSignature::try_from(signature).expect("wrap"));
+    signed
+}
+
+/// Seed the ACTIVE WILAYA anchor through the install ceremony (Root-verified)
+/// and return its `identity_id` — the identity that must sign trust packages
+/// (SEC-010 issuer pin).
+fn seed_wilaya_anchor(db: &Database, secret: [u8; 32]) -> Uuid {
+    let identity_id = Uuid::new_v4();
+    let certificate = IdentityCertificate {
+        identity_id,
+        subject_type: SubjectType::Wilaya,
+        subject_id: identity_id,
+        issuer_identity_id: None,
+        credential_id: Uuid::new_v4(),
+        generation: 1,
+        status: CredentialStatus::Active,
+        public_key: Ed25519SigningProvider::new(secret).public_key(),
+        algorithm_version: SIGNATURE_VERSION_ED25519,
+        not_after: None,
+        package_sequence: None,
+        signature: None,
+    };
+    let signed = root_signed(&certificate);
+    IdentityTrustAnchorService::new(make_executor(db))
+        .install_wilaya_certificate(&signed, "2026-08-04T00:00:00Z")
+        .expect("install WILAYA anchor");
+    identity_id
+}
+
+fn anchor_cert(db: &Database) -> IdentityCertificate {
+    make_executor(db)
+        .identity_store()
+        .get_active_by_subject_type(SubjectType::Wilaya)
+        .expect("read")
+        .expect("WILAYA anchor present")
+}
 
 fn make_executor(db: &Database) -> DbExecutor<'_> {
     db.executor()
@@ -135,22 +190,22 @@ fn trust_package(
     pkg_id: &str,
     issuer_id: Uuid,
     secret: [u8; 32],
-    sequence: u64,
     certificates: Vec<IdentityCertificate>,
 ) -> SyncPackage<TrustPackagePayload> {
     let signer = Ed25519PackageSigner::new(secret);
     SyncPackage {
         metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
-            package_sequence: Some(sequence),
             issuer_identity_id: Some(issuer_id),
             package_id: PackageId(pkg_id.to_string()),
             signature_version: Some(SIGNATURE_VERSION_ED25519),
             signing_key_id: Some(signer.public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: TrustPackagePayload {
             certificates,
@@ -162,22 +217,22 @@ fn trust_package(
 fn registry_package(
     pkg_id: &str,
     issuer_id: Uuid,
-    sequence: u64,
     snapshot_version: u64,
 ) -> SyncPackage<RegistryPackagePayload> {
     let signer = Ed25519PackageSigner::new(ISSUER_SECRET);
     SyncPackage {
         metadata: SyncPackageMetadata {
-            schema_version: SchemaVersion::V2,
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
             created_at: Utc::now(),
             source_node_id: "wilaya-a".to_string(),
-            package_sequence: Some(sequence),
             issuer_identity_id: Some(issuer_id),
             package_id: PackageId(pkg_id.to_string()),
             signature_version: Some(SIGNATURE_VERSION_ED25519),
             signing_key_id: Some(signer.public_key_hex()),
             integrity_hash: None,
             signature: None,
+            export_mode: None,
+            target_node_id: None,
         },
         payload: RegistryPackagePayload {
             snapshot_version,
@@ -214,8 +269,9 @@ fn write_encrypted<T: serde::Serialize>(package: &SyncPackage<T>, secret: [u8; 3
 }
 
 /// Mirror of `run_import_pipeline`'s B4 sequence (RFC §3.4/§3.10): V2 signature
-/// verification runs BEFORE the Transport Guard, then the importer, then the
-/// per-issuer ledger is advanced — all in one transaction.
+/// verification runs BEFORE the importer. SEC-056D/SEC-057: no Transport Guard
+/// and no per-issuer transport ledger — replay protection is exact
+/// `package_id` dedup performed by the per-kind importer via the registry.
 fn run_pipeline<T>(
     db: &mut Database,
     kind: &str,
@@ -233,7 +289,6 @@ where
 {
     let source_node_id =
         Some(package.metadata.source_node_id.trim().to_string()).filter(|s| !s.is_empty());
-    let package_sequence = package.metadata.package_sequence;
     let issuer_identity_id = package.metadata.issuer_identity_id.map(|u| u.to_string());
 
     let (_outcome, _buf) = db.with_event_persistence(|ctx| {
@@ -243,58 +298,16 @@ where
             kind,
             source_node_id.as_deref(),
             imported_by,
-            package_sequence,
             issuer_identity_id.as_deref(),
         );
 
         SyncPackageIdentityVerificationService::verify_v2_signature(executor, &package)?;
 
-        if let Some(issuer) = issuer_identity_id.as_deref() {
-            let sequence = package_sequence.ok_or_else(|| {
-                AppError::Validation(ValidationError::InvalidFormat {
-                    field: "package_sequence".into(),
-                    message: "حزمة موقّعة بلا رقم تسلسل نقل".into(),
-                })
-            })?;
-            let last_applied =
-                SyncPackageIdentityVerificationService::last_applied_sequence(executor, issuer)?;
-            match TransportGuard::check(issuer, sequence, last_applied) {
-                TransportVerdict::Accept { .. } => {}
-                TransportVerdict::OutOfOrder { expected, got, .. } => {
-                    return Err(AppError::BusinessLogic(
-                        BusinessLogicError::OperationNotPermitted {
-                            message: format!("out-of-order expected={expected} got={got}"),
-                        },
-                    ));
-                }
-                TransportVerdict::Replay { .. } => {
-                    return Err(AppError::BusinessLogic(
-                        BusinessLogicError::OperationNotPermitted {
-                            message: format!("replay sequence={sequence}"),
-                        },
-                    ));
-                }
-            }
-        }
-
         apply(executor, &registry, package, imported_by)?;
-
-        if let Some(issuer) = issuer_identity_id.as_deref() {
-            if let Some(sequence) = package_sequence {
-                SyncPackageIdentityVerificationService::advance_issuer_sequence(
-                    executor, issuer, sequence,
-                )?;
-            }
-        }
 
         Ok(())
     })?;
     Ok(())
-}
-
-fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
-    SyncPackageIdentityVerificationService::last_applied_sequence(make_executor(db), issuer)
-        .expect("read ledger")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,21 +315,20 @@ fn last_applied(db: &Database, issuer: &str) -> Option<u64> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn trust_import_happy_path_persists_certificates_and_advances_ledger() {
+fn trust_import_happy_path_accepts_identical_anchor() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_issuer(&db, issuer_id, ISSUER_SECRET);
+    let issuer_id = seed_wilaya_anchor(&db, ISSUER_SECRET);
+    let anchor = anchor_cert(&db);
 
-    let cert_identity = Uuid::new_v4();
-    let certificate = unit_certificate(cert_identity, issuer_id);
-
+    // SEC-010: the ONLY certificate a trust package may carry is the ACTIVE
+    // WILAYA anchor itself (Root-signed, issuer None) — re-presented verbatim
+    // (anchor immutability: an identical anchor is an idempotent no-op).
     let package = sign_v2_package(
         trust_package(
             "trust-pkg-1",
             issuer_id,
             ISSUER_SECRET,
-            1,
-            vec![certificate],
+            vec![anchor.clone()],
         ),
         ISSUER_SECRET,
     );
@@ -340,99 +352,31 @@ fn trust_import_happy_path_persists_certificates_and_advances_ledger() {
     )
     .expect("trust import succeeds");
 
-    let stored = make_executor(&db)
-        .identity_store()
-        .get_by_identity_id(&cert_identity)
-        .expect("read cert")
-        .expect("certificate persisted");
-    assert_eq!(stored.identity_id, cert_identity);
-    assert_eq!(stored.issuer_identity_id, Some(issuer_id));
-
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
-}
-
-#[test]
-fn trust_import_round_trips_through_encrypted_file() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let path = dir.path().join("trust.sync");
-    let issuer_id = Uuid::new_v4();
-
-    let package = trust_package("trust-file-1", issuer_id, ISSUER_SECRET, 1, vec![]);
-    write_encrypted(&package, ISSUER_SECRET, &path);
-
-    let read_back = read_trust_package_from_file(&path, &AgeFileEncryptionProvider::new())
-        .expect("read + integrity verify");
-    assert_eq!(read_back.metadata.package_id.0, "trust-file-1");
-    assert_eq!(
-        read_back.metadata.signature_version,
-        Some(SIGNATURE_VERSION_ED25519)
+    let stored = anchor_cert(&db);
+    assert!(
+        stored.is_identical_to(&anchor),
+        "the WILAYA anchor must remain unchanged (zero-write no-op)"
     );
 }
 
 #[test]
-fn trust_replay_sequence_is_rejected_and_ledger_not_consumed() {
+fn trust_import_unit_certificate_is_rejected_sec010() {
+    // SEC-010: UNIT certificates MUST NOT be distributed through trust
+    // packages — even inside a WILAYA-signed, signature-valid package.
+    // UNIT issuance remains the local R5 ceremony only.
     let mut db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_issuer(&db, issuer_id, ISSUER_SECRET);
+    let issuer_id = seed_wilaya_anchor(&db, ISSUER_SECRET);
 
-    let first = sign_v2_package(
-        trust_package("trust-pkg-a", issuer_id, ISSUER_SECRET, 1, vec![]),
-        ISSUER_SECRET,
-    );
-    run_pipeline(
-        &mut db,
-        "trust",
-        "admin",
-        first,
-        |executor, registry, package, _| {
-            let input = ImportTrustPackageInput {
-                package,
-                imported_by: "admin".into(),
-            };
-            let _ = apply_trust_package(executor, registry, input)?;
-            Ok(())
-        },
-    )
-    .expect("first import ok");
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
+    let cert_identity = Uuid::new_v4();
+    let certificate = unit_certificate(cert_identity, issuer_id);
 
-    // Same issuer, NEW package id, but sequence 1 again → Transport Guard Replay.
-    let replay = sign_v2_package(
-        trust_package("trust-pkg-b", issuer_id, ISSUER_SECRET, 1, vec![]),
-        ISSUER_SECRET,
-    );
-    let err = run_pipeline(
-        &mut db,
-        "trust",
-        "admin",
-        replay,
-        |executor, registry, package, _| {
-            let input = ImportTrustPackageInput {
-                package,
-                imported_by: "admin".into(),
-            };
-            let _ = apply_trust_package(executor, registry, input)?;
-            Ok(())
-        },
-    )
-    .expect_err("replay must be rejected");
-    match err {
-        AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
-        e => panic!("expected OperationNotPermitted, got {e:?}"),
-    }
-    // Sequence must NOT have advanced past 1.
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
-}
-
-#[test]
-fn trust_out_of_order_sequence_is_rejected() {
-    let mut db = ConnectionFactory::new_for_test().expect("db");
-    let issuer_id = Uuid::new_v4();
-    seed_issuer(&db, issuer_id, ISSUER_SECRET);
-
-    // Jump straight to sequence 3 without 1 → OutOfOrder.
     let package = sign_v2_package(
-        trust_package("trust-pkg-c", issuer_id, ISSUER_SECRET, 3, vec![]),
+        trust_package(
+            "trust-pkg-unit-rejected",
+            issuer_id,
+            ISSUER_SECRET,
+            vec![certificate],
+        ),
         ISSUER_SECRET,
     );
     let err = run_pipeline(
@@ -449,12 +393,114 @@ fn trust_out_of_order_sequence_is_rejected() {
             Ok(())
         },
     )
-    .expect_err("out-of-order must be rejected");
+    .expect_err("UNIT certificate must be rejected under SEC-010");
+
     match err {
         AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. }) => {}
         e => panic!("expected OperationNotPermitted, got {e:?}"),
     }
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
+
+    assert!(make_executor(&db)
+        .identity_store()
+        .get_by_identity_id(&cert_identity)
+        .expect("read")
+        .is_none());
+}
+
+#[test]
+fn trust_import_round_trips_through_encrypted_file() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("trust.sync");
+    let issuer_id = Uuid::new_v4();
+
+    let package = trust_package("trust-file-1", issuer_id, ISSUER_SECRET, vec![]);
+    write_encrypted(&package, ISSUER_SECRET, &path);
+
+    let read_back = read_trust_package_from_file(&path, &AgeFileEncryptionProvider::new())
+        .expect("read + integrity verify");
+    assert_eq!(read_back.metadata.package_id.0, "trust-file-1");
+    assert_eq!(
+        read_back.metadata.signature_version,
+        Some(SIGNATURE_VERSION_ED25519)
+    );
+}
+
+#[test]
+fn trust_duplicate_package_id_is_rejected_but_fresh_package_accepted() {
+    // SEC-056D/SEC-057: replay protection is exact `package_id` dedup. There is
+    // no per-issuer sequence, so a FRESH package id from the same issuer is
+    // accepted while re-presenting the SAME package id is rejected (idempotent
+    // skip).
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    let issuer_id = Uuid::new_v4();
+    seed_issuer(&db, issuer_id, ISSUER_SECRET);
+
+    let first = sign_v2_package(
+        trust_package("trust-pkg-a", issuer_id, ISSUER_SECRET, vec![]),
+        ISSUER_SECRET,
+    );
+    run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        first.clone(),
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
+    .expect("first import ok");
+
+    // The SAME package id again → the registry dedup rejects the re-import
+    // (idempotent skip: the payload is not re-applied).
+    let dup = first.clone();
+    let err = run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        dup,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
+    .expect_err("duplicate package_id must be rejected");
+    match err {
+        AppError::BusinessLogic(BusinessLogicError::DuplicateSyncPackage { package_id }) => {
+            assert_eq!(package_id, "trust-pkg-a");
+        }
+        e => panic!("expected DuplicateSyncPackage, got {e:?}"),
+    }
+
+    // A NEW package id carrying the same content is accepted — no transport
+    // sequence participates in replay rejection.
+    let fresh = sign_v2_package(
+        trust_package("trust-pkg-b", issuer_id, ISSUER_SECRET, vec![]),
+        ISSUER_SECRET,
+    );
+    run_pipeline(
+        &mut db,
+        "trust",
+        "admin",
+        fresh,
+        |executor, registry, package, _| {
+            let input = ImportTrustPackageInput {
+                package,
+                imported_by: "admin".into(),
+            };
+            let _ = apply_trust_package(executor, registry, input)?;
+            Ok(())
+        },
+    )
+    .expect("fresh package id from the same issuer is accepted");
 }
 
 #[test]
@@ -474,7 +520,6 @@ fn trust_wrong_issuer_certificate_is_rejected_before_importer() {
             "trust-pkg-wrong-issuer",
             issuer_id,
             OTHER_SECRET,
-            1,
             vec![certificate],
         ),
         OTHER_SECRET,
@@ -503,13 +548,13 @@ fn trust_wrong_issuer_certificate_is_rejected_before_importer() {
         e => panic!("expected signature validation error, got {e:?}"),
     }
 
-    // The importer never ran: no certificate persisted, ledger untouched.
+    // The importer never ran: no certificate persisted and the package was
+    // never registered as imported.
     assert!(make_executor(&db)
         .identity_store()
         .get_by_identity_id(&cert_identity)
         .expect("read")
         .is_none());
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
 }
 
 #[test]
@@ -519,13 +564,7 @@ fn trust_unknown_issuer_is_rejected() {
     // No certificate seeded for `unknown_issuer`.
 
     let package = sign_v2_package(
-        trust_package(
-            "trust-pkg-unknown",
-            unknown_issuer,
-            ISSUER_SECRET,
-            1,
-            vec![],
-        ),
+        trust_package("trust-pkg-unknown", unknown_issuer, ISSUER_SECRET, vec![]),
         ISSUER_SECRET,
     );
     let err = run_pipeline(
@@ -558,7 +597,7 @@ fn trust_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
 
     let mut package = sign_v2_package(
-        trust_package("trust-pkg-tamper", issuer_id, ISSUER_SECRET, 1, vec![]),
+        trust_package("trust-pkg-tamper", issuer_id, ISSUER_SECRET, vec![]),
         ISSUER_SECRET,
     );
 
@@ -616,7 +655,6 @@ fn trust_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
         .get_by_identity_id(&forged_cert_identity)
         .expect("read")
         .is_none());
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), None);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -624,13 +662,13 @@ fn trust_tampered_payload_with_refreshed_hash_is_rejected_by_signature() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn registry_import_happy_path_persists_snapshot_verbatim_and_advances_ledger() {
+fn registry_import_happy_path_persists_snapshot_verbatim() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     let issuer_id = Uuid::new_v4();
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
 
     let package = sign_v2_package(
-        registry_package("registry-pkg-1", issuer_id, 1, 1),
+        registry_package("registry-pkg-1", issuer_id, 1),
         ISSUER_SECRET,
     );
     run_pipeline(
@@ -660,8 +698,6 @@ fn registry_import_happy_path_persists_snapshot_verbatim_and_advances_ledger() {
     assert_eq!(latest.snapshot_version, 1);
     let payload: RegistryPackagePayload = serde_json::from_str(&latest.payload_json).expect("json");
     assert_eq!(payload.units.len(), 2);
-
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
 }
 
 #[test]
@@ -670,7 +706,7 @@ fn registry_import_round_trips_through_encrypted_file() {
     let path = dir.path().join("registry.sync");
     let issuer_id = Uuid::new_v4();
 
-    let package = registry_package("registry-file-1", issuer_id, 1, 2);
+    let package = registry_package("registry-file-1", issuer_id, 2);
     write_encrypted(&package, ISSUER_SECRET, &path);
 
     let read_back = read_registry_package_from_file(&path, &AgeFileEncryptionProvider::new())
@@ -686,7 +722,7 @@ fn registry_duplicate_package_id_is_rejected() {
     seed_issuer(&db, issuer_id, ISSUER_SECRET);
 
     let first = sign_v2_package(
-        registry_package("registry-pkg-dup", issuer_id, 1, 1),
+        registry_package("registry-pkg-dup", issuer_id, 1),
         ISSUER_SECRET,
     );
     run_pipeline(
@@ -705,10 +741,10 @@ fn registry_duplicate_package_id_is_rejected() {
     )
     .expect("first import ok");
 
-    // Same package id again (sequence 2 would be fine transport-wise, but the
-    // package registry rejects the duplicate package id).
+    // Same package id again (newer snapshot content, but SEC-057 dedup is by
+    // exact package_id only → the re-import is an idempotent skip).
     let dup = sign_v2_package(
-        registry_package("registry-pkg-dup", issuer_id, 2, 2),
+        registry_package("registry-pkg-dup", issuer_id, 2),
         ISSUER_SECRET,
     );
     let err = run_pipeline(
@@ -732,7 +768,6 @@ fn registry_duplicate_package_id_is_rejected() {
         }
         e => panic!("expected DuplicateSyncPackage, got {e:?}"),
     }
-    assert_eq!(last_applied(&db, &issuer_id.to_string()), Some(1));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -63,7 +63,7 @@ export function scanProjectionIntegrity(cache: FileCache): Violation[] {
     "FE-141",
     "Division on projection values detected — suppress with [arch:allow-fe141]",
     patterns,
-    /\/(?=[^;]*\b(cost|average|beneficiar|quantity|total|price)\b)/i,
+    /\/(?!\d)(?=[^;]*\b(cost|average|beneficiar|quantity|total|price)\b)/i,
     suppressExclude("fe141"),
     "ERROR",
     fileFilter,

@@ -16,14 +16,14 @@ fn seed_open_year(db: &grpc_lib::db::Database, year: i32) {
         .unwrap();
     ex.settings().set_current_year(year).unwrap();
     ex.execute(
-        "INSERT INTO products (id, name, base_price, tva, supplier_name, year, created_at, updated_at)
-         VALUES ('p-tx', 'Tx Product', 10.0, 0.0, NULL, ?1, datetime('now'), datetime('now'))",
+        "INSERT INTO products (id, name, base_price, year, created_at, updated_at, purchase_unit, consumption_unit, conversion_factor, tva_classification)
+         VALUES ('p-tx', 'Tx Product', 10.0, ?1, datetime('now'), datetime('now'), 1, 1, 1, 0)",
         [year],
     )
     .unwrap();
     ex.execute(
-        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, last_updated, updated_at)
-         VALUES ('s-tx', 'p-tx', 5.0, 'kg', datetime('now'), datetime('now'))",
+        "INSERT INTO inventory_stocks (id, product_id, quantity, unit, consumption_unit, last_updated, updated_at)
+         VALUES ('s-tx', 'p-tx', 5.0, 'kg', 1, datetime('now'), datetime('now'))",
         [],
     )
     .unwrap();
@@ -278,6 +278,8 @@ fn case_e_export_snapshot_failure_no_partial_export_metadata() {
         active_anomalies_count: None,
         signing_key_id: None,
         export_reason: None,
+        export_mode: None,
+        target_node_id: None,
     };
 
     let before: i64 = db

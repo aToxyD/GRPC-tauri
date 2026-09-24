@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import { listSupplierOrders, createSupplierOrder, updateSupplierOrder, deleteSupplierOrder, confirmOrder, getSupplierOrderItems } from '../lib/contracts';
+  import { listSupplierOrders, createSupplierOrder, updateSupplierOrder, deleteSupplierOrder, confirmOrder, getSupplierOrderItems, listUnitContractEntitlements } from '../lib/contracts';
   import { showAsk } from '../lib/tauri';
   import { listProducts } from '../lib/contracts';
-  import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
+  import { unitLabel } from '../lib/unitLabels';
+  import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem, UnitContractEntitlement } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
   import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
@@ -18,6 +19,7 @@
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const ordersOp = createOperation({ scope });
@@ -38,17 +40,19 @@
   let selectedOrder = $state<SupplierOrder | null>(null);
   // @category ProjectionState
   let orderItems = $state<SupplierOrderItem[]>([]);
+  // @category ProjectionState
+  let unitEntitlements = $state<UnitContractEntitlement[]>([]);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
 
   // Form fields
   // @category TransientState
-  let supplierName = $state('');
-  // @category TransientState
   let referenceNumber = $state('');
   // @category TransientState
   let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
+  // @category UiState
+  let orderSearch = $state('');
 
   onMount(async () => {
     loadData();
@@ -56,12 +60,14 @@
 
   /** تحديث القائمة دون تداخل مع ordersOp.run (تجنب الرفض عند busy) */
   async function refreshList() {
-    const [nextOrders, nextProducts] = await Promise.all([
+    const [nextOrders, nextProducts, nextEntitlements] = await Promise.all([
       listSupplierOrders(),
       listProducts(),
+      listUnitContractEntitlements(),
     ]);
     orders = nextOrders;
     products = nextProducts;
+    unitEntitlements = nextEntitlements;
   }
 
   async function loadData() {
@@ -70,7 +76,6 @@
 
   function openCreateModal() {
     editingOrderId = null;
-    supplierName = '';
     referenceNumber = '';
     orderProducts = products.map((p) => ({ product: p, quantity: '' }));
     showModal = true;
@@ -79,7 +84,6 @@
 
   async function openEditModal(order: SupplierOrder) {
     editingOrderId = order.id;
-    supplierName = order.supplier_name;
     referenceNumber = order.reference_number || '';
     showModal = true;
     ordersOp.error.set(null);
@@ -105,17 +109,11 @@
   }
 
   async function saveOrder() {
-    if (!supplierName) {
-      ordersOp.error.set('الرجاء إدخال اسم المورد');
-      return;
-    }
-
     const items: OrderItemInput[] = orderProducts
       .filter((op) => op.quantity && parseFloat(op.quantity) > 0)
       .map((op) => ({
         product_id: op.product.id,
         quantity: parseFloat(op.quantity),
-        unit_price: op.product.base_price,
       }));
 
     if (items.length === 0) {
@@ -127,18 +125,22 @@
       if (editingOrderId) {
         await updateSupplierOrder({
           id: editingOrderId,
-          supplier_name: supplierName,
           reference_number: referenceNumber || null,
           items,
         });
         setSuccessWithTimeout('تم تحديث الطلبية بنجاح');
       } else {
-        await createSupplierOrder({
-          supplier_name: supplierName,
+        const created = await createSupplierOrder({
           reference_number: referenceNumber || null,
           items,
         });
-        setSuccessWithTimeout('تم إنشاء الطلبية بنجاح');
+        if (created.length > 1) {
+          setSuccessWithTimeout(
+            `تم إنشاء ${created.length} طلبيات بنجاح — وزعت تلقائياً حسب الموردين وكتالوج العقود والالتزامات الجارية`
+          );
+        } else {
+          setSuccessWithTimeout('تم إنشاء الطلبية بنجاح — سيتم تحديد المورد والسعر تلقائياً حسب كتالوج العقود والالتزامات الجارية');
+        }
       }
       closeModal();
       await refreshList();
@@ -190,8 +192,6 @@
 
   function getStatusIntent(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
     if (status === 'Confirmed') return 'success';
-    if (status === 'Received') return 'info';
-    if (status === 'Cancelled') return 'danger';
     if (status === 'Draft') return 'warning';
     return 'neutral';
   }
@@ -199,10 +199,36 @@
   function getStatusLabel(status: string): string {
     if (status === 'Draft') return 'مسودة';
     if (status === 'Confirmed') return 'مؤكدة';
-    if (status === 'Received') return 'مستلمة';
-    if (status === 'Cancelled') return 'ملغاة';
     return status;
   }
+
+  // Task 5b: remaining contracted quantity is read verbatim from the
+  // authoritative `UnitContractEntitlement` projection (`effective_remaining`);
+  // it is never re-derived here. Returns null when no entitlement exists.
+  // @category UiState
+  function remainingForProduct(productId: string): number | null {
+    const e = unitEntitlements.find(
+      (ent) => ent.product_id === productId
+    );
+    return e ? e.effective_remaining : null;
+  }
+
+  // Presentation/filtering only: the base collection is the set of products
+  // currently requestable in the dialog (a positive quantity already entered,
+  // or a positive effective_remaining entitlement). Search only narrows it by
+  // product name — it never makes additional catalog products requestable and
+  // never recomputes effective_remaining or contract quantities.
+  // @category UiState
+  let filteredOrderProducts = $derived(
+    orderProducts.filter((op) => {
+      const requested = parseFloat(op.quantity) > 0;
+      const remaining = remainingForProduct(op.product.id);
+      const requestable = requested || (remaining !== null && remaining > 0);
+      if (!requestable) return false;
+      const q = orderSearch.trim().toLowerCase();
+      return !q || op.product.name.toLowerCase().includes(q);
+    })
+  );
 </script>
 
 <Layout nodeType="UNIT" title="طلبيات الموردين" subtitle="إدارة الطلبيات والتوريد">
@@ -308,49 +334,55 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-2 gap-4 mb-6">
-      <AppInput
-        id="supplierName"
-        label="المورد *"
-        placeholder="اسم المورد"
-        bind:value={supplierName}
-      />
+    <div class="space-y-4">
+      <AppAlert intent="info">
+        <strong>تُحدَّد بشكل تلقائي:</strong> هوية المورّد وسعر الوحدة محسومان من كتالوج العقود والالتزامات الجارية من الجانب الخلفي. لا يُقبل تحديد المُورِّد أو السعر يدوياً عند إنشاء أو تعديل الطلبية — سيُعرض المورد المحدد بعد الحفظ.
+      </AppAlert>
+
       <AppInput
         id="referenceNumber"
         label="المرجع"
         placeholder="رقم الفاتورة أو أمر الشراء"
         bind:value={referenceNumber}
       />
-    </div>
 
-    <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-4">المنتجات</h3>
-    <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
-      {#each orderProducts as op (op.product.id)}
-        {@const qty = parseFloat(op.quantity) || 0}
-        {@const lineTotal = qty * op.product.base_price}
-        <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
-          <span class="flex-1 font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
-          <div class="w-24">
-            <AppInput
-              id="qty-{op.product.id}"
-              label=""
-              type="number"
-              placeholder="الكمية"
-              bind:value={op.quantity}
-            />
-          </div>
-          <div class="w-28 text-left text-sm text-gray-600 dark:text-gray-400 tabular-nums">
-            <span class="block text-xs text-gray-500 dark:text-gray-500 mb-0.5">سعر الوحدة</span>
-            <span class="font-medium">{op.product.base_price.toFixed(2)} دج</span>
-          </div>
-          <div class="w-28 text-left text-sm tabular-nums">
-            <span class="block text-xs text-gray-500 dark:text-gray-500 mb-0.5">الإجمالي</span>
-            <span class="font-medium text-gray-800 dark:text-gray-200">
-              {lineTotal > 0 ? `${lineTotal.toFixed(2)} دج` : '—'}
-            </span>
-          </div>
+      <div class="flex items-center justify-between gap-3 pt-2">
+        <h3 class="font-semibold text-gray-800 dark:text-gray-100">المنتجات والكميات</h3>
+        <AppProductSearch bind:search={orderSearch} />
+      </div>
+
+      {#if filteredOrderProducts.length === 0 && orderProducts.length > 0}
+        <div class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          لا توجد منتجات متاحة للطلب أو مطابقة للبحث ضمن الالتزامات الجارية.
         </div>
-      {/each}
+      {:else}
+        <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
+          {#each filteredOrderProducts as op (op.product.id)}
+          <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
+            <span class="flex-1">
+              <span class="block font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
+              {#if remainingForProduct(op.product.id) !== null}
+                <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  المتبقي من العقد: {remainingForProduct(op.product.id)?.toFixed(2)} ({unitLabel(op.product.purchase_unit)})
+                </span>
+              {/if}
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">({unitLabel(op.product.purchase_unit)})</span>
+              <div class="w-24">
+                <AppInput
+                  id="qty-{op.product.id}"
+                  label=""
+                  type="number"
+                  placeholder="الكمية"
+                  bind:value={op.quantity}
+                />
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+      {/if}
     </div>
   </div>
 
@@ -385,8 +417,18 @@
               {#each orderItems as item}
                 <tr class="bg-white dark:bg-gray-900">
                   <td class="px-4 py-3">{item.product_name}</td>
-                  <td class="px-4 py-3 text-left">{item.quantity.toFixed(2)}</td>
-                  <td class="px-4 py-3 text-left">{item.unit_price.toFixed(2)} DA</td>
+                  <td class="px-4 py-3 text-left">
+                    {item.quantity.toFixed(2)}
+                    {#if item.purchase_unit != null}
+                      <span class="text-xs text-gray-400">({unitLabel(item.purchase_unit)})</span>
+                    {/if}
+                  </td>
+                  <td class="px-4 py-3 text-left">
+                    {item.unit_price.toFixed(2)} DA
+                    {#if item.purchase_unit != null}
+                      <span class="text-xs text-gray-400">/{unitLabel(item.purchase_unit)}</span>
+                    {/if}
+                  </td>
                   <td class="px-4 py-3 text-left font-medium">{item.total_cost.toFixed(2)} DA</td>
                 </tr>
               {/each}

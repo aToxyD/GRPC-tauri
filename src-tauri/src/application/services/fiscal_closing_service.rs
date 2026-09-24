@@ -6,6 +6,7 @@
 //! transaction — that is the caller's responsibility, keeping the boundary clean.
 
 use crate::domain::audit::{AuditAction, EntityType};
+use crate::domain::numeric::legacy_float;
 use crate::errors::AppError;
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
@@ -83,6 +84,18 @@ impl<'a> FiscalClosingService<'a> {
 
         let now = chrono::Utc::now().to_rfc3339();
 
+        // ── 0. Close the fiscal-year contract lifecycle (SEC-087-F) ──────
+        // Accepted/active contracts become ENDED (remaining obligations stay
+        // fulfillable); proposed contracts become CANCELLED (never ratified).
+        // The fiscal-year TVA policy is frozen at close (ADR-0055 §3.9).
+        let ended_contracts = match _unit_id {
+            Some(unit) => crate::application::services::ContractService::new(self.executor)
+                .end_live_contracts_for_unit_year(unit, year, &now)?,
+            None => 0,
+        };
+        crate::application::services::FiscalTaxPolicyService::new(self.executor)
+            .freeze_policy(year)?;
+
         // ── 1. Snapshot ending inventory for every product ────────────────
         let products = self.executor.products().list_products()?;
         let mut snapshot_count: usize = 0;
@@ -93,8 +106,15 @@ impl<'a> FiscalClosingService<'a> {
                 .fifo_layers()
                 .get_global_quantity_and_value_for_product(&product.id)?;
 
-            let unit_cost = if quantity > 0.0 {
-                total_value / quantity
+            // ADR-0048: exact weighted cost — total ÷ quantity on `Decimal`,
+            // guarded by an exact `is_positive` check; converted to `f64` only
+            // for the snapshot REAL-column write.
+            let quantity_exact = legacy_float::quantity_from_f64(quantity)?;
+            let total_value_exact = legacy_float::money_from_f64(total_value)?;
+            let unit_cost = if quantity_exact.is_positive() {
+                legacy_float::money_to_f64(
+                    &total_value_exact.checked_div_quantity(&quantity_exact)?,
+                )?
             } else {
                 0.0
             };
@@ -161,18 +181,9 @@ impl<'a> FiscalClosingService<'a> {
             year, next_year, user_id
         );
 
-        let total_inventory_value: f64 = self
-            .executor
-            .inventory()
-            .get_total_inventory_value()
-            .unwrap_or_else(|e| {
-                log::error!(
-                    target: "grpc::fiscal",
-                    "Failed to compute FIFO inventory value for audit: {}",
-                    e
-                );
-                0.0
-            });
+        // Fail closed: a FIFO valuation error must abort the fiscal close rather
+        // than persist a plausible-but-wrong zero in the audit record.
+        let total_inventory_value: f64 = self.executor.inventory().get_total_inventory_value()?;
 
         // ── 4. Audit record ───────────────────────────────────────────────
         crate::application::services::AuditService::new(self.executor).log_success(
@@ -188,6 +199,7 @@ impl<'a> FiscalClosingService<'a> {
                 "opened_year":   next_year,
                 "snapshot_count": snapshot_count,
                 "reclassified_count": reclassified,
+                "ended_contracts": ended_contracts,
                 "total_inventory_value": total_inventory_value,
                 "timestamp":     now,
             })),
