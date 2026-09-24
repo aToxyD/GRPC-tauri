@@ -45,6 +45,7 @@
   import AppCard from '../lib/components/ui/AppCard.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const contractsOp = createOperation({ scope });
@@ -71,6 +72,10 @@
   let selectedAllocations = $state<ContractAllocation[]>([]);
   // @category ProjectionState
   let allocationExceptions = $state<Record<string, ContractAllocationException[]>>({});
+  // @category UiState
+  let contractProductsSearch = $state('');
+  // @category UiState
+  let allocationsSearch = $state('');
   // @category TransientState
   let success = $state('');
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
@@ -152,6 +157,37 @@
       ? `الكمية المتفق عليها * (${unitLabel(selected.purchase_unit)})`
       : 'الكمية المتفق عليها *';
   }
+
+  // Presentation-only product name of an obligation/entitlement row, resolved
+  // from the WILAYA catalog. Never a business decision.
+  // @category UiState
+  function allocationProductName(allocation: ContractAllocation): string {
+    return products.find((p) => p.id === allocation.product_id)?.name || allocation.product_id;
+  }
+
+  // Search is presentation/filtering only (first contract list): it narrows the
+  // products of the currently displayed contract and never injects unrelated
+  // WILAYA catalog products into the contract list.
+  // @category UiState
+  let filteredSelectedProducts = $derived(
+    contractProductsSearch.trim()
+      ? selectedProducts.filter((p) =>
+          p.product_name.toLowerCase().includes(contractProductsSearch.trim().toLowerCase())
+        )
+      : selectedProducts
+  );
+
+  // Search is presentation/filtering only (unit entitlements/obligations list):
+  // it narrows the existing obligation rows by product name and never alters
+  // entitlement calculations or contract semantics.
+  // @category UiState
+  let filteredSelectedAllocations = $derived(
+    allocationsSearch.trim()
+      ? selectedAllocations.filter((a) =>
+          allocationProductName(a).toLowerCase().includes(allocationsSearch.trim().toLowerCase())
+        )
+      : selectedAllocations
+  );
 
   // Task 1d: the add-product TTC preview depends ONLY on the agreed HT price
   // and the selected Product's authoritative TVA rate. The proposed price is
@@ -613,8 +649,14 @@
             {/if}
           </div>
 
-          <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">منتجات العقد</h3>
-          <AppTable empty={selectedProducts.length === 0} emptyMessage="لم تُضف منتجات بعد">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200">منتجات العقد</h3>
+            <AppProductSearch bind:search={contractProductsSearch} />
+          </div>
+          <AppTable
+            empty={filteredSelectedProducts.length === 0}
+            emptyMessage={contractProductsSearch.trim() ? 'لا توجد نتائج مطابقة' : 'لم تُضف منتجات بعد'}
+          >
             <svelte:fragment slot="head">
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الكمية المتفق عليها</th>
@@ -624,7 +666,7 @@
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">السعر ش.ض (TTC)</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">إجراءات</th>
             </svelte:fragment>
-            {#each selectedProducts as product (product.id)}
+            {#each filteredSelectedProducts as product (product.id)}
               <tr class="border-t border-gray-100 dark:border-gray-700">
                 <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">{product.product_name}</td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
@@ -673,8 +715,14 @@
             </div>
           {/if}
 
-          <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200 mt-6 mb-2">أذونات الوحدات (الالتزامات)</h3>
-          <AppTable empty={selectedAllocations.length === 0} emptyMessage="لا توجد أذونات بعد">
+          <div class="flex items-center justify-between gap-3 mt-6 mb-2">
+            <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200">أذونات الوحدات (الالتزامات)</h3>
+            <AppProductSearch bind:search={allocationsSearch} />
+          </div>
+          <AppTable
+            empty={filteredSelectedAllocations.length === 0}
+            emptyMessage={allocationsSearch.trim() ? 'لا توجد نتائج مطابقة' : 'لا توجد أذونات بعد'}
+          >
             <svelte:fragment slot="head">
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الكمية المتفق عليها</th>
@@ -682,10 +730,10 @@
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الحالة</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">إجراءات</th>
             </svelte:fragment>
-            {#each selectedAllocations as allocation (allocation.id)}
+            {#each filteredSelectedAllocations as allocation (allocation.id)}
               <tr class="border-t border-gray-100 dark:border-gray-700">
                 <td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
-                  {products.find((p) => p.id === allocation.product_id)?.name || allocation.product_id}
+                  {allocationProductName(allocation)}
                 </td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{allocation.contracted_quantity}</td>
                 <td class="px-3 py-2 text-sm font-semibold text-gray-800 dark:text-gray-100">

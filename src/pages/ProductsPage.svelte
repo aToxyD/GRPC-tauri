@@ -19,6 +19,7 @@
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const productsOp = createOperation({ scope });
@@ -37,9 +38,22 @@
   let success = $state('');
   // @category UiState
   let currentYear = $state(new Date().getFullYear());
+  // @category UiState
+  let productSearch = $state('');
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
+
+  // Search is presentation/filtering only — it narrows the product/prices list
+  // by product name and never alters product definitions or prices.
+  // @category UiState
+  let filteredProducts = $derived(
+    productSearch.trim()
+      ? products.filter((p) =>
+          p.name.toLowerCase().includes(productSearch.trim().toLowerCase())
+        )
+      : products
+  );
 
   // Form fields
   // @category TransientState
@@ -298,20 +312,33 @@
     {/if}
 
     <AppCard padding="none">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
+        <h3 class="font-semibold text-lg text-gray-800 dark:text-white">المنتجات والأسعار</h3>
+        <AppProductSearch bind:search={productSearch} />
+      </div>
+
       <AppTable
         loading={$loading}
-        empty={!$loading && products.length === 0}
+        empty={!$loading && filteredProducts.length === 0}
       >
         <svelte:fragment slot="empty">
-          <AppEmptyState
-            title="لا يوجد منتجات مسجلة لـ {currentYear}"
-            description="أنشئ أول منتج أو قم بالاستيراد."
-            icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-          >
-            <svelte:fragment slot="action">
-              <AppButton variant="primary" on:click={openCreateModal}>إنشاء أول منتج</AppButton>
-            </svelte:fragment>
-          </AppEmptyState>
+          {#if products.length > 0}
+            <AppEmptyState
+              title="لا توجد نتائج مطابقة"
+              description="لم يتم العثور على منتج مطابق لبحثك."
+              icon="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          {:else}
+            <AppEmptyState
+              title="لا يوجد منتجات مسجلة لـ {currentYear}"
+              description="أنشئ أول منتج أو قم بالاستيراد."
+              icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+            >
+              <svelte:fragment slot="action">
+                <AppButton variant="primary" on:click={openCreateModal}>إنشاء أول منتج</AppButton>
+              </svelte:fragment>
+            </AppEmptyState>
+          {/if}
         </svelte:fragment>
 
         <svelte:fragment slot="head">
@@ -324,7 +351,7 @@
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
 
-        {#each products as product (product.id)}
+        {#each filteredProducts as product (product.id)}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{product.name}</td>
             <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
