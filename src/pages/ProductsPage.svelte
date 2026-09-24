@@ -317,7 +317,9 @@
         <svelte:fragment slot="head">
           <th class="table-header">الاسم</th>
           <th class="table-header">السعر المرجعي</th>
-          <th class="table-header">الوحدات</th>
+          <th class="table-header">وحدة الشراء</th>
+          <th class="table-header">وحدة الاستهلاك</th>
+          <th class="table-header">معامل التحويل</th>
           <th class="table-header">TVA</th>
           <th class="table-header text-left">الإجراءات</th>
         </svelte:fragment>
@@ -326,10 +328,9 @@
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <td class="table-cell font-medium">{product.name}</td>
             <td class="table-cell">{product.base_price.toFixed(2)} دج</td>
-            <td class="table-cell text-xs">
-              {unitLabel(product.purchase_unit)} → {unitLabel(product.consumption_unit)}
-              {#if product.conversion_factor !== 1}×{product.conversion_factor}{/if}
-            </td>
+            <td class="table-cell text-xs">{unitLabel(product.purchase_unit)}</td>
+            <td class="table-cell text-xs">{unitLabel(product.consumption_unit)}</td>
+            <td class="table-cell text-xs">×{product.conversion_factor}</td>
             <td class="table-cell text-xs">{TVA_LABELS[product.tva_classification] ?? product.tva_classification}</td>
             <td class="table-cell text-left space-x-2 space-x-reverse">
               <AppButton variant="ghost" size="sm" on:click={() => openEditModal(product)} ariaLabel="تعديل">

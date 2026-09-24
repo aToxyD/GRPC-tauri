@@ -129,10 +129,11 @@ describe('ProductsPage — create flow unit/TVA config (SEC-087 Phase 6D)', () =
       expect(screen.getByText('دقيق')).toBeInTheDocument();
     });
 
-    // SEC-087 Phase 6D — F-02 projection: the table surfaces the config.
-    // The `×4` suffix renders in a separate block node, so match per-node.
-    expect(screen.getByText(/كلغ → دلو/)).toBeInTheDocument();
-    expect(screen.getByText(/×4/)).toBeInTheDocument();
+    // SEC-087 Phase 6D — F-02 projection: the table surfaces the config in
+    // three dedicated columns (purchase unit / consumption unit / factor).
+    expect(screen.getByText('كلغ')).toBeInTheDocument();
+    expect(screen.getByText('دلو')).toBeInTheDocument();
+    expect(screen.getByText('×4')).toBeInTheDocument();
     expect(screen.getByText('9 %')).toBeInTheDocument();
   });
 
