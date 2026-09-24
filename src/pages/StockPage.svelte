@@ -5,8 +5,9 @@
   import { formatErrorMessage } from "../lib/errors";
   import { openFile, saveFile } from "../lib/tauri";
   import { importProductsPackage, exportStockMovementsPackage, importStockMovementsPackage, importContractCatalogPackage } from "../lib/contracts";
-  import { getAllStocks, getStockSummary, getStockMovements, exportStockMovementsExcel, getSettings, getInventoryFifoView } from "../lib/contracts";
+  import { getAllStocks, getStockSummary, getStockMovements, exportStockMovementsExcel, getSettings, getInventoryFifoView, listProducts } from "../lib/contracts";
   import { showSuccess, showError } from "../lib/notifications";
+  import { unitLabel } from "../lib/unitLabels";
   import type {
     InventoryStock,
     StockSummary,
@@ -17,6 +18,7 @@
     Settings,
     InventoryStockPageView,
     InventoryProductView,
+    Product,
   } from "../lib/types";
   import Layout from "../components/Layout.svelte";
 
@@ -98,6 +100,8 @@
   // Fallback stocks
   // @category ProjectionState
   let stocks: InventoryStock[] = $state([]);
+  // @category ProjectionState
+  let products: Product[] = $state([]);
 
   // Section 2.5: FIFO Inventory View
   // @category ProjectionState
@@ -117,9 +121,18 @@
     }
   }
 
+  // Presentation-only consumption unit of a product from the WILAYA catalog,
+  // used to label the displayed quantities. Never a numeric conversion.
+  // @category UiState
+  function consumptionUnitFor(productId: string): string {
+    const p = products.find((prod) => prod.id === productId);
+    return p ? unitLabel(p.consumption_unit) : "—";
+  }
+
   onMount(async () => {
     try {
       settings = await getSettings();
+      products = await listProducts();
     } catch (e) {
       console.error("Failed to load settings", e);
     }
@@ -582,6 +595,7 @@
           <svelte:fragment slot="head">
             <th class="table-header">المنتج</th>
             <th class="table-header">الكمية الحالية</th>
+            <th class="table-header">وحدة الاستهلاك</th>
             <th class="table-header">قيمة المخزون</th>
             <th class="table-header">الطبقات</th>
             <th class="table-header">إجمالي الدخول</th>
@@ -600,6 +614,9 @@
               <td class="table-cell font-medium">{product.product_name}</td>
               <td class="table-cell {product.current_quantity < 10 ? 'text-red-700 dark:text-red-400 font-bold' : ''}">
                 {product.current_quantity.toFixed(2)}
+              </td>
+              <td class="table-cell">
+                {consumptionUnitFor(product.product_id)}
               </td>
               <td class="table-cell text-sm font-medium text-purple-700 dark:text-purple-400">
                 {fp ? fp.total_value.toFixed(2) + " د.ج" : "-"}
@@ -635,7 +652,7 @@
             </tr>
             {#if fp && expandedProductId === product.product_id && fp.layers.length > 0}
               <tr class="bg-gray-50 dark:bg-gray-800/50">
-                <td colspan="10" class="p-0">
+                <td colspan="11" class="p-0">
                   <div class="px-6 py-3">
                     <table class="w-full text-sm">
                       <thead>
