@@ -31,6 +31,7 @@
   import AppSelect from '../lib/components/ui/AppSelect.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const summaryOp = createOperation({ scope });
@@ -49,6 +50,20 @@
   // Section 2 & 3: Summary
   // @category ProjectionState
   let summary: StockSummary[] = $state([]);
+
+  // Search is presentation/filtering only — it narrows the current-stock rows
+  // by product name and never alters quantities, valuation, or FIFO layers.
+  // @category UiState
+  let stockSearch = $state('');
+
+  // @category UiState
+  let filteredSummary = $derived(
+    stockSearch.trim()
+      ? summary.filter((p) =>
+          p.product_name.toLowerCase().includes(stockSearch.trim().toLowerCase())
+        )
+      : summary
+  );
 
   // Computed stats from summary
   // @category ProjectionState
@@ -576,20 +591,29 @@
     <!-- SECTION 3: Stock Table -->
     <div class="mb-8">
       <AppCard padding="none">
-        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
           <h3 class="font-semibold text-lg text-gray-800 dark:text-white">المخزون الحالي</h3>
+          <AppProductSearch bind:search={stockSearch} />
         </div>
 
         <AppTable
           loading={$summaryLoading}
-          empty={!$summaryLoading && summary.length === 0 && stocks.length === 0}
+          empty={!$summaryLoading && filteredSummary.length === 0 && (summary.length > 0 || stocks.length === 0)}
         >
           <svelte:fragment slot="empty">
-            <AppEmptyState
-              title="لا يوجد منتجات في المخزون"
-              description="استورد قائمة منتجات الولاية"
-              icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-            />
+            {#if summary.length > 0 && stocks.length === 0}
+              <AppEmptyState
+                title="لا توجد نتائج مطابقة"
+                description="لم يتم العثور على منتج مطابق لبحثك في المخزون الحالي."
+                icon="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            {:else}
+              <AppEmptyState
+                title="لا يوجد منتجات في المخزون"
+                description="استورد قائمة منتجات الولاية"
+                icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+              />
+            {/if}
           </svelte:fragment>
 
           <svelte:fragment slot="head">
@@ -606,7 +630,7 @@
             <th class="table-header text-left">إجراءات</th>
           </svelte:fragment>
 
-          {#each summary as product}
+          {#each filteredSummary as product}
             {@const status = getStatusBadge(product.current_quantity)}
             {@const isHighlighted = highlightedProductId === product.product_id}
             {@const fp = fifoView?.products.find(p => p.product_id === product.product_id)}
@@ -701,7 +725,7 @@
                 label="المنتج"
                 bind:value={filterProductId}
               >
-                <option value="">كل المنتجات</option>
+<option value="">كل المنتجات</option>
                 {#each summary as product}
                   <option value={product.product_id}>{product.product_name}</option>
                 {/each}

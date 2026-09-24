@@ -11,6 +11,7 @@
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
   import AppTable from '../lib/components/ui/AppTable.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation } from '../lib/operationGuard';
@@ -27,6 +28,21 @@
   let entitlements: UnitContractEntitlement[] = [];
   // @category ProjectionState
   let products: Product[] = [];
+
+  // Search is presentation/filtering only — it narrows the entitlement rows by
+  // product name and never alters entitlement state or backend values.
+  // @category UiState
+  let searchText = '';
+
+  // @category UiState
+  let filteredEntitlements: UnitContractEntitlement[] = [];
+
+  // @category UiState
+  $: filteredEntitlements = !searchText.trim()
+    ? entitlements
+    : entitlements.filter((e) =>
+        e.product_name.toLowerCase().includes(searchText.trim().toLowerCase())
+      );
 
   onMount(async () => {
     await entitlementsOp.run(async () => {
@@ -111,13 +127,25 @@
         </p>
       </div>
 
-      <AppTable empty={entitlements.length === 0}>
+      <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-end">
+        <AppProductSearch bind:search={searchText} />
+      </div>
+
+      <AppTable empty={filteredEntitlements.length === 0}>
         <svelte:fragment slot="empty">
-          <AppEmptyState
-            title="لا توجد استحقاقات معروضة"
-            description="تُعرض هنا استحقاقات العقود المستوردة عبر كتالوج العقود"
-            icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
+          {#if entitlements.length > 0}
+            <AppEmptyState
+              title="لا توجد نتائج مطابقة"
+              description="لم يتم العثور على استحقاق مطابق لبحثك."
+              icon="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          {:else}
+            <AppEmptyState
+              title="لا توجد استحقاقات معروضة"
+              description="تُعرض هنا استحقاقات العقود المستوردة عبر كتالوج العقود"
+              icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          {/if}
         </svelte:fragment>
 
         <svelte:fragment slot="head">
@@ -137,7 +165,7 @@
           <th class="table-header">النافذة</th>
         </svelte:fragment>
 
-        {#each entitlements as e}
+        {#each filteredEntitlements as e}
           {@const purchaseUnit = products.find((pr) => pr.id === e.product_id)}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
             <td class="table-cell font-medium">{e.product_name}</td>

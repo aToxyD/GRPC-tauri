@@ -19,6 +19,7 @@
   import AppPageHeader from '../lib/components/ui/AppPageHeader.svelte';
   import AppInput from '../lib/components/ui/AppInput.svelte';
   import AppEmptyState from '../lib/components/ui/AppEmptyState.svelte';
+  import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
 
   const scope = createRuntimeScope();
   const ordersOp = createOperation({ scope });
@@ -50,6 +51,8 @@
   let referenceNumber = $state('');
   // @category TransientState
   let orderProducts = $state<{ product: Product; quantity: string }[]>([]);
+  // @category UiState
+  let orderSearch = $state('');
 
   onMount(async () => {
     loadData();
@@ -209,6 +212,23 @@
     );
     return e ? e.effective_remaining : null;
   }
+
+  // Presentation/filtering only: the base collection is the set of products
+  // currently requestable in the dialog (a positive quantity already entered,
+  // or a positive effective_remaining entitlement). Search only narrows it by
+  // product name — it never makes additional catalog products requestable and
+  // never recomputes effective_remaining or contract quantities.
+  // @category UiState
+  let filteredOrderProducts = $derived(
+    orderProducts.filter((op) => {
+      const requested = parseFloat(op.quantity) > 0;
+      const remaining = remainingForProduct(op.product.id);
+      const requestable = requested || (remaining !== null && remaining > 0);
+      if (!requestable) return false;
+      const q = orderSearch.trim().toLowerCase();
+      return !q || op.product.name.toLowerCase().includes(q);
+    })
+  );
 </script>
 
 <Layout nodeType="UNIT" title="طلبيات الموردين" subtitle="إدارة الطلبيات والتوريد">
@@ -326,9 +346,18 @@
         bind:value={referenceNumber}
       />
 
-      <h3 class="font-semibold text-gray-800 dark:text-gray-100 pt-2">المنتجات والكميات</h3>
-      <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
-        {#each orderProducts as op (op.product.id)}
+      <div class="flex items-center justify-between gap-3 pt-2">
+        <h3 class="font-semibold text-gray-800 dark:text-gray-100">المنتجات والكميات</h3>
+        <AppProductSearch bind:search={orderSearch} />
+      </div>
+
+      {#if filteredOrderProducts.length === 0 && orderProducts.length > 0}
+        <div class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          لا توجد منتجات متاحة للطلب أو مطابقة للبحث ضمن الالتزامات الجارية.
+        </div>
+      {:else}
+        <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
+          {#each filteredOrderProducts as op (op.product.id)}
           <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
             <span class="flex-1">
               <span class="block font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
@@ -353,6 +382,7 @@
           </div>
         {/each}
       </div>
+      {/if}
     </div>
   </div>
 
