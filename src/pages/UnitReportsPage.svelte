@@ -3,8 +3,8 @@
   import { formatErrorMessage } from '../lib/errors';
   import { saveFile } from '../lib/tauri';
   import { exportDailyReportPackage, exportMonthlySummaryPackage } from '../lib/contracts';
-  import { listDailyReports, getDailyReport, getMonthlySummary, getSettings, listFiscalYears } from '../lib/contracts';
-  import type { DailyReport, DailyReportResult, MonthlySummary, Settings } from '../lib/types';
+  import { listDailyReports, getDailyReport, getMonthlySummary, getSettings, listFiscalYears, listProducts } from '../lib/contracts';
+  import type { DailyReport, DailyReportResult, MonthlySummary, Product, Settings } from '../lib/types';
   import DailyReportModal from '../components/reports/DailyReportModal.svelte';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
@@ -28,6 +28,8 @@
   let reports: DailyReport[] = [];
   // @category ProjectionState
   let settings: Settings | null = null;
+  // @category ProjectionState
+  let products: Product[] = [];
   // @category TransientState
   let success = '';
   // @category ProjectionState
@@ -80,6 +82,7 @@
     await reportsOp.run(async () => {
       settings = await getSettings();
       fiscalYears = await listFiscalYears();
+      products = await listProducts();
 
       if (settings) {
         selectedYear = settings.current_year || fiscalYears[0] || new Date().getFullYear();
@@ -316,5 +319,5 @@
 </Layout>
 
 {#if viewingDetails && selectedReport}
-  <DailyReportModal selectedReport={selectedReport} on:close={closeDetails} />
+  <DailyReportModal selectedReport={selectedReport} {products} on:close={closeDetails} />
 {/if}
