@@ -60,13 +60,13 @@ export const DOMAIN_REGISTRY: Record<string, {
     contract: "orders.contract.ts",
     pages: ["OrdersPage"],
     functions: ["createSupplierOrder", "confirmOrder", "updateSupplierOrder", "deleteSupplierOrder", "getSupplierOrder", "getSupplierOrderItems", "listSupplierOrders"],
-    crossDomainExceptions: ["listProducts"],
+    crossDomainExceptions: ["listProducts", "listUnitContractEntitlements"],
   },
   report: {
     contract: "report.contract.ts",
     pages: ["UnitReportsPage", "WilayaReportsPage"],
     functions: ["getMonthlySummary", "listFiscalYears", "listWilayaReports", "generateReports", "getReportData", "exportDailyReportExcel", "exportMonthlySummaryExcel", "exportAllUnitsMonthlyStatusExcel"],
-    crossDomainExceptions: ["listUnits", "listDailyReports", "getDailyReport", "exportDailyReportPackage", "exportMonthlySummaryPackage"],
+    crossDomainExceptions: ["listUnits", "listDailyReports", "getDailyReport", "exportDailyReportPackage", "exportMonthlySummaryPackage", "listProducts"],
   },
   fiscal: {
     contract: "fiscal.contract.ts",
@@ -130,12 +130,12 @@ export const DOMAIN_REGISTRY: Record<string, {
   },
   procurement: {
     contract: "procurement.contract.ts",
-    pages: ["SuppliersPage", "ContractsPage"],
+    pages: ["SuppliersPage", "ContractsPage", "UnitEntitlementsPage"],
     functions: [
       "createSupplier", "updateSupplier", "setSupplierActive", "associateSupplierWithUnit", "disassociateSupplierFromUnit",
       "createContract", "addContractProduct", "setContractProductAgreedPriceHt", "acceptContract", "activateContract", "endContract", "cancelContract",
       "releaseContractAllocation", "revokeContractAllocationRelease",
-      "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies",
+      "setFiscalTaxPolicy", "getFiscalTaxPolicy", "listFiscalTaxPolicies", "listUnitContractEntitlements",
       "getSupplier", "listSuppliers", "listUnitSuppliers", "getContract", "listContracts", "getContractProducts", "listContractAllocations", "listAllocationExceptions",
       "exportSuppliersExcel", "exportContractsExcel", "exportContractAllocationsExcel",
     ],

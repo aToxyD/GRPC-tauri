@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSettings, listUnitContractEntitlements } from '../lib/contracts';
-  import type { Settings, UnitContractEntitlement } from '../lib/types';
+  import { getSettings, listUnitContractEntitlements, listProducts } from '../lib/contracts';
+  import type { Settings, UnitContractEntitlement, Product } from '../lib/types';
+  import { unitLabel } from '../lib/unitLabels';
   import Layout from '../components/Layout.svelte';
 
   import AppCard from '../lib/components/ui/AppCard.svelte';
@@ -24,12 +25,15 @@
   let settings: Settings | null = null;
   // @category ProjectionState
   let entitlements: UnitContractEntitlement[] = [];
+  // @category ProjectionState
+  let products: Product[] = [];
 
   onMount(async () => {
     await entitlementsOp.run(async () => {
-      [entitlements, settings] = await Promise.all([
+      [entitlements, settings, products] = await Promise.all([
         listUnitContractEntitlements(),
-        getSettings()
+        getSettings(),
+        listProducts()
       ]);
     });
   });
@@ -118,6 +122,7 @@
 
         <svelte:fragment slot="head">
           <th class="table-header">المنتج</th>
+          <th class="table-header">وحدة الشراء</th>
           <th class="table-header">المورد</th>
           <th class="table-header">السنة المالية</th>
           <th class="table-header text-right">التعاقد</th>
@@ -133,8 +138,10 @@
         </svelte:fragment>
 
         {#each entitlements as e}
+          {@const purchaseUnit = products.find((pr) => pr.id === e.product_id)}
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
             <td class="table-cell font-medium">{e.product_name}</td>
+            <td class="table-cell">{purchaseUnit ? unitLabel(purchaseUnit.purchase_unit) : '—'}</td>
             <td class="table-cell">{e.supplier_name}</td>
             <td class="table-cell">{e.fiscal_year}</td>
             <td class="table-cell text-right">{e.contracted_quantity.toFixed(2)}</td>

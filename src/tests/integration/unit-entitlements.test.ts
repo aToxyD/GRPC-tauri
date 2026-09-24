@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import UnitEntitlementsPage from '../../pages/UnitEntitlementsPage.svelte';
-import type { UnitContractEntitlement } from '../../lib/types';
+import type { Product, UnitContractEntitlement } from '../../lib/types';
 
 // Mock Tauri modules
 const mockListUnitContractEntitlements = vi.fn();
+const mockListProducts = vi.fn();
 const mockGetSettings = vi.fn();
 
 vi.mock('../../lib/tauri', () => ({
@@ -16,6 +17,7 @@ vi.mock('../../lib/tauri', () => ({
 
 vi.mock('../../lib/contracts', () => ({
   listUnitContractEntitlements: (...args: any[]) => mockListUnitContractEntitlements(...args),
+  listProducts: (...args: any[]) => mockListProducts(...args),
   getSettings: (...args: any[]) => mockGetSettings(...args),
 }));
 
@@ -44,9 +46,26 @@ function entitlement(overrides: Partial<UnitContractEntitlement> = {}): UnitCont
   };
 }
 
+function product(overrides: Partial<Product> = {}): Product {
+  return {
+    id: 'p1',
+    name: 'دقيق',
+    base_price: 80,
+    year: 2026,
+    created_at: '2026-01-01T00:00:00Z',
+    purchase_unit: 10,
+    consumption_unit: 1,
+    conversion_factor: 1,
+    tva_classification: 0,
+    tva_rate: 0,
+    ...overrides,
+  };
+}
+
 describe('UnitEntitlementsPage (Phase 4 read-only projection)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockListProducts.mockResolvedValue([product()]);
     mockGetSettings.mockResolvedValue({
       node_type: 'UNIT',
       configured: true,
@@ -64,6 +83,7 @@ describe('UnitEntitlementsPage (Phase 4 read-only projection)', () => {
       expect(screen.getByText('المورد المركزي')).toBeInTheDocument();
       expect(screen.getByText('استحقاق السنة الحالية')).toBeInTheDocument();
       expect(screen.getByText('ACTIVE')).toBeInTheDocument();
+      expect(screen.getByText('خبزة')).toBeInTheDocument();
     });
   });
 
