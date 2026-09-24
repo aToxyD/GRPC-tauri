@@ -33,7 +33,6 @@ const mockReleaseContractAllocation = vi.fn();
 const mockRevokeContractAllocationRelease = vi.fn();
 const mockExportContractsExcel = vi.fn();
 const mockExportContractAllocationsExcel = vi.fn();
-const mockExportContractCatalogPackage = vi.fn();
 const mockExportContractCatalogToUnits = vi.fn();
 const mockCalculateProductPriceWithTva = vi.fn();
 const mockListUnits = vi.fn();
@@ -58,8 +57,6 @@ vi.mock('../../lib/contracts', () => ({
   revokeContractAllocationRelease: (...args: any[]) => mockRevokeContractAllocationRelease(...args),
   exportContractsExcel: (...args: any[]) => mockExportContractsExcel(...args),
   exportContractAllocationsExcel: (...args: any[]) => mockExportContractAllocationsExcel(...args),
-  exportContractCatalogPackage: (...args: any[]) =>
-    mockExportContractCatalogPackage(...args),
   exportContractCatalogToUnits: (...args: any[]) =>
     mockExportContractCatalogToUnits(...args),
   calculateProductPriceWithTva: (...args: any[]) =>

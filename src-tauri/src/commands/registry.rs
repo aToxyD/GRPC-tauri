@@ -118,7 +118,6 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_orders,
         // Sync Package Export
         commands::export_products_package,
-        commands::export_contract_catalog_package,
         commands::export_contract_catalog_to_units,
         commands::export_daily_report_package,
         commands::export_monthly_summary_package,

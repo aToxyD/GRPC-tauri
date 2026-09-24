@@ -43,7 +43,9 @@ struct ImporterUnit {
 /// UNIT importers scope the projection to their own unit row (FKs target the
 /// local `units` table, which holds exactly the node's own unit) and expose
 /// the authoritative `units.code` for SEC-087 C4 target binding. WILAYA
-/// importers carry no unit scope — they apply the full catalog (restore path).
+/// importers carry no unit scope and cannot import any Contract Catalog
+/// package (ADR-0060 — only UNIT-scoped `UnitDistribution` artifacts are
+/// accepted, matching the UNIT's own code).
 fn resolve_importer_unit(executor: DbExecutor<'_>) -> AppResult<Option<ImporterUnit>> {
     let settings = SettingsService::new(executor).get_settings()?;
     let unit_code = match settings.node_type {
@@ -68,7 +70,8 @@ fn resolve_importer_unit(executor: DbExecutor<'_>) -> AppResult<Option<ImporterU
     }))
 }
 
-/// SEC-087 Phase 2 — C4: Contract Catalog target binding (ADR-0059 §13–15).
+/// SEC-087 Phase 2 — C4: Contract Catalog target binding (ADR-0059 §13–15,
+/// amended by ADR-0060).
 ///
 /// Enforces the authenticated `export_mode` / `target_node_id` matrix against
 /// the importer's own node before any database mutation or replay marking.
@@ -78,11 +81,13 @@ fn resolve_importer_unit(executor: DbExecutor<'_>) -> AppResult<Option<ImporterU
 /// authoritative local `units.code` — no trimming, normalization, or case
 /// folding.
 ///
-/// Matrix:
+/// Matrix (ADR-0060):
 /// - `export_mode = None`            → REJECT (legacy targetless contract
 ///   catalog packages are rejected; no inferred mode fallback).
-/// - `FleetRestore` + no target      → ACCEPT only on WILAYA, REJECT on UNIT.
-/// - `FleetRestore` + target         → REJECT everywhere.
+/// - `FleetRestore` (any target `Some`/`None`) → REJECT everywhere. The
+///   weakly-typed flag is retired for Contract Catalog packages: a UNIT must
+///   never apply an unscoped whole-fleet catalog, and a WILAYA must never
+///   accept it either.
 /// - `UnitDistribution` + target     → ACCEPT only on a UNIT whose exact
 ///   `units.code` equals the package target; REJECT on WILAYA and on any
 ///   other UNIT.
@@ -100,18 +105,13 @@ fn validate_contract_catalog_target_for_import(
             }));
         }
         Some(PackageExportMode::FleetRestore) => {
-            if metadata.target_node_id.is_some() {
-                return Err(AppError::Validation(ValidationError::InvalidFormat {
-                    field: "target_node_id".into(),
-                    message: "نمط استعادة الأسطول غير قابل للتوجيه إلى وحدة".into(),
-                }));
-            }
-            if importer_unit.is_some() {
-                return Err(AppError::Validation(ValidationError::InvalidFormat {
-                    field: "export_mode".into(),
-                    message: "لا يمكن للوحدة استيراد كتالوج استعادة الأسطول".into(),
-                }));
-            }
+            // ADR-0060: the FleetRestore form is retired for Contract Catalog
+            // packages. Reject unconditionally — regardless of target presence
+            // and regardless of the importer node type.
+            return Err(AppError::Validation(ValidationError::InvalidFormat {
+                field: "export_mode".into(),
+                message: "كتالوج استعادة الأسطول ملغى — لا يمكن لأي عقدة استيراده".into(),
+            }));
         }
         Some(PackageExportMode::UnitDistribution) => {
             let local_code = match importer_unit.as_ref().map(|u| u.code.as_str()) {

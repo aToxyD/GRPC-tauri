@@ -1,11 +1,13 @@
 //! End-to-end ContractCatalog import tests (ADR-0055 / SEC-087-F).
 //!
 //! Covers:
-//! - WILAYA full-catalog apply (restore path)
 //! - UNIT-scoped apply (only the importer's own unit rows are written)
 //! - WILAYA-owned upsert semantics (UNIT-owned runtime state preserved)
 //! - Replay rejection via the imported-package registry
 //! - Fail-closed source provenance
+//! - FleetRestore retirement (ADR-0060): the form is rejected for Contract
+//!   Catalog packages everywhere — with or without a target, on WILAYA and
+//!   on UNIT nodes.
 
 use chrono::{TimeZone, Utc};
 
@@ -21,14 +23,14 @@ use grpc_lib::application::usecases::sync::import_contract_catalog_package::{
     ImportContractCatalogPackageOutcome, CONTRACT_CATALOG_PACKAGE_KIND,
 };
 use grpc_lib::db::{ConnectionFactory, Database};
-use grpc_lib::errors::{AppError, BusinessLogicError};
+use grpc_lib::errors::{AppError, BusinessLogicError, ValidationError};
 use grpc_lib::infrastructure::db::sync_import::SqliteImportedPackageRegistry;
 use grpc_lib::models::{
     Contract, ContractAllocation, ContractAllocationException, ContractStatus, FiscalYearTaxPolicy,
     NodeType, Product, Supplier, WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::{
-    ContractRepository, FiscalYearTaxPolicyRepository, ProductRepository, SettingsRepository,
+    ContractRepository, ProductRepository, SettingsRepository,
     SupplierRepository, UnitRepository,
 };
 
@@ -414,56 +416,29 @@ fn seed_unit(db: &mut Database) {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[test]
-fn wilaya_full_catalog_restore_import_persists_everything() {
+fn wilaya_rejects_fleet_restore_catalog_import() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_wilaya(&mut db);
 
     let pkg = fleet_package("pkg-cc-full-1", full_catalog(), WILAYA);
-    let outcome = apply_package(&mut db, &pkg).expect("apply full catalog");
-    assert!(outcome.imported > 0, "full restore must import rows");
-    assert_eq!(outcome.skipped, 0, "no rows out of WILAYA scope");
-
-    let contracts = ContractRepository::new(db.executor());
-    let c1 = contracts
-        .get_contract("ctr-1")
-        .expect("read")
-        .expect("ctr-1 present");
-    assert_eq!(c1.status, ContractStatus::Active);
-    assert_eq!(c1.contract_reference, "REF-2026-A");
-    let c2 = contracts
-        .get_contract("ctr-2")
-        .expect("read")
-        .expect("ctr-2 present");
-    assert_eq!(c2.supplier_id, "sup-2");
-
-    let a1 = contracts
-        .get_allocation("alloc-1")
-        .expect("read")
-        .expect("alloc-1 present");
-    assert_eq!(a1.contracted_quantity, 100.0);
-    assert_eq!(a1.entitlement_state, "ACTIVE");
-    // Exceptions ride along (WILAYA releases).
-    assert!(contracts.get_exception("exc-1").expect("read").is_some());
-
-    let suppliers = SupplierRepository::new(db.executor());
-    assert!(suppliers.get_supplier("sup-2").expect("read").is_some());
-    assert!(suppliers
-        .supplier_associated_with_unit("unit-a", "sup-1")
-        .expect("read"));
-
-    let policy = FiscalYearTaxPolicyRepository::new(db.executor())
-        .get_policy(2026)
-        .expect("read")
-        .expect("policy present");
-    assert_eq!(policy.tva_rate, 19.0);
+    let err = apply_package(&mut db, &pkg)
+        .expect_err("WILAYA must reject the retired fleet restore catalog (ADR-0060)");
+    assert!(
+        matches!(
+            err,
+            AppError::Validation(ValidationError::InvalidFormat { ref field, .. })
+                if field == "export_mode"
+        ),
+        "rejection must name the retired export_mode"
+    );
 }
 
 #[test]
 fn replay_same_package_id_is_rejected() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
-    seed_wilaya(&mut db);
+    seed_unit(&mut db);
 
-    let pkg = fleet_package("pkg-cc-replay", full_catalog(), WILAYA);
+    let pkg = unit_package("pkg-cc-replay", mixed_catalog(), WILAYA, "L01");
     apply_package(&mut db, &pkg).expect("first import ok");
 
     let err = apply_package(&mut db, &pkg).expect_err("replay must fail");

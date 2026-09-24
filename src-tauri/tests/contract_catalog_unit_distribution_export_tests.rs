@@ -13,12 +13,14 @@
 //!   construction precedes validation);
 //! - the whole batch fails closed when any requested target is unresolvable or
 //!   any selected dataset is invalid — no partial artifact set is emitted;
-//! - `FleetRestore` semantics remain unchanged (all statuses, unscoped) and the
-//!   mode-target pair (-) is always explicitly labeled in the signed envelope;
 //! - repeated exports are deterministic in DATASET content (distinct
 //!   package_id / signature only);
 //! - the persisted reproducibility snapshot carries the SAME semantics as the
-//!   package metadata (`"fleet_restore"`+null / `"unit_distribution"`+code).
+//!   package metadata (`"unit_distribution"`+code).
+//!
+//! The fleet-wide `FleetRestore` export form was retired by ADR-0060 and is
+//! therefore NOT exercised here; every Contract Catalog artifact is a
+//! `UnitDistribution` targeting exactly the requested `units.code`.
 
 use std::collections::HashSet;
 
@@ -27,9 +29,8 @@ use uuid::Uuid;
 
 use grpc_lib::application::services::export_contract_catalog_unit_distribution;
 use grpc_lib::application::services::{
-    current_wilaya_signing_key_id, export_contract_catalog_fleet,
-    record_export_with_reproducibility, ExportReproducibilityContext,
-    FinalizeWilayaProvisionResult, IdentityProvisioningService,
+    current_wilaya_signing_key_id, record_export_with_reproducibility,
+    ExportReproducibilityContext, FinalizeWilayaProvisionResult, IdentityProvisioningService,
     SyncPackageIdentityVerificationService, V2ImportPolicy,
 };
 use grpc_lib::application::sync::PackageExportMode;
@@ -712,77 +713,6 @@ fn tax_policies_are_global_in_every_artifact() {
 }
 
 #[test]
-fn fleet_restore_artifacts_are_unscoped_and_explicitly_labeled() {
-    let mut node = provisioned_catalog_node();
-    let dir = TempDir::new().expect("temp dir");
-    let crypto = AgeFileEncryptionProvider::new();
-    let requested = dir.path().join("fleet.sync");
-
-    let outcome = export_contract_catalog_fleet(
-        &mut node.db,
-        &node.node_key_store,
-        &crypto,
-        "wilaya-test-node",
-        SubjectType::Wilaya,
-        &requested,
-    )
-    .expect("fleet export");
-    assert_eq!(
-        outcome.targets,
-        vec!["UNIT-A", "UNIT-B"],
-        "fleet targets = all registered units, order-stable"
-    );
-    assert_eq!(outcome.artifact_paths.len(), 2);
-
-    let a = read_contract_catalog_package_from_file(&outcome.artifact_paths[0], &crypto)
-        .expect("read fleet artifact A");
-    let b = read_contract_catalog_package_from_file(&outcome.artifact_paths[1], &crypto)
-        .expect("read fleet artifact B");
-
-    // Fleet is explicitly FleetRestore with no target — never inferred.
-    assert_eq!(
-        a.metadata.export_mode,
-        Some(PackageExportMode::FleetRestore)
-    );
-    assert_eq!(a.metadata.target_node_id, None);
-    assert_eq!(
-        b.metadata.export_mode,
-        Some(PackageExportMode::FleetRestore)
-    );
-    assert_eq!(b.metadata.target_node_id, None);
-
-    // Unscoped: BOTH artifacts carry ALL units and ALL statuses (proposed +
-    // cancelled included) — pre-C3 fleet semantics preserved.
-    for pkg in [&a, &b] {
-        let ids = contract_ids(&pkg.payload.contracts);
-        for ctr in [
-            "ctr-a1", "ctr-a2", "ctr-a3", "ctr-a4", "ctr-a5", "ctr-a6", "ctr-b1",
-        ] {
-            assert!(
-                ids.contains(ctr),
-                "fleet {ctr} must be present (all statuses)"
-            );
-        }
-        let mut suppliers: HashSet<&str> = pkg
-            .payload
-            .suppliers
-            .iter()
-            .map(|s| s.id.as_str())
-            .collect();
-        for s in ["sup-a1", "sup-a2", "sup-b1", "sup-shared", "sup-orphan"] {
-            assert!(suppliers.remove(s), "fleet {s} must be present (unscoped)");
-        }
-        assert!(suppliers.is_empty(), "no unreferenced suppliers dropped");
-    }
-    // Same dataset shape on every fleet artifact.
-    assert_eq!(
-        serde_json::to_value(&a.payload).expect("A value"),
-        serde_json::to_value(&b.payload).expect("B value")
-    );
-    assert_eq!(outcome.record_count, a.payload.contracts.len());
-}
-
-#[test]
 fn unit_artifacts_verify_v2_signature_against_issuer() {
     let mut node = provisioned_catalog_node();
     let dir = TempDir::new().expect("temp dir");
@@ -1022,9 +952,9 @@ fn snapshot_agrees_with_artifact_mode_and_target() {
     );
     assert_eq!(pkg.metadata.target_node_id.as_deref(), Some("UNIT-A"));
 
-    // Mirrors the command wiring: the fleet snapshot records
-    // ("fleet_restore", None); the unit command records per target
-    // ("unit_distribution", Some(code)). Persist + read back.
+    // Mirrors the command wiring: the unit command records per target
+    // ("unit_distribution", Some(code)). Persist + read back. The retired
+    // fleet ("fleet_restore", None) snapshot wiring was removed with ADR-0060.
     let signing_key_id = current_wilaya_signing_key_id(&node.db, &node.node_key_store);
     let unit_hash = Uuid::new_v4().to_string();
     record_export_with_reproducibility(
@@ -1043,23 +973,6 @@ fn snapshot_agrees_with_artifact_mode_and_target() {
         },
     )
     .expect("record unit snapshot");
-    let fleet_hash = Uuid::new_v4().to_string();
-    record_export_with_reproducibility(
-        make_executor(&node.db),
-        signing_key_id,
-        ExportReproducibilityContext {
-            export_hash: fleet_hash.clone(),
-            fiscal_year: 2026,
-            generated_by: "admin".into(),
-            movement_count: 0,
-            report_count: 0,
-            inventory_total_value: 0.0,
-            export_reason: "contract_catalog_sync_package".into(),
-            export_mode: Some("fleet_restore".into()),
-            target_node_id: None,
-        },
-    )
-    .expect("record fleet snapshot");
 
     let unit_snap = node
         .db
@@ -1079,25 +992,6 @@ fn snapshot_agrees_with_artifact_mode_and_target() {
         .target_node_id;
     assert_eq!(unit_snap.as_deref(), Some("unit_distribution"));
     assert_eq!(unit_target.as_deref(), Some("UNIT-A"));
-
-    let fleet_snap = node
-        .db
-        .executor()
-        .fiscal_snapshots()
-        .get_export_snapshot_by_hash(&fleet_hash)
-        .expect("read fleet snapshot")
-        .expect("present")
-        .export_mode;
-    let fleet_target = node
-        .db
-        .executor()
-        .fiscal_snapshots()
-        .get_export_snapshot_by_hash(&fleet_hash)
-        .expect("read fleet snapshot")
-        .expect("present")
-        .target_node_id;
-    assert_eq!(fleet_snap.as_deref(), Some("fleet_restore"));
-    assert_eq!(fleet_target, None);
 }
 
 #[test]

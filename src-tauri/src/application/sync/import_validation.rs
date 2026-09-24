@@ -187,8 +187,9 @@ pub fn validate_daily_report_package_for_import(
 /// without contracts carries no projection and is rejected fail-closed
 /// (mirrors the products validator's non-empty rule).
 ///
-/// SEC-087 Phase 2 C4 (ADR-0059 §10): a `UnitDistribution` package is the
-/// unit-scoped per-unit projection and MAY legitimately carry an EMPTY
+/// SEC-087 Phase 2 C4 (ADR-0059 §10, amended by ADR-0060): a
+/// `UnitDistribution` package — the ONLY Contract Catalog export form — is
+/// the unit-scoped per-unit projection and MAY legitimately carry an EMPTY
 /// contract set (the target's own view contains no contracts), so the
 /// non-empty rule applies ONLY outside `UnitDistribution`. Scope/target
 /// binding itself is enforced separately by the importer.

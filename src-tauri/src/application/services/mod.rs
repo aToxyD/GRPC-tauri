@@ -60,8 +60,8 @@ pub use fiscal_reporting_service::FiscalReportingService;
 pub use fiscal_tax_policy_service::FiscalTaxPolicyService;
 pub use fiscal_validation_service::FiscalValidationService;
 pub use fleet_package_export::{
-    export_admin_access_fleet, export_contract_catalog_fleet,
-    export_contract_catalog_unit_distribution, export_products_fleet, FleetExportOutcome,
+    export_admin_access_fleet, export_contract_catalog_unit_distribution, export_products_fleet,
+    FleetExportOutcome,
 };
 pub use identity_authentication_policy::{AdminCredentialState, IdentityAuthenticationPolicy};
 pub use identity_bootstrap_status_service::IdentityBootstrapStatusService;

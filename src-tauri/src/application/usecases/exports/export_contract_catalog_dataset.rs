@@ -6,9 +6,10 @@
 //! allocation release exceptions), and the fiscal-year TVA policies. UNIT
 //! importers apply ONLY the rows scoped to their own unit id.
 //!
-//! ADR-0059: the mode-carrying [`ExportContractCatalogInput`] selects either
-//! the fleet-wide `FleetRestore` projection (ALL statuses, everything) or a
-//! UNIT-scoped `UnitDistribution` projection:
+//! ADR-0059 / ADR-0060: the mode-carrying [`ExportContractCatalogInput`]
+//! selects the UNIT-scoped `UnitDistribution` projection — the ONLY
+//! Contract Catalog export form (the fleet-wide `FleetRestore` form was
+//! retired by ADR-0060):
 //!
 //! - contracts are selected at the SQL boundary by the target unit's internal
 //!   `units.id` with the per-UNIT status policy (`accepted | active | ended`,
@@ -44,52 +45,8 @@ pub fn execute(
     executor: DbExecutor<'_>,
     input: ExportContractCatalogInput,
 ) -> AppResult<ContractCatalogExportDataset> {
-    let dataset = match input.mode {
-        ExportContractCatalogMode::FleetRestore => {
-            execute_fleet(executor, &ExportContractCatalogMode::FleetRestore)?
-        }
-        ExportContractCatalogMode::UnitDistribution { target_unit_code } => {
-            execute_for_unit(executor, &target_unit_code)?
-        }
-    };
-    Ok(dataset)
-}
-
-/// Fleet-wide projection (ADR-0059 §7): ALL statuses retained, ALL units.
-/// Existing fleet semantics preserved unchanged.
-fn execute_fleet(
-    executor: DbExecutor<'_>,
-    mode: &ExportContractCatalogMode,
-) -> AppResult<ContractCatalogExportDataset> {
-    let supplier_repo = SupplierRepository::new(executor);
-    let contract_repo = ContractRepository::new(executor);
-    let policy_repo = FiscalYearTaxPolicyRepository::new(executor);
-
-    let suppliers = supplier_repo.list_suppliers()?;
-    let unit_supplier_links = supplier_repo
-        .list_all_unit_supplier_links()?
-        .into_iter()
-        .map(|(unit_id, supplier_id)| ContractCatalogUnitSupplierLink {
-            unit_id,
-            supplier_id,
-        })
-        .collect();
-    let tax_policies = policy_repo.list_policies()?;
-
-    let contracts = contract_repo
-        .list_contracts(None, None, None)?
-        .into_iter()
-        .map(|contract| build_contract_row(&contract_repo, contract))
-        .collect::<AppResult<Vec<_>>>()?;
-
-    let dataset = ContractCatalogExportDataset {
-        suppliers,
-        unit_supplier_links,
-        contracts,
-        tax_policies,
-    };
-    validate_contract_catalog_dataset_for_export(&dataset, mode, None)?;
-    Ok(dataset)
+    let ExportContractCatalogMode::UnitDistribution { target_unit_code } = input.mode;
+    execute_for_unit(executor, &target_unit_code)
 }
 
 /// UNIT-scoped projection for one authoritative target unit code (ADR-0059).
@@ -117,7 +74,7 @@ fn execute_for_unit(
     let contracts = contract_repo
         .list_catalog_exportable_contracts_for_unit(&unit.id)?
         .into_iter()
-        .map(|contract| build_contract_row_for_unit(&contract_repo, contract, &unit.id))
+        .map(|contract| build_contract_row(&contract_repo, contract, &unit.id))
         .collect::<AppResult<Vec<_>>>()?;
 
     // UNIT↔supplier associations restricted to the target unit.
@@ -154,39 +111,24 @@ fn execute_for_unit(
         contracts,
         tax_policies,
     };
-    validate_contract_catalog_dataset_for_export(
-        &dataset,
-        &ExportContractCatalogMode::UnitDistribution {
-            target_unit_code: code,
-        },
-        Some(&unit.id),
-    )?;
+    validate_contract_catalog_dataset_for_export(&dataset, &unit.id)?;
     Ok(dataset)
 }
 
 /// Map one contract into its dataset row with product lines / allocations /
-/// exceptions (fleet: allocations via the contract chain, no unit restriction).
-fn build_contract_row(
-    contract_repo: &ContractRepository<'_>,
-    contract: crate::models::Contract,
-) -> AppResult<ContractCatalogContractRow> {
-    build_contract_row_inner(contract_repo, contract, None)
-}
-
-/// Map one contract into its dataset row with product lines / allocations /
 /// exceptions, restricted to one owning UNIT for the allocation scope.
-fn build_contract_row_for_unit(
+fn build_contract_row(
     contract_repo: &ContractRepository<'_>,
     contract: crate::models::Contract,
     unit_id: &str,
 ) -> AppResult<ContractCatalogContractRow> {
-    build_contract_row_inner(contract_repo, contract, Some(unit_id))
+    build_contract_row_inner(contract_repo, contract, unit_id)
 }
 
 fn build_contract_row_inner(
     contract_repo: &ContractRepository<'_>,
     contract: crate::models::Contract,
-    unit_scope: Option<&str>,
+    unit_id: &str,
 ) -> AppResult<ContractCatalogContractRow> {
     let product_lines = contract_repo
         .list_sync_contract_products(&contract.id)?
@@ -210,12 +152,8 @@ fn build_contract_row_inner(
 
     let mut allocations = Vec::new();
     let mut exceptions = Vec::new();
-    let allocation_rows = match unit_scope {
-        Some(unit_id) => {
-            contract_repo.list_sync_allocations_for_contract_unit(&contract.id, unit_id)?
-        }
-        None => contract_repo.list_sync_allocations_for_contract(&contract.id)?,
-    };
+    let allocation_rows =
+        contract_repo.list_sync_allocations_for_contract_unit(&contract.id, unit_id)?;
     for (allocation, created_at) in allocation_rows {
         exceptions.extend(contract_repo.list_exceptions_for_allocation(&allocation.id)?);
         allocations.push(ContractCatalogAllocationRow {
@@ -234,17 +172,15 @@ fn build_contract_row_inner(
 
 /// Producer-side validation of the EXACT dataset selected for the mode
 /// (ADR-0059 §15.1). Mirrors the per-row structural rules of the import
-/// boundary WITHOUT the import-side whole-fleet empty-catalog rejection
-/// (ADR-0059 §10: a UNIT scoped artifact may legitimately carry zero
-/// contracts; the fleet empty-catalog rule is an import-side policy and is
-/// deliberately not duplicated here).
+/// boundary WITHOUT the import-side empty-catalog rejection (ADR-0059 §10: a
+/// UNIT scoped artifact may legitimately carry zero contracts; the empty-catalog
+/// rule is an import-side policy and is deliberately not duplicated here).
 ///
-/// For `UnitDistribution`, additionally asserts every selected contract is
-/// owned by the target unit — the producer selected-dataset invariant.
+/// Additionally asserts every selected contract is owned by the target unit —
+/// the producer selected-dataset invariant.
 fn validate_contract_catalog_dataset_for_export(
     dataset: &ContractCatalogExportDataset,
-    mode: &ExportContractCatalogMode,
-    unit_scope_id: Option<&str>,
+    unit_scope_id: &str,
 ) -> AppResult<()> {
     for row in &dataset.contracts {
         if row.contract.id.trim().is_empty() {
@@ -268,30 +204,16 @@ fn validate_contract_catalog_dataset_for_export(
                 format!("عقد «{}» بدون منتجات", row.contract.id),
             ));
         }
-    }
-    match mode {
-        ExportContractCatalogMode::FleetRestore => {}
-        ExportContractCatalogMode::UnitDistribution { .. } => {
-            // Producer selected-dataset invariant (ADR-0059 §15.1): every
-            // selected contract must belong to the target unit's internal id.
-            // `unit_scope_id` is always present here (set by execute_for_unit).
-            let scope = unit_scope_id.ok_or_else(|| {
-                dataset_validation_error(
-                    "contracts[].unit_id",
-                    "نطاق الوحدة مفقود للتحقق من الحزمة الموجهة",
-                )
-            })?;
-            for row in &dataset.contracts {
-                if row.contract.unit_id != scope {
-                    return Err(dataset_validation_error(
-                        "contracts[].unit_id",
-                        format!(
-                            "عقد «{}» لا ينتمي إلى الوحدة المستهدفة — رفض مغلق",
-                            row.contract.id
-                        ),
-                    ));
-                }
-            }
+        // Producer selected-dataset invariant (ADR-0059 §15.1): every selected
+        // contract must belong to the target unit's internal id.
+        if row.contract.unit_id != unit_scope_id {
+            return Err(dataset_validation_error(
+                "contracts[].unit_id",
+                format!(
+                    "عقد «{}» لا ينتمي إلى الوحدة المستهدفة — رفض مغلق",
+                    row.contract.id
+                ),
+            ));
         }
     }
     Ok(())
