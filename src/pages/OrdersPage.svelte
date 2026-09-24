@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { formatErrorMessage } from '../lib/errors';
-  import { listSupplierOrders, createSupplierOrder, updateSupplierOrder, deleteSupplierOrder, confirmOrder, getSupplierOrderItems } from '../lib/contracts';
+  import { listSupplierOrders, createSupplierOrder, updateSupplierOrder, deleteSupplierOrder, confirmOrder, getSupplierOrderItems, listUnitContractEntitlements } from '../lib/contracts';
   import { showAsk } from '../lib/tauri';
   import { listProducts } from '../lib/contracts';
   import { unitLabel } from '../lib/unitLabels';
-  import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem } from '../lib/types';
+  import type { SupplierOrder, Product, OrderItemInput, SupplierOrderItem, UnitContractEntitlement } from '../lib/types';
   import Layout from '../components/Layout.svelte';
   import { createOperation } from '../lib/operationGuard';
   import { createRuntimeScope, createTransientMessage } from '../lib/runtimeCleanup';
@@ -39,6 +39,8 @@
   let selectedOrder = $state<SupplierOrder | null>(null);
   // @category ProjectionState
   let orderItems = $state<SupplierOrderItem[]>([]);
+  // @category ProjectionState
+  let unitEntitlements = $state<UnitContractEntitlement[]>([]);
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
@@ -55,12 +57,14 @@
 
   /** تحديث القائمة دون تداخل مع ordersOp.run (تجنب الرفض عند busy) */
   async function refreshList() {
-    const [nextOrders, nextProducts] = await Promise.all([
+    const [nextOrders, nextProducts, nextEntitlements] = await Promise.all([
       listSupplierOrders(),
       listProducts(),
+      listUnitContractEntitlements(),
     ]);
     orders = nextOrders;
     products = nextProducts;
+    unitEntitlements = nextEntitlements;
   }
 
   async function loadData() {
@@ -194,6 +198,17 @@
     if (status === 'Confirmed') return 'مؤكدة';
     return status;
   }
+
+  // Task 5b: remaining contracted quantity is read verbatim from the
+  // authoritative `UnitContractEntitlement` projection (`effective_remaining`);
+  // it is never re-derived here. Returns null when no entitlement exists.
+  // @category UiState
+  function remainingForProduct(productId: string): number | null {
+    const e = unitEntitlements.find(
+      (ent) => ent.product_id === productId
+    );
+    return e ? e.effective_remaining : null;
+  }
 </script>
 
 <Layout nodeType="UNIT" title="طلبيات الموردين" subtitle="إدارة الطلبيات والتوريد">
@@ -315,15 +330,25 @@
       <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
         {#each orderProducts as op (op.product.id)}
           <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
-            <span class="flex-1 font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
-            <div class="w-24">
-              <AppInput
-                id="qty-{op.product.id}"
-                label=""
-                type="number"
-                placeholder="الكمية"
-                bind:value={op.quantity}
-              />
+            <span class="flex-1">
+              <span class="block font-medium text-sm text-gray-800 dark:text-gray-200">{op.product.name}</span>
+              {#if remainingForProduct(op.product.id) !== null}
+                <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  المتبقي من العقد: {remainingForProduct(op.product.id)?.toFixed(2)} ({unitLabel(op.product.consumption_unit)})
+                </span>
+              {/if}
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">({unitLabel(op.product.purchase_unit)})</span>
+              <div class="w-24">
+                <AppInput
+                  id="qty-{op.product.id}"
+                  label=""
+                  type="number"
+                  placeholder="الكمية"
+                  bind:value={op.quantity}
+                />
+              </div>
             </div>
           </div>
         {/each}
