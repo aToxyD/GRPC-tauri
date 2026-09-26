@@ -252,6 +252,10 @@ export interface ContractAllocation {
   version: number;
   /** Backend-derived projection (A5) — never re-derived in the frontend. */
   effective_remaining: number;
+  /** Backend-derived WILAYA executable remainder (ADR-0061) — the balance
+   *  that is neither executed nor released, ignoring local reservation. Never
+   *  re-derived in the frontend (A5, P2). */
+  wilaya_executable_remaining: number;
 }
 
 /** Read-only UNIT ContractCatalog entitlement projection (Phase 4).
@@ -620,6 +624,19 @@ export interface StockMovementsImportResult {
   movement_count: number;
   unit_id: string;
   file_hash: string;
+  imported_by: string;
+  timestamp: string;
+}
+
+/** ADR-0061 `contract_fulfillment` import outcome.
+ *  `applied_count` = facts that advanced the local state; `already_satisfied_count`
+ *  = facts the destination had already converged on (verified no-ops). Both are
+ *  decided by the backend — the frontend never derives them. */
+export interface ContractFulfillmentImportResult {
+  applied_count: number;
+  already_satisfied_count: number;
+  unit_id: string;
+  package_id: string;
   imported_by: string;
   timestamp: string;
 }

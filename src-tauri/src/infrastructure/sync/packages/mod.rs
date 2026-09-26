@@ -9,6 +9,7 @@
 //! - Use `PackageBuilder::build_encrypted_stream_path` (streams directly to file)
 
 pub mod canonical_json;
+pub mod content_package_id;
 mod encrypted_package_reader;
 pub mod integrity;
 mod package_builder;
@@ -23,6 +24,7 @@ pub use package_serializer::{SerdeJsonSyncPackageSerializer, SyncPackageSerializ
 // ── Preferred file-path-based readers (ADR-0016) ──────────────────────────
 pub use encrypted_package_reader::read_admin_access_package_from_file;
 pub use encrypted_package_reader::read_contract_catalog_package_from_file;
+pub use encrypted_package_reader::read_contract_fulfillment_package_from_file;
 pub use encrypted_package_reader::read_daily_report_package_from_file;
 pub use encrypted_package_reader::read_identity_access_package_from_file;
 pub use encrypted_package_reader::read_monthly_summary_package_from_file;

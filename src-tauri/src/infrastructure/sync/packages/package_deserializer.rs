@@ -8,8 +8,9 @@
 
 use crate::application::sync::{SchemaVersion, SyncPackage};
 use crate::application::usecases::exports::types::{
-    ContractCatalogExportDataset, DailyReportExportDataset, MonthlySummaryExportDataset,
-    ProductsExportDataset, StockMovementsExportDataset,
+    ContractCatalogExportDataset, DailyReportExportDataset, FulfillmentFactExportDataset,
+    MonthlySummaryExportDataset, ProductsExportDataset, StockMovementsExportDataset,
+    FULFILLMENT_FACT_VERSION,
 };
 use crate::application::usecases::sync::import_registry_package::RegistryPackagePayload;
 use crate::application::usecases::sync::import_trust_package::TrustPackagePayload;
@@ -20,6 +21,7 @@ use crate::models::{IdentityAccessPayload, UnitNodePackage};
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::canonical_json::canonical_bytes_for_integrity;
+use super::content_package_id::derive_content_package_id;
 use super::integrity::{PackageHasher, Sha256PackageHasher};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -149,6 +151,48 @@ impl SerdeJsonSyncPackageDeserializer {
         let package = Self::parse_json_from_reader(reader)?;
         Self::verify_integrity(&package)?;
         Self::verify_signature(&package)?;
+        Ok(package)
+    }
+
+    /// ADR-0061 `contract_fulfillment`.
+    ///
+    /// Layers 1 and 2 of the four-layer idempotency model are enforced *here*,
+    /// before the caller touches the database: the payload's own schema version
+    /// is checked fail-closed, and the content-derived `package_id` is
+    /// recomputed from the dataset. An unrecognised fact contract can never be
+    /// silently reinterpreted as version 1, and a package whose identity does
+    /// not match its content never reaches the import pipeline. The application
+    /// validator re-checks both for use-case callers that bypass this reader.
+    pub fn contract_fulfillment_from_reader<R: std::io::Read>(
+        reader: R,
+    ) -> AppResult<SyncPackage<FulfillmentFactExportDataset>> {
+        let package: SyncPackage<FulfillmentFactExportDataset> =
+            Self::parse_json_from_reader(reader)?;
+        Self::verify_integrity(&package)?;
+        Self::verify_signature(&package)?;
+        if package.payload.fact_version != FULFILLMENT_FACT_VERSION {
+            return Err(AppError::Validation(
+                crate::errors::ValidationError::InvalidFormat {
+                    field: "fact_version".into(),
+                    message: format!(
+                        "إصدار عقد حقيقة التنفيذ غير مدعوم: {} — المتوقع {} (مرفوضة بالكامل)",
+                        package.payload.fact_version, FULFILLMENT_FACT_VERSION
+                    ),
+                },
+            ));
+        }
+        let expected_id = derive_content_package_id(&package.payload)?;
+        if expected_id.0 != package.metadata.package_id.0 {
+            return Err(AppError::Validation(
+                crate::errors::ValidationError::InvalidFormat {
+                    field: "package_id".into(),
+                    message: format!(
+                        "معرّف الحزمة لا يطابق محتواها (المتوقع {}) — رفضت الحزمة",
+                        expected_id.0
+                    ),
+                },
+            ));
+        }
         Ok(package)
     }
 

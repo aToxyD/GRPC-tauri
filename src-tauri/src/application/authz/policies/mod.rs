@@ -80,7 +80,9 @@ pub fn authorize(
         | Action::ImportTrustPackage
         | Action::ImportRegistryPackage
         | Action::ExportContractCatalogPackage
-        | Action::ImportContractCatalogPackage => {
+        | Action::ImportContractCatalogPackage
+        | Action::ExportContractFulfillment
+        | Action::ImportContractFulfillment => {
             reports::authorize_reports(principal, action, resource)
         }
 

@@ -11,8 +11,8 @@
 
 use crate::application::sync::SyncPackage;
 use crate::application::usecases::exports::types::{
-    ContractCatalogExportDataset, DailyReportExportDataset, MonthlySummaryExportDataset,
-    ProductsExportDataset, StockMovementsExportDataset,
+    ContractCatalogExportDataset, DailyReportExportDataset, FulfillmentFactExportDataset,
+    MonthlySummaryExportDataset, ProductsExportDataset, StockMovementsExportDataset,
 };
 use crate::errors::{AppError, AppResult};
 use crate::models::UnitNodePackage;
@@ -137,6 +137,21 @@ pub fn read_stock_movements_package_from_file(
     let file = std::fs::File::open(temp_plaintext.path())
         .map_err(|e| AppError::Internal(format!("Failed to re-open decrypt temp: {}", e)))?;
     SerdeJsonSyncPackageDeserializer::stock_movements_from_reader(std::io::BufReader::new(file))
+}
+
+/// ADR-0061 `contract_fulfillment` (UNIT → WILAYA). Routed through the
+/// dedicated reader entry point so the fail-closed payload-version gate and
+/// the content-derived `package_id` check run before any DB access.
+pub fn read_contract_fulfillment_package_from_file(
+    path: &Path,
+    crypto_port: &AgeFileEncryptionProvider,
+) -> AppResult<SyncPackage<FulfillmentFactExportDataset>> {
+    let temp_plaintext = decrypt_encrypted_file_to_temp(path, crypto_port)?;
+    let file = std::fs::File::open(temp_plaintext.path())
+        .map_err(|e| AppError::Internal(format!("Failed to re-open decrypt temp: {}", e)))?;
+    SerdeJsonSyncPackageDeserializer::contract_fulfillment_from_reader(std::io::BufReader::new(
+        file,
+    ))
 }
 
 pub fn read_unit_node_package_from_file(

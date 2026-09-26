@@ -14,7 +14,9 @@
 //! - is transport-sequence-free (SEC-056D/SEC-057): no producer allocator,
 //!   no per-issuer/per-target sequence. Each package carries a fresh
 //!   `package_id`; replay protection on the receiving node is
-//!   `package_id`-exact only.
+//!   `package_id`-exact only. ADR-0061 `contract_fulfillment` is the single
+//!   documented exception: it supplies a content-derived id through
+//!   [`Self::export_v2_package_with_identity`].
 //!
 //! `.unit` bootstrap packages share the identical sequence-free shape and do
 //! not route through any ledger. Legacy `identity_access` issuance remains
@@ -71,6 +73,44 @@ impl<'a> IdentitySignedExportService<'a> {
         node_type: SubjectType,
         crypto_port: &AgeFileEncryptionProvider,
     ) -> AppResult<()> {
+        self.export_v2_package_with_identity(
+            dataset,
+            source_node_id,
+            kind,
+            export_mode,
+            target_node_id,
+            target_path,
+            node_type,
+            crypto_port,
+            None,
+        )
+    }
+
+    /// [`Self::export_v2_package`] with an explicit `package_id`.
+    ///
+    /// Every kind except ADR-0061 `contract_fulfillment` passes `None` and gets
+    /// a fresh random UUID, which makes the id a property of the export EVENT.
+    /// `contract_fulfillment` instead passes a **content-derived** id
+    /// (`hex(sha256(canonical_json(dataset)))`) so the same current cumulative
+    /// state set always produces the same identity and a re-export of unchanged
+    /// state is recognised as a duplicate at the destination (ADR-0061 §4).
+    ///
+    /// The signed envelope is otherwise byte-for-byte identical to the default
+    /// path: `created_at` still varies, so the integrity hash and the signature
+    /// of two exports of the same content differ while the identity does not.
+    #[allow(clippy::too_many_arguments)]
+    pub fn export_v2_package_with_identity<T: Serialize>(
+        &self,
+        dataset: T,
+        source_node_id: &str,
+        kind: &str,
+        export_mode: Option<PackageExportMode>,
+        target_node_id: Option<&str>,
+        target_path: &Path,
+        node_type: SubjectType,
+        crypto_port: &AgeFileEncryptionProvider,
+        package_id: Option<PackageId>,
+    ) -> AppResult<()> {
         let resolved = NodeIdentityResolver::resolve_local_signer(self.db, self.node_key_store, node_type)?
             .ok_or_else(|| {
                 AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
@@ -92,6 +132,7 @@ impl<'a> IdentitySignedExportService<'a> {
             signer,
             target_path,
             crypto_port,
+            package_id,
         )?;
 
         log::info!(
@@ -144,6 +185,7 @@ impl<'a> IdentitySignedExportService<'a> {
             signer,
             target_path,
             crypto_port,
+            None,
         )?;
 
         log::info!(
@@ -171,6 +213,7 @@ impl<'a> IdentitySignedExportService<'a> {
         signer: Ed25519PackageSigner,
         target_path: &Path,
         crypto_port: &AgeFileEncryptionProvider,
+        package_id: Option<PackageId>,
     ) -> AppResult<()> {
         let package = SyncPackage {
             metadata: SyncPackageMetadata {
@@ -178,7 +221,10 @@ impl<'a> IdentitySignedExportService<'a> {
                 created_at: Utc::now(),
                 source_node_id: source_node_id.to_string(),
                 issuer_identity_id: Some(identity_id),
-                package_id: PackageId(Uuid::new_v4().to_string()),
+                // ADR-0061: a caller-supplied content-derived id keeps the
+                // identity a property of the CONTENT. `None` preserves the
+                // default fresh-UUID-per-export behavior of every other kind.
+                package_id: package_id.unwrap_or_else(|| PackageId(Uuid::new_v4().to_string())),
                 signature_version: Some(SIGNATURE_VERSION_ED25519),
                 signing_key_id: Some(signer.public_key_hex()),
                 integrity_hash: None,

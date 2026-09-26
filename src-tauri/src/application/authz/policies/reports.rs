@@ -16,10 +16,14 @@
 //! | Trust/Registry Imports†      | ✓                  | ✗                      | ✗                | ✗                    | ✗            |
 //! | ImportStockMovements         | ✓                  | ✗                      | ✓                | ✓                    | ✗            |
 //! | ReadAuditLog                 | ✓ (wilaya admin)   | ✗                      | ✓ (unit admin)   | ✗                    | ✗            |
+//! | ExportContractFulfillment‡   | ✗                  | ✗                      | ✓ (admin)        | ✗                    | ✗            |
+//! | ImportContractFulfillment‡   | ✓ (wilaya admin)   | ✗                      | ✗                | ✗                    | ✗            |
 //!
 //! *Unit Sync Exports: ExportDailyReport, ExportMonthlySummary, ExportStockMovementsPackage.
 //! *Wilaya Sync Imports: ImportDailyReportPackage, ImportMonthlySummaryPackage, ImportStockMovementsPackage.
 //! †Trust/Registry Imports: ImportTrustPackage, ImportRegistryPackage.
+//! ‡Allocation-level cumulative fulfillment state (ADR-0061): UNIT-owned state,
+//! exported by the source UNIT and converged by the destination WILAYA.
 
 use crate::models::UserRole;
 
@@ -135,6 +139,41 @@ pub fn authorize_reports(
             }
             match resource {
                 ResourceContext::WilayaNode => Ok(()),
+                ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => {
+                    Err(AuthorizationError::RequiresWilayaNode)
+                }
+                _ => Err(AuthorizationError::InsufficientPermissions),
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Allocation-level cumulative fulfillment state sync (ADR-0061).
+        //
+        // The direction of authority decides the arm: the UNIT owns the
+        // fulfillment state and is the only producer, the WILAYA is the only
+        // convergence target. Both sides are Admin-only because both mutate or
+        // export contract-procurement state, and each side is refused on the
+        // wrong node type rather than silently downgraded.
+        // ----------------------------------------------------------------
+        Action::ExportContractFulfillment => {
+            if principal.role != UserRole::Admin {
+                return Err(AuthorizationError::RequiresAdmin);
+            }
+            match resource {
+                ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => Ok(()),
+                ResourceContext::WilayaNode | ResourceContext::Global => {
+                    Err(AuthorizationError::RequiresUnitNode)
+                }
+                _ => Err(AuthorizationError::InsufficientPermissions),
+            }
+        }
+
+        Action::ImportContractFulfillment => {
+            if principal.role != UserRole::Admin {
+                return Err(AuthorizationError::RequiresAdmin);
+            }
+            match resource {
+                ResourceContext::WilayaNode | ResourceContext::Global => Ok(()),
                 ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => {
                     Err(AuthorizationError::RequiresWilayaNode)
                 }

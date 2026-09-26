@@ -154,6 +154,20 @@ pub fn effective_remaining(contracted: f64, fulfilled: f64, released: f64, reser
     contracted - fulfilled - released - reserved
 }
 
+/// Single-source derivation of the WILAYA-facing executable remaining quantity
+/// (A5/P2, ADR-0061 I13).
+///
+/// Semantically distinct from [`effective_remaining`]: `reserved_quantity` is a
+/// UNIT-local transient of a *Draft* order and is deliberately **excluded**,
+/// because `reserved_quantity` is structurally `0` on a WILAYA node (order
+/// creation is UNIT-only) and therefore contributes nothing there.
+///
+/// `effective_remaining` semantics are unchanged by ADR-0061 (I12) and remain
+/// the UNIT reservation/ordering gate.
+pub fn wilaya_executable_remaining(contracted: f64, fulfilled: f64, released: f64) -> f64 {
+    contracted - fulfilled - released
+}
+
 impl ContractAllocation {
     /// Derived component-based remaining (not stored authoritatively).
     pub fn effective_remaining(&self) -> f64 {
@@ -164,12 +178,28 @@ impl ContractAllocation {
             self.reserved_quantity,
         )
     }
+
+    /// Derived WILAYA-facing executable remaining (not stored authoritatively).
+    ///
+    /// Excludes `reserved_quantity` — see [`wilaya_executable_remaining`].
+    pub fn wilaya_executable_remaining(&self) -> f64 {
+        wilaya_executable_remaining(
+            self.contracted_quantity,
+            self.fulfilled_quantity,
+            self.released_quantity,
+        )
+    }
 }
 
 /// Backend-derived obligation projection consumed by the frontend.
 ///
 /// `effective_remaining` is computed in the domain model (single owner, A5/P2)
 /// and serialized so presentation layers never re-derive business arithmetic.
+///
+/// This is the **WILAYA-owned** projection (`Action::ReadContractProjection`),
+/// so it additionally carries the WILAYA-facing `wilaya_executable_remaining`
+/// (ADR-0061). `UnitContractEntitlement` deliberately does **not** carry it —
+/// one business fact, one owner (P2/A1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractAllocationView {
     pub id: String,
@@ -185,11 +215,13 @@ pub struct ContractAllocationView {
     pub entitlement_state: String,
     pub version: i64,
     pub effective_remaining: f64,
+    pub wilaya_executable_remaining: f64,
 }
 
 impl From<ContractAllocation> for ContractAllocationView {
     fn from(allocation: ContractAllocation) -> Self {
         let effective_remaining = allocation.effective_remaining();
+        let wilaya_executable_remaining = allocation.wilaya_executable_remaining();
         Self {
             id: allocation.id,
             contract_id: allocation.contract_id,
@@ -204,6 +236,7 @@ impl From<ContractAllocation> for ContractAllocationView {
             entitlement_state: allocation.entitlement_state,
             version: allocation.version,
             effective_remaining,
+            wilaya_executable_remaining,
         }
     }
 }

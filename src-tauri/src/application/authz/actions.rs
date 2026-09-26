@@ -86,4 +86,14 @@ pub enum Action {
     ExportSuppliers,
     ExportContracts,
     ExportContractAllocations,
+
+    // Allocation-level cumulative fulfillment state synchronization
+    // (ADR-0061, kind `contract_fulfillment`).
+    //
+    // `Export…` is a UNIT-node capability (the UNIT owns the fulfillment
+    // state); `Import…` is a WILAYA-node capability (the WILAYA converges its
+    // projection from the authenticated UNIT state). They are distinct actions
+    // so neither direction can be authorized by the other's policy.
+    ExportContractFulfillment,
+    ImportContractFulfillment,
 }

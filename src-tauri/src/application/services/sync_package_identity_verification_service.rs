@@ -17,14 +17,30 @@
 //! SEC-003-01 WILAYA-only gate (`.unit` dedicated path). The import pipeline
 //! uses `verify_v2_package_for_import`, which applies the kind-scoped policy:
 //! UNIT issuers are accepted ONLY for `stock_movements` / `daily_report` /
-//! `monthly_summary` on WILAYA importers, and ONLY after Ed25519 signature
-//! authentication, with mandatory membership (`cert.subject_id → local units
-//! row of the importer's wilaya`) and issuer↔import-target/payload binding.
+//! `monthly_summary` / `contract_fulfillment` on WILAYA importers, and ONLY
+//! after Ed25519 signature authentication, with mandatory membership
+//! (`cert.subject_id → local units row of the importer's wilaya`) and
+//! issuer↔import-target/payload binding.
+//!
+//! ADR-0061 `contract_fulfillment` is authenticated by the SAME policy. Its
+//! facts deliberately carry no `unit_id` — the allocation identity plus the
+//! state value is the whole contract, and a fabricated unit id would add no
+//! authority — so the issuer↔target binding is the `import_unit_id ==
+//! cert.subject_id` check (step 8b) combined with the mandatory membership
+//! check (step 8a). The `payload_unit_ids` extractor is therefore `None` for
+//! this kind, which leaves 8a/8b fully in force.
+//!
+//! Those two checks authenticate the SIGNER, not the target allocation: they
+//! prove who sent the package, not that the named `allocation_id` belongs to
+//! them. That last proof is a local-data check and therefore lives in the
+//! import use case, which requires the resolved allocation's own `unit_id` to
+//! equal the selected source unit (ADR-0061 §7a) before any fact is applied.
 
 use serde::Serialize;
 
 use crate::application::sync::unit_issuer_membership::verify_unit_issuer_membership;
 use crate::application::sync::SyncPackage;
+use crate::application::usecases::sync::import_contract_fulfillment_package::CONTRACT_FULFILLMENT_PACKAGE_KIND;
 use crate::application::usecases::sync::import_daily_report_package::DAILY_REPORT_PACKAGE_KIND;
 use crate::application::usecases::sync::import_monthly_summary_package::MONTHLY_SUMMARY_PACKAGE_KIND;
 use crate::application::usecases::sync::import_stock_movements_package::STOCK_MOVEMENTS_PACKAGE_KIND;
@@ -45,6 +61,7 @@ const UNIT_ISSUER_ACCEPTED_KINDS: &[&str] = &[
     STOCK_MOVEMENTS_PACKAGE_KIND,
     DAILY_REPORT_PACKAGE_KIND,
     MONTHLY_SUMMARY_PACKAGE_KIND,
+    CONTRACT_FULFILLMENT_PACKAGE_KIND,
 ];
 
 fn reject(message: &str) -> AppError {

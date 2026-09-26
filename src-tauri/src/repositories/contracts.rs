@@ -49,6 +49,43 @@ fn map_contract_row(row: &Row<'_>) -> Result<Contract, rusqlite::Error> {
 
 const CONTRACT_COLUMNS: &str = "id, contract_reference, unit_id, supplier_id, fiscal_year, status, proposed_at, accepted_at, activated_at, ended_at, cancelled_at, created_at, notes";
 
+/// One row of the ADR-0061 `contract_fulfillment` export dataset: the CURRENT
+/// cumulative fulfillment state of a single `ContractAllocation` as known by
+/// this UNIT.
+///
+/// Carries no `order_id` / `order_item_id` / event id by design — the
+/// repository persists no durable historical fulfillment ledger, so a
+/// per-order attribution could not be proven (ADR-0061 §3). `fiscal_year`,
+/// `purchase_unit` and `conversion_factor` are cross-check-only fields: they
+/// let the destination fail closed, and are never application inputs.
+#[derive(Debug, Clone)]
+pub struct FulfillmentStateRow {
+    pub allocation_id: String,
+    pub fiscal_year: i32,
+    pub purchase_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
+    pub fulfilled_quantity: f64,
+}
+
+/// The local allocation an inbound ADR-0061 fact resolves to, together with
+/// the destination's authoritative unit triple for cross-checking.
+#[derive(Debug, Clone)]
+pub struct FulfillmentResolutionRow {
+    pub allocation_id: String,
+    /// Owning UNIT of the allocation. The wire fact carries no unit_id
+    /// (ADR-0061), so this local column is the authoritative proof that a
+    /// fact may mutate this allocation on behalf of the authenticated issuer.
+    pub unit_id: String,
+    pub fiscal_year: i32,
+    pub contracted_quantity: f64,
+    pub fulfilled_quantity: f64,
+    pub released_quantity: f64,
+    pub reserved_quantity: f64,
+    pub entitlement_state: String,
+    pub purchase_unit: Option<i32>,
+    pub conversion_factor: Option<i32>,
+}
+
 fn map_contract_product_row(row: &Row<'_>) -> Result<ContractProduct, rusqlite::Error> {
     Ok(ContractProduct {
         id: row.get(0)?,
@@ -1123,5 +1160,117 @@ impl<'a> ContractRepository<'a> {
             ],
         )?;
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // ADR-0061 — allocation-level cumulative fulfillment state sync
+    //
+    // `FulfillmentFact` is a *state snapshot* of one ContractAllocation, never
+    // a historical per-order event. These three primitives are the whole
+    // data surface: read the complete current set (producer), resolve the
+    // target allocation (consumer), apply the absolute value under a monotone
+    // guard (consumer). No per-fact ledger, no watermark, no sequence.
+    // ------------------------------------------------------------------
+
+    /// Complete current set of allocation fulfillment states, one row per
+    /// allocation whose `fulfilled_quantity > 0` (ADR-0061 §8 — the exported
+    /// set is deliberately complete, which is what licenses the absence of a
+    /// per-fact ledger).
+    ///
+    /// `entitlement_state` is intentionally NOT filtered: a `CANCELLED`
+    /// allocation keeps its historical fulfillment (ADR-0055:83). `ORDER BY
+    /// ca.id` gives the deterministic ordering ADR-0055 §2.5 / freeze §2.5
+    /// require, which in turn makes the content-derived `package_id` stable.
+    pub fn list_fulfillment_states_for_export(&self) -> Result<Vec<FulfillmentStateRow>, AppError> {
+        Ok(self.executor.query_all(
+            "SELECT ca.id, ca.fiscal_year,
+                    cp.purchase_unit, cp.conversion_factor,
+                    ca.fulfilled_quantity
+             FROM contract_allocations ca
+             JOIN contract_products cp ON cp.id = ca.contract_product_id
+             WHERE ca.deleted = 0 AND ca.fulfilled_quantity > 0
+             ORDER BY ca.id ASC",
+            [],
+            |row| {
+                Ok(FulfillmentStateRow {
+                    allocation_id: row.get(0)?,
+                    fiscal_year: row.get(1)?,
+                    purchase_unit: row.get(2)?,
+                    conversion_factor: row.get(3)?,
+                    fulfilled_quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                })
+            },
+        )?)
+    }
+
+    /// Resolve the local allocation targeted by an inbound fact.
+    ///
+    /// `deleted = 0` only — `entitlement_state` is deliberately NOT filtered,
+    /// so fulfillment of a `CANCELLED` allocation still records against the
+    /// original identity (ADR-0061 §7). Returns the local `contract_products`
+    /// unit triple in the same query so the caller can cross-check the fact's
+    /// unit without a second repository call (ADR-0061 §5).
+    pub fn resolve_allocation_for_fulfillment_sync(
+        &self,
+        allocation_id: &str,
+    ) -> Result<Option<FulfillmentResolutionRow>, AppError> {
+        self.executor
+            .query_row_optional(
+                "SELECT ca.id, ca.unit_id, ca.fiscal_year,
+                    ca.contracted_quantity, ca.fulfilled_quantity,
+                    ca.released_quantity, ca.reserved_quantity,
+                    ca.entitlement_state,
+                    cp.purchase_unit, cp.conversion_factor
+             FROM contract_allocations ca
+             JOIN contract_products cp ON cp.id = ca.contract_product_id
+             WHERE ca.id = ?1 AND ca.deleted = 0",
+                params![allocation_id],
+                |row| {
+                    Ok(FulfillmentResolutionRow {
+                        allocation_id: row.get(0)?,
+                        unit_id: row.get(1)?,
+                        fiscal_year: row.get(2)?,
+                        contracted_quantity: numeric_row::qty_col(3, row.get::<_, i64>(3)?)?,
+                        fulfilled_quantity: numeric_row::qty_col(4, row.get::<_, i64>(4)?)?,
+                        released_quantity: numeric_row::qty_col(5, row.get::<_, i64>(5)?)?,
+                        reserved_quantity: numeric_row::qty_col(6, row.get::<_, i64>(6)?)?,
+                        entitlement_state: row.get(7)?,
+                        purchase_unit: row.get(8)?,
+                        conversion_factor: row.get(9)?,
+                    })
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    /// Apply an ABSOLUTE cumulative fulfillment state under a monotone guard.
+    ///
+    /// This is the per-fact idempotency primitive (ADR-0061 §4). It is a
+    /// conditional `SET` to a constant, never `+=`, so the post-state depends
+    /// only on `(?absolute, ?allocation_id)` and re-applying a fact is
+    /// indistinguishable from applying it once. The `fulfilled_quantity <
+    /// ?absolute` predicate makes it order-insensitive and turns an
+    /// already-satisfied fact into a 0-row no-op; the standing component
+    /// guard is asserted exactly as on the local confirmation path, and is
+    /// never relaxed.
+    ///
+    /// Returns the affected row count: `1` = applied, `0` = already satisfied
+    /// or guard refused. Callers must not treat `0` as success-by-overwrite.
+    pub fn set_fulfilled_absolute_guarded(
+        &self,
+        allocation_id: &str,
+        absolute_quantity: f64,
+    ) -> Result<usize, AppError> {
+        let absolute_scaled = numeric_row::qty_scaled(absolute_quantity)?;
+        let n = self.executor.execute(
+            "UPDATE contract_allocations
+             SET fulfilled_quantity = ?1,
+                 version = version + 1
+             WHERE id = ?2 AND deleted = 0
+               AND fulfilled_quantity < ?1
+               AND (fulfilled_quantity + released_quantity + reserved_quantity) <= contracted_quantity",
+            params![absolute_scaled, allocation_id],
+        )?;
+        Ok(n)
     }
 }

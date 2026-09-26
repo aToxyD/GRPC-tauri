@@ -4,11 +4,12 @@ use chrono::Datelike;
 
 use crate::application::sync::SyncPackage;
 use crate::application::usecases::exports::types::{
-    ContractCatalogExportDataset, DailyReportExportDataset, MonthlySummaryExportDataset,
-    ProductsExportDataset,
+    ContractCatalogExportDataset, DailyReportExportDataset, FulfillmentFactExportDataset,
+    MonthlySummaryExportDataset, ProductsExportDataset, FULFILLMENT_FACT_VERSION,
 };
 use crate::domain::validation;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
+use crate::infrastructure::sync::packages::content_package_id::derive_content_package_id;
 use crate::repositories::{DbExecutor, RepositoryProvider};
 
 /// Wire + semantic checks before any DB mutation.
@@ -243,6 +244,63 @@ pub fn validate_contract_catalog_package_for_import(
                 message: format!("عقد «{}» بدون منتجات", row.contract.id),
             }));
         }
+    }
+    Ok(())
+}
+
+/// Wire + identity checks for an ADR-0061 `contract_fulfillment` package.
+///
+/// This is layer 2 of the four-layer idempotency model. The `package_id` of a
+/// fulfillment package is **content-derived** — `hex(sha256(canonical_json(
+/// dataset)))` — so re-exporting an unchanged state set produces the same
+/// identity and is recognised as a duplicate instead of appearing as a new fact
+/// stream. That contract is only meaningful if the destination verifies it, so
+/// a `package_id` that does not describe its own payload is rejected
+/// fail-closed, BEFORE any DB access.
+///
+/// `fact_version` is checked in the deserializer (where the untrusted bytes
+/// first materialize); it is re-asserted here so the invariant holds for every
+/// caller, including tests that build a package value directly.
+pub fn validate_contract_fulfillment_package_for_import(
+    package: &SyncPackage<FulfillmentFactExportDataset>,
+) -> AppResult<()> {
+    if package.metadata.package_id.0.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "package_id".into(),
+            message: "معرّف الحزمة مفقود".into(),
+        }));
+    }
+    if package.metadata.source_node_id.trim().is_empty() {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "source_node_id".into(),
+            message: "مصدر الحزمة (العقدة) مفقود — لا يمكن الاستيراد بدون بيانات المنشأ".into(),
+        }));
+    }
+    if package.payload.fact_version != FULFILLMENT_FACT_VERSION {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "fact_version".into(),
+            message: format!(
+                "إصدار عقد حقيقة التنفيذ غير مدعوم: {} — المتوقع {}",
+                package.payload.fact_version, FULFILLMENT_FACT_VERSION
+            ),
+        }));
+    }
+    if package.payload.facts.is_empty() {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "facts".into(),
+            message: "الحزمة لا تحتوي حقائق تنفيذ — لا يمكن تطبيقها".into(),
+        }));
+    }
+
+    let expected_id = derive_content_package_id(&package.payload)?;
+    if expected_id.0 != package.metadata.package_id.0 {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "package_id".into(),
+            message: format!(
+                "معرّف الحزمة لا يطابق محتواها (المتوقع {}) — رفضت الحزمة",
+                expected_id.0
+            ),
+        }));
     }
     Ok(())
 }

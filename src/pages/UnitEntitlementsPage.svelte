@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSettings, listUnitContractEntitlements, listProducts } from '../lib/contracts';
+  import { getSettings, listUnitContractEntitlements, listProducts, exportContractFulfillmentPackage } from '../lib/contracts';
+  import { saveFile } from '../lib/tauri';
   import type { Settings, UnitContractEntitlement, Product } from '../lib/types';
   import { unitLabel } from '../lib/unitLabels';
   import Layout from '../components/Layout.svelte';
@@ -12,15 +13,22 @@
   import AppTable from '../lib/components/ui/AppTable.svelte';
   import AppAlert from '../lib/components/ui/AppAlert.svelte';
   import AppProductSearch from '../lib/components/ui/AppProductSearch.svelte';
+  import AppButton from '../lib/components/ui/AppButton.svelte';
 
   import { createRuntimeScope } from '../lib/runtimeCleanup';
-  import { createOperation } from '../lib/operationGuard';
+  import { createOperation, createOperationGuard } from '../lib/operationGuard';
+  import { formatErrorMessage } from '../lib/errors';
 
   const scope = createRuntimeScope();
   onDestroy(() => scope.dispose());
 
   const entitlementsOp = createOperation({ scope });
   const { loading, error } = entitlementsOp;
+
+  const { loading: exporting, guard: exportGuard } = createOperationGuard({ scope });
+
+  // @category TransientState
+  let exportNotice = '';
 
   // @category ProjectionState
   let settings: Settings | null = null;
@@ -99,6 +107,34 @@
   $: hasReserved = entitlements.some(e => e.reserved_quantity > 0);
   // @category UiState
   $: subtitle = settings?.unit_name || 'مطعم الوحدة';
+
+  // ADR-0061: the UNIT exports the COMPLETE current cumulative fulfillment
+  // state set of its own allocations. The dataset, its ordering, and its
+  // content-derived identity are all backend-owned; the renderer only chooses
+  // a destination path and reports the outcome (A5/F3).
+  async function handleExportFulfillmentPackage() {
+    exportNotice = '';
+    await exportGuard(async () => {
+      try {
+        const unitCode = settings?.unit_code || 'UNIT';
+        const dateStr = new Date().toISOString().split('T')[0];
+        const filePath = await saveFile({
+          defaultPath: `حزمة_تنفيذ_العقود_${unitCode}_${dateStr}.sync`,
+          filters: [{ name: 'Sync Package', extensions: ['sync'] }],
+        });
+        if (!filePath) return;
+
+        const result = await exportContractFulfillmentPackage(filePath as string);
+        // `file_hash` carries the content-derived package identity: exporting
+        // the same state again yields the same value, which is what makes a
+        // repeat export recognisable as a duplicate on the WILAYA node.
+        exportNotice = `تم تصدير ${result.record_count} حالة تنفيذ إلى حزمة مشفرة. معرّف الحزمة (مشتق من المحتوى): ${result.file_hash.substring(0, 12)}…`;
+      } catch (e) {
+        exportNotice = '';
+        error.set('خطأ في تصدير حزمة تنفيذ العقود: ' + formatErrorMessage(e));
+      }
+    });
+  }
 </script>
 
 <Layout nodeType="UNIT" title="استحقاقات الكتالوج" {subtitle}>
@@ -119,12 +155,30 @@
       </div>
     {/if}
 
+    {#if exportNotice}
+      <div class="mb-4">
+        <AppAlert intent="success" dismissible on:dismiss={() => exportNotice = ''}>{exportNotice}</AppAlert>
+      </div>
+    {/if}
+
     <AppCard padding="none">
-      <div class="p-4 border-b border-gray-100 dark:border-gray-700">
-        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">استحقاقات العقود - قراءة فقط</h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          الكميات المتبقية التقديرية محتسبة من جانب النظام (المصدر الوحيد للقيمة).
-        </p>
+      <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">استحقاقات العقود - قراءة فقط</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            الكميات المتبقية التقديرية محتسبة من جانب النظام (المصدر الوحيد للقيمة).
+          </p>
+        </div>
+        <AppButton
+          variant="secondary"
+          disabled={$exporting}
+          on:click={handleExportFulfillmentPackage}
+          ariaLabel="تصدير حالة تنفيذ التخصيصات التراكمية الحالية للوحدة كحزمة موقّعة ومشفّرة (.sync) لمزامنة الولاية"
+        >
+          <span class="text-blue-700 dark:text-blue-400">
+            {$exporting ? 'جارٍ التصدير…' : 'تصدير حالة التنفيذ (.sync)'}
+          </span>
+        </AppButton>
       </div>
 
       <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-end">

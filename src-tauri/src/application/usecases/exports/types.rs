@@ -140,6 +140,51 @@ pub struct ContractCatalogExportDataset {
     pub tax_policies: Vec<FiscalYearTaxPolicy>,
 }
 
+// --- Contract fulfillment (ADR-0061; `contract_fulfillment`, UNIT → WILAYA) ---
+//
+// `FulfillmentFact` is an **allocation-level cumulative state snapshot**, not a
+// historical per-order event. It carries no `order_id`, no `order_item_id` and
+// no event id: the repository persists no durable historical fulfillment ledger,
+// so a per-order attribution could not be proven (ADR-0061 §3). One fact exists
+// per allocation, holding the allocation's *current* cumulative fulfilled
+// quantity in **purchase units** (ADR-0061 §5).
+//
+// `fiscal_year`, `purchase_unit` and `conversion_factor` are **cross-check
+// only** — they let the destination fail closed, and are never application
+// inputs (ADR-0061 §5, §6).
+
+/// Payload schema version of the `FulfillmentFact` contract. Fail-closed: an
+/// importer that does not recognise the version rejects the ENTIRE package
+/// (ADR-0061 I5, layer 1).
+pub const FULFILLMENT_FACT_VERSION: u16 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FulfillmentFact {
+    /// The contractual allocation whose cumulative state this fact reports.
+    /// Together with `fulfilled_quantity` this is the synchronization identity
+    /// (ADR-0061 §2).
+    pub allocation_id: String,
+    /// ABSOLUTE cumulative fulfilled quantity, in the contract product's
+    /// **purchase unit**. Never a delta.
+    pub fulfilled_quantity: f64,
+    /// The allocation's contractual fiscal year. Cross-check only.
+    pub fiscal_year: i32,
+    /// Purchase unit code (`domain::units::UnitMeasure`, 1..=10). Cross-check
+    /// only — `contract_allocations` itself declares no unit (ADR-0061 §5).
+    pub purchase_unit: Option<i32>,
+    /// Purchase→consumption conversion factor. Cross-check only. `None` is
+    /// treated as factor 1, consistent with `OrderUnitSnapshot::effective_factor`.
+    pub conversion_factor: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FulfillmentFactExportDataset {
+    pub fact_version: u16,
+    /// One fact per eligible allocation, deterministically ordered by
+    /// `allocation_id` (freeze §2.5).
+    pub facts: Vec<FulfillmentFact>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

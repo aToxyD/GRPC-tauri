@@ -1,6 +1,6 @@
 {
-  "generated": "2026-09-14T00:00:00.000Z",
-  "totalTypes": 125,
+  "generated": "2026-09-26T00:00:00.000Z",
+  "totalTypes": 126,
   "types": [
     {
       "name": "LoginRequest",
@@ -1248,6 +1248,36 @@
         },
         {
           "name": "file_hash",
+          "type": "string"
+        },
+        {
+          "name": "imported_by",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ContractFulfillmentImportResult",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "applied_count",
+          "type": "number"
+        },
+        {
+          "name": "already_satisfied_count",
+          "type": "number"
+        },
+        {
+          "name": "unit_id",
+          "type": "string"
+        },
+        {
+          "name": "package_id",
           "type": "string"
         },
         {
@@ -2979,6 +3009,10 @@
         },
         {
           "name": "effective_remaining",
+          "type": "number"
+        },
+        {
+          "name": "wilaya_executable_remaining",
           "type": "number"
         }
       ]

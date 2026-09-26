@@ -281,6 +281,21 @@ pub struct AdminAccessPackageImportResult {
     pub timestamp: String,
 }
 
+/// Result of a `contract_fulfillment` package import (ADR-0061).
+///
+/// Reports the two disjoint dispositions the importer decided so an operator
+/// can tell a converged import (`already_satisfied`) from one that advanced
+/// local state (`applied`). `package_id` is the content-derived identity.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ContractFulfillmentImportResult {
+    pub applied_count: usize,
+    pub already_satisfied_count: usize,
+    pub unit_id: String,
+    pub package_id: String,
+    pub imported_by: String,
+    pub timestamp: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

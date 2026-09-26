@@ -726,7 +726,8 @@
             <svelte:fragment slot="head">
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المنتج</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الكمية المتفق عليها</th>
-              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">المتبقي الفعّال</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400" title="المتبقي الفعّال محليًا: المتفق عليه − المنفَّذ − المُفرَج عنه − المحجوز">المتبقي الفعّال</th>
+              <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400" title="المتبقي القابل للتنفيذ على الولاية: المتفق عليه − المنفَّذ − المُفرَج عنه (بدون الحجز المحلي)">المتبقي للولاية</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">الحالة</th>
               <th class="px-3 py-2 text-right text-xs font-bold text-gray-500 dark:text-gray-400">إجراءات</th>
             </svelte:fragment>
@@ -739,6 +740,12 @@
                 <td class="px-3 py-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
                   {allocation.effective_remaining.toFixed(2)}
                 </td>
+                <!-- ADR-0061: read verbatim from the backend projection. The
+                     two remainders differ by local reservation, which the
+                     WILAYA does not own; never re-derived here (A5/P2). -->
+                <td class="px-3 py-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                  {allocation.wilaya_executable_remaining.toFixed(2)}
+                </td>
                 <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{entState(allocation.entitlement_state)}</td>
                 <td class="px-3 py-2">
                   {#if selectedContract.status === 'Active' || selectedContract.status === 'Ended'}
@@ -748,7 +755,7 @@
               </tr>
               {#if (allocationExceptions[allocation.id] ?? []).length > 0}
                 <tr class="border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                  <td colspan="5" class="px-3 py-2">
+                  <td colspan="6" class="px-3 py-2">
                     <ul class="space-y-1">
                       {#each (allocationExceptions[allocation.id] ?? []) as exception (exception.id)}
                         <li class="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">

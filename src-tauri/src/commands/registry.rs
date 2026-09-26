@@ -138,6 +138,9 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::import_unit_node_package,
         commands::import_monthly_summary_package,
         commands::import_stock_movements_package,
+        // Allocation-level cumulative fulfillment state sync (ADR-0061)
+        commands::import_contract_fulfillment_package,
+        commands::export_contract_fulfillment_package,
         commands::import_trust_package,
         commands::import_registry_package,
         // Identity & Access Synchronization (B8, ADR-0040)

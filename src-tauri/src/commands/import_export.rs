@@ -29,6 +29,7 @@ use crate::application::sync::{
 use crate::application::usecases::exports::types::{
     DailyReportExportInput, MonthlySummaryExportInput, StockMovementsExportDataset,
 };
+use crate::application::usecases::sync::export_contract_fulfillment_package::build_dataset as build_contract_fulfillment_dataset;
 use crate::application::usecases::sync::import_admin_access_package::ADMIN_ACCESS_PACKAGE_KIND;
 use crate::application::usecases::sync::import_admin_access_package::{
     execute as apply_admin_access_package, ImportAdminAccessPackageInput,
@@ -36,6 +37,10 @@ use crate::application::usecases::sync::import_admin_access_package::{
 use crate::application::usecases::sync::import_contract_catalog_package::CONTRACT_CATALOG_PACKAGE_KIND;
 use crate::application::usecases::sync::import_contract_catalog_package::{
     execute as apply_contract_catalog_package, ImportContractCatalogPackageInput,
+};
+use crate::application::usecases::sync::import_contract_fulfillment_package::CONTRACT_FULFILLMENT_PACKAGE_KIND;
+use crate::application::usecases::sync::import_contract_fulfillment_package::{
+    execute as apply_contract_fulfillment_package, ImportContractFulfillmentPackageInput,
 };
 use crate::application::usecases::sync::import_daily_report_package::DAILY_REPORT_PACKAGE_KIND;
 use crate::application::usecases::sync::import_daily_report_package::{
@@ -82,15 +87,16 @@ use crate::infrastructure::db::sync_import::{
 };
 use crate::infrastructure::sync::{
     read_admin_access_package_from_file, read_contract_catalog_package_from_file,
-    read_daily_report_package_from_file, read_monthly_summary_package_from_file,
-    read_products_package_from_file, read_registry_package_from_file,
-    read_stock_movements_package_from_file, read_trust_package_from_file,
-    read_unit_node_package_from_file, resolve_export_source_node_id,
+    read_contract_fulfillment_package_from_file, read_daily_report_package_from_file,
+    read_monthly_summary_package_from_file, read_products_package_from_file,
+    read_registry_package_from_file, read_stock_movements_package_from_file,
+    read_trust_package_from_file, read_unit_node_package_from_file, resolve_export_source_node_id,
 };
 
 use crate::models::{
-    AdminAccessPackageImportResult, DailyReportImportResult, PackageExportResult,
-    RegistryPackageImportResult, Settings, TrustPackageImportResult, XlsxExportResult,
+    AdminAccessPackageImportResult, ContractFulfillmentImportResult, DailyReportImportResult,
+    PackageExportResult, RegistryPackageImportResult, Settings, TrustPackageImportResult,
+    XlsxExportResult,
 };
 use chrono::Datelike;
 use tauri::State;
@@ -136,6 +142,7 @@ const DATA_PACKAGE_KINDS: &[&str] = &[
     MONTHLY_SUMMARY_PACKAGE_KIND,
     STOCK_MOVEMENTS_PACKAGE_KIND,
     CONTRACT_CATALOG_PACKAGE_KIND,
+    CONTRACT_FULFILLMENT_PACKAGE_KIND,
 ];
 
 /// V2-only security requirements for the `.unit` setup-mode import (ADR-0044,
@@ -1270,6 +1277,159 @@ pub fn import_stock_movements_package_impl(
                 .collect()
         }),
     )
+}
+
+/// Import a Contract Fulfillment package (ADR-0061, kind
+/// `contract_fulfillment`) from an encrypted `.sync` file on a WILAYA node.
+///
+/// The package is the source UNIT's complete current cumulative fulfillment
+/// state set. The content-derived `package_id` and the `fact_version` are first
+/// verified by the reader, BEFORE any database access, and are then re-verified
+/// by the application validation layer. Signature, issuer/membership binding,
+/// and replay protection all run inside the shared import pipeline; the
+/// per-fact guarded monotone convergence runs in the use case, inside the same
+/// single transaction.
+#[tauri::command]
+pub fn import_contract_fulfillment_package(
+    state: State<AppState>,
+    file_path: String,
+    unit_id: String,
+) -> Result<ContractFulfillmentImportResult, String> {
+    import_contract_fulfillment_package_impl(&state, file_path, unit_id)
+}
+
+/// Testable implementation of `import_contract_fulfillment_package` (without a
+/// Tauri runtime).
+pub fn import_contract_fulfillment_package_impl(
+    state: &AppState,
+    file_path: String,
+    unit_id: String,
+) -> Result<ContractFulfillmentImportResult, String> {
+    run_import_pipeline(
+        state,
+        Action::ImportContractFulfillment,
+        file_path,
+        CONTRACT_FULFILLMENT_PACKAGE_KIND,
+        AuditAction::ImportNodePackage,
+        read_contract_fulfillment_package_from_file,
+        |executor, registry, package, session, importer_wilaya: &str| {
+            let input = ImportContractFulfillmentPackageInput {
+                package,
+                unit_id: unit_id.clone(),
+                importer_wilaya_code: importer_wilaya.to_string(),
+                imported_by: session.username.clone(),
+            };
+            let outcome = apply_contract_fulfillment_package(executor, registry, input)?;
+            Ok(ContractFulfillmentImportResult {
+                applied_count: outcome.applied_count,
+                already_satisfied_count: outcome.already_satisfied_count,
+                unit_id: unit_id.clone(),
+                package_id: outcome.package_id,
+                imported_by: session.username.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            })
+        },
+        // ADR-0061: the facts carry no `unit_id` (allocation identity + state is
+        // the whole contract), so there is no payload unit-id extractor. The
+        // issuer↔target binding is still enforced through `import_unit_id ==
+        // cert.subject_id` plus mandatory membership in the V2 policy, and the
+        // use case additionally proves from local data that each named
+        // allocation belongs to that unit (ADR-0061 §7a).
+        Some(&unit_id),
+        None,
+    )
+}
+
+/// Export the current cumulative fulfillment state set (ADR-0061, kind
+/// `contract_fulfillment`) from a UNIT node.
+///
+/// Unlike every other producer, the resulting `package_id` is derived from the
+/// dataset content: exporting the same state twice produces the same identity,
+/// so the destination recognises a re-export of unchanged state as a duplicate
+/// instead of treating it as a new fact stream.
+#[tauri::command]
+pub fn export_contract_fulfillment_package(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    export_contract_fulfillment_package_impl(&state, file_path)
+}
+
+/// Testable implementation of `export_contract_fulfillment_package` (without a
+/// Tauri runtime).
+pub fn export_contract_fulfillment_package_impl(
+    state: &AppState,
+    file_path: String,
+) -> Result<PackageExportResult, String> {
+    let (_session, _settings) = authorize_command(state, Action::ExportContractFulfillment, None)
+        .map_err(into_command_error)?;
+    validation::validate_file_path(&file_path, &["sync"]).map_err(into_command_error)?;
+    state.touch_session();
+
+    let guard = state.get_db().map_err(into_command_error)?;
+    let db = db_ref_or_command_error(guard.as_ref())?;
+    let start_time = std::time::Instant::now();
+    let executor = db.executor();
+
+    let settings_svc = SettingsService::new(executor);
+    let settings_row = settings_svc.get_settings().map_err(into_command_error)?;
+
+    let (dataset, package_id) =
+        build_contract_fulfillment_dataset(executor).map_err(into_command_error)?;
+
+    let source_node_id =
+        resolve_export_source_node_id(executor, &settings_row).map_err(into_command_error)?;
+
+    // ADR-0053 §3.3: UNIT-issued data package → authoritative WILAYA target.
+    let _target_node_id =
+        crate::application::services::transport_target::resolve_wilaya_transport_target(
+            executor,
+            &settings_row,
+        )
+        .map_err(into_command_error)?;
+
+    IdentitySignedExportService::new(db, &node_key_store())
+        .export_v2_package_with_identity(
+            dataset.clone(),
+            &source_node_id,
+            CONTRACT_FULFILLMENT_PACKAGE_KIND,
+            None,
+            None,
+            std::path::Path::new(&file_path),
+            export_subject_type(settings_row.node_type),
+            &state.crypto_port,
+            Some(package_id.clone()),
+        )
+        .map_err(into_command_error)?;
+
+    log::info!(
+        target: "grpc::import_export",
+        "export_contract_fulfillment_package: success path={} facts={} package_id={}",
+        file_path,
+        dataset.facts.len(),
+        package_id.0
+    );
+
+    let duration = start_time.elapsed().as_millis() as i64;
+    let _ = crate::application::services::TelemetryService::new(executor).record_event(
+        crate::application::services::TelemetryEventType::SyncExport,
+        crate::application::services::TelemetryOutcome::Success,
+        Some(duration),
+        Some(serde_json::json!({ "path": file_path, "kind": CONTRACT_FULFILLMENT_PACKAGE_KIND, "package_id": package_id.0 })),
+        None,
+    );
+
+    let mut result =
+        PackageExportResult::success(file_path, dataset.facts.len(), "encrypted".to_string());
+    // The content-derived identity is the operator-visible proof that a repeat
+    // export of unchanged state is the SAME package.
+    result.file_hash = package_id.0;
+    result.message = format!(
+        "تم تصدير {} حالة تنفيذ بعنصر التمييز {:?}",
+        dataset.facts.len(),
+        result.file_hash
+    );
+    Ok(result)
 }
 
 /// Import a Trust Package (certificates + revocations) from an encrypted `.sync` file.

@@ -2,7 +2,7 @@ import { safeInvoke } from '../tauri';
 import type {
   SyncExportResult, SyncImportResult, DailyReportImportResult,
   UnitNodePackageImportResult, StockMovementsImportResult,
-  AdminAccessImportResult,
+  AdminAccessImportResult, ContractFulfillmentImportResult,
 } from '../types';
 
 // SEC-033: fleet-level export — the backend enumerates the authoritative
@@ -25,6 +25,21 @@ export async function exportUnitNodePackage(unitId: string, filePath: string): P
 
 export async function exportStockMovementsPackage(startDate: string, endDate: string, filePath: string): Promise<SyncExportResult> {
   return await safeInvoke('export_stock_movements_package', { startDate, endDate, filePath });
+}
+
+// ADR-0061: the export carries the UNIT's complete current cumulative
+// fulfillment state set. No parameters beyond the destination path — the
+// dataset is derived entirely by the backend, and its content-derived identity
+// is returned as `file_hash` so a repeat export of unchanged state is visibly
+// the SAME package.
+export async function exportContractFulfillmentPackage(filePath: string): Promise<SyncExportResult> {
+  return await safeInvoke('export_contract_fulfillment_package', { filePath });
+}
+
+// ADR-0061: `unitId` is the source UNIT whose state is being converged; the
+// backend binds it to the authenticated issuer identity.
+export async function importContractFulfillmentPackage(filePath: string, unitId: string): Promise<ContractFulfillmentImportResult> {
+  return await safeInvoke('import_contract_fulfillment_package', { filePath, unitId });
 }
 
 export async function importProductsPackage(filePath: string): Promise<SyncImportResult> {

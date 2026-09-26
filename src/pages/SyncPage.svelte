@@ -4,6 +4,7 @@
     importDailyReportPackage,
     importMonthlySummaryPackage,
     importStockMovementsPackage,
+    importContractFulfillmentPackage,
     listUnits,
     getSettings,
   } from '../lib/contracts';
@@ -143,6 +144,40 @@
           success = '';
           const result = await importStockMovementsPackage(selected as string, selectedUnit);
           success = `تم استيراد ${result.movement_count} حركة مخزون بنجاح (المعرف الفريد للحزمة: ${result.file_hash.substring(0, 8)}...)`;
+          importProgress = '';
+        }
+      } catch (e) {
+        error = formatErrorMessage(e);
+        importProgress = '';
+      }
+    });
+  }
+
+  // ADR-0061: converge the WILAYA allocation projection from the source UNIT's
+  // complete current cumulative fulfillment state set. The backend decides both
+  // counts; the renderer only reports them (A5/F3).
+  async function importContractFulfillmentPackageSync() {
+    if (!selectedUnit) {
+      error = 'يرجى اختيار وحدة أولاً';
+      return;
+    }
+
+    await guard(async () => {
+      try {
+        const selected = await openFile({
+          multiple: false,
+          filters: [{
+            name: 'حزمة المزامنة',
+            extensions: ['sync']
+          }]
+        });
+
+        if (selected) {
+          importProgress = 'استيراد حالة تنفيذ التخصيصات...';
+          error = '';
+          success = '';
+          const result = await importContractFulfillmentPackage(selected as string, selectedUnit);
+          success = `تم استيراد حالة التنفيذ للوحدة ${selectedUnit}: ${result.applied_count} حالة طُبِّقت، ${result.already_satisfied_count} حالة كانت مطابقة أصلاً (المعرّف: ${result.package_id.substring(0, 8)}...)`;
           importProgress = '';
         }
       } catch (e) {
@@ -301,6 +336,35 @@
         </AppCard>
       </div>
 
+      <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <AppCard>
+          <div class="flex items-start gap-3 mb-4">
+            <div class="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="font-semibold text-gray-800 dark:text-gray-100">تنفيذ التخصيصات</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">استورد الحالة التراكمية لتنفيذ التخصيصات من الوحدة</p>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <AppButton
+              variant="primary"
+              fullWidth
+              class="bg-teal-600 hover:bg-teal-700 dark:bg-teal-600 dark:hover:bg-teal-700 border-teal-700"
+              disabled={!selectedUnit || !!importProgress || $operationLoading}
+              loading={importProgress === 'استيراد حالة تنفيذ التخصيصات...'}
+              on:click={importContractFulfillmentPackageSync}
+              ariaLabel="استيراد حزمة تنفيذ التخصيصات الموقّعة رقمياً لتحديث المتبقي على الولاية"
+            >
+              استيراد حالة التنفيذ (.sync)
+            </AppButton>
+          </div>
+        </AppCard>
+      </div>
+
       <div class="mt-8">
         <AppAlert intent="info" title="كيفية استيراد تقارير الوحدة">
           <ol class="text-sm list-decimal list-inside space-y-1 mt-2">
@@ -309,6 +373,7 @@
                 <li>• تقرير يومي: صفحة "التقارير" → تصدير حزمة .sync</li>
                 <li>• تقرير شهري: صفحة "التقارير" → تصدير حزمة .sync</li>
                 <li>• <strong>حركات المخزون: صفحة "المخزون" → تصدير حزمة حركات (.sync)</strong></li>
+                <li>• <strong>تنفيذ التخصيصات: صفحة "استحقاقات الكتالوج" → تصدير حالة التنفيذ (.sync)</strong></li>
               </ul>
             </li>
             <li><strong>من عقدة الولاية:</strong> اختر الوحدة المناسبة ثم استورد كل ملف</li>
