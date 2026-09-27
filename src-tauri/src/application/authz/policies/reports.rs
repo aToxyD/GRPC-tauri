@@ -16,14 +16,16 @@
 //! | Trust/Registry Imports†      | ✓                  | ✗                      | ✗                | ✗                    | ✗            |
 //! | ImportStockMovements         | ✓                  | ✗                      | ✓                | ✓                    | ✗            |
 //! | ReadAuditLog                 | ✓ (wilaya admin)   | ✗                      | ✓ (unit admin)   | ✗                    | ✗            |
-//! | ExportContractFulfillment‡   | ✗                  | ✗                      | ✓ (admin)        | ✗                    | ✗            |
+//! | ExportContractFulfillment‡   | ✗                  | ✗                      | ✓                | ✓                    | ✗            |
 //! | ImportContractFulfillment‡   | ✓ (wilaya admin)   | ✗                      | ✗                | ✗                    | ✗            |
 //!
 //! *Unit Sync Exports: ExportDailyReport, ExportMonthlySummary, ExportStockMovementsPackage.
 //! *Wilaya Sync Imports: ImportDailyReportPackage, ImportMonthlySummaryPackage, ImportStockMovementsPackage.
 //! †Trust/Registry Imports: ImportTrustPackage, ImportRegistryPackage.
 //! ‡Allocation-level cumulative fulfillment state (ADR-0061): UNIT-owned state,
-//! exported by the source UNIT and converged by the destination WILAYA.
+//! exported by the source UNIT — a UNIT operational sync export, so any
+//! authenticated role on the local UNIT node is allowed — and converged by the
+//! destination WILAYA, whose import remains WILAYA-admin.
 
 use crate::models::UserRole;
 
@@ -151,22 +153,35 @@ pub fn authorize_reports(
         //
         // The direction of authority decides the arm: the UNIT owns the
         // fulfillment state and is the only producer, the WILAYA is the only
-        // convergence target. Both sides are Admin-only because both mutate or
-        // export contract-procurement state, and each side is refused on the
-        // wrong node type rather than silently downgraded.
+        // convergence target.
+        //
+        // `ExportContractFulfillment` is a UNIT **operational synchronization
+        // export** — the same class as `ExportDailyReport`,
+        // `ExportMonthlySummary` and `ExportStockMovementsPackage` — so it is
+        // allowed for every authenticated role on the local UNIT node, in line
+        // with the `Unit Sync Exports` row of the matrix above. It exports only
+        // the node's OWN `contract_allocations.fulfilled_quantity` state, the
+        // source node identity is resolved server-side from local settings
+        // (`resolve_export_source_node_id`) and never supplied by the caller,
+        // and the package is signed by the node identity rather than by the
+        // user. It therefore grants no authority over contract master data:
+        // creating/modifying suppliers or contracts, approving prices or
+        // entitlements, TVA policy, and obligation release remain Admin-only
+        // and WILAYA-only (`mod.rs` procurement arm, ADR-0055).
+        //
+        // The action stays strictly distinct from `ImportContractFulfillment`,
+        // which is the WILAYA-side convergence direction and keeps its own
+        // Admin-only policy below. Neither direction can be authorized by the
+        // other's policy, and both are refused on the wrong node type rather
+        // than silently downgraded.
         // ----------------------------------------------------------------
-        Action::ExportContractFulfillment => {
-            if principal.role != UserRole::Admin {
-                return Err(AuthorizationError::RequiresAdmin);
+        Action::ExportContractFulfillment => match resource {
+            ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => Ok(()),
+            ResourceContext::WilayaNode | ResourceContext::Global => {
+                Err(AuthorizationError::RequiresUnitNode)
             }
-            match resource {
-                ResourceContext::UnitNode { .. } | ResourceContext::UnitScope { .. } => Ok(()),
-                ResourceContext::WilayaNode | ResourceContext::Global => {
-                    Err(AuthorizationError::RequiresUnitNode)
-                }
-                _ => Err(AuthorizationError::InsufficientPermissions),
-            }
-        }
+            _ => Err(AuthorizationError::InsufficientPermissions),
+        },
 
         Action::ImportContractFulfillment => {
             if principal.role != UserRole::Admin {

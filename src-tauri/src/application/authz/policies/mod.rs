@@ -552,4 +552,83 @@ mod tests {
             Err(AuthorizationError::RequiresUnitNode)
         ));
     }
+
+    #[test]
+    fn export_contract_fulfillment_is_operational_on_unit_nodes() {
+        // ADR-0061: the fulfillment state export is a UNIT operational sync
+        // export, the same class as ExportDailyReport / ExportStockMovements,
+        // so it is allowed for EVERY authenticated role on the local UNIT node —
+        // including a normal UNIT `User`. Regression: the arm previously carried
+        // an unconditional `role != Admin` gate, so a UNIT `User` was refused
+        // with `RequiresAdmin` even though the node context was already correct.
+        let unit_node = ResourceContext::UnitNode {
+            unit_id: "unit-a".to_string(),
+        };
+        let unit_scope = ResourceContext::UnitScope {
+            unit_id: "unit-a".to_string(),
+        };
+
+        // ── Positive ──
+        assert!(authorize(
+            &principal(UserRole::User),
+            Action::ExportContractFulfillment,
+            &unit_node,
+        )
+        .is_ok());
+        assert!(authorize(
+            &principal(UserRole::Admin),
+            Action::ExportContractFulfillment,
+            &unit_scope,
+        )
+        .is_ok());
+
+        // ── Negative: wrong node direction, for BOTH roles ──
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::User),
+                Action::ExportContractFulfillment,
+                &ResourceContext::WilayaNode,
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ExportContractFulfillment,
+                &ResourceContext::WilayaNode,
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
+
+        // ── Negative: an unconfigured UNIT resolves to `Global`; it must stay
+        // fail-closed (unlike the shared operational-export arm, which admits
+        // `Global` for Admin). ──
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::User),
+                Action::ExportContractFulfillment,
+                &ResourceContext::Global,
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::Admin),
+                Action::ExportContractFulfillment,
+                &ResourceContext::Global,
+            ),
+            Err(AuthorizationError::RequiresUnitNode)
+        ));
+
+        // ── Negative: the opposite sync direction is a different action and
+        // keeps its own WILAYA-admin policy. ──
+        assert!(matches!(
+            authorize(
+                &principal(UserRole::User),
+                Action::ImportContractFulfillment,
+                &unit_node,
+            ),
+            Err(AuthorizationError::RequiresAdmin)
+        ));
+    }
 }
