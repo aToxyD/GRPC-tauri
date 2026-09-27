@@ -224,8 +224,20 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --cache-dir ${{ env.BUN_CACHE_DIR }}
         shell: bash
-      - name: Build src-tauri
-        run: cd src-tauri && cargo build
+      - name: Build src-tauri (WebView2 CDP enabled for E2E)
+        # The CDP port is compiled into the window's additionalBrowserArgs, so
+        # the overlay must be present at build time. wry overrides
+        # WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so the env var alone never opens
+        # the debug port — see scripts/e2e/tauri_cdp_overlay.ts.
+        run: |
+          TAURI_CONFIG="$(bun run e2e:cdp-config)"
+          if [ -z "$TAURI_CONFIG" ]; then
+            echo "::error::E2E CDP overlay produced no output; refusing to build a binary without the WebView2 debug port."
+            exit 1
+          fi
+          export TAURI_CONFIG
+          echo "TAURI_CONFIG=$TAURI_CONFIG"
+          cd src-tauri && cargo build
         shell: bash
       - name: Run Playwright E2E tests (Windows)
         run: |

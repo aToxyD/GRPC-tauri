@@ -1,8 +1,8 @@
 import { chromium } from '@playwright/test';
 import type { ChromiumBrowser, Page } from '@playwright/test';
 import { ProcessManager } from '../orchestration/processManager';
-import { isPortInUse } from '../helpers/port';
 import { startCdpRelay, type CdpRelayHandle } from '../helpers/cdpRelay';
+import { resolveCdpPort } from '../helpers/cdpPort';
 import fs from 'fs';
 import path from 'path';
 
@@ -10,33 +10,39 @@ export class TauriDriver {
   private processManager: ProcessManager;
   private browser: ChromiumBrowser | null = null;
   private relay: CdpRelayHandle | null = null;
-  private port = 9222;
+  private port = resolveCdpPort();
 
   constructor() {
     this.processManager = new ProcessManager();
   }
 
   /**
-   * Automatically allocates unused ports, prepares the environment,
-   * spawns the Tauri app, starts the Bun-native CDP relay, and attaches
-   * Playwright to the WebView2 runtime through the relay.
+   * Resolves the fixed CDP port, prepares the environment, spawns the Tauri
+   * app, starts the Bun-native CDP relay, and attaches Playwright to the
+   * WebView2 runtime through the relay.
+   *
+   * The port is NOT dynamically allocated: it is compiled into the app binary
+   * via the window's `additionalBrowserArgs`, so it must match
+   * `scripts/e2e/tauri_cdp_overlay.ts`. Both read `helpers/cdpPort.ts`.
    *
    * Background: Playwright's `connectOverCDP` uses the npm `ws` package
    * internally. Under Bun (no Node.js installed), `ws` cannot complete the
    * WebSocket handshake with WebView2. The relay uses Bun's native WebSocket
    * to proxy all CDP traffic so that Playwright never speaks directly to
    * WebView2's CDP socket.
+   *
+   * The `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` environment variable set below
+   * is intentionally retained as a fallback for WebView2 builds that do not
+   * consume the compiled window argument, but it is NOT sufficient on its own:
+   * wry always calls `set_additional_browser_arguments(...)` with a non-empty
+   * value, which overrides that environment variable entirely.
    */
   public async start(): Promise<Page> {
-    // ── 1. Allocate two consecutive free ports ────────────────────────────────
-    //    cdpPort  : WebView2 remote-debugging port (passed to the app binary)
+    // ── 1. Resolve the build-time CDP port ────────────────────────────────────
+    //    cdpPort  : WebView2 remote-debugging port (compiled into the binary)
     //    relayPort: Bun relay port (Playwright talks to this one)
-    let cdpPort = 9222;
-    while (await isPortInUse(cdpPort) || await isPortInUse(cdpPort + 1)) {
-      cdpPort++;
-    }
+    const cdpPort = this.port;
     const relayPort = cdpPort + 1;
-    this.port = cdpPort;
 
     // ── 2. Prepare environment & launch app ───────────────────────────────────
     this.processManager.prepareEnvironment(cdpPort);
