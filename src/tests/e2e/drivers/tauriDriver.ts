@@ -145,6 +145,21 @@ export class TauriDriver {
     return this.processManager.getDbPath();
   }
 
+  /**
+   * Returns the path of the app stdout/stderr capture file, or null when the
+   * environment was never prepared. Callers must read it before stop().
+   */
+  public getRunLogPath(): string | null {
+    return this.processManager.getRunLogPath();
+  }
+
+  /**
+   * Returns the spawned process lifecycle state plus the tail of its run log.
+   */
+  public getDiagnostics(): string {
+    return this.processManager.getDiagnostics();
+  }
+
   private _log(logPath: string, message: string): void {
     try {
       fs.appendFileSync(logPath, `\n${message}\n`);

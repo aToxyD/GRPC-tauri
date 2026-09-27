@@ -101,4 +101,20 @@ export class ViteDriver {
   public getDbPath(): string {
     return '/tmp/vite_driver_noop.db';
   }
+
+  /**
+   * No spawned application process exists in Vite dev server mode, so there is
+   * no run log to collect. Present to satisfy the driver interface.
+   */
+  public getRunLogPath(): string | null {
+    return null;
+  }
+
+  /**
+   * No spawned application process exists in Vite dev server mode.
+   * Present to satisfy the driver interface.
+   */
+  public getDiagnostics(): string {
+    return 'ViteDriver: no application process was spawned';
+  }
 }

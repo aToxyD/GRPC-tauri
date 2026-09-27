@@ -14,6 +14,8 @@ export class ProcessManager {
   private process: ChildProcess | null = null;
   private tempDir: string | null = null;
   private config: ProcessConfig | null = null;
+  private exitCode: number | null = null;
+  private exitSignal: NodeJS.Signals | null = null;
 
   constructor() {}
 
@@ -70,12 +72,14 @@ export class ProcessManager {
       stdio: 'pipe'
     });
 
-    const logPath = path.join(this.tempDir!, 'tauri_run.log');
+    const logPath = this.getRunLogPath()!;
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
     this.process.stdout?.pipe(logStream);
     this.process.stderr?.pipe(logStream);
 
     this.process.on('exit', (code, signal) => {
+      this.exitCode = code;
+      this.exitSignal = signal;
       try {
         fs.appendFileSync(logPath, `\n[PROCESS EXITED] code=${code} signal=${signal}\n`);
       } catch (e) {}
@@ -97,9 +101,56 @@ export class ProcessManager {
       console.error(`[Tauri Process Error] Spawn failed: ${err}`);
     });
 
-    // Wait until remote debugging port is occupied
-    await waitForPort(this.config.port);
+    try {
+      await waitForPort(this.config.port);
+    } catch (err) {
+      throw new Error(
+        `[TauriDriver] ${(err as Error).message}\n${this.getDiagnostics()}`
+      );
+    }
     return this.process;
+  }
+
+  /**
+   * Returns the path of the spawned process stdout/stderr capture file.
+   * Callers must read it before stop() deletes the temporary directory.
+   */
+  public getRunLogPath(): string | null {
+    if (!this.tempDir) {
+      return null;
+    }
+    return path.join(this.tempDir, 'tauri_run.log');
+  }
+
+  /**
+   * Returns a human-readable summary of the spawned process lifecycle state,
+   * including the tail of the run log when the process wrote one.
+   */
+  public getDiagnostics(): string {
+    const port = this.config?.port ?? 'unknown';
+    const pid = this.process?.pid ?? 'none';
+    const exited = this.exitCode !== null || this.exitSignal !== null;
+    const exitInfo = exited
+      ? `code=${this.exitCode} signal=${this.exitSignal}`
+      : 'still running (never reported an exit)';
+    const lines = [
+      `port=${port}`,
+      `pid=${pid}`,
+      `state=${exitInfo}`,
+      `binary=${path.join(process.cwd(), 'src-tauri/target/debug', process.platform === 'win32' ? 'grpc.exe' : 'grpc')}`,
+    ];
+    try {
+      const logPath = this.getRunLogPath();
+      if (logPath && fs.existsSync(logPath)) {
+        const tail = fs.readFileSync(logPath, 'utf8').trimEnd().split('\n').slice(-40);
+        lines.push(`run log (${logPath}, last ${tail.length} lines):`, ...tail);
+      } else {
+        lines.push('run log: missing or empty (process produced no output)');
+      }
+    } catch (e) {
+      lines.push(`run log: unreadable (${e})`);
+    }
+    return lines.join('\n');
   }
 
   /**
