@@ -45,22 +45,20 @@ pub(crate) fn money_col(idx: usize, scaled: i64) -> Result<f64, SqliteError> {
 /// used by the other `*_col` helpers — keeping all bogus-code / NumericError
 /// classification inside this single bridging owner.
 pub(crate) fn tva_rate_col(idx: usize, code: i32) -> Result<f64, SqliteError> {
-    let classification = crate::domain::units::TvaClassification::try_from(code)
-        .map_err(|_| {
-            SqliteError::FromSqlConversionFailure(
-                idx,
-                Type::Integer,
-                Box::new(AppError::Validation(crate::errors::ValidationError::InvalidFormat {
+    let classification = crate::domain::units::TvaClassification::try_from(code).map_err(|_| {
+        SqliteError::FromSqlConversionFailure(
+            idx,
+            Type::Integer,
+            Box::new(AppError::Validation(
+                crate::errors::ValidationError::InvalidFormat {
                     field: "tva_classification".to_string(),
                     message: format!("كود تصنيف TVA غير صالح: {code}"),
-                })),
-            )
-        })?;
-    legacy_float::rate_to_f64(&classification.rate())
-        .map_err(|e| conversion_error(idx, e))
+                },
+            )),
+        )
+    })?;
+    legacy_float::rate_to_f64(&classification.rate()).map_err(|e| conversion_error(idx, e))
 }
-
-
 
 /// Reads a scale-4 Rate column and returns the DTO f64 percent-domain value.
 pub(crate) fn rate_col(idx: usize, scaled: i64) -> Result<f64, SqliteError> {

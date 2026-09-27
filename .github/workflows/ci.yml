@@ -98,9 +98,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
       # Generate governance observability reports first (gitignored artifacts
-      # required by the FE-165 release gate, e.g. GOVERNANCE_COVERAGE_REPORT.md)
+      # required by the FE-165 release gate, e.g. GOVERNANCE_COVERAGE_REPORT.md).
+      # Must use the standalone generator entry point, not `check:obs`: the
+      # governance engine runs the invariant scanners BEFORE it generates the
+      # reports, so on a clean checkout `check:obs` always self-reports FE-165
+      # ("GOVERNANCE_COVERAGE_REPORT.md file missing") and exits 1. Generation
+      # therefore has to be its own step; the architecture check below still
+      # enforces FE-165 against the generated artifact.
       - name: Generate governance observability reports
-        run: bun run check:obs
+        run: bun scripts/governance/observability/index.ts
       - name: Run architecture checks
         run: bun run check:arch
 
@@ -170,10 +176,15 @@ jobs:
         with:
           name: frontend-dist
           path: dist
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+      # Dependencies MUST be installed before the Playwright browsers.
+      # `bunx playwright` resolves the local, lockfile-pinned @playwright/test
+      # only when node_modules exists; otherwise it downloads the latest
+      # playwright from the registry, which installs a different chromium
+      # revision than the pinned runner expects.
       - name: Install dependencies
         run: bun install --frozen-lockfile --cache-dir $BUN_CACHE_DIR
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
       - name: Build src-tauri
         run: cd src-tauri && cargo build
       - name: Run Playwright E2E tests

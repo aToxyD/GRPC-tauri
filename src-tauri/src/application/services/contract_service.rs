@@ -203,7 +203,8 @@ impl<'a> ContractService<'a> {
         )?;
 
         // Exact HT authority (Money), never reinterpreted from a historical TTC.
-        let breakdown = compute_contract_fiscal(&agreed_price_ht, &config.tva_classification.rate())?;
+        let breakdown =
+            compute_contract_fiscal(agreed_price_ht, &config.tva_classification.rate())?;
 
         let snapshot = ContractPriceSnapshot {
             contract_product_id: contract_product_id.to_string(),

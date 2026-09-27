@@ -30,8 +30,7 @@ use grpc_lib::models::{
     NodeType, Product, Supplier, WilayaNodeConfiguration,
 };
 use grpc_lib::repositories::{
-    ContractRepository, ProductRepository, SettingsRepository,
-    SupplierRepository, UnitRepository,
+    ContractRepository, ProductRepository, SettingsRepository, SupplierRepository, UnitRepository,
 };
 
 const WILAYA: &str = "16";
