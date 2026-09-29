@@ -19,6 +19,17 @@ use tauri::State;
 /// User login with rate limiting and audit logging
 #[tauri::command]
 pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginResponse, String> {
+    login_impl(&state, request)
+}
+
+/// Implementation of [`login`] over a borrowed `AppState`.
+///
+/// A Tauri `State` cannot be constructed outside a running app, so the password
+/// authentication failure path (rate-limit gate → identity policy gate → user
+/// lookup → password verification → failed-login audit) is covered by
+/// integration tests through this seam. Same pattern and rationale as
+/// [`touch_session_impl`].
+pub fn login_impl(state: &AppState, request: LoginRequest) -> Result<LoginResponse, String> {
     // Check rate limiting
     let rate_limiter = state.rate_limiter.lock().map_err(|e| {
         into_command_error(AppError::Internal(format!(
@@ -209,8 +220,14 @@ pub fn login(state: State<AppState>, request: LoginRequest) -> Result<LoginRespo
     }
 
     // Log failed login (Non-transactional)
+    //
+    // The audit actor MUST be an existing `users.id`: `audit_log.user_id`
+    // references `users(id)` with foreign keys enabled, so a non-existent
+    // actor aborts the insert (`SQLITE_CONSTRAINT_FOREIGNKEY`, extended 787)
+    // and the failure is never recorded. `"system"` is the id of the system
+    // user seeded by the canonical fresh-install migration.
     if let Err(e) = AuditService::new(db.executor()).log_failure(
-        "SYSTEM",
+        "system",
         &request.username,
         AuditAction::Login,
         crate::domain::audit::EntityType::User,
