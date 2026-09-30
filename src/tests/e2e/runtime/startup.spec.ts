@@ -1,10 +1,109 @@
 import { test, expect } from '../fixtures/tauriApp';
+import { ProcessManager } from '../orchestration/processManager';
+import { WebKitTauriDriver } from '../drivers/webkitTauriDriver';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ChildProcess, spawn } from 'child_process';
 
 test.describe('Tauri Application Startup Integrity & Lifecycle', () => {
+
+  // ADR-0062 environment wiring. These are pure path/environment properties of
+  // the harness that decide where the launched binary resolves identity data, so
+  // they are asserted directly on a prepared (not yet spawned) environment. That
+  // keeps the guarantee checkable on any platform without launching the app and
+  // without touching any real identity directory. The provisioning ceremony
+  // itself stays covered by the runtime specs that do launch the binary.
+  test('CDP launch environment is hermetic for identity data (ADR-0062)', async () => {
+    const pm = new ProcessManager();
+    const config = pm.prepareEnvironment(1420);
+    const runRoot = pm.getTempDir();
+    const identityDir = config.identityDataDir;
+
+    // Absolute, not relative — the resolver rejects a relative value outright.
+    expect(path.isAbsolute(identityDir)).toBe(true);
+
+    // Lives under this run's own temp root and exists before startup.
+    expect(runRoot).not.toBeNull();
+    expect(identityDir.startsWith(runRoot as string)).toBe(true);
+    expect(fs.existsSync(identityDir)).toBe(true);
+
+    // The variable the app is actually spawned with.
+    expect(config.env?.GRPC_IDENTITY_DATA_DIR).toBe(identityDir);
+
+    // Never the real platform identity directory.
+    const platformDir = path.join(
+      process.platform === 'win32'
+        ? (process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'))
+        : (process.env.XDG_DATA_HOME ?? path.join(os.homedir(), '.local', 'share')),
+      'GRPC',
+    );
+    // Never the real platform identity directory, nor any descendant of one.
+    // (A blanket "not under LOCALAPPDATA" check is wrong: `os.tmpdir()` is
+    // `%LOCALAPPDATA%\Temp` on Windows, which is exactly where the run-scoped
+    // root is supposed to live.)
+    const realIdentityDirs = [
+      process.env.APPDATA ? path.join(process.env.APPDATA, 'GRPC') : null,
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'GRPC') : null,
+      process.env.XDG_DATA_HOME ? path.join(process.env.XDG_DATA_HOME, 'GRPC') : null,
+    ].filter((p): p is string => Boolean(p) && path.isAbsolute(p as string));
+    for (const real of realIdentityDirs) {
+      expect(identityDir === real).toBe(false);
+      expect(identityDir.startsWith(real + path.sep)).toBe(false);
+    }
+    expect(realIdentityDirs.length).toBeGreaterThan(0);
+
+    // Existing variable semantics are untouched.
+    expect(config.env?.GRPC_DB_PATH).toBe(config.dbPath);
+    expect(config.env?.GRPC_ENV).toBe('test');
+    expect(config.env?.GRPC_APP_KEY).toBeDefined();
+
+    await pm.stop();
+  });
+
+  test('each E2E run gets a distinct identity directory (ADR-0062)', async () => {
+    // `prepareEnvironment` mints a fresh run root per call (timestamp + random
+    // suffix), so concurrent or sequential runs cannot share identity state.
+    const first = new ProcessManager();
+    const firstConfig = first.prepareEnvironment(1421);
+    await first.stop();
+
+    const second = new ProcessManager();
+    const secondConfig = second.prepareEnvironment(1422);
+
+    expect(secondConfig.identityDataDir).not.toBe(firstConfig.identityDataDir);
+    expect(path.isAbsolute(secondConfig.identityDataDir)).toBe(true);
+    // Same run root is never handed out twice.
+    expect(second.getTempDir()).not.toBe(first.getTempDir());
+
+    await second.stop();
+  });
+
+  test('a driver reuses one identity directory across app launches (ADR-0062)', async () => {
+    // The multi-launch ceremony (fresh node → unlock → restart) is driven by one
+    // driver instance, and must keep ONE identity directory across all launches
+    // so a relaunch observes the store the first launch provisioned.
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grpc_identity_reuse_'));
+    try {
+      const driver = new WebKitTauriDriver({
+        appBinary: path.join(process.cwd(), 'src-tauri', 'target', 'release', 'grpc'),
+        dataDir,
+      });
+
+      expect(path.isAbsolute(driver.identityDataDir)).toBe(true);
+      expect(driver.identityDataDir.startsWith(dataDir)).toBe(true);
+      // Stable for the driver's lifetime → every launchApp() sees the same path.
+      expect(driver.identityDataDir).toBe(driver.identityDataDir);
+      // The App Key store lives in the identity directory (ADR-0062), not next
+      // to the database.
+      expect(driver.appKeyPath).toBe(path.join(driver.identityDataDir, 'appkey.age'));
+      expect(driver.appKeyPath.startsWith(dataDir)).toBe(true);
+      // Database location is unchanged by ADR-0062.
+      expect(driver.dbPath).toBe(path.join(dataDir, 'GRPC', 'grpc.db'));
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
 
   if (process.platform === 'win32') {
     test('application boots cleanly and initializes sandboxed SQLite database', async ({ tauriApp }) => {
@@ -51,6 +150,10 @@ test.describe('Tauri Application Startup Integrity & Lifecycle', () => {
     // Isolated sandbox: never touches the developer's real database.
     const sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grpc_corrupt_db_'));
     const dbPath = path.join(sandboxDir, 'corrupted.db');
+    // ADR-0062: identity data must resolve inside this sandbox too, otherwise
+    // this spawn would read and write the operator's real identity files.
+    const identityDataDir = path.join(sandboxDir, 'identity');
+    fs.mkdirSync(identityDataDir, { recursive: true });
 
     // Genuinely invalid SQLite content: a non-empty file whose header does not
     // match SQLite's format magic. rusqlite/SQLite must reject it when the app
@@ -67,7 +170,12 @@ test.describe('Tauri Application Startup Integrity & Lifecycle', () => {
       // key via the debug dev-fallback and the DB bootstrap is what fails.
       // An empty string would instead fail the key format validation, masking
       // the corrupted-DB path under test — so it must be removed, not emptied.
-      const appEnv: NodeJS.ProcessEnv = { ...process.env, GRPC_DB_PATH: dbPath, GRPC_ENV: 'test' };
+      const appEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        GRPC_DB_PATH: dbPath,
+        GRPC_ENV: 'test',
+        GRPC_IDENTITY_DATA_DIR: identityDataDir,
+      };
       delete appEnv.GRPC_APP_KEY;
 
       const proc = spawn(binaryPath, [], {

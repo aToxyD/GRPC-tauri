@@ -10,9 +10,11 @@
 //! providers in `infrastructure::security::identity`.
 
 pub mod adminkey_provider;
+pub mod data_dir;
 pub mod node_key_store;
 pub mod root_public_key;
 
 pub use adminkey_provider::{AdminKeyProvider, ADMINKEY_FILE_NAME, GRPC_DATA_DIR};
+pub use data_dir::{identity_data_dir, IDENTITY_DATA_DIR_ENV, IDENTITY_FILE_NAMES};
 pub use node_key_store::{NodeKeyStore, NODE_KEY_FILE_NAME};
 pub use root_public_key::resolve_root_public_key;

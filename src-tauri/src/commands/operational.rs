@@ -563,7 +563,7 @@ pub fn verify_deployment_readiness(
         db.executor(),
         db_path,
         db,
-        &crate::commands::common::node_key_store(),
+        &crate::commands::common::node_key_store().map_err(into_command_error)?,
     )
     .verify()
     .map_err(into_command_error)

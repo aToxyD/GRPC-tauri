@@ -183,7 +183,7 @@ pub fn initialize_app_key_impl(
         )));
     }
 
-    let store = appkey_store();
+    let store = appkey_store().map_err(into_command_error)?;
     if store.exists() {
         return Err(into_command_error(AppError::Configuration(
             "appkey.age already exists — refusing to overwrite; unlock the existing store".into(),
@@ -272,7 +272,7 @@ pub fn import_app_key_impl(
         )));
     }
 
-    let store = appkey_store();
+    let store = appkey_store().map_err(into_command_error)?;
     let (result, identity) = import_app_key_into_store(&store, passphrase, artifact_path.trim())
         .map_err(into_command_error)?;
 
@@ -318,7 +318,7 @@ pub fn unlock_app_key_impl(
     passphrase: &str,
     remember: Option<bool>,
 ) -> Result<AppKeyUnlockResult, String> {
-    let store = appkey_store();
+    let store = appkey_store().map_err(into_command_error)?;
     if !store.exists() {
         return Err(into_command_error(AppError::Configuration(
             "appkey.age not found — initialize the app key first (Security Setup)".into(),
@@ -843,5 +843,77 @@ mod tests {
         assert!(short.len() < MIN_APP_KEY_PASSPHRASE_LEN);
         let ok = "x".repeat(MIN_APP_KEY_PASSPHRASE_LEN);
         assert!(ok.len() >= MIN_APP_KEY_PASSPHRASE_LEN);
+    }
+
+    // ------------------------------------------------------------------
+    // ADR-0062 §2: the provisioning entry points are fail-closed
+    // ------------------------------------------------------------------
+
+    /// The locked/unprovisioned boot path reaches `initialize_app_key` before
+    /// `runtime_bootstrap`, so the resolver rejection must surface here. A
+    /// swallowed error previously produced a store rooted at
+    /// `temp_dir()/GRPC`, and this command then minted a fresh App Key and
+    /// wrote it there before failing later.
+    ///
+    /// The resolver caches its first *successful* resolution (ADR-0062 §3), so
+    /// a relative override only rejects on a cold cache. On a warm cache the
+    /// command is not invoked at all, because that would write real identity
+    /// material into the operator's platform data directory.
+    #[test]
+    fn initialize_app_key_never_falls_back_to_the_temp_directory() {
+        use crate::infrastructure::identity::data_dir::IDENTITY_DATA_DIR_ENV;
+        use crate::infrastructure::security::test_support::lock_security_test_env;
+
+        let _env = lock_security_test_env();
+        let temp_fallback = std::env::temp_dir().join("GRPC");
+        let temp_store = AppKeyStore::new(temp_fallback.clone());
+        let temp_store_existed_before = temp_store.exists();
+
+        // The override stays set across the command call: it is the state under
+        // test, and unsetting it would resolve the real platform directory.
+        std::env::set_var(IDENTITY_DATA_DIR_ENV, "relative-identity-dir");
+        let outcome = (|| -> Result<Option<std::path::PathBuf>, String> {
+            match appkey_store() {
+                // Warm cache (§3): the pinned directory is in use. The historical
+                // defect was a temp-rooted store, which cannot be returned here.
+                // The command is not invoked, because it would write real
+                // identity material into the operator's platform data directory.
+                Ok(store) => Ok(Some(store.file_path().parent().unwrap().to_path_buf())),
+                // Cold cache: the command must fail before generating or writing
+                // any identity material.
+                Err(AppError::Configuration(_)) => {
+                    let state = crate::app::state::AppState::new_for_test(
+                        crate::db::ConnectionFactory::new_for_test().expect("test database"),
+                    );
+                    initialize_app_key_impl(
+                        &state,
+                        "correct-horse-battery-staple",
+                        None,
+                        Some(false),
+                    )
+                    .map(|_| None)
+                }
+                Err(e) => Err(format!("unexpected resolver error: {e:?}")),
+            }
+        })();
+        std::env::remove_var(IDENTITY_DATA_DIR_ENV);
+        clear_app_key_cache();
+
+        match outcome {
+            // Warm cache: assert on the directory actually handed to the caller.
+            Ok(Some(resolved_parent)) => assert_ne!(
+                resolved_parent, temp_fallback,
+                "the store must never be rooted at the temp fallback"
+            ),
+            // Cold cache: the rejection surfaced and nothing was written.
+            Ok(None) => {
+                assert_eq!(
+                    temp_store.exists(),
+                    temp_store_existed_before,
+                    "no appkey.age may be written to the temp fallback"
+                );
+            }
+            Err(detail) => panic!("{detail}"),
+        }
     }
 }

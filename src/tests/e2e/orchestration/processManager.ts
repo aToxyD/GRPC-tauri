@@ -7,6 +7,12 @@ import { waitForPort } from '../helpers/port';
 export interface ProcessConfig {
   port: number;
   dbPath: string;
+  /**
+   * Absolute, run-scoped identity data directory (ADR-0062). Passed to the app
+   * as `GRPC_IDENTITY_DATA_DIR` so identity state never resolves through the
+   * operator's real platform data directory.
+   */
+  identityDataDir: string;
   env?: Record<string, string>;
 }
 
@@ -30,16 +36,29 @@ export class ProcessManager {
 
     const dbPath = path.join(this.tempDir, 'test_sandbox.db');
 
+    // ADR-0062: identity data directory resolved explicitly for the run. It
+    // lives under this run's own temp root (`this.tempDir` is already unique per
+    // run via timestamp + random suffix), so identity state is hermetic and
+    // concurrent runs cannot collide. Created here rather than lazily so the
+    // app never has to decide whether the directory exists.
+    const identityDataDir = path.join(this.tempDir, 'identity');
+    fs.mkdirSync(identityDataDir, { recursive: true });
+
     // Default development AGE-X25519 identity key
     const testAppKey = 'AGE-SECRET-KEY-1KTYK6RVLN5TAPE7VF6FQQSKZ9HWWCDSKUGXXNUQDWZ7XXT5YK5LSF3UTKQ';
 
     this.config = {
       port,
       dbPath,
+      identityDataDir,
       env: {
         GRPC_DB_PATH: dbPath,
         GRPC_ENV: 'test',
         GRPC_APP_KEY: testAppKey,
+        // ADR-0062: must be set before the app resolves identity data. The
+        // platform resolver does not honor XDG_DATA_HOME on Windows, so this
+        // is the only reliable isolation for the CDP path.
+        GRPC_IDENTITY_DATA_DIR: identityDataDir,
         WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
         WEBVIEW2_USER_DATA_FOLDER: path.join(this.tempDir, 'webview2'),
         TAURI_ENV_DEBUG: 'true'
@@ -208,5 +227,24 @@ export class ProcessManager {
       throw new Error('Environment not prepared');
     }
     return this.config.dbPath;
+  }
+
+  /**
+   * Returns the absolute, run-scoped identity data directory handed to the app
+   * as `GRPC_IDENTITY_DATA_DIR` (ADR-0062).
+   */
+  public getIdentityDataDir(): string {
+    if (!this.config) {
+      throw new Error('Environment not prepared');
+    }
+    return this.config.identityDataDir;
+  }
+
+  /**
+   * Returns the run-scoped temp root that owns both the database and the
+   * identity directory. Callers use it to assert hermetic isolation.
+   */
+  public getTempDir(): string | null {
+    return this.tempDir;
   }
 }

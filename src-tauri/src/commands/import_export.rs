@@ -246,7 +246,7 @@ pub fn export_products_package(
     // — a UNIT).
     let outcome = crate::application::services::export_products_fleet(
         db,
-        &node_key_store(),
+        &node_key_store().map_err(into_command_error)?,
         &state.crypto_port,
         &source_node_id,
         export_subject_type(settings.node_type),
@@ -270,8 +270,10 @@ pub fn export_products_package(
         "encrypted".to_string(),
     );
 
-    let signing_key_id =
-        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
+    let signing_key_id = crate::application::services::current_wilaya_signing_key_id(
+        db,
+        &node_key_store().map_err(into_command_error)?,
+    );
     let _ = db.with_transaction(|tx| {
         record_export_with_reproducibility(
             tx,
@@ -384,7 +386,7 @@ pub fn export_contract_catalog_to_units_impl(
 
     let outcome = crate::application::services::export_contract_catalog_unit_distribution(
         db,
-        &node_key_store(),
+        &node_key_store().map_err(into_command_error)?,
         &state.crypto_port,
         &source_node_id,
         export_subject_type(settings.node_type),
@@ -400,8 +402,10 @@ pub fn export_contract_catalog_to_units_impl(
         file_path
     );
 
-    let signing_key_id =
-        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
+    let signing_key_id = crate::application::services::current_wilaya_signing_key_id(
+        db,
+        &node_key_store().map_err(into_command_error)?,
+    );
     let _ = db.with_transaction(|tx| {
         for (target, _artifact_path) in outcome.targets.iter().zip(outcome.artifact_paths.iter()) {
             record_export_with_reproducibility(
@@ -578,7 +582,7 @@ pub fn export_daily_report_package(
         )
         .map_err(into_command_error)?;
 
-    IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store().map_err(into_command_error)?)
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
@@ -758,7 +762,7 @@ pub fn import_unit_node_package(
         // crash between the two leaves "key present, identity absent", which a
         // re-import of the SAME package recovers from (both steps re-run).
         if let Some(pkg_identity) = &packaged_identity {
-            let nks = node_key_store();
+            let nks = node_key_store()?;
             IdentityProvisioningService::install_node_key_matching(
                 &nks,
                 &pkg_identity.secret_key,
@@ -1009,7 +1013,7 @@ pub fn export_monthly_summary_package(
         )
         .map_err(into_command_error)?;
 
-    IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store().map_err(into_command_error)?)
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
@@ -1100,7 +1104,11 @@ pub fn export_unit_node_package(
             .generate_unit_identity_request_for_package(unit_subject_id)
             .map_err(into_command_error)?;
         let cert = provisioning
-            .sign_unit_bootstrap_request(&request, &node_key_store(), &now)
+            .sign_unit_bootstrap_request(
+                &request,
+                &node_key_store().map_err(into_command_error)?,
+                &now,
+            )
             .map_err(into_command_error)?;
         (secret, cert)
     };
@@ -1120,7 +1128,7 @@ pub fn export_unit_node_package(
     // identity) — no new V1/HMAC packages are produced (RFC §3.10). The
     // bootstrap artifact carries the FIXED sequence 1 and never touches the
     // per-issuer ledger; the receiving UNIT accepts it anchor-first.
-    IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store().map_err(into_command_error)?)
         .export_v2_bootstrap_package(
             package_data.clone(),
             &source_node_id,
@@ -1190,7 +1198,7 @@ pub fn export_stock_movements_package(
         )
         .map_err(into_command_error)?;
 
-    IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store().map_err(into_command_error)?)
         .export_v2_package(
             dataset.clone(),
             &source_node_id,
@@ -1388,7 +1396,7 @@ pub fn export_contract_fulfillment_package_impl(
         )
         .map_err(into_command_error)?;
 
-    IdentitySignedExportService::new(db, &node_key_store())
+    IdentitySignedExportService::new(db, &node_key_store().map_err(into_command_error)?)
         .export_v2_package_with_identity(
             dataset.clone(),
             &source_node_id,
@@ -1662,7 +1670,7 @@ pub fn export_admin_access_package_impl(
     // — a UNIT security scope).
     let outcome = crate::application::services::export_admin_access_fleet(
         db,
-        &node_key_store(),
+        &node_key_store().map_err(into_command_error)?,
         state.password_port.as_ref(),
         &state.crypto_port,
         &source_node_id,
@@ -1685,8 +1693,10 @@ pub fn export_admin_access_package_impl(
         "encrypted".to_string(),
     );
 
-    let signing_key_id =
-        crate::application::services::current_wilaya_signing_key_id(db, &node_key_store());
+    let signing_key_id = crate::application::services::current_wilaya_signing_key_id(
+        db,
+        &node_key_store().map_err(into_command_error)?,
+    );
     let _ = db.with_transaction(|tx| {
         record_export_with_reproducibility(
             tx,

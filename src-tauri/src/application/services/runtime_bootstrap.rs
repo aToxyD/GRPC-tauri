@@ -66,10 +66,12 @@ pub fn bootstrap_runtime() -> crate::errors::AppResult<RuntimeBootstrap> {
 
     // Node key store (SEC-008): the WILAYA signing identity for fiscal closure
     // exports — shared data dir, mirroring `commands/common::node_key_store`.
-    let node_key_store = crate::infrastructure::identity::NodeKeyStore::new(
-        crate::infrastructure::identity::AdminKeyProvider::default_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir().join("GRPC")),
-    );
+    // ADR-0062: resolution goes through the single identity data-dir resolver.
+    // The pre-existing `temp_dir()` fallback still applies when the platform
+    // data directory itself cannot be resolved; a misconfigured override is
+    // never silently redirected.
+    let node_key_store =
+        crate::infrastructure::identity::NodeKeyStore::new(identity_data_dir_or_temp_fallback()?);
 
     match DeploymentReadinessService::new(db.executor(), db_path.clone(), &db, &node_key_store)
         .verify()
@@ -119,6 +121,23 @@ pub fn bootstrap_runtime() -> crate::errors::AppResult<RuntimeBootstrap> {
 
     log::info!(target: "grpc::runtime", "System boot verification completed successfully");
     Ok(RuntimeBootstrap { db, rate_limiter })
+}
+
+/// Identity data directory for the node key store (ADR-0062).
+///
+/// The pre-existing `temp_dir().join("GRPC")` fallback is preserved for the one
+/// condition it was written for — the platform data directory being
+/// unresolvable. A rejected `GRPC_IDENTITY_DATA_DIR` and a tripped §5 shadow
+/// guard are propagated instead, so a misconfiguration aborts boot rather than
+/// redirecting identity state to an unintended directory.
+fn identity_data_dir_or_temp_fallback() -> AppResult<PathBuf> {
+    match crate::infrastructure::identity::data_dir::identity_data_dir() {
+        Ok(dir) => Ok(dir),
+        Err(AppError::Internal(_)) => {
+            Ok(std::env::temp_dir().join(crate::infrastructure::identity::GRPC_DATA_DIR))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// SEC-005 BR-05 phase 1: apply every pending ledger sidecar as a monotonic
@@ -352,6 +371,36 @@ fn marker_id_from_sidecar(db_path: &Path, sidecar: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use crate::domain::ports::backup::restore_ledger_sidecar_path;
+
+    /// ADR-0062: the `temp_dir()/GRPC` fallback is retained at F for the one
+    /// historical `AppError::Internal` condition only. A `Configuration`
+    /// rejection must propagate, never reach the fallback.
+    #[test]
+    fn the_temp_fallback_is_limited_to_internal_errors() {
+        use crate::infrastructure::identity::data_dir::IDENTITY_DATA_DIR_ENV;
+        use crate::infrastructure::security::test_support::lock_security_test_env;
+
+        let _env = lock_security_test_env();
+        let temp_fallback =
+            std::env::temp_dir().join(crate::infrastructure::identity::GRPC_DATA_DIR);
+
+        // A rejected override is a Configuration error, not an Internal one, so
+        // it must not be rewritten into the fallback directory.
+        std::env::set_var(IDENTITY_DATA_DIR_ENV, "relative-identity-dir");
+        let rejected = identity_data_dir_or_temp_fallback();
+        std::env::remove_var(IDENTITY_DATA_DIR_ENV);
+
+        match rejected {
+            Err(e) => assert!(
+                matches!(e, AppError::Configuration(_)),
+                "only Internal may be converted; got {e:?}"
+            ),
+            Ok(dir) => assert_ne!(
+                dir, temp_fallback,
+                "a rejected override must never resolve to the temp fallback"
+            ),
+        }
+    }
 
     #[test]
     fn marker_id_extraction_roundtrips() {

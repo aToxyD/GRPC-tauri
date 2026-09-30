@@ -21,8 +21,14 @@ export interface WebKitTauriDriverOptions {
   tauriDriverBinary?: string;
   /** Path to the `WebKitWebDriver` binary (Linux). Default: found on PATH. */
   webkitWebDriver?: string;
-  /** Sandboxed `XDG_DATA_HOME` for the launched app (isolates appkey + DB). */
+  /** Sandboxed `XDG_DATA_HOME` for the launched app (isolates DB + logs). */
   dataDir: string;
+  /**
+   * Absolute, run-scoped identity data directory (ADR-0062). Defaults to
+   * `<dataDir>/GRPC` — the same directory `XDG_DATA_HOME` already resolved to,
+   * so existing `security.spec.ts` assertions on `appkeyPath` keep holding.
+   */
+  identityDataDir?: string;
   /** Extra environment for the launched app (merged over the defaults). */
   env?: Record<string, string>;
   /** tauri-driver intermediary port (default: auto-assigned). */
@@ -56,6 +62,12 @@ export class WebKitTauriDriver {
   private readonly tauriDriverBinary: string;
   private readonly webkitWebDriver?: string;
   readonly dataDir: string;
+  /**
+   * Absolute identity data directory handed to the app as
+   * `GRPC_IDENTITY_DATA_DIR` (ADR-0062). Fixed for the lifetime of the driver,
+   * so a restart within one test reuses the same identity state.
+   */
+  readonly identityDataDir: string;
   private readonly extraEnv: Record<string, string>;
   private spawned: SpawnedSession | null = null;
   private readonly logs: string[] = [];
@@ -67,6 +79,13 @@ export class WebKitTauriDriver {
       path.join(os.homedir(), '.cargo', 'bin', 'tauri-driver');
     this.webkitWebDriver = options.webkitWebDriver;
     this.dataDir = options.dataDir;
+    // Defaults to the same `<dataDir>/GRPC` directory the app already resolved
+    // through `XDG_DATA_HOME` on Linux, so existing assertions in
+    // `security.spec.ts` (which locate `appkey.age` under that path) keep
+    // holding. The difference is that it is now stated explicitly rather than
+    // inferred from `XDG_DATA_HOME`, which the platform resolver does not honor
+    // on Windows. Specs may override to place identity apart from the database.
+    this.identityDataDir = options.identityDataDir ?? path.join(options.dataDir, 'GRPC');
     this.extraEnv = options.env ?? {};
   }
 
@@ -79,8 +98,12 @@ export class WebKitTauriDriver {
     return path.join(this.dataDir, 'GRPC', 'grpc.db');
   }
 
+  /**
+   * Location of the encrypted App Key store, which lives in the ADR-0062
+   * identity directory rather than next to the database.
+   */
   get appKeyPath(): string {
-    return path.join(this.dataDir, 'GRPC', 'appkey.age');
+    return path.join(this.identityDataDir, 'appkey.age');
   }
 
   /**
@@ -100,15 +123,24 @@ export class WebKitTauriDriver {
       throw new Error(`Release binary not found at ${this.appBinary}. Run 'bun run tauri:build' first.`);
     }
     fs.mkdirSync(path.join(this.dataDir, 'GRPC'), { recursive: true });
+    // ADR-0062: the identity directory is created up front so the app never
+    // has to create it, and never falls back to any other location.
+    fs.mkdirSync(this.identityDataDir, { recursive: true });
 
     const port = await findFreePort();
     const nativePort = await findFreePort();
 
     // The app must inherit: isolated data dir, non-production env, and NO
     // GRPC_APP_KEY (ADR-0041 rank 1 must be absent so the store flow runs).
+    //
+    // ADR-0062: `GRPC_IDENTITY_DATA_DIR` is set explicitly rather than relying
+    // on `XDG_DATA_HOME`. The platform resolver does not honor `XDG_DATA_HOME`
+    // on Windows, so identity data would otherwise resolve through the real
+    // per-user data directory on that platform.
     const appEnv: NodeJS.ProcessEnv = {
       ...process.env,
       XDG_DATA_HOME: this.dataDir,
+      GRPC_IDENTITY_DATA_DIR: this.identityDataDir,
       GRPC_ENV: 'test',
       WEBKIT_DISABLE_COMPOSITING_MODE: '1',
       ...this.extraEnv,

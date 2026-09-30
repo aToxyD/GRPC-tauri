@@ -13,7 +13,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::errors::{AppError, AppResult};
-use crate::infrastructure::identity::adminkey_provider::GRPC_DATA_DIR;
 
 /// `appkey.age` file name (passphrase-protected app-key-at-rest).
 pub const APPKEY_FILE_NAME: &str = "appkey.age";
@@ -66,11 +65,10 @@ pub struct AppKeyStore {
 }
 
 impl AppKeyStore {
-    /// Resolve the on-disk GRPC data directory (`dirs::data_dir()/GRPC`).
+    /// Resolve the on-disk identity data directory (ADR-0062): the single
+    /// resolver in `infrastructure/identity/data_dir.rs` owns this decision.
     pub fn default_data_dir() -> AppResult<PathBuf> {
-        dirs::data_dir()
-            .map(|dir| dir.join(GRPC_DATA_DIR))
-            .ok_or_else(|| AppError::Internal("Cannot resolve system data directory".into()))
+        crate::infrastructure::identity::data_dir::identity_data_dir()
     }
 
     pub fn new(data_dir: PathBuf) -> Self {

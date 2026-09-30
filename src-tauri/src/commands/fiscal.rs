@@ -204,7 +204,7 @@ pub fn export_fiscal_closure_package(
     // ever consulted.
     let (signer_info, signer) = FiscalClosurePackageService::resolve_wilaya_signer(
         db,
-        &crate::commands::common::node_key_store(),
+        &crate::commands::common::node_key_store().map_err(into_command_error)?,
     )
     .map_err(into_command_error)?;
 

@@ -29,11 +29,10 @@ pub struct AdminKeyProvider {
 }
 
 impl AdminKeyProvider {
-    /// Resolve the on-disk GRPC data directory (`dirs::data_dir()/GRPC`).
+    /// Resolve the on-disk identity data directory (ADR-0062): the single
+    /// resolver in `infrastructure/identity/data_dir.rs` owns this decision.
     pub fn default_data_dir() -> AppResult<PathBuf> {
-        dirs::data_dir()
-            .map(|dir| dir.join(GRPC_DATA_DIR))
-            .ok_or_else(|| AppError::Internal("Cannot resolve system data directory".into()))
+        super::data_dir::identity_data_dir()
     }
 
     pub fn new(data_dir: PathBuf) -> Self {

@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::domain::ports::SecretStoragePort;
 use crate::errors::{AppError, AppResult, ValidationError};
+use crate::infrastructure::identity::data_dir::identity_data_dir;
 
 pub use appkey_store::{AppKeyFile, AppKeyStore};
 pub use file_encryption::AgeFileEncryptionProvider;
@@ -131,7 +132,7 @@ pub fn app_key_unlocked() -> bool {
 pub fn app_key_status() -> AppResult<crate::models::AppKeyStatus> {
     use crate::models::AppKeyStatus;
 
-    let store = AppKeyStore::new(AppKeyStore::default_data_dir()?);
+    let store = AppKeyStore::new(identity_data_dir()?);
     let has_env = std::env::var("GRPC_APP_KEY")
         .ok()
         .map(|v| v.trim().starts_with("AGE-SECRET-KEY-1"))

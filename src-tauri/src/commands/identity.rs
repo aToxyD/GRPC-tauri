@@ -40,13 +40,13 @@ use crate::infrastructure::identity::NodeKeyStore;
 use crate::models::{LoginResponse, User};
 use tauri::State;
 
-fn challenge_service(state: &AppState) -> IdentityChallengeService {
-    IdentityChallengeService::with_default_verifier(
+fn challenge_service(state: &AppState) -> Result<IdentityChallengeService, String> {
+    Ok(IdentityChallengeService::with_default_verifier(
         state.identity_challenge.clone(),
-        adminkey_provider(),
+        adminkey_provider().map_err(into_command_error)?,
         state.password_port.clone(),
         state.rate_limiter.clone(),
-    )
+    ))
 }
 
 /// Derived bootstrap state for the local node (pure projection).
@@ -54,8 +54,12 @@ fn challenge_service(state: &AppState) -> IdentityChallengeService {
 pub fn get_identity_status(state: State<AppState>) -> Result<IdentityBootstrapState, String> {
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;
-    IdentityBootstrapStatusService::compute(db, &node_key_store(), &adminkey_provider())
-        .map_err(into_command_error)
+    IdentityBootstrapStatusService::compute(
+        db,
+        &node_key_store().map_err(into_command_error)?,
+        &adminkey_provider().map_err(into_command_error)?,
+    )
+    .map_err(into_command_error)
 }
 
 /// Begin offline WILAYA bootstrap: generate the node keypair, persist the node
@@ -74,7 +78,7 @@ pub fn begin_wilaya_provision(
 
     let subject_id = uuid::Uuid::new_v4();
     let request = IdentityProvisioningService::new(db)
-        .generate_wilaya_request(subject_id, &node_key_store())
+        .generate_wilaya_request(subject_id, &node_key_store().map_err(into_command_error)?)
         .map_err(into_command_error)?;
     let json = serde_json::to_string_pretty(&request).map_err(|e| {
         into_command_error(AppError::Internal(format!("CSR serialization failed: {e}")))
@@ -107,7 +111,11 @@ pub fn finalize_wilaya_provision(
 
     let now = chrono::Utc::now().to_rfc3339();
     IdentityProvisioningService::new(db)
-        .finalize_wilaya_provision(&signed_cert, &node_key_store(), &now)
+        .finalize_wilaya_provision(
+            &signed_cert,
+            &node_key_store().map_err(into_command_error)?,
+            &now,
+        )
         .map_err(into_command_error)
 }
 
@@ -168,8 +176,11 @@ pub fn issue_first_admin_key_impl(
         let guard = state.get_db().map_err(into_command_error)?;
         let db = db_ref_or_command_error(guard.as_ref())?;
         matches!(
-            IdentityAuthenticationPolicy::admin_credential_state(db, &adminkey_provider())
-                .map_err(into_command_error)?,
+            IdentityAuthenticationPolicy::admin_credential_state(
+                db,
+                &adminkey_provider().map_err(into_command_error)?
+            )
+            .map_err(into_command_error)?,
             AdminCredentialState::Usable
                 | AdminCredentialState::MissingAdminkey
                 | AdminCredentialState::MismatchedAdminkey
@@ -213,8 +224,8 @@ pub fn issue_first_admin_key_impl(
     let result = IdentityProvisioningService::new(db).issue_first_admin_key(
         &subject_username,
         &passphrase,
-        &node_key_store(),
-        &adminkey_provider(),
+        &node_key_store().map_err(into_command_error)?,
+        &adminkey_provider().map_err(into_command_error)?,
         &now,
     );
 
@@ -253,7 +264,11 @@ pub fn begin_unit_provision(
         .resolve_local_unit_subject_id()
         .map_err(into_command_error)?;
     let request = service
-        .generate_identity_request(SubjectType::Unit, subject_id, &node_key_store())
+        .generate_identity_request(
+            SubjectType::Unit,
+            subject_id,
+            &node_key_store().map_err(into_command_error)?,
+        )
         .map_err(into_command_error)?;
     let json = serde_json::to_string_pretty(&request).map_err(|e| {
         into_command_error(AppError::Internal(format!("CSR serialization failed: {e}")))
@@ -275,8 +290,12 @@ pub fn sign_unit_identity_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<IdentityCertificate, String> {
-    sign_unit_identity_request_impl(&state, request_json, &node_key_store())
-        .map_err(into_command_error)
+    sign_unit_identity_request_impl(
+        &state,
+        request_json,
+        &node_key_store().map_err(into_command_error)?,
+    )
+    .map_err(into_command_error)
 }
 
 /// Testable command body for `sign_unit_identity_request`.
@@ -378,7 +397,11 @@ pub fn finalize_unit_provision(
 
     let now = chrono::Utc::now().to_rfc3339();
     IdentityProvisioningService::new(db)
-        .finalize_unit_provision(&signed_cert, &node_key_store(), &now)
+        .finalize_unit_provision(
+            &signed_cert,
+            &node_key_store().map_err(into_command_error)?,
+            &now,
+        )
         .map_err(into_command_error)
 }
 
@@ -495,7 +518,7 @@ pub fn begin_wilaya_rotation(
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    let plan = IdentityRotationCoordinator::new(db, &node_key_store())
+    let plan = IdentityRotationCoordinator::new(db, &node_key_store().map_err(into_command_error)?)
         .begin(SubjectType::Wilaya, operation)
         .map_err(into_command_error)?;
     let json = serde_json::to_string_pretty(&plan.certificate).map_err(|e| {
@@ -521,7 +544,7 @@ pub fn finalize_wilaya_rotation(
         &state,
         cert_file_path,
         rotation_package_path,
-        &node_key_store(),
+        &node_key_store().map_err(into_command_error)?,
     )
     .map_err(into_command_error)
 }
@@ -586,7 +609,7 @@ pub fn begin_unit_rotation(
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    let plan = IdentityRotationCoordinator::new(db, &node_key_store())
+    let plan = IdentityRotationCoordinator::new(db, &node_key_store().map_err(into_command_error)?)
         .begin(SubjectType::Unit, operation)
         .map_err(into_command_error)?;
     let json = serde_json::to_string_pretty(&plan.certificate).map_err(|e| {
@@ -606,8 +629,12 @@ pub fn sign_unit_rotation_request(
     state: State<AppState>,
     request_json: String,
 ) -> Result<SignedUnitRotation, String> {
-    sign_unit_rotation_request_impl(&state, request_json, &node_key_store())
-        .map_err(into_command_error)
+    sign_unit_rotation_request_impl(
+        &state,
+        request_json,
+        &node_key_store().map_err(into_command_error)?,
+    )
+    .map_err(into_command_error)
 }
 
 /// Command-boundary implementation of `sign_unit_rotation_request`.
@@ -647,8 +674,12 @@ pub fn finalize_unit_rotation(
     state: State<AppState>,
     cert_file_path: String,
 ) -> Result<RotationFinalizeOutcome, String> {
-    finalize_unit_rotation_impl(&state, cert_file_path, &node_key_store())
-        .map_err(into_command_error)
+    finalize_unit_rotation_impl(
+        &state,
+        cert_file_path,
+        &node_key_store().map_err(into_command_error)?,
+    )
+    .map_err(into_command_error)
 }
 
 /// Command-boundary implementation of `finalize_unit_rotation`.
@@ -691,7 +722,7 @@ pub fn finalize_unit_rotation_impl(
 pub fn begin_challenge(state: State<AppState>) -> Result<ChallengeMessage, String> {
     let guard = state.get_db().map_err(into_command_error)?;
     let db = db_ref_or_command_error(guard.as_ref())?;
-    challenge_service(&state)
+    challenge_service(&state)?
         .begin_with_db(db)
         .map_err(into_command_error)
 }
@@ -730,7 +761,7 @@ pub fn complete_challenge(
     let mut guard = state.get_db().map_err(into_command_error)?;
     let db = db_mut_or_command_error(guard.as_mut())?;
 
-    let established = challenge_service(&state)
+    let established = challenge_service(&state)?
         .complete_with_passphrase(db, &parsed_session_id, &passphrase)
         .map_err(into_command_error)?;
 
