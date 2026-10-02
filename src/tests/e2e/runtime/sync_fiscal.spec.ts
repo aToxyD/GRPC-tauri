@@ -1,5 +1,8 @@
 import { test, expect } from '../fixtures/tauriApp';
-import { performFirstAdminCeremony } from '../helpers/firstAdminCeremony';
+import {
+  E2E_ADMIN_PASSPHRASE,
+  performFirstAdminCeremony,
+} from '../helpers/firstAdminCeremony';
 import path from 'path';
 import fs from 'fs';
 
@@ -11,6 +14,39 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
 
     // Login and setup node via the real first-ADMIN ceremony
     await performFirstAdminCeremony({ page, driver, rootCeremony });
+
+    // SEC-033: `export_products_package` enumerates the authoritative UNIT
+    // target set server-side and fails closed when none is registered
+    // (`transport_target.rs:84`). Exactly ONE unit is required:
+    // `derive_per_target_artifact_path` preserves the operator-requested path
+    // verbatim only while `target_count <= 1` (`transport_target.rs:133`), so a
+    // second unit would invalidate the `existsSync(exportPath)` assertion below.
+    //
+    // The unit is created through the real `create_unit` command
+    // (`commands/units.rs:20`), never by writing to SQLite. The ceremony above
+    // already satisfies every precondition: an Admin session, and a node
+    // configured as WILAYA so `settings.wilaya_code` resolves and the
+    // `Action::ManageUnits` policy admits `ResourceContext::WilayaNode`.
+    const createdUnit = await page.evaluate(
+      async (unitPassword) => {
+        const { invoke } = (window as any).__TAURI__.core;
+        return await invoke('create_unit', {
+          request: {
+            // Passes the transport-target path-component check and the dormant
+            // `validate_create_unit_request` rule (exactly 6 alphanumeric
+            // characters) as well as the live command's UNIQUE constraint.
+            code: 'UNIT01',
+            name: 'E2E Export Target Unit',
+            password: unitPassword,
+          },
+        });
+      },
+      E2E_ADMIN_PASSPHRASE
+    );
+    expect(createdUnit.code).toBe('UNIT01');
+    // `wilaya_code` is derived server-side from settings, proving the ceremony's
+    // configured WILAYA supplied it rather than the caller.
+    expect(createdUnit.wilaya_code).toBe('16');
 
     // Export path inside test isolated folder
     const exportPath = path.join(path.dirname(driver.getDbPath()), 'catalog.sync');
