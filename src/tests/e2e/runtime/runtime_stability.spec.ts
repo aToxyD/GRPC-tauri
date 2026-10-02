@@ -13,10 +13,28 @@ test.describe('Runtime stability', () => {
 
     await ensureLoginIdentity(page, 'admin');
     await passwordInput.fill('wrong');
+    // The login page arms a client-side latch once 5 attempts fail
+    // (LoginPage.svelte:432) that disables the submit button
+    // (LoginPage.svelte:576) and is cleared only by a successful login
+    // (LoginPage.svelte:350). Reaching that latch is therefore the expected
+    // outcome of a rapid-submit run, not a runtime error.
+    //
+    // Two bounds keep this deterministic instead of stalling until the 90 s
+    // test timeout: global `actionTimeout` is 0 (playwright.config.ts:15), so
+    // every click needs an explicit deadline, and clicks must stop being issued
+    // once the latch disables the button.
+    let attempts = 0;
     for (let i = 0; i < 5; i++) {
-      await submitBtn.click({ clickCount: 2, delay: 20 }).catch(() => {});
+      if (await submitBtn.isDisabled()) break;
+      await submitBtn.click({ clickCount: 2, delay: 20, timeout: 5_000 });
+      attempts++;
       await page.waitForTimeout(100);
     }
+
+    // Guard against a vacuous pass where no submission ever ran.
+    expect(attempts).toBeGreaterThan(0);
+    // Bounded wait for the documented lockout state to settle.
+    await expect(submitBtn).toBeDisabled({ timeout: 15_000 });
 
     expect(runtimeErrors).toEqual([]);
   });
