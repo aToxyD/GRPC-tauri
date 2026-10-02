@@ -1,24 +1,16 @@
 import { test, expect } from '../fixtures/tauriApp';
-import { ensureLoginIdentity } from '../helpers/login';
+import { performFirstAdminCeremony } from '../helpers/firstAdminCeremony';
 import path from 'path';
 import fs from 'fs';
 
 test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
   test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
-  test('export products sync package verifies package structure and V2 signing', async ({ tauriApp }) => {
-    const { page, driver } = tauriApp;
+  test('export products sync package verifies package structure and V2 signing', async ({ tauriAdminApp }) => {
+    const { page, driver, rootCeremony } = tauriAdminApp;
 
-    // Login and setup node
-    await ensureLoginIdentity(page, 'admin');
-    await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
-    await page.locator('button:has-text("تسجيل الدخول")').click();
-
-    await page.waitForSelector('h1:has-text("تكوين الولاية")');
-    await page.locator('input[id="wilayaCode"]').fill('16');
-    await page.locator('input[id="wilayaName"]').fill('الجزائر العاصمة');
-    await page.locator('button:has-text("تكوين كولاية")').click();
-    await page.waitForSelector('h1:has-text("لوحة تحكم الولاية")');
+    // Login and setup node via the real first-ADMIN ceremony
+    await performFirstAdminCeremony({ page, driver, rootCeremony });
 
     // Export path inside test isolated folder
     const exportPath = path.join(path.dirname(driver.getDbPath()), 'catalog.sync');
@@ -36,19 +28,11 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
     expect(data.startsWith('age-encryption.org')).toBe(true);
   });
 
-  test('corrupted or tampered sync packages are rejected safely', async ({ tauriApp }) => {
-    const { page, driver } = tauriApp;
+  test('corrupted or tampered sync packages are rejected safely', async ({ tauriAdminApp }) => {
+    const { page, driver, rootCeremony } = tauriAdminApp;
 
-    // Login and setup node
-    await ensureLoginIdentity(page, 'admin');
-    await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
-    await page.locator('button:has-text("تسجيل الدخول")').click();
-
-    await page.waitForSelector('h1:has-text("تكوين الولاية")');
-    await page.locator('input[id="wilayaCode"]').fill('16');
-    await page.locator('input[id="wilayaName"]').fill('الجزائر العاصمة');
-    await page.locator('button:has-text("تكوين كولاية")').click();
-    await page.waitForSelector('h1:has-text("لوحة تحكم الولاية")');
+    // Login and setup node via the real first-ADMIN ceremony
+    await performFirstAdminCeremony({ page, driver, rootCeremony });
 
     // Write a corrupted file to import
     const corruptPath = path.join(path.dirname(driver.getDbPath()), 'corrupted.sync');
@@ -74,19 +58,11 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
     }
   });
 
-  test('fiscal closure workflow transitions year and enforces immutability', async ({ tauriApp }) => {
-    const { page } = tauriApp;
+  test('fiscal closure workflow transitions year and enforces immutability', async ({ tauriAdminApp }) => {
+    const { page, driver, rootCeremony } = tauriAdminApp;
 
-    // Login and setup node
-    await ensureLoginIdentity(page, 'admin');
-    await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
-    await page.locator('button:has-text("تسجيل الدخول")').click();
-
-    await page.waitForSelector('h1:has-text("تكوين الولاية")');
-    await page.locator('input[id="wilayaCode"]').fill('16');
-    await page.locator('input[id="wilayaName"]').fill('الجزائر العاصمة');
-    await page.locator('button:has-text("تكوين كولاية")').click();
-    await page.waitForSelector('h1:has-text("لوحة تحكم الولاية")');
+    // Login and setup node via the real first-ADMIN ceremony
+    await performFirstAdminCeremony({ page, driver, rootCeremony });
 
     // 1. Issue operational execution token for fiscal close
     const tokenResponse = await page.evaluate(async () => {

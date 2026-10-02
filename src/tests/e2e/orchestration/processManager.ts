@@ -27,8 +27,16 @@ export class ProcessManager {
 
   /**
    * Generates a isolated test environment with custom temp folders and DB paths.
+   *
+   * The run-scoped environment is established here: DB path, identity data
+   * directory (ADR-0062), app key, and the CDP/WebView2 pair are owned by
+   * ProcessManager. `extraEnv` is an explicit caller override applied last, so
+   * a caller CAN replace any of those variables. Current callers pass only
+   * `GRPC_ROOT_PUBLIC_KEY` (the first-admin ceremony). Callers must not override
+   * a ProcessManager-owned variable unless they intentionally intend to change
+   * that contract.
    */
-  public prepareEnvironment(port: number): ProcessConfig {
+  public prepareEnvironment(port: number, extraEnv?: Record<string, string>): ProcessConfig {
     const timestamp = Date.now();
     const randomSuffix = Math.floor(Math.random() * 100000);
     this.tempDir = path.join(os.tmpdir(), `grpc_e2e_${timestamp}_${randomSuffix}`);
@@ -61,7 +69,8 @@ export class ProcessManager {
         GRPC_IDENTITY_DATA_DIR: identityDataDir,
         WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
         WEBVIEW2_USER_DATA_FOLDER: path.join(this.tempDir, 'webview2'),
-        TAURI_ENV_DEBUG: 'true'
+        TAURI_ENV_DEBUG: 'true',
+        ...extraEnv
       }
     };
 

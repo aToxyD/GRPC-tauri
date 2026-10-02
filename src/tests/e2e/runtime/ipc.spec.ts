@@ -1,23 +1,15 @@
 import { test, expect } from '../fixtures/tauriApp';
-import { ensureLoginIdentity } from '../helpers/login';
+import { performFirstAdminCeremony } from '../helpers/firstAdminCeremony';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
 
 test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
   test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
-  test('IPC commands enforce node boundaries and reject path traversal attempts', async ({ tauriApp }) => {
-    const { page } = tauriApp;
+  test('IPC commands enforce node boundaries and reject path traversal attempts', async ({ tauriAdminApp }) => {
+    const { page, driver, rootCeremony } = tauriAdminApp;
 
     // Login and configure to initialize database settings context
-    await ensureLoginIdentity(page, 'admin');
-    await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
-    await page.locator('button:has-text("تسجيل الدخول")').click();
-
-    await page.waitForSelector('h1:has-text("تكوين الولاية")');
-    await page.locator('input[id="wilayaCode"]').fill('16');
-    await page.locator('input[id="wilayaName"]').fill('الجزائر العاصمة');
-    await page.locator('button:has-text("تكوين كولاية")').click();
-    await page.waitForSelector('h1:has-text("لوحة تحكم الولاية")');
+    await performFirstAdminCeremony({ page, driver, rootCeremony });
 
     // 1. Validate that direct call to unauthorized commands fails
     await RuntimeContracts.assertIpcGuardsEnforced(page);

@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/tauriApp';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
 import { ensureLoginIdentity } from '../helpers/login';
+import { performFirstAdminCeremony } from '../helpers/firstAdminCeremony';
 
 test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
   test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
@@ -30,26 +31,20 @@ test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
     expect(joinedText).toMatch(/محظور|تجاوز الحد/);
   });
 
-  test('successful authentication, session bootstrap, and node redirection', async ({ tauriApp }) => {
-    const { page } = tauriApp;
+  test('successful authentication, session bootstrap, and node redirection', async ({ tauriAdminApp }) => {
+    const { page, driver, rootCeremony } = tauriAdminApp;
 
-    // Login as default admin (identity pinned/selected — ADR-0052)
-    await ensureLoginIdentity(page, 'admin');
-    await page.locator('input[placeholder*="كلمة المرور"]').fill('admin');
-    await page.locator('button:has-text("تسجيل الدخول")').click();
+    // Real first-ADMIN bootstrap ceremony: Root-sign the WILAYA CSR, issue the
+    // admin identity key, authenticate through the admin-key UI, and configure
+    // the node. Production seeds no password-enabled admin, so a password login
+    // cannot reach an authenticated state on a fresh database.
+    const ceremony = await performFirstAdminCeremony({ page, driver, rootCeremony });
 
-    // Since this is a fresh database, it redirects to the node setup page
-    await page.waitForSelector('h1:has-text("تكوين الولاية")');
-    expect(page.url()).toContain('configure');
-
-    // Perform configuration as Wilaya node
-    await page.locator('input[id="wilayaCode"]').fill('16');
-    await page.locator('input[id="wilayaName"]').fill('الجزائر العاصمة');
-    await page.locator('button:has-text("تكوين كولاية")').click();
-
-    // Redirection to main Wilaya dashboard
-    await page.waitForSelector('h1:has-text("لوحة تحكم الولاية")');
-    expect(page.url()).toContain('wilaya');
+    // The ceremony leaves the node authenticated, configured, and on the
+    // dashboard; assert the identities it actually provisioned.
+    expect(ceremony.wilayaCertificate.subject_type).toBe('WILAYA');
+    expect(ceremony.wilayaCertificate.status).toBe('ACTIVE');
+    expect(ceremony.adminCertificate.subject_type).toBe('ADMIN');
 
     // Assert session exists in memory/local storage
     await RuntimeContracts.assertSecureSessionBootstrapped(page);

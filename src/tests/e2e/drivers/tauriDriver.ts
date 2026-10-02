@@ -35,13 +35,18 @@ export class TauriDriver {
    * consume the compiled window argument, but it is NOT sufficient on its own:
    * wry always calls `set_additional_browser_arguments(...)` with a non-empty
    * value, which overrides that environment variable entirely.
+   *
+   * `extraEnv` is forwarded to `ProcessManager.prepareEnvironment` so a caller
+   * can supply variables that must be present at spawn time (the process
+   * environment cannot be changed after launch on Windows). The first-admin
+   * ceremony uses this for `GRPC_ROOT_PUBLIC_KEY`.
    */
-  public async start(): Promise<Page> {
+  public async start(extraEnv?: Record<string, string>): Promise<Page> {
     // ── 1. Resolve the build-time CDP port ────────────────────────────────────
     const cdpPort = this.port;
 
     // ── 2. Prepare environment & launch app ───────────────────────────────────
-    this.processManager.prepareEnvironment(cdpPort);
+    this.processManager.prepareEnvironment(cdpPort, extraEnv);
     await this.processManager.start();
 
     // ── 3. Poll the real CDP HTTP endpoint until WebView2 is ready ───────────
@@ -143,6 +148,23 @@ export class TauriDriver {
    */
   public getDiagnostics(): string {
     return this.processManager.getDiagnostics();
+  }
+
+  /**
+   * Returns the absolute, run-scoped identity data directory handed to the app
+   * as `GRPC_IDENTITY_DATA_DIR` (ADR-0062). `ProcessManager` owns it; this only
+   * forwards.
+   */
+  public getIdentityDataDir(): string {
+    return this.processManager.getIdentityDataDir();
+  }
+
+  /**
+   * Returns the run-scoped temp root that owns both the database and the
+   * identity directory, so callers can assert hermetic isolation.
+   */
+  public getTempDir(): string | null {
+    return this.processManager.getTempDir();
   }
 
   private _log(logPath: string, message: string): void {
