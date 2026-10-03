@@ -40,6 +40,23 @@ export class ViteDriver {
           if (_cmd === 'is_configured') {
             return Promise.resolve(false);
           }
+          // `login` must RESOLVE with a failed `LoginResponse`, not reject:
+          // the page's client-side lockout latch (LoginPage.svelte) increments
+          // `loginAttempts` only inside the `response.success === false`
+          // branch. A rejected invoke bypasses that branch entirely, so the
+          // latch never arms and rapid-submit stability cannot be exercised
+          // without a real backend. The message deliberately avoids the
+          // backend's rate-limit phrasing ('تجاوز الحد') so the failure takes
+          // the counting path rather than the immediate-lockout path.
+          if (_cmd === 'login') {
+            return Promise.resolve({
+              success: false,
+              user: null,
+              message: 'بيانات الدخول غير صالحة',
+              requires_configuration: false,
+              identity_challenge_required: false,
+            });
+          }
           // Mock window API plugin calls to avoid console error noise and promise rejection logs in E2E tests.
           if (_cmd.startsWith('plugin:window|')) {
             if (_cmd.includes('is_maximized') || _cmd.includes('is_minimized') || _cmd.includes('is_resizable')) {
