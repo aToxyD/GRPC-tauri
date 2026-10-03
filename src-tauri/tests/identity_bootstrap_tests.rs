@@ -36,6 +36,7 @@ use grpc_lib::domain::identity::{
 };
 use grpc_lib::domain::security::PasswordHashPort;
 use grpc_lib::errors::AuthenticationError;
+use grpc_lib::infrastructure::identity::data_dir::reset_identity_data_dir_cache_for_tests;
 use grpc_lib::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
 use grpc_lib::infrastructure::security::{
     Argon2PasswordHashProvider, Ed25519SignatureVerifier, Ed25519SigningProvider,
@@ -1387,6 +1388,14 @@ fn with_command_harness(f: impl FnOnce(&mut CommandHarness)) {
     let _lock = XDG_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // ADR-0062 §3 pins the resolved directory for the process lifetime, but this
+    // harness pins a different `XDG_DATA_HOME` per test. Without this
+    // test-only reset the second and later tests resolve the FIRST test's
+    // TempDir, which has already been dropped on the floor — every later
+    // `node_identity.key` read then fails with "No such file or directory".
+    // Same seam and same placement as `with_security_harness()` in
+    // `app_key_keyring_tests.rs`; production resolution is untouched.
+    reset_identity_data_dir_cache_for_tests().expect("reset the identity data dir cache");
     let xdg_dir = tempfile::TempDir::new().expect("xdg temp");
     std::env::set_var("XDG_DATA_HOME", xdg_dir.path());
     let grpc_dir = xdg_dir.path().join("GRPC");
@@ -1400,6 +1409,9 @@ fn with_command_harness(f: impl FnOnce(&mut CommandHarness)) {
     };
     f(&mut harness);
     std::env::remove_var("XDG_DATA_HOME");
+    // The cached resolution still points at the TempDir dropped just above, so
+    // it is cleared here too rather than leaked into a later test in this binary.
+    reset_identity_data_dir_cache_for_tests().expect("clear the identity data dir cache");
 }
 
 impl CommandHarness {
