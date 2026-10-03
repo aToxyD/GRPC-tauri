@@ -42,10 +42,20 @@ test.describe('Tauri Application Startup Integrity & Lifecycle', () => {
     // (A blanket "not under LOCALAPPDATA" check is wrong: `os.tmpdir()` is
     // `%LOCALAPPDATA%\Temp` on Windows, which is exactly where the run-scoped
     // root is supposed to live.)
+    //
+    // `platformDir` is always included: it is the resolved platform default the
+    // app would fall back to when no override is set, and it is absolute on
+    // every platform. Deriving the list from environment variables alone left
+    // it empty wherever the platform does not export one (Linux without
+    // `XDG_DATA_HOME`), which made the `toBeGreaterThan(0)` guard below fail
+    // without any identity state having been touched. Entries may repeat when a
+    // variable and the platform default coincide; both assertions are
+    // idempotent, so duplicates add no coverage and cost nothing.
     const realIdentityDirs = [
       process.env.APPDATA ? path.join(process.env.APPDATA, 'GRPC') : null,
       process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'GRPC') : null,
       process.env.XDG_DATA_HOME ? path.join(process.env.XDG_DATA_HOME, 'GRPC') : null,
+      platformDir,
     ].filter((p): p is string => Boolean(p) && path.isAbsolute(p as string));
     for (const real of realIdentityDirs) {
       expect(identityDir === real).toBe(false);
