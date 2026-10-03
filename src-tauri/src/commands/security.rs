@@ -872,30 +872,23 @@ mod tests {
         // The override stays set across the command call: it is the state under
         // test, and unsetting it would resolve the real platform directory.
         std::env::set_var(IDENTITY_DATA_DIR_ENV, "relative-identity-dir");
-        let outcome = (|| -> Result<Option<std::path::PathBuf>, String> {
-            match appkey_store() {
-                // Warm cache (§3): the pinned directory is in use. The historical
-                // defect was a temp-rooted store, which cannot be returned here.
-                // The command is not invoked, because it would write real
-                // identity material into the operator's platform data directory.
-                Ok(store) => Ok(Some(store.file_path().parent().unwrap().to_path_buf())),
-                // Cold cache: the command must fail before generating or writing
-                // any identity material.
-                Err(AppError::Configuration(_)) => {
-                    let state = crate::app::state::AppState::new_for_test(
-                        crate::db::ConnectionFactory::new_for_test().expect("test database"),
-                    );
-                    initialize_app_key_impl(
-                        &state,
-                        "correct-horse-battery-staple",
-                        None,
-                        Some(false),
-                    )
+        let outcome: Result<Option<std::path::PathBuf>, String> = match appkey_store() {
+            // Warm cache (§3): the pinned directory is in use. The historical
+            // defect was a temp-rooted store, which cannot be returned here.
+            // The command is not invoked, because it would write real
+            // identity material into the operator's platform data directory.
+            Ok(store) => Ok(Some(store.file_path().parent().unwrap().to_path_buf())),
+            // Cold cache: the command must fail before generating or writing
+            // any identity material.
+            Err(AppError::Configuration(_)) => {
+                let state = crate::app::state::AppState::new_for_test(
+                    crate::db::ConnectionFactory::new_for_test().expect("test database"),
+                );
+                initialize_app_key_impl(&state, "correct-horse-battery-staple", None, Some(false))
                     .map(|_| None)
-                }
-                Err(e) => Err(format!("unexpected resolver error: {e:?}")),
             }
-        })();
+            Err(e) => Err(format!("unexpected resolver error: {e:?}")),
+        };
         std::env::remove_var(IDENTITY_DATA_DIR_ENV);
         clear_app_key_cache();
 
