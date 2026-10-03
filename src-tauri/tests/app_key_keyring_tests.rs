@@ -20,6 +20,9 @@ mod common;
 use common::{InMemorySecretStorage, KeyringSeamGuard, IDENTITY_A, IDENTITY_B};
 use grpc_lib::commands::{initialize_app_key_impl, unlock_app_key_impl};
 use grpc_lib::domain::ports::SecretStoragePort;
+use grpc_lib::infrastructure::identity::data_dir::{
+    reset_identity_data_dir_cache_for_tests, IDENTITY_DATA_DIR_ENV,
+};
 use grpc_lib::infrastructure::security::keyring_secret_storage::{
     APP_KEY_RING_ENTRY, KEYRING_SERVICE,
 };
@@ -29,9 +32,9 @@ use grpc_lib::infrastructure::security::{
 };
 use std::sync::{Arc, Mutex as StdMutex};
 
-/// Serializes `XDG_DATA_HOME` / `GRPC_APP_KEY` / `GRPC_DB_PATH` mutation
-/// between env-dependent tests in THIS file (same pattern as
-/// `identity_bootstrap_tests`).
+/// Serializes `GRPC_IDENTITY_DATA_DIR` / `XDG_DATA_HOME` / `GRPC_APP_KEY` /
+/// `GRPC_DB_PATH` mutation between env-dependent tests in THIS file (same
+/// pattern as `identity_bootstrap_tests`).
 static XDG_LOCK: StdMutex<()> = StdMutex::new(());
 
 // ---------------------------------------------------------------------------
@@ -348,10 +351,11 @@ fn no_secret_is_written_before_validation_succeeds() {
 
 /// Command-level harness, seam-isolated with a pinned XDG layout.
 ///
-/// Pins `XDG_DATA_HOME` and `GRPC_DB_PATH` into a temp dir and seeds a minimal
-/// valid deployment (open fiscal year, settings.current_year, writable backup
-/// and log dirs). The deployment-readiness gate in `bootstrap_runtime` passes;
-/// the in-memory keyring fake absorbs `remember` writes (never the real keyring).
+/// Pins `GRPC_IDENTITY_DATA_DIR`, `XDG_DATA_HOME` and `GRPC_DB_PATH` into a
+/// temp dir and seeds a minimal valid deployment (open fiscal year,
+/// settings.current_year, writable backup and log dirs). The deployment-
+/// readiness gate in `bootstrap_runtime` passes; the in-memory keyring fake
+/// absorbs `remember` writes (never the real keyring).
 fn with_security_harness(f: impl FnOnce(&SecurityHarness)) {
     let _lock = XDG_LOCK
         .lock()
@@ -360,7 +364,24 @@ fn with_security_harness(f: impl FnOnce(&SecurityHarness)) {
     let temp = tempfile::TempDir::new().expect("temp root");
     let xdg_dir = temp.path().join("xdg");
     std::fs::create_dir_all(&xdg_dir).expect("xdg dir");
+    // `XDG_DATA_HOME` alone does NOT isolate identity state: `dirs::data_dir()`
+    // resolves through the Windows Known Folder API on Windows and ignores
+    // `XDG_DATA_HOME` entirely, so every invocation resolved the real
+    // `%APPDATA%\GRPC`. `GRPC_IDENTITY_DATA_DIR` is the ADR-0062 §2 override and
+    // is honored on every platform, so it is the authoritative test identity
+    // directory here; `XDG_DATA_HOME` is still set below for the non-identity
+    // data (logs, backups) that Linux tests depend on.
+    let identity_dir = temp.path().join("identity");
+    std::fs::create_dir_all(&identity_dir).expect("identity dir");
     let db_path = temp.path().join("db").join("grpc.db");
+    // The resolver caches its first successful resolution for the process
+    // lifetime (ADR-0062 §3), so the cache is dropped here — while the harness
+    // lock is held, and before the override below can be read — otherwise a
+    // later test inherits the previous test's directory, still holding its
+    // `appkey.age`, and `initialize_app_key_impl` fails closed. Test-only seam:
+    // production resolution semantics are untouched.
+    reset_identity_data_dir_cache_for_tests().expect("reset the identity data dir cache");
+    std::env::set_var(IDENTITY_DATA_DIR_ENV, &identity_dir);
     std::env::set_var("XDG_DATA_HOME", &xdg_dir);
     std::env::set_var("GRPC_DB_PATH", &db_path);
     std::env::remove_var("GRPC_APP_KEY");
@@ -394,8 +415,12 @@ fn with_security_harness(f: impl FnOnce(&SecurityHarness)) {
     );
     let harness = SecurityHarness { _temp: temp, state };
     f(&harness);
+    std::env::remove_var(IDENTITY_DATA_DIR_ENV);
     std::env::remove_var("XDG_DATA_HOME");
     std::env::remove_var("GRPC_DB_PATH");
+    // The cached resolution still points at the TempDir dropped just above, so
+    // it is cleared here too rather than leaked into a later test in this binary.
+    reset_identity_data_dir_cache_for_tests().expect("clear the identity data dir cache");
 }
 
 struct SecurityHarness {

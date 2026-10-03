@@ -65,6 +65,39 @@ pub fn identity_data_dir() -> AppResult<PathBuf> {
     Ok(resolved)
 }
 
+/// TEST-ONLY: drop the process-lifetime resolution cache so the next
+/// [`identity_data_dir`] call re-reads the current process environment.
+///
+/// This seam exists **solely** to isolate tests which intentionally mutate
+/// process-global identity-directory environment state inside a single Rust
+/// test process. `tests/app_key_keyring_tests.rs` pins a different
+/// `XDG_DATA_HOME` per test through `with_security_harness()`; without a reset,
+/// the second and later tests resolve the first test's directory — which
+/// already holds an `appkey.age` — and `initialize_app_key_impl` correctly fails
+/// closed.
+///
+/// Production semantics are unchanged. Within a production process the resolved
+/// directory still remains cached for that process lifetime (ADR-0062 §3):
+/// this seam is compiled out of release builds, so it is unreachable from
+/// application code, and it introduces no runtime reset capability, no
+/// environment-sensitive cache key, and no production configuration switch.
+/// `identity_data_dir()`, `resolve_identity_data_dir()`, and the
+/// `GRPC_IDENTITY_DATA_DIR` contract are all untouched.
+///
+/// Excluded from release binaries via `#[cfg(debug_assertions)]` for the same
+/// reason as `infrastructure/security`'s development-only AGE key: an
+/// integration test compiles the library as a normal dependency, where
+/// `#[cfg(test)]` items are not present at all. A poisoned lock is propagated
+/// rather than swallowed, matching the lock handling of [`identity_data_dir`].
+#[cfg(debug_assertions)]
+pub fn reset_identity_data_dir_cache_for_tests() -> AppResult<()> {
+    let mut cached = RESOLVED_IDENTITY_DATA_DIR.lock().map_err(|e| {
+        AppError::Internal(format!("Failed to lock the identity data dir cache: {e}"))
+    })?;
+    *cached = None;
+    Ok(())
+}
+
 /// Uncached resolution: reads the process environment and the platform data
 /// directory. Reached only through [`identity_data_dir`].
 fn resolve_identity_data_dir() -> AppResult<PathBuf> {
