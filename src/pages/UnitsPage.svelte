@@ -48,10 +48,6 @@
   let unitCode = "";
   // @category TransientState
   let unitName = "";
-  // @category TransientState
-  let password = "";
-  // @category TransientState
-  let confirmPassword = "";
 
   onMount(async () => {
     loadData();
@@ -69,8 +65,6 @@
   function openCreateModal() {
     unitCode = "";
     unitName = "";
-    password = "";
-    confirmPassword = "";
     showModal = true;
     unitsOp.error.set(null);
   }
@@ -79,8 +73,6 @@
     editingUnit = unit;
     unitCode = unit.code;
     unitName = unit.name;
-    password = "";
-    confirmPassword = "";
     showEditModal = true;
     unitsOp.error.set(null);
   }
@@ -101,13 +93,8 @@
   }
 
   async function saveUnit() {
-    if (!unitCode || !unitName || !password) {
+    if (!unitCode || !unitName) {
       unitsOp.error.set("الرجاء إدخال رمز واسم الوحدة");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      unitsOp.error.set("كلمات المرور غير متطابقة");
       return;
     }
 
@@ -117,10 +104,12 @@
     }
 
     try {
+      // ADR-0063 D1: the backend mints the canonical operator credential
+      // (bootstrap value, forced change) server-side. No password is
+      // collected, sent, or derived here.
       const request: CreateUnitRequest = {
         code: unitCode,
         name: unitName,
-        password,
       };
       await createUnit(request, settings.wilaya_code);
       setSuccessWithTimeout(`تم إنشاء الوحدة ${unitCode} بنجاح.`);
@@ -143,10 +132,11 @@
     }
 
     try {
+      // `code` is immutable (ADR-0063 D8); the edit field is disabled and the
+      // backend rejects any attempted change. This flow edits the name only.
       const request: CreateUnitRequest = {
         code: unitCode,
         name: unitName,
-        password: password || "",
       };
       await updateUnit(editingUnit.id, request);
       setSuccessWithTimeout(`تم تحديث الوحدة ${unitCode} بنجاح.`);
@@ -379,22 +369,9 @@
         اسم مستخدم مشغّل الوحدة ثابت: <span class="font-semibold" dir="ltr">user</span>
       </p>
 
-      <div class="grid grid-cols-2 gap-4">
-        <AppInput
-          id="password"
-          label="كلمة المرور *"
-          type="password"
-          placeholder="••••••••"
-          bind:value={password}
-        />
-        <AppInput
-          id="confirmPassword"
-          label="تأكيد *"
-          type="password"
-          placeholder="تأكيد"
-          bind:value={confirmPassword}
-        />
-      </div>
+      <p class="text-sm text-gray-600 dark:text-gray-400">
+        تُنشأ بيانات دخول المشغّل تلقائياً من الخادم عند إنشاء الوحدة.
+      </p>
     </div>
   </div>
 
@@ -418,6 +395,7 @@
       label="رمز الوحدة *"
       placeholder="مثال: UNIT01"
       bind:value={unitCode}
+      disabled
     />
     <AppInput
       id="editUnitName"
@@ -428,31 +406,14 @@
 
     <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
       <h3 class="font-semibold text-gray-800 dark:text-gray-100 mb-2">
-        بيانات تسجيل الدخول (اختياري)
+        بيانات تسجيل الدخول
       </h3>
-      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-        اترك الحقول فارغة إذا لم تريد تغيير بيانات تسجيل الدخول.
-      </p>
-
       <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
         اسم المستخدم ثابت ولا يمكن تغييره: <span class="font-semibold" dir="ltr">user</span>
       </p>
-      <div class="grid grid-cols-2 gap-4">
-        <AppInput
-          id="editPassword"
-          label="كلمة المرور"
-          type="password"
-          placeholder="كلمة مرور جديدة"
-          bind:value={password}
-        />
-        <AppInput
-          id="editConfirmPassword"
-          label="تأكيد"
-          type="password"
-          placeholder="تأكيد كلمة المرور"
-          bind:value={confirmPassword}
-        />
-      </div>
+      <p class="text-sm text-gray-600 dark:text-gray-400">
+        رمز الوحدة وكلمة المرور غير قابلين للتغيير من هنا.
+      </p>
     </div>
   </div>
 

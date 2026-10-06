@@ -106,7 +106,7 @@ pub use sync_package_identity_verification_service::{
 pub use system_diagnostics_service::SystemDiagnosticsService;
 pub use system_health_service::SystemHealthService;
 pub use system_stats_service::SystemStatsService;
-pub use unit_service::UnitService;
+pub use unit_service::{UnitService, BOOTSTRAP_PASSWORD, OPERATOR_USERNAME};
 pub use user_account_sync_service::{ApplyIdentityAccessOutcome, UserAccountSyncService};
 pub use user_service::UserService;
 

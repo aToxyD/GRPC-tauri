@@ -35,11 +35,15 @@ impl Unit {
 ///
 /// ADR-0052: the operator username is NOT caller-supplied — the backend
 /// derives the canonical `user` server-side (node-scoped to the unit code).
+///
+/// ADR-0063 D1: no password is caller-supplied either. The initial operator
+/// credential is minted server-side as the bootstrap value, so this contract
+/// carries only `code` and `name`. This supersedes ADR-0052 §D1 line 46, which
+/// stated `CreateUnitRequest` carries `{code, name, password}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUnitRequest {
     pub code: String,
     pub name: String,
-    pub password: String,
 }
 
 /// Unit export package for node synchronization

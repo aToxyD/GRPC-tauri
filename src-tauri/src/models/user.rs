@@ -25,6 +25,12 @@ pub struct User {
     /// (soft-deleted). Never sent to the frontend through the `User` DTO.
     #[serde(default, skip_serializing)]
     pub deleted: bool,
+    /// ADR-0063: persisted forced credential state. `true` means the stored
+    /// credential must be replaced before normal application use; it is set
+    /// when the canonical UNIT operator is minted with the bootstrap
+    /// credential. Never sent to the frontend through the `User` DTO.
+    #[serde(default, skip_serializing)]
+    pub must_change_password: bool,
 }
 
 /// User role for authorization

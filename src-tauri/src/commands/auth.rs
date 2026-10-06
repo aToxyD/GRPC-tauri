@@ -340,6 +340,10 @@ pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> 
         created_at: snapshot.created_at,
         node_id: String::new(),
         deleted: false,
+        // Session-snapshot projection only. Carrying the forced credential
+        // state into `UserSnapshot` and enforcing it belongs to the ADR-0063
+        // login/session slice, which is not part of this slice.
+        must_change_password: false,
     };
 
     Ok(Some(user))

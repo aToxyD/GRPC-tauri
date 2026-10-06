@@ -224,17 +224,15 @@ impl<'a> UnitRepository<'a> {
         Ok(user_id)
     }
 
-    /// Update unit information
-    pub fn update_unit(
-        &self,
-        unit_id: &str,
-        code: &str,
-        name: &str,
-        now: &str,
-    ) -> Result<(), AppError> {
+    /// Update a unit's mutable information (SQL-only).
+    ///
+    /// ADR-0063 D8: `code` is immutable after creation — the canonical UNIT
+    /// operator credential is node-bound to the code, so the column is never
+    /// written by an update path. Only `name` is editable.
+    pub fn update_unit_name(&self, unit_id: &str, name: &str, now: &str) -> Result<(), AppError> {
         self.executor.execute(
-            "UPDATE units SET code = ?1, name = ?2, updated_at = ?3 WHERE id = ?4",
-            params![code, name, now, unit_id],
+            "UPDATE units SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![name, now, unit_id],
         )?;
 
         Ok(())

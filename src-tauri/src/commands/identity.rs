@@ -778,6 +778,10 @@ pub fn complete_challenge(
         created_at: session.user_snapshot.created_at,
         node_id: String::new(),
         deleted: false,
+        // Session-snapshot projection only. Carrying the forced credential
+        // state into `UserSnapshot` and enforcing it belongs to the ADR-0063
+        // login/session slice, which is not part of this slice.
+        must_change_password: false,
     };
 
     Ok(LoginResponse {

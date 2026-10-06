@@ -88,10 +88,17 @@ export interface Unit {
   created_at: string;
 }
 
+/**
+ * ADR-0063 D1: carries `code` and `name` only.
+ *
+ * The operator username is derived server-side (canonical `user`) and the
+ * initial credential is the server-side bootstrap value, so no password is
+ * accepted, forwarded, or derived from the caller. Supersedes ADR-0052 §D1
+ * (`{code, name, password}`).
+ */
 export interface CreateUnitRequest {
   code: string;
   name: string;
-  password: string;
 }
 
 // Stock Types

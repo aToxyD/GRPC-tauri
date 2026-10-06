@@ -111,7 +111,6 @@ fn test_unit_validation() {
     let valid_unit = CreateUnitRequest {
         code: "123456".to_string(),
         name: "Test Unit".to_string(),
-        password: "SecurePass123".to_string(),
     };
 
     assert!(validate_create_unit_request(&valid_unit).is_ok());
@@ -120,7 +119,6 @@ fn test_unit_validation() {
     let invalid = CreateUnitRequest {
         code: "123".to_string(),
         name: "Test".to_string(),
-        password: "weak".to_string(),
     };
     assert!(validate_create_unit_request(&invalid).is_err());
 }

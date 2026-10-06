@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT NOT NULL DEFAULT 'WILAYA',
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+    -- ADR-0063: persisted forced credential state. `0` (false) is the safe
+    -- default for every account created outside the canonical UNIT bootstrap
+    -- path (fleet admin, sync-delivered accounts, package import).
+    must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
     UNIQUE(username, node_id)
 );
 

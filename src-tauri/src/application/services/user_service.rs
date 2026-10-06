@@ -39,7 +39,9 @@ impl<'a> UserService<'a> {
         let now = Utc::now().to_rfc3339();
         self.executor
             .users()
-            .upsert_user(&id, username, &password_hash, role, &node_id, &now)?;
+            // Not the canonical UNIT bootstrap path (ADR-0063 §4): this generic
+            // account-creation flow always starts outside the forced state.
+            .upsert_user(&id, username, &password_hash, role, &node_id, false, &now)?;
         Ok(id)
     }
 

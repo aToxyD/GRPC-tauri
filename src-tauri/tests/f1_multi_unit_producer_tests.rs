@@ -56,7 +56,6 @@ use grpc_lib::repositories::RepositoryProvider;
 
 const FIXED_NOW: &str = "2026-08-04T00:00:00Z";
 const FLEET_PASSWORD: &str = "FleetPass123";
-const UNIT_PASSWORD: &str = "UnitPass123";
 
 /// RFC 8032 §7.1 TEST 1 secret — matches the debug-mode Root fallback.
 const TEST_ROOT_SECRET: [u8; 32] = [
@@ -136,7 +135,6 @@ fn create_unit(db: &Database, code: &str) {
             &CreateUnitRequest {
                 code: code.to_string(),
                 name: format!("Unit {}", code),
-                password: UNIT_PASSWORD.to_string(),
             },
             "WILAYA-1",
         )

@@ -39,6 +39,7 @@ use grpc_lib::application::services::{
     identity_authentication_policy::IdentityAuthenticationPolicy, FinalizeWilayaProvisionResult,
     IdentityProvisioningService, IdentitySignedExportService, SettingsService,
     SyncPackageIdentityVerificationService, UnitService, UserAccountSyncService,
+    BOOTSTRAP_PASSWORD,
 };
 use grpc_lib::application::sync::{
     ImportedPackageRegistry, PackageId, SyncPackage, SyncPackageMetadata,
@@ -277,7 +278,6 @@ fn create_unit(db: &Database, code: &str) {
             &CreateUnitRequest {
                 code: code.to_string(),
                 name: format!("Unit {}", code),
-                password: UNIT_PASSWORD.to_string(),
             },
             "WILAYA-1",
         )
@@ -404,8 +404,10 @@ fn export_identity_access_round_trips_as_signed_v2_package() {
     assert!(port
         .verify_admin(FLEET_PASSWORD, &pkg.payload.admin_password_hash)
         .expect("verify admin"));
+    // ADR-0063: the created operator's credential is the server-side
+    // bootstrap value, not a caller-supplied password.
     assert!(port
-        .verify_node(UNIT_PASSWORD, "UNIT-9", &pkg.payload.user_password_hash)
+        .verify_node(BOOTSTRAP_PASSWORD, "UNIT-9", &pkg.payload.user_password_hash)
         .expect("verify user"));
 }
 
@@ -485,10 +487,10 @@ fn export_carries_fleet_identical_admin_and_node_bound_user_hashes() {
     // Unit-bound user: different hashes, each node-bound to its unit code.
     assert_ne!(a.user_password_hash, b.user_password_hash);
     assert!(port
-        .verify_node(UNIT_PASSWORD, "UNIT-A", &a.user_password_hash)
+        .verify_node(BOOTSTRAP_PASSWORD, "UNIT-A", &a.user_password_hash)
         .expect("verify user A against its own node"));
     assert!(!port
-        .verify_node(UNIT_PASSWORD, "UNIT-B", &a.user_password_hash)
+        .verify_node(BOOTSTRAP_PASSWORD, "UNIT-B", &a.user_password_hash)
         .expect("user A must not verify on another node"));
 }
 
@@ -539,6 +541,8 @@ fn import_happy_path_applies_canonical_accounts() {
         .expect("canonical user present");
     assert_eq!(user.role, UserRole::User);
     assert_eq!(user.node_id, "UNIT-9");
+    // The imported package carries its own hash, so the operator credential is
+    // the one delivered by the package — not the creation bootstrap value.
     assert!(port
         .verify_node(UNIT_PASSWORD, "UNIT-9", &user.password_hash)
         .expect("verify user"));

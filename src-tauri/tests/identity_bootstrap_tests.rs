@@ -1106,6 +1106,7 @@ fn sec002_10_orphan_user_cannot_mint_extra_admin() {
             "",
             UserRole::Admin,
             "WILAYA",
+            false,
             FIXED_NOW,
         )
         .expect("orphan user inserted");

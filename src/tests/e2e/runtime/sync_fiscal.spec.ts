@@ -1,6 +1,5 @@
 import { test, expect } from '../fixtures/tauriApp';
 import {
-  E2E_ADMIN_PASSPHRASE,
   performFirstAdminCeremony,
 } from '../helpers/firstAdminCeremony';
 import path from 'path';
@@ -27,22 +26,21 @@ test.describe('Sync Interoperability & Fiscal Closure Operations', () => {
     // already satisfies every precondition: an Admin session, and a node
     // configured as WILAYA so `settings.wilaya_code` resolves and the
     // `Action::ManageUnits` policy admits `ResourceContext::WilayaNode`.
-    const createdUnit = await page.evaluate(
-      async (unitPassword) => {
-        const { invoke } = (window as any).__TAURI__.core;
-        return await invoke('create_unit', {
-          request: {
-            // Passes the transport-target path-component check and the dormant
-            // `validate_create_unit_request` rule (exactly 6 alphanumeric
-            // characters) as well as the live command's UNIQUE constraint.
-            code: 'UNIT01',
-            name: 'E2E Export Target Unit',
-            password: unitPassword,
-          },
-        });
-      },
-      E2E_ADMIN_PASSPHRASE
-    );
+    const createdUnit = await page.evaluate(async () => {
+      const { invoke } = (window as any).__TAURI__.core;
+      return await invoke('create_unit', {
+        request: {
+          // Passes the transport-target path-component check and the dormant
+          // `validate_create_unit_request` rule (exactly 6 alphanumeric
+          // characters) as well as the live command's UNIQUE constraint.
+          //
+          // ADR-0063 D1: `code` and `name` only. The canonical operator
+          // credential is minted server-side; no password is sent.
+          code: 'UNIT01',
+          name: 'E2E Export Target Unit',
+        },
+      });
+    });
     expect(createdUnit.code).toBe('UNIT01');
     // `wilaya_code` is derived server-side from settings, proving the ceremony's
     // configured WILAYA supplied it rather than the caller.

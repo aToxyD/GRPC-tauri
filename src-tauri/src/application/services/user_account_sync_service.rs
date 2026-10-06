@@ -262,6 +262,7 @@ mod tests {
     use crate::infrastructure::security::Argon2PasswordHashProvider;
     use crate::models::{CreateUnitRequest, UserRole};
     use crate::repositories::RepositoryProvider;
+    use crate::application::services::BOOTSTRAP_PASSWORD;
 
     const FLEET_PASSWORD: &str = "FleetPass123";
     const UNIT_PASSWORD: &str = "UnitPass123";
@@ -277,7 +278,6 @@ mod tests {
                 &CreateUnitRequest {
                     code: code.to_string(),
                     name: format!("Unit {}", code),
-                    password: UNIT_PASSWORD.to_string(),
                 },
                 "WILAYA-1",
             )
@@ -323,8 +323,10 @@ mod tests {
         assert!(port
             .verify_admin(FLEET_PASSWORD, &payload.admin_password_hash)
             .expect("verify admin"));
+        // ADR-0063: the created operator's credential is the server-side
+        // bootstrap value, not a caller-supplied password.
         assert!(port
-            .verify_node(UNIT_PASSWORD, "UNIT-9", &payload.user_password_hash)
+            .verify_node(BOOTSTRAP_PASSWORD, "UNIT-9", &payload.user_password_hash)
             .expect("verify user"));
     }
 
@@ -481,7 +483,7 @@ mod tests {
         assert_eq!(user.role, UserRole::User);
         assert_eq!(user.node_id, "UNIT-9");
         assert!(port
-            .verify_node(UNIT_PASSWORD, "UNIT-9", &user.password_hash)
+            .verify_node(BOOTSTRAP_PASSWORD, "UNIT-9", &user.password_hash)
             .expect("verify user"));
     }
 

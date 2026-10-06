@@ -781,6 +781,7 @@ impl<'a> IdentityProvisioningService<'a> {
                     "",
                     UserRole::Admin,
                     &node_id,
+                    false,
                     now,
                 )?;
             }

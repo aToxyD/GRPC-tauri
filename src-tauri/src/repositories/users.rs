@@ -42,7 +42,7 @@ impl<'a> UserRepository<'a> {
         let result = self
             .executor
             .query_row_optional(
-                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted FROM users WHERE username = ?1 AND COALESCE(node_id, 'WILAYA') = ?2 AND deleted = 0",
+                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted, must_change_password FROM users WHERE username = ?1 AND COALESCE(node_id, 'WILAYA') = ?2 AND deleted = 0",
                 [username, node_scope],
                 |row| {
                     let created_at_str: String = row.get(4)?;
@@ -56,6 +56,7 @@ impl<'a> UserRepository<'a> {
                         created_at,
                         node_id: row.get(5)?,
                         deleted: row.get(6)?,
+                        must_change_password: row.get(7)?,
                     })
                 },
             )
@@ -76,7 +77,7 @@ impl<'a> UserRepository<'a> {
         let result = self
             .executor
             .query_row_optional(
-                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted FROM users WHERE username = ?1 AND COALESCE(node_id, 'WILAYA') = ?2",
+                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted, must_change_password FROM users WHERE username = ?1 AND COALESCE(node_id, 'WILAYA') = ?2",
                 [username, node_scope],
                 |row| {
                     let created_at_str: String = row.get(4)?;
@@ -90,6 +91,7 @@ impl<'a> UserRepository<'a> {
                         created_at,
                         node_id: row.get(5)?,
                         deleted: row.get(6)?,
+                        must_change_password: row.get(7)?,
                     })
                 },
             )
@@ -104,7 +106,7 @@ impl<'a> UserRepository<'a> {
         let result = self
             .executor
             .query_row_optional(
-                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted FROM users WHERE node_id = ?1 LIMIT 1",
+                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted, must_change_password FROM users WHERE node_id = ?1 LIMIT 1",
                 [node_id],
                 |row| {
                     let created_at_str: String = row.get(4)?;
@@ -118,6 +120,7 @@ impl<'a> UserRepository<'a> {
                         created_at,
                         node_id: row.get(5)?,
                         deleted: row.get(6)?,
+                        must_change_password: row.get(7)?,
                     })
                 },
             )
@@ -130,7 +133,7 @@ impl<'a> UserRepository<'a> {
         let result = self
             .executor
             .query_row_optional(
-                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted FROM users WHERE id = ?1",
+                "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted, must_change_password FROM users WHERE id = ?1",
                 [user_id],
                 |row| {
                     let created_at_str: String = row.get(4)?;
@@ -144,6 +147,7 @@ impl<'a> UserRepository<'a> {
                         created_at,
                         node_id: row.get(5)?,
                         deleted: row.get(6)?,
+                        must_change_password: row.get(7)?,
                     })
                 },
             )?;
@@ -152,7 +156,13 @@ impl<'a> UserRepository<'a> {
 
     /// Create a new user
     ///
-    /// The password_hash must be already hashed with node binding
+    /// The password_hash must be already hashed with node binding.
+    ///
+    /// `must_change_password` (ADR-0063) persists the forced credential state
+    /// on the created row. It is written only on insert: an ON CONFLICT update
+    /// never rewrites an existing account's forced state, because clearing it
+    /// belongs to the self-change / reset paths, not to account provisioning.
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_user(
         &self,
         id: &str,
@@ -160,15 +170,16 @@ impl<'a> UserRepository<'a> {
         password_hash: &str,
         role: UserRole,
         node_id: &str,
+        must_change_password: bool,
         now: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO users (id, username, password_hash, role, created_at, node_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO users (id, username, password_hash, role, created_at, node_id, updated_at, must_change_password) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(username, node_id) DO UPDATE SET
                  password_hash = excluded.password_hash,
                  role = excluded.role,
                  updated_at = excluded.updated_at",
-            params![id, username, password_hash, &role.to_string(), now, node_id, now],
+            params![id, username, password_hash, &role.to_string(), now, node_id, now, must_change_password as i64],
         )?;
 
         Ok(())
@@ -322,7 +333,7 @@ impl<'a> UserRepository<'a> {
     /// List all users ordered by creation date (newest first)
     pub fn list_users(&self) -> Result<Vec<User>, AppError> {
         Ok(self.executor.query_all(
-            "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted FROM users ORDER BY created_at DESC",
+            "SELECT id, username, password_hash, role, created_at, COALESCE(node_id, 'WILAYA'), deleted, must_change_password FROM users ORDER BY created_at DESC",
             [],
             |row| {
                 let created_at_str: String = row.get(4)?;
@@ -336,6 +347,7 @@ impl<'a> UserRepository<'a> {
                     created_at,
                     node_id: row.get(5)?,
                     deleted: row.get(6)?,
+                    must_change_password: row.get(7)?,
                 })
             },
         )?)
@@ -562,5 +574,102 @@ mod tests {
             .expect("canonical admin present");
         assert_eq!(admin.role, UserRole::Admin);
         assert_eq!(admin.password_hash, "fleet-hash");
+    }
+
+    /// ADR-0063: `upsert_user` persists the forced credential state on the
+    /// inserted row, and every read path surfaces it.
+    #[test]
+    fn test_upsert_user_persists_forced_change_state() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let repo = UserRepository::new(make_executor(&db));
+
+        repo.upsert_user(
+            "forced-1",
+            "user",
+            "hash-forced",
+            UserRole::User,
+            "UNIT-77",
+            true,
+            "2024-01-01T00:00:00Z",
+        )
+        .unwrap();
+
+        // Every user read path observes the flag.
+        assert!(repo
+            .get_user_by_username("user", "UNIT-77")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+        assert!(repo
+            .get_user_by_username_raw("user", "UNIT-77")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+        assert!(repo
+            .get_user_by_id("forced-1")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+        assert!(repo
+            .get_user_by_node_id("UNIT-77")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+        assert!(repo
+            .list_users()
+            .unwrap()
+            .iter()
+            .find(|u| u.id == "forced-1")
+            .expect("row listed")
+            .must_change_password);
+    }
+
+    /// ADR-0063: accounts created outside the canonical UNIT bootstrap path
+    /// default to the safe, non-forced state — the schema default and the
+    /// explicit `false` are equivalent, so existing flows are unaffected.
+    #[test]
+    fn test_accounts_created_outside_bootstrap_default_to_not_forced() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let repo = UserRepository::new(make_executor(&db));
+
+        // Schema-default path: a raw insert that never names the column.
+        repo.insert_raw_user(
+            "raw-1",
+            "imported",
+            "hash",
+            "User",
+            "UNIT-88",
+            "2024-01-01T00:00:00Z",
+        )
+        .unwrap();
+        assert!(!repo
+            .get_user_by_username("imported", "UNIT-88")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+
+        // Explicit path used by the sync/admin provisioning flows.
+        repo.upsert_synced_user("synced-1", "hash", "UNIT-89", false, "2024-01-01T00:00:00Z")
+            .unwrap();
+        assert!(!repo
+            .get_user_by_username("user", "UNIT-89")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+
+        repo.upsert_synced_admin("admin-1", "hash", "UNIT-90", false, "2024-01-01T00:00:00Z")
+            .unwrap();
+        assert!(!repo
+            .get_user_by_username("admin", "UNIT-90")
+            .unwrap()
+            .expect("row present")
+            .must_change_password);
+
+        // The seeded fleet admin is untouched by the new column.
+        assert!(!repo
+            .get_user_by_username("admin", "WILAYA")
+            .unwrap()
+            .expect("seeded admin present")
+            .must_change_password);
     }
 }

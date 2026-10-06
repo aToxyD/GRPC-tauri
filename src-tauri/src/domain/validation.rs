@@ -648,25 +648,34 @@ pub fn validate_create_unit_request(req: &CreateUnitRequest) -> ValidationResult
 
     // ADR-0052: there is no caller-supplied username to validate — the
     // operator username is derived server-side as the canonical `user`.
-
-    // Validate password (8+ characters, must contain uppercase, lowercase, and digit)
-    if req.password.len() < 8 {
-        return Err(AppError::Validation(ValidationError::WeakPassword {
-            reason: "كلمة المرور يجب أن تكون 8 أحرف على الأقل".to_string(),
-        }));
-    }
-
-    let has_uppercase = req.password.chars().any(|c| c.is_ascii_uppercase());
-    let has_lowercase = req.password.chars().any(|c| c.is_ascii_lowercase());
-    let has_digit = req.password.chars().any(|c| c.is_ascii_digit());
-
-    if !has_uppercase || !has_lowercase || !has_digit {
-        return Err(AppError::Validation(ValidationError::WeakPassword {
-            reason: "كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم".to_string(),
-        }));
-    }
-
+    //
+    // ADR-0063 D1: there is no caller-supplied password either. The initial
+    // operator credential is minted server-side as the bootstrap value, so the
+    // former password clauses are removed rather than relaxed: no password
+    // reaches this function any more, and the enforced change policy
+    // (`validate_change_password`) stays untouched.
     Ok(())
+}
+
+/// Validate that an update request does not attempt to change an immutable
+/// UNIT `code` (ADR-0063 D8).
+///
+/// `code` is immutable after creation because the canonical UNIT operator
+/// credential is node-bound to it: the password hash is derived under an HMAC
+/// key equal to the code, so a code change would invalidate every existing
+/// operator credential. Owned by the domain validation layer — not the command
+/// layer and not the repository (`AGENTS.md` §3, layer map).
+pub fn validate_unit_code_immutable(existing_code: &str, requested_code: &str) -> ValidationResult {
+    // Exact comparison, fail-closed: any difference at all — including
+    // whitespace — is treated as an attempted change rather than normalized
+    // away into acceptance.
+    if requested_code == existing_code {
+        return Ok(());
+    }
+    Err(AppError::Validation(ValidationError::InvalidFormat {
+        field: "code".to_string(),
+        message: "رمز الوحدة غير قابل للتغيير بعد الإنشاء".to_string(),
+    }))
 }
 
 /// Validate login request
@@ -1054,7 +1063,6 @@ mod tests {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
             name: "وحدة الاختبار".to_string(),
-            password: "Test1234".to_string(),
         };
         assert!(validate_create_unit_request(&req).is_ok());
     }
@@ -1064,32 +1072,31 @@ mod tests {
         let req = CreateUnitRequest {
             code: "U1".to_string(),
             name: "وحدة".to_string(),
-            password: "Test1234".to_string(),
         };
         let result = validate_create_unit_request(&req);
         assert!(result.is_err());
     }
 
+    /// ADR-0063 D1: the creation contract carries no password, so the
+    /// validator no longer has any password clause. `code` and `name` remain
+    /// the only rules.
     #[test]
-    fn test_validate_create_unit_request_weak_password() {
+    fn test_validate_create_unit_request_rejects_invalid_name() {
         let req = CreateUnitRequest {
             code: "UNIT01".to_string(),
-            name: "وحدة".to_string(),
-            password: "weak".to_string(),
+            name: "ab".to_string(),
         };
-        let result = validate_create_unit_request(&req);
-        assert!(result.is_err());
+        assert!(validate_create_unit_request(&req).is_err());
     }
 
+    /// ADR-0063 D8: `code` is immutable after creation.
     #[test]
-    fn test_validate_create_unit_request_password_no_uppercase() {
-        let req = CreateUnitRequest {
-            code: "UNIT01".to_string(),
-            name: "وحدة".to_string(),
-            password: "test1234".to_string(),
-        };
-        let result = validate_create_unit_request(&req);
-        assert!(result.is_err());
+    fn test_validate_unit_code_immutable() {
+        assert!(validate_unit_code_immutable("UNIT01", "UNIT01").is_ok());
+        assert!(validate_unit_code_immutable("UNIT01", "UNIT02").is_err());
+        // Fail-closed on any difference, including case and whitespace.
+        assert!(validate_unit_code_immutable("UNIT01", "unit01").is_err());
+        assert!(validate_unit_code_immutable("UNIT01", " UNIT01").is_err());
     }
 
     #[test]
