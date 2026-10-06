@@ -95,6 +95,96 @@ pub(crate) fn require_authenticated(state: &AppState) -> Result<CurrentSession, 
     Ok(session)
 }
 
+/// ADR-0063 §5 — the **closed** allowlist of commands that may proceed while
+/// the forced credential state (`users.must_change_password = true`) is active.
+///
+/// Closed by construction: membership here is an ADR-scoped decision, never a
+/// convenience decision. The list is keyed on registered IPC command names
+/// (`invoke.message.command()`), not on [`Action`] variants — the actions
+/// `AuthenticatedOnly` and `AuthenticatedOnly`-adjacent variants are shared by
+/// commands that must stay blocked.
+pub const FORCED_STATE_ALLOWED_COMMANDS: &[&str] = &[
+    // Session establishment / teardown / inspection
+    "login",
+    "logout",
+    "get_current_user",
+    "check_session",
+    "touch_session",
+    // The only way out of the forced state (ADR-0063 §6)
+    "change_own_password",
+    // `admin_access` import must stay open until initialization completes
+    "import_admin_access_package",
+    // Rendering prerequisites for the change screen
+    "get_settings",
+    "is_configured",
+];
+
+/// ADR-0063 §5 — central forced-credential-state gate.
+///
+/// This is one half of the enforcement seam: it lives in this security layer
+/// next to [`require_authenticated`] / [`authorize_command`], and is invoked
+/// from the repository's single dispatch point
+/// (`commands::registry::get_invoke_handler`), which is the only place that
+/// covers **every** registered `#[tauri::command]`. Several commands
+/// (`get_build_info`, `get_login_metrics`, `generate_reports`, the
+/// `calculate_*` family, and the pre-auth commands) never reach
+/// [`authorize_command`], so the dispatch seam — not `authorize_command` — is
+/// the choke point (ADR-0063 §5 erratum).
+///
+/// Semantics, all fail-closed except where stated:
+/// * allowlisted command → `Ok`
+/// * no session → `Ok` (authentication remains the responsibility of the
+///   command's own guards)
+/// * expired session → `Ok` (same rationale)
+/// * session-lock or database-lock lookup error → propagated (fail closed)
+/// * missing authenticated user row → `Ok`, so `require_authenticated` performs
+///   its normal fail-closed revalidation for the command itself
+/// * forced credential state on any other command → `Err(PasswordChangeRequired)`,
+///   a real backend command error, never an empty/success result
+pub fn enforce_forced_credential_state(state: &AppState, command: &str) -> Result<(), AppError> {
+    if FORCED_STATE_ALLOWED_COMMANDS.contains(&command) {
+        return Ok(());
+    }
+
+    let session = match state.get_session() {
+        Ok(session) => session,
+        Err(AppError::Authentication(AuthenticationError::SessionNotFound)) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if session.is_expired() || session.is_absolutely_expired() {
+        return Ok(());
+    }
+
+    let db_guard = state.get_db()?;
+    let Some(db) = db_guard.as_ref() else {
+        return Err(AppError::Internal("Database is closed".to_string()));
+    };
+
+    let user = UserService::new(db.executor(), state.password_port.as_ref())
+        .get_user_by_id(&session.user_id)?;
+
+    let Some(user) = user else {
+        // The row disappeared after session establishment: defer to the
+        // command's own `require_authenticated` revalidation, which fails closed
+        // and invalidates the stale session.
+        return Ok(());
+    };
+
+    if user.must_change_password {
+        log::warn!(
+            target: "grpc::authz",
+            "forced credential state refused command: command={} username={}",
+            command,
+            session.username
+        );
+        return Err(AppError::Authorization(
+            AuthorizationError::PasswordChangeRequired,
+        ));
+    }
+
+    Ok(())
+}
+
 /// Helper to convert session to principal
 fn build_principal(session: &CurrentSession) -> Principal {
     Principal {

@@ -12,7 +12,7 @@ use crate::commands::common::{db_mut_or_command_error, user_ctx_from_parts};
 use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
-use crate::errors::{into_command_error, AppError, ValidationError};
+use crate::errors::{into_command_error, AppError, AuthenticationError, ValidationError};
 use crate::models::{LoginRequest, LoginResponse, SessionStatus, User, UserRole};
 use tauri::State;
 
@@ -316,22 +316,51 @@ pub fn logout(state: State<AppState>) -> Result<bool, String> {
 /// Get current authenticated user
 #[tauri::command]
 pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> {
-    let session = state.current_session.lock().map_err(|e| {
-        into_command_error(AppError::Internal(format!("Failed to lock session: {}", e)))
-    })?;
+    get_current_user_impl(&state)
+}
 
-    let session = match session.as_ref() {
-        Some(s) => s,
-        None => return Ok(None),
+/// Borrowed-state seam for [`get_current_user`].
+///
+/// A Tauri `State` cannot be constructed outside a running app, so the
+/// projection's truthful forced-credential state (ADR-0063 §5/F32) is covered
+/// by integration tests through this seam. Same pattern and rationale as
+/// [`login_impl`] and [`touch_session_impl`].
+pub fn get_current_user_impl(state: &AppState) -> Result<Option<User>, String> {
+    // `get_session` clones the session out of the lock, so no session lock is
+    // held while the database is read below.
+    let session = match state.get_session() {
+        Ok(session) => session,
+        Err(AppError::Authentication(AuthenticationError::SessionNotFound)) => return Ok(None),
+        Err(e) => return Err(into_command_error(e)),
     };
 
     if session.is_expired() || session.is_absolutely_expired() {
         return Ok(None);
     }
 
-    // Read from login-time snapshot.
-    // Role/user changes take effect on next login by design.
+    // Read identity/role from the login-time snapshot: role/user changes take
+    // effect on next login by design.
     let snapshot = &session.user_snapshot;
+
+    // ADR-0063 §5: `must_change_password` is a persisted credential fact, not
+    // a session fact. It is re-read from the database on every call so the
+    // frontend always observes the backend's current state — deliberately NOT
+    // stored in `UserSnapshot`, which would create a second source of truth.
+    // A vanished row reports no user; a database failure fails closed.
+    let must_change_password = {
+        let db_guard = state.get_db().map_err(into_command_error)?;
+        let db = db_guard.as_ref().ok_or_else(|| {
+            into_command_error(AppError::Internal("Database is closed".to_string()))
+        })?;
+        match UserService::new(db.executor(), state.password_port.as_ref())
+            .get_user_by_id(&snapshot.id)
+        {
+            Ok(Some(persisted)) => persisted.must_change_password,
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(into_command_error(e)),
+        }
+    };
+
     let user = User {
         id: snapshot.id.clone(),
         username: snapshot.username.clone(),
@@ -340,13 +369,62 @@ pub fn get_current_user(state: State<AppState>) -> Result<Option<User>, String> 
         created_at: snapshot.created_at,
         node_id: String::new(),
         deleted: false,
-        // Session-snapshot projection only. Carrying the forced credential
-        // state into `UserSnapshot` and enforcing it belongs to the ADR-0063
-        // login/session slice, which is not part of this slice.
-        must_change_password: false,
+        must_change_password,
     };
 
     Ok(Some(user))
+}
+
+/// ADR-0063 §6 — canonical local UNIT operator self password change.
+///
+/// Authorization is `Action::ChangeOwnPassword` (UNIT node + canonical
+/// operator username + `User` role); the target row is always the authenticated
+/// session's own id, never caller-supplied. The password write, the forced-state
+/// clear and the `PasswordChange` audit share one transaction (§6.6, §6.8).
+/// No rate-limiter call and no session creation/invalidation (§6.7, §6.9).
+#[tauri::command]
+pub fn change_own_password(
+    state: State<AppState>,
+    current_password: String,
+    new_password: String,
+) -> Result<(), String> {
+    change_own_password_impl(&state, &current_password, &new_password)
+}
+
+/// Borrowed-state seam for [`change_own_password`], same rationale as
+/// [`login_impl`]: the failure paths (wrong current password, policy rejection,
+/// reuse) are covered by integration tests through this seam.
+pub fn change_own_password_impl(
+    state: &AppState,
+    current_password: &str,
+    new_password: &str,
+) -> Result<(), String> {
+    let (session, _settings) =
+        authorize_command(state, Action::ChangeOwnPassword, None).map_err(into_command_error)?;
+    // Advance session activity for an authorized mutating command. The login
+    // rate limiter is deliberately never consulted here (ADR-0063 §6.7).
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    let user_ctx = user_ctx_from_parts(
+        &session.user_id,
+        &session.username,
+        Some(&session.session_id),
+    );
+    let password_port = state.password_port.as_ref();
+
+    AuditTxService::execute_with_audit(db, AuditAction::PasswordChange, &user_ctx, |tx| {
+        UserService::new(tx.executor, password_port).change_own_password(
+            &session.user_id,
+            current_password,
+            new_password,
+        )
+    })
+    .map_err(into_command_error)?;
+
+    Ok(())
 }
 
 /// Check session status

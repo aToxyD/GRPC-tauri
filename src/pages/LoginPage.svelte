@@ -361,6 +361,14 @@
     } catch (err) {
       console.error('Failed to maximize window:', err);
     }
+    // ADR-0063 §5/D32: `must_change_password` is a backend-owned persisted
+    // fact. When it is active the operator is routed to the self-change
+    // surface instead of the normal node home; every other login keeps its
+    // existing routing.
+    if (response.user?.must_change_password) {
+      push('/settings');
+      return;
+    }
     try {
       const settings = await getSettings();
       if (settings?.node_type === 'WILAYA') push('/wilaya');

@@ -30,6 +30,7 @@ import { updateFiscalPackageRetentionStatus } from '../../../lib/contracts/fisca
 import { initializeAppKey } from '../../../lib/contracts/security.contract';
 import {
   setFleetAdminPassword,
+  changeOwnPassword,
 } from '../../../lib/contracts/sync.contract';
 
 const SNAKE_CASE_KEY = /^[a-z]+_[a-z]/;
@@ -70,6 +71,7 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
     await calculateMealRate(100, 2, 3, 4, 5, 6);
     await updateFiscalPackageRetentionStatus('t1', 'ARCHIVED', 'confirm');
     await initializeAppKey('passphrase', '/tmp/backup.json');
+    await changeOwnPassword('OldPass12', 'NewPass45');
 
     const calls = mockInvoke.mock.calls.map(([name]) => name as string);
     for (const command of calls) {
@@ -159,5 +161,10 @@ describe('IPC contract argument naming (Tauri camelCase serialization)', () => {
   it('B8 sync commands use camelCase keys (SEC-013 Phase 3)', async () => {
     await setFleetAdminPassword('FleetPass123');
     expectExactKeys('set_fleet_admin_password', ['password']);
+  });
+
+  it('change_own_password -> currentPassword + newPassword (ADR-0063 §6)', async () => {
+    await changeOwnPassword('OldPass12', 'NewPass45');
+    expectExactKeys('change_own_password', ['currentPassword', 'newPassword']);
   });
 });

@@ -257,12 +257,12 @@ impl<'a> UserAccountSyncService<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::services::BOOTSTRAP_PASSWORD;
     use crate::db::{ConnectionFactory, Database};
     use crate::domain::security::PasswordHashPort;
     use crate::infrastructure::security::Argon2PasswordHashProvider;
     use crate::models::{CreateUnitRequest, UserRole};
     use crate::repositories::RepositoryProvider;
-    use crate::application::services::BOOTSTRAP_PASSWORD;
 
     const FLEET_PASSWORD: &str = "FleetPass123";
     const UNIT_PASSWORD: &str = "UnitPass123";

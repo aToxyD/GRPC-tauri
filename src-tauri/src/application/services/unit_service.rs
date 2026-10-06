@@ -237,7 +237,9 @@ mod tests {
             .expect("canonical operator present");
 
         let port = Argon2PasswordHashProvider;
-        assert!(port.verify_node("0000", CODE, &operator.password_hash).unwrap());
+        assert!(port
+            .verify_node("0000", CODE, &operator.password_hash)
+            .unwrap());
         // Node binding preserved: the same value does not authenticate elsewhere.
         assert!(!port
             .verify_node("0000", "UNIT78", &operator.password_hash)

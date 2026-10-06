@@ -1,7 +1,16 @@
 use crate::commands;
+use crate::commands::guards::enforce_forced_credential_state;
+use crate::commands::types::AppState;
+use crate::errors::{into_command_error, AppError};
 use tauri::ipc::Invoke;
+use tauri::Manager;
 
-pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+/// The generated dispatcher for every registered `#[tauri::command]`.
+///
+/// `tauri::generate_handler!` expands to an `Fn(Invoke) -> bool` closure that
+/// matches on `invoke.message.command()`. It lives in its own function so the
+/// closure parameter type is inferred from the return annotation.
+fn registered_commands() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // Application-key provisioning (ADR-0041, pre-auth lifecycle)
         commands::get_security_status,
@@ -13,6 +22,8 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         // Authentication
         commands::login,
         commands::get_current_user,
+        // ADR-0063 §6 — canonical local UNIT operator self password change
+        commands::change_own_password,
         // Identity bootstrap & Challenge–Response (B5, pre-auth)
         commands::get_identity_status,
         commands::begin_wilaya_provision,
@@ -222,4 +233,42 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
         commands::get_system_maintenance_state,
         commands::list_operational_sessions,
     ]
+}
+
+/// The repository's single IPC dispatch seam.
+///
+/// Wrapping the generated dispatcher here is what makes the ADR-0063 §5 forced
+/// credential gate cover **every** registered command: the gate must not live
+/// only in `authorize_command`, because a non-empty set of commands never
+/// reaches it (ADR-0063 §5 erratum, correcting F33).
+///
+/// Return semantics of the wrapped handler are preserved: `true` means the
+/// command was handled (including the forced-state refusal, which is rejected
+/// as a real command error), `false` is still returned for unregistered names.
+pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    let handler = registered_commands();
+
+    move |invoke: Invoke<tauri::Wry>| {
+        let webview = invoke.message.webview();
+        let Some(state) = webview.try_state::<AppState>() else {
+            // Fail closed: without the application state the forced credential
+            // gate cannot run, so no command may proceed.
+            invoke
+                .resolver
+                .reject(into_command_error(AppError::Internal(
+                    "application state unavailable".to_string(),
+                )));
+            return true;
+        };
+
+        if let Err(e) = enforce_forced_credential_state(state.inner(), invoke.message.command()) {
+            // ADR-0063 §5: a real command rejection carrying the same wire
+            // shape as a command returning `Err(String)` — never an empty or
+            // successful result.
+            invoke.resolver.reject(into_command_error(e));
+            return true;
+        }
+
+        handler(invoke)
+    }
 }

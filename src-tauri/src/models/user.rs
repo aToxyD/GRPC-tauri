@@ -25,11 +25,14 @@ pub struct User {
     /// (soft-deleted). Never sent to the frontend through the `User` DTO.
     #[serde(default, skip_serializing)]
     pub deleted: bool,
-    /// ADR-0063: persisted forced credential state. `true` means the stored
+    /// ADR-0063 §5: persisted forced credential state. `true` means the stored
     /// credential must be replaced before normal application use; it is set
     /// when the canonical UNIT operator is minted with the bootstrap
-    /// credential. Never sent to the frontend through the `User` DTO.
-    #[serde(default, skip_serializing)]
+    /// credential and cleared by the §6 self-change. Serialized to the
+    /// frontend (owner: `sync.contract.ts` / SettingsPage) so the UI observes
+    /// the backend's single source of truth — it is a projection of a
+    /// boolean, not a credential secret.
+    #[serde(default)]
     pub must_change_password: bool,
 }
 

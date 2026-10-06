@@ -18,6 +18,11 @@ export interface User {
   username: string;
   role: 'Admin' | 'User';
   created_at: string;
+  /** ADR-0063 §5/D32: backend-owned forced credential state. `true` means the
+   *  stored credential must be replaced before normal application use. The
+   *  frontend only observes it (owner: sync.contract.ts / SettingsPage) — it
+   *  never computes, persists, or overrides it. */
+  must_change_password: boolean;
 }
 
 // Configuration Types

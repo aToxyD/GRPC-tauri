@@ -407,7 +407,11 @@ fn export_identity_access_round_trips_as_signed_v2_package() {
     // ADR-0063: the created operator's credential is the server-side
     // bootstrap value, not a caller-supplied password.
     assert!(port
-        .verify_node(BOOTSTRAP_PASSWORD, "UNIT-9", &pkg.payload.user_password_hash)
+        .verify_node(
+            BOOTSTRAP_PASSWORD,
+            "UNIT-9",
+            &pkg.payload.user_password_hash
+        )
         .expect("verify user"));
 }
 

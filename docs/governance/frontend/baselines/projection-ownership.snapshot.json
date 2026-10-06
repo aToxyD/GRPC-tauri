@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-05T00:00:00.000Z",
+  "generated": "2026-10-06T00:00:00.000Z",
   "totalTypes": 126,
   "types": [
     {
@@ -53,6 +53,10 @@
         {
           "name": "role",
           "type": "'Admin' | 'User'"
+        },
+        {
+          "name": "must_change_password",
+          "type": "boolean"
         }
       ]
     },

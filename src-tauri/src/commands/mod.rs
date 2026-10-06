@@ -30,7 +30,9 @@ pub mod units;
 pub use types::AppState;
 
 // Re-export guards
-pub use guards::authorize_command;
+pub use guards::{
+    authorize_command, enforce_forced_credential_state, FORCED_STATE_ALLOWED_COMMANDS,
+};
 
 // Re-export identity bootstrap/challenge commands (B5)
 pub use identity::*;

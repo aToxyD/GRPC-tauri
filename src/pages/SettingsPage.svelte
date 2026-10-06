@@ -20,11 +20,12 @@
     setFleetAdminPassword,
     exportAdminAccessPackage,
     importAdminAccessPackage,
+    changeOwnPassword,
   } from '../lib/contracts';
   import { openFile, saveFile } from '../lib/tauri';
   import type { Settings } from '../lib/types';
   import { push } from 'svelte-spa-router';
-  import { currentUser as userStore } from '../lib/session';
+  import { currentUser as userStore, refreshCurrentUser } from '../lib/session';
   import Layout from '../components/Layout.svelte';
   import { createRuntimeScope } from '../lib/runtimeCleanup';
   import { createOperation, createOperationGuard } from '../lib/operationGuard';
@@ -49,10 +50,17 @@
   const b8ImportOp = createOperationGuard({ scope });
   const b8ImportLoading = b8ImportOp.loading;
 
+  const selfChangeOp = createOperationGuard({ scope });
+  const selfChangeLoading = selfChangeOp.loading;
+
   // @category SessionState
   $: user = $userStore;
   // @category UiState
   $: isAdmin = user?.role === 'Admin';
+  // @category ProjectionState — observed, never owned: ADR-0063 §5 states the
+  // forced credential state is a backend-persisted fact read through the
+  // `User` projection (owner: sync.contract.ts).
+  $: mustChangePassword = user?.must_change_password === true;
 
   // @category ProjectionState
   let settings: Settings | null = null;
@@ -86,6 +94,22 @@
   let b8ImportSuccess = '';
   // @category TransientState
   let b8ImportError = '';
+
+  // ── Forced self-change (ADR-0063 §6) ──────────────────────────────────────
+  // Transient only: never persisted, never rendered back after submission,
+  // never logged. The backend is the sole authority for current-password
+  // verification, policy validation, reuse rejection and forced-state clearing;
+  // the checks below only mirror its rules for immediate UX feedback.
+  // @category TransientState
+  let selfChangeCurrent = '';
+  // @category TransientState
+  let selfChangeNew = '';
+  // @category TransientState
+  let selfChangeConfirm = '';
+  // @category TransientState
+  let selfChangeError = '';
+  // @category TransientState
+  let selfChangeSuccess = '';
 
   onMount(async () => {
     await initialOp.run(async () => {
@@ -182,6 +206,45 @@
           'تمت مزامنة حساب المدير العام بنجاح. يمكنك الآن تسجيل الخروج ثم تسجيل الدخول باسم admin باستخدام كلمة مرور المسؤول العام المعينة على عقدة WILAYA. حساب مشغّل الوحدة الخاص بك لم يُمَسّ — استمر باستخدام اسم المستخدم وكلمة المرور المُوفرَّين عبر ملف .unit.';
       } catch (e) {
         b8ImportError = 'خطأ في استيراد حزمة حساب المدير العام: ' + formatErrorMessage(e);
+      }
+    });
+  }
+
+  // ADR-0063 §6/D33 — canonical local UNIT operator self password change.
+  // The backend derives the target row from the authenticated session and
+  // rejects wrong current passwords, policy violations, reuse, and any
+  // non-canonical actor. On success the authoritative projection is re-read
+  // from the backend and published to the session store: the UI never flips
+  // its own copy of `must_change_password`.
+  async function handleChangeOwnPassword() {
+    if (!selfChangeCurrent) {
+      selfChangeError = 'أدخل كلمة المرور الحالية';
+      return;
+    }
+    if (selfChangeNew.length < 8) {
+      selfChangeError = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل';
+      return;
+    }
+    if (!/[A-Z]/.test(selfChangeNew) || !/[a-z]/.test(selfChangeNew) || !/[0-9]/.test(selfChangeNew)) {
+      selfChangeError = 'كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم';
+      return;
+    }
+    if (selfChangeNew !== selfChangeConfirm) {
+      selfChangeError = 'كلمتا المرور غير متطابقتين';
+      return;
+    }
+    await selfChangeOp.guard(async () => {
+      try {
+        selfChangeError = '';
+        selfChangeSuccess = '';
+        await changeOwnPassword(selfChangeCurrent, selfChangeNew);
+        selfChangeCurrent = '';
+        selfChangeNew = '';
+        selfChangeConfirm = '';
+        await refreshCurrentUser();
+        selfChangeSuccess = 'تم تغيير كلمة المرور بنجاح. يمكنك الآن متابعة العمل بالتطبيق.';
+      } catch (e) {
+        selfChangeError = formatErrorMessage(e);
       }
     });
   }
@@ -303,6 +366,82 @@
           </AppCard>
         </div>
       {:else if nodeType === 'UNIT'}
+        <!-- The confirmation survives the projection flip: `refreshCurrentUser`
+             clears `must_change_password`, which unmounts the forced card, so
+             the result is announced here rather than inside it. -->
+        {#if selfChangeSuccess}
+          <AppAlert intent="success" dismissible on:dismiss={() => selfChangeSuccess = ''}>{selfChangeSuccess}</AppAlert>
+        {/if}
+        {#if mustChangePassword}
+          <!-- ADR-0063 §5/§6 — forced credential state: the ONLY actionable
+               surface while `must_change_password` is active. Every other
+               section stays hidden because the backend rejects all
+               non-allowlisted commands until the change succeeds. -->
+          <div class="mt-8">
+            <AppCard>
+              <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+                <div class="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-lg flex items-center justify-center">
+                  <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="font-semibold text-gray-800 dark:text-gray-100">تغيير كلمة المرور الإلزامي</h3>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">يجب استبدال كلمة المرور المؤقتة قبل متابعة العمل</p>
+                </div>
+              </div>
+              <AppAlert intent="warning">
+                <p class="text-sm leading-relaxed">
+                  هذه الحساب مُفعَّل عليه وضع «تغيير كلمة المرور الإلزامي»:
+                  يرفض الخلفية كل العمليات الأخرى حتى تُستبدل كلمة المرور المؤقتة
+                  بكلمة مرور جديدة. لا يمكن إرجاع هذا الوضع من الواجهة.
+                </p>
+              </AppAlert>
+              <form class="mt-4 space-y-3" on:submit|preventDefault={handleChangeOwnPassword} novalidate>
+                <AppInput
+                  id="self-change-current"
+                  label="كلمة المرور الحالية"
+                  type="password"
+                  bind:value={selfChangeCurrent}
+                  autocomplete="current-password"
+                  required
+                  disabled={$selfChangeLoading}
+                />
+                <AppInput
+                  id="self-change-new"
+                  label="كلمة المرور الجديدة"
+                  type="password"
+                  bind:value={selfChangeNew}
+                  placeholder="8 أحرف على الأقل، مع حرف كبير وحرف صغير ورقم"
+                  autocomplete="new-password"
+                  required
+                  disabled={$selfChangeLoading}
+                />
+                <AppInput
+                  id="self-change-confirm"
+                  label="تأكيد كلمة المرور الجديدة"
+                  type="password"
+                  bind:value={selfChangeConfirm}
+                  placeholder="أعد إدخال كلمة المرور"
+                  autocomplete="new-password"
+                  required
+                  disabled={$selfChangeLoading}
+                />
+                {#if selfChangeError}
+                  <AppAlert intent="danger" dismissible on:dismiss={() => selfChangeError = ''}>{selfChangeError}</AppAlert>
+                {/if}
+                <AppButton
+                  type="submit"
+                  variant="primary"
+                  fullWidth
+                  loading={$selfChangeLoading}
+                >
+                  تعيين كلمة المرور الجديدة
+                </AppButton>
+              </form>
+            </AppCard>
+          </div>
+        {:else}
         <!-- مزامنة حساب المدير العام (admin_access): استيراد أسطولي -->
         <div class="mt-8">
           <AppCard>
@@ -355,6 +494,7 @@
             </AppButton>
           </AppCard>
         </div>
+        {/if}
       {/if}
     {/if}
   </div>

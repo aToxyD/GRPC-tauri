@@ -65,6 +65,11 @@ pub enum Action {
     ExportAdminAccessPackage,
     ImportAdminAccessPackage,
 
+    // Canonical local UNIT operator self password change (ADR-0063 §6 / D3).
+    // Scoped by policy to UNIT node + username `user` + role `User`; the target
+    // is always the authenticated principal, never a caller-supplied id.
+    ChangeOwnPassword,
+
     // Contract-centric procurement (ADR-0055 / SEC-087-F)
     ManageSuppliers,
     ManageContracts,

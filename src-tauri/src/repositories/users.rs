@@ -267,6 +267,49 @@ impl<'a> UserRepository<'a> {
         Ok(())
     }
 
+    /// ADR-0063 §6.6 — change a password **and** clear the forced credential
+    /// state as one fail-closed unit.
+    ///
+    /// Two statements executed on the caller's [`DbExecutor`], which is a
+    /// transaction executor when the command wraps this call in
+    /// `AuditTxService::execute_with_audit`: a failure of either statement
+    /// surfaces as an `Err` and therefore rolls back both. Every statement's
+    /// affected-row count is verified — a zero-row write means the target row
+    /// does not exist (or vanished mid-transaction), so the operation fails
+    /// closed instead of reporting success.
+    ///
+    /// Deliberately separate from [`Self::change_password`]: the administrative
+    /// reset paths must keep their existing semantics and must not clear the
+    /// forced flag (ADR-0063 §7.2 is out of scope for this operation).
+    pub fn change_password_and_clear_forced_state(
+        &self,
+        user_id: &str,
+        password_hash: &str,
+        now: &str,
+    ) -> Result<(), AppError> {
+        let updated = self.executor.execute(
+            "UPDATE users SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
+            params![password_hash, now, user_id],
+        )?;
+        if updated == 0 {
+            return Err(AppError::Internal(
+                "password change target does not exist".to_string(),
+            ));
+        }
+
+        let cleared = self.executor.execute(
+            "UPDATE users SET must_change_password = 0 WHERE id = ?1",
+            params![user_id],
+        )?;
+        if cleared == 0 {
+            return Err(AppError::Internal(
+                "forced credential state could not be cleared".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Enable (`deleted = 0`) or disable (`deleted = 1`) an account.
     /// Disabling is a soft-delete: the row is preserved and re-enableable.
     pub fn set_deleted(&self, user_id: &str, deleted: bool, now: &str) -> Result<(), AppError> {
@@ -595,33 +638,38 @@ mod tests {
         .unwrap();
 
         // Every user read path observes the flag.
-        assert!(repo
-            .get_user_by_username("user", "UNIT-77")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
-        assert!(repo
-            .get_user_by_username_raw("user", "UNIT-77")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
-        assert!(repo
-            .get_user_by_id("forced-1")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
-        assert!(repo
-            .get_user_by_node_id("UNIT-77")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
-        assert!(repo
-            .list_users()
-            .unwrap()
-            .iter()
-            .find(|u| u.id == "forced-1")
-            .expect("row listed")
-            .must_change_password);
+        assert!(
+            repo.get_user_by_username("user", "UNIT-77")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
+        assert!(
+            repo.get_user_by_username_raw("user", "UNIT-77")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
+        assert!(
+            repo.get_user_by_id("forced-1")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
+        assert!(
+            repo.get_user_by_node_id("UNIT-77")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
+        assert!(
+            repo.list_users()
+                .unwrap()
+                .iter()
+                .find(|u| u.id == "forced-1")
+                .expect("row listed")
+                .must_change_password
+        );
     }
 
     /// ADR-0063: accounts created outside the canonical UNIT bootstrap path
@@ -642,34 +690,42 @@ mod tests {
             "2024-01-01T00:00:00Z",
         )
         .unwrap();
-        assert!(!repo
-            .get_user_by_username("imported", "UNIT-88")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
+        assert!(
+            !repo
+                .get_user_by_username("imported", "UNIT-88")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
 
         // Explicit path used by the sync/admin provisioning flows.
         repo.upsert_synced_user("synced-1", "hash", "UNIT-89", false, "2024-01-01T00:00:00Z")
             .unwrap();
-        assert!(!repo
-            .get_user_by_username("user", "UNIT-89")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
+        assert!(
+            !repo
+                .get_user_by_username("user", "UNIT-89")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
 
         repo.upsert_synced_admin("admin-1", "hash", "UNIT-90", false, "2024-01-01T00:00:00Z")
             .unwrap();
-        assert!(!repo
-            .get_user_by_username("admin", "UNIT-90")
-            .unwrap()
-            .expect("row present")
-            .must_change_password);
+        assert!(
+            !repo
+                .get_user_by_username("admin", "UNIT-90")
+                .unwrap()
+                .expect("row present")
+                .must_change_password
+        );
 
         // The seeded fleet admin is untouched by the new column.
-        assert!(!repo
-            .get_user_by_username("admin", "WILAYA")
-            .unwrap()
-            .expect("seeded admin present")
-            .must_change_password);
+        assert!(
+            !repo
+                .get_user_by_username("admin", "WILAYA")
+                .unwrap()
+                .expect("seeded admin present")
+                .must_change_password
+        );
     }
 }

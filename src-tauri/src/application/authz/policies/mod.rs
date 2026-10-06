@@ -121,6 +121,24 @@ pub fn authorize(
             }
         }
 
+        // ── Canonical UNIT operator self password change (ADR-0063 §6 / D3) ─
+        // UNIT node only, and only the canonical local operator identity
+        // (username `user`, role `User`). Every other account — including a
+        // local Admin, which owns the §7 reset path — is denied outright. The
+        // target user is never caller-supplied: the command derives it from
+        // the authenticated session, so this policy never sees a target id.
+        Action::ChangeOwnPassword => match resource {
+            ResourceContext::UnitNode { .. }
+                if principal.username
+                    == crate::application::services::unit_service::OPERATOR_USERNAME
+                    && principal.role == UserRole::User =>
+            {
+                Ok(())
+            }
+            ResourceContext::UnitNode { .. } => Err(AuthorizationError::InsufficientPermissions),
+            _ => Err(AuthorizationError::RequiresUnitNode),
+        },
+
         // ── Actions requiring authentication (any valid session) ──────────
         // These must still require a valid session — enforced by the command
         // dispatcher (`authorize_command`) before this function is reached.

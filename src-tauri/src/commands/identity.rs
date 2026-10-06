@@ -25,6 +25,7 @@ use crate::application::services::{
     IdentityTrustAnchorService, InstallWilayaCertificateResult, RotationFinalizeOutcome,
     RotationOperation, RotationPlan, SignedUnitRotation, UserContext,
 };
+use crate::commands::auth::get_current_user_impl;
 use crate::commands::common::{
     adminkey_provider, db_mut_or_command_error, db_ref_or_command_error, node_key_store,
 };
@@ -37,7 +38,7 @@ use crate::domain::identity::{
 use crate::domain::session::CurrentSession;
 use crate::errors::{into_command_error, AppError};
 use crate::infrastructure::identity::NodeKeyStore;
-use crate::models::{LoginResponse, User};
+use crate::models::LoginResponse;
 use tauri::State;
 
 fn challenge_service(state: &AppState) -> Result<IdentityChallengeService, String> {
@@ -769,20 +770,20 @@ pub fn complete_challenge(
     if let Ok(mut current_session) = state.current_session.lock() {
         *current_session = Some(established.session);
     }
+    // Release the database lock before the projection below takes its own.
+    drop(guard);
 
-    let user = User {
-        id: session.user_snapshot.id.clone(),
-        username: session.user_snapshot.username.clone(),
-        password_hash: String::new(),
-        role: session.user_snapshot.role.clone(),
-        created_at: session.user_snapshot.created_at,
-        node_id: String::new(),
-        deleted: false,
-        // Session-snapshot projection only. Carrying the forced credential
-        // state into `UserSnapshot` and enforcing it belongs to the ADR-0063
-        // login/session slice, which is not part of this slice.
-        must_change_password: false,
-    };
+    // ADR-0063 §5 — the login response reports the *persisted* forced
+    // credential state through the very same projection seam as
+    // `get_current_user`, so there is exactly one owner for this fact and no
+    // hardcoded value here.
+    let user = get_current_user_impl(&state)?.ok_or_else(|| {
+        into_command_error(AppError::Authentication(
+            crate::errors::AuthenticationError::UserNotFound {
+                username: session.user_snapshot.username.clone(),
+            },
+        ))
+    })?;
 
     Ok(LoginResponse {
         success: true,

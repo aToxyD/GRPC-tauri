@@ -107,6 +107,62 @@ describe('Login Page Integration Flow', () => {
         });
     });
 
+    it('routes an operator with an active forced credential state to the self-change surface (ADR-0063 §5/D32)', async () => {
+        const user = { username: 'user', role: 'User', must_change_password: true };
+        mockLogin.mockResolvedValue({
+            success: true,
+            user,
+            message: 'تم تسجيل الدخول',
+            requires_configuration: false,
+            identity_challenge_required: false
+        });
+        mockGetSettings.mockResolvedValue({ node_type: 'UNIT', configured: true });
+
+        render(LoginPage);
+
+        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+
+        await fireEvent.input(passwordInput, { target: { value: 'TempPass12' } });
+        await fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+            expect(mockLogin).toHaveBeenCalled();
+            expect(get(currentUser)).toEqual(user);
+            expect(mockPush).toHaveBeenCalledWith('/settings');
+        });
+        // Normal node routing is short-circuited: the backend owns the flag,
+        // the renderer only observes it and never re-derives the destination.
+        expect(mockPush).not.toHaveBeenCalledWith('/unit');
+        expect(mockPush).not.toHaveBeenCalledWith('/wilaya');
+        expect(mockPush).not.toHaveBeenCalledWith('/configure');
+    });
+
+    it('keeps the existing routing when the forced credential state is inactive', async () => {
+        const user = { username: 'user', role: 'User', must_change_password: false };
+        mockLogin.mockResolvedValue({
+            success: true,
+            user,
+            message: 'تم تسجيل الدخول',
+            requires_configuration: false,
+            identity_challenge_required: false
+        });
+        mockGetSettings.mockResolvedValue({ node_type: 'UNIT', configured: true });
+
+        render(LoginPage);
+
+        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+
+        await fireEvent.input(passwordInput, { target: { value: 'Abcdef12' } });
+        await fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+            expect(mockPush).toHaveBeenCalledWith('/unit');
+        });
+        expect(mockPush).not.toHaveBeenCalledWith('/settings');
+    });
+
     it('should handle invalid credentials and lockout propagation from backend', async () => {
         mockLogin.mockResolvedValue({
             success: false,

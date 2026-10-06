@@ -8,6 +8,7 @@ describe('Permissions & Routing Helpers', () => {
     username: 'admin',
     role: 'Admin',
     created_at: '',
+    must_change_password: false,
   };
 
   const regularUser: User = {
@@ -15,6 +16,7 @@ describe('Permissions & Routing Helpers', () => {
     username: 'user',
     role: 'User',
     created_at: '',
+    must_change_password: false,
   };
 
   const wilayaSettings: Settings = {

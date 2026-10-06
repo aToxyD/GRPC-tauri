@@ -70,6 +70,15 @@ export async function setUnitUserPassword(unitCode: string, password: string): P
   return await safeInvoke('set_unit_user_password', { unitCode, password });
 }
 
+// ADR-0063 §6/D33 — canonical local UNIT operator self password change.
+// The backend derives the target from the authenticated session (`user_id`
+// is never caller-supplied) and is the sole authority for current-password
+// verification, policy validation, reuse rejection, forced-state clearing
+// and audit attribution.
+export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<void> {
+  return await safeInvoke('change_own_password', { currentPassword, newPassword });
+}
+
 export async function setAccountStatus(username: string, enabled: boolean): Promise<void> {
   return await safeInvoke('set_account_status', { username, enabled });
 }

@@ -50,6 +50,24 @@ export async function bootstrapSession(scope?: RuntimeScope): Promise<User | nul
     }
 }
 
+/**
+ * Re-read the authoritative `User` projection from the backend and republish it
+ * to the session store. Owned by the session domain so pages never consume
+ * `getCurrentUser` directly (FE-152); no monitoring side effects, unlike
+ * {@link bootstrapSession}. Consumers observe — they never derive or override
+ * projection fields (ADR-0063 §5/D32).
+ */
+export async function refreshCurrentUser(): Promise<User | null> {
+    try {
+        const user = await getCurrentUser();
+        setCurrentUser(user);
+        return user;
+    } catch (error) {
+        console.error('Failed to refresh current user', error);
+        return null;
+    }
+}
+
 const SESSION_CHECK_INTERVAL = 60000;
 const ACTIVITY_DEBOUNCE = 5000;
 

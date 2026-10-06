@@ -1,7 +1,8 @@
 # ADR 0063: UNIT Operator Credential & Initialization Lifecycle
 
 # Status
-Accepted (2026-10-05)
+Accepted (2026-10-05); amended by owner-approved Errata E-1 and E-2 (2026-10-06) — see
+`# Errata` at the end of this document. No decision was withdrawn.
 
 > **Governance state.** This ADR is **Accepted** (2026-10-05) by owner ratification of the
 > eighteen credential/lifecycle decisions enumerated in §2. It is the **authoritative
@@ -232,6 +233,14 @@ Every fact below was read from the working tree at commit `3e982990949cc666ccbdc
   `run_import_pipeline_core` / `run_import_pipeline_bootstrap`
   (`commands/import_export.rs:1871,1920`), which themselves call it. `guards.rs:35` exposes
   the separate maintenance gate `require_maintenance_allows`.
+  **[Erratum E-1, 2026-10-06 — owner-approved]** The "All 181 … reach it" clause is
+  **factually incorrect**. A non-empty set of registered commands never calls
+  `authorize_command` — session/projection utilities (`logout`, `get_current_user`,
+  `check_session`), the frontend bootstrap reads (`get_settings`, `is_configured`,
+  `get_build_info`, `get_login_metrics`), the report/calculation readers and the pre-auth
+  ceremony commands. `authorize_command` **remains** the single authorization entry point for
+  every command that performs authorization (unchanged, frozen `§2.2`), but it is not a
+  universal dispatch point, which is why §5's enforcement location was corrected by E-1.
 
 # Decision
 
@@ -314,11 +323,18 @@ Every other password-mutating entry point calls validate_change_password unchang
 * The first successful login of the canonical operator using the bootstrap credential MUST
   leave the account in the forced credential state. Frontend routing, guards, or modal
   dismissal MUST NOT be sufficient to clear it (D2).
-* Enforcement is **central**, at the authorization choke point
-  `src-tauri/src/commands/guards.rs:110` (`authorize_command`), because F33 establishes that
-  every command reaches it. This satisfies `AGENTS.md` §2 P3 (explicit boundaries) and
-  `ARCHITECTURE_FREEZE.md` §2.2 without creating a parallel check that a future command could
-  forget.
+* **[Erratum E-1, 2026-10-06 — owner-approved]** Enforcement is **central**, at the
+  *dispatch* choke point `src-tauri/src/commands/registry.rs::get_invoke_handler`, which
+  wraps the closure returned by `generate_handler!` and therefore runs before **every**
+  registered command body — registration, not per-command discipline, is what the guard hangs
+  off. This corrects the original text, which named `commands/guards.rs:110`
+  (`authorize_command`) "because F33 establishes that every command reaches it": that
+  premise is false (F33 erratum), so the original location would have left the commands that
+  skip `authorize_command` unguarded. `authorize_command` and `ARCHITECTURE_FREEZE.md` §2.2
+  are untouched; the forced-state check is an additive guard evaluated earlier in the
+  dispatch path. This still satisfies `AGENTS.md` §2 P3 (explicit boundaries) and still
+  creates no check a future command can forget: a command cannot be invoked unless it is in
+  the registry, and the registry is exactly where the check lives.
 * While the forced state is active, the set of operations that may proceed is a **closed
   allowlist**. Only these categories are approved:
 
@@ -331,6 +347,16 @@ Every other password-mutating entry point calls validate_change_password unchang
 
   Every other command MUST be refused while the forced state is active. The allowlist is
   closed: an operation not listed here is denied.
+* **[Erratum E-2, 2026-10-06 — owner-approved]** The category table above is implemented as
+  exactly this closed set of command names, in `commands/guards.rs`
+  (`FORCED_STATE_ALLOWED_COMMANDS`): `login`, `logout`, `get_current_user`, `check_session`,
+  `touch_session`, `change_own_password`, `import_admin_access_package`, `get_settings`,
+  `is_configured`. Three names are made explicit here because the table states categories:
+  `touch_session` is `Action::AuthenticatedOnly` and only advances the idle timestamp — the
+  operator must be able to keep the session alive while completing the change; `get_settings`
+  and `is_configured` are the unauthenticated-to-render frontend bootstrap reads the change
+  surface needs before it can render. None of the three mutates business state. The set is
+  closed: adding a name requires an approved amendment to this ADR.
 * The refusal MUST be a backend error, not an empty result set, so the UI cannot mistake it
   for "no data".
 
@@ -608,9 +634,12 @@ performed by this ADR.
    `src-tauri/src/repositories/users.rs`; add the §8.1 existence predicate (not
    `count_active_admins`); add the `audit_log` reference-count predicate required by
    `0064` §5.
-5. **Guards** — implement the §5 closed allowlist in `commands/guards.rs:110`; correct the
-   `admin_access_first_import_predicates_service.rs` doc comment (F15) and redefine
-   `no_active_admin`.
+5. **Guards** — implement the §5 closed allowlist as the dispatch-level guard named by
+   Erratum E-1: the allowlist constant and the enforcement function live in
+   `commands/guards.rs`, and they are invoked from the registry wrapper
+   `commands/registry.rs::get_invoke_handler` (not from inside `authorize_command`, per E-1);
+   correct the `admin_access_first_import_predicates_service.rs` doc comment (F15) and
+   redefine `no_active_admin`.
 6. **Commands/services** — add the self-change command (§6) and the local admin reset
    command (§7.1); evolve `set_unit_user_password` to set the forced flag (§7.2); enforce
    `.unit` forced state on import (§11).
@@ -650,3 +679,18 @@ Normative checklist for the implementation phase.
 13. `audit_log` has no plaintext password, hash, or pre-hash in any column or in `details`.
 14. `bun run check:arch` reports zero warnings; `cargo clippy -D warnings`, `cargo test`,
     `vitest`, and the release-integrity and documentation-governance scripts pass.
+
+# Errata
+
+Amendments to this record's **own** text, approved by the owner and entered here rather than
+in a second document, so that exactly one canonical source exists (`AGENTS.md` §7 D2, D3).
+No decision in this ADR is withdrawn; the errata correct one factual finding and one
+implementation locus, and make one category table's contents normative.
+
+| ID | Date | Locus | What was wrong | Correction |
+|----|------|-------|----------------|------------|
+| E-1 | 2026-10-06 | Context F33; §5 enforcement bullet; Implementation Boundary item 5 | F33 states that "All 181 `#[tauri::command]` functions … reach `authorize_command`", and §5 derived its enforcement locus from that claim. The claim is **false**: a non-empty set of registered commands (session/projection utilities, frontend bootstrap reads, report/calculation readers, pre-auth ceremony commands) never calls it. | The §5 forced-state enforcement is implemented at the **dispatch** choke point `src-tauri/src/commands/registry.rs::get_invoke_handler`, which runs before every registered command body. `authorize_command` (`commands/guards.rs:110`) is unchanged and remains the single authorization entry point; the forced-state check is additive and sits earlier in the dispatch path. |
+| E-2 | 2026-10-06 | §5 allowlist table | The table enumerated **categories** of allowed operations only, which left the implemented set unverifiable against the record. | The closed allowlist is now normative and enumerated by name: `login`, `logout`, `get_current_user`, `check_session`, `touch_session`, `change_own_password`, `import_admin_access_package`, `get_settings`, `is_configured` (`commands/guards.rs::FORCED_STATE_ALLOWED_COMMANDS`). |
+
+Provenance: recorded with the §5 + §6 implementation (Slice 2); approval and scope are
+recorded in `docs/governance/frontend/GOVERNANCE_APPROVALS.md` (2026-10-06 entry).

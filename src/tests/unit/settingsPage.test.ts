@@ -16,17 +16,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import SettingsPage from '../../pages/SettingsPage.svelte';
 
-let currentUserValue: { username: string; role: string } | null = null;
+let currentUserValue: {
+  username: string;
+  role: string;
+  must_change_password?: boolean;
+} | null = null;
+let currentUserListeners: Array<(value: unknown) => void> = [];
 
 const mockGetSettings = vi.fn();
 const mockSetFleetAdminPassword = vi.fn();
 const mockExportAdminAccessPackage = vi.fn();
 const mockImportAdminAccessPackage = vi.fn();
+const mockChangeOwnPassword = vi.fn();
 const mockOpenFile = vi.fn();
 const mockSaveFile = vi.fn();
 const mockCurrentUserSubscribe = vi.fn((listener: (value: unknown) => void) => {
+  currentUserListeners.push(listener);
   listener(currentUserValue);
-  return () => {};
+  return () => {
+    currentUserListeners = currentUserListeners.filter((l) => l !== listener);
+  };
+});
+const mockRefreshCurrentUser = vi.fn(async () => {
+  currentUserValue = currentUserValue
+    ? { ...currentUserValue, must_change_password: false }
+    : null;
+  currentUserListeners.forEach((l) => l(currentUserValue));
 });
 const mockThemeSubscribe = vi.fn((listener: (value: unknown) => void) => {
   listener('dark');
@@ -36,6 +51,7 @@ const mockThemeSubscribe = vi.fn((listener: (value: unknown) => void) => {
 vi.mock('../../lib/session', () => ({
   currentUser: { subscribe: (l: any) => mockCurrentUserSubscribe(l) },
   logout: vi.fn(),
+  refreshCurrentUser: () => mockRefreshCurrentUser(),
 }));
 
 vi.mock('../../lib/theme', () => ({
@@ -71,6 +87,7 @@ vi.mock('../../lib/contracts', () => ({
   setFleetAdminPassword: (...args: any[]) => mockSetFleetAdminPassword(...args),
   exportAdminAccessPackage: (...args: any[]) => mockExportAdminAccessPackage(...args),
   importAdminAccessPackage: (...args: any[]) => mockImportAdminAccessPackage(...args),
+  changeOwnPassword: (...args: any[]) => mockChangeOwnPassword(...args),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -375,5 +392,160 @@ describe('SettingsPage — access control (SEC-014 Phase 4 / SEC-021)', () => {
       expect(screen.queryByLabelText(/^كلمة مرور المسؤول العام/)).toBeNull();
       expect(screen.queryByRole('button', { name: /استيراد حزمة حساب المدير العام/ })).toBeNull();
     });
+  });
+});
+
+describe('SettingsPage — ADR-0063 §5/§6 forced credential state (D32)', () => {
+  const forcedOperator = {
+    username: 'user',
+    role: 'User',
+    must_change_password: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentUserValue = forcedOperator;
+    mockGetSettings.mockResolvedValue({
+      configured: true,
+      node_type: 'UNIT',
+      unit_code: 'U1',
+    });
+  });
+
+  async function fillSelfChange(
+    current: string,
+    next: string,
+    confirm: string
+  ): Promise<void> {
+    await fireEvent.input(
+      await screen.findByLabelText(/^كلمة المرور الحالية/),
+      { target: { value: current } }
+    );
+    await fireEvent.input(screen.getByLabelText(/^كلمة المرور الجديدة/), {
+      target: { value: next },
+    });
+    await fireEvent.input(screen.getByLabelText(/^تأكيد كلمة المرور الجديدة/), {
+      target: { value: confirm },
+    });
+  }
+
+  it('renders ONLY the forced self-change surface while the backend flag is active', async () => {
+    render(SettingsPage);
+
+    await waitFor(() => {
+      expect(screen.getByText('تغيير كلمة المرور الإلزامي')).toBeInTheDocument();
+      expect(
+        screen.getByText(/يرفض الخلفية كل العمليات الأخرى/)
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/^كلمة المرور الحالية/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^كلمة المرور الجديدة/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^تأكيد كلمة المرور الجديدة/)).toBeInTheDocument();
+    // Every other UNIT section stays hidden — the backend rejects those
+    // commands anyway, so the renderer must not offer them.
+    expect(screen.queryByText('مزامنة حساب المدير العام (admin)')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /استيراد حزمة حساب المدير العام/ })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /تصدير حزمة حساب المدير العام/ })
+    ).toBeNull();
+    // The forced card never re-opens the normal surface on its own.
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('changes the operator password, clears the form, refreshes the projection and unlocks the page', async () => {
+    mockChangeOwnPassword.mockResolvedValue(undefined);
+    render(SettingsPage);
+
+    await fillSelfChange('TempPass12', 'Abcdef12', 'Abcdef12');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /تعيين كلمة المرور الجديدة/ })
+    );
+
+    await waitFor(() => {
+      expect(mockChangeOwnPassword).toHaveBeenCalledTimes(1);
+      expect(mockChangeOwnPassword).toHaveBeenCalledWith('TempPass12', 'Abcdef12');
+    });
+    await waitFor(() => {
+      expect(mockRefreshCurrentUser).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByText(/تم تغيير كلمة المرور بنجاح/)
+      ).toBeInTheDocument();
+    });
+    // The plaintext never survives submission.
+    expect(screen.queryByDisplayValue('TempPass12')).toBeNull();
+    expect(screen.queryByDisplayValue('Abcdef12')).toBeNull();
+    // Projection flip → the forced card yields to the normal UNIT surface.
+    await waitFor(() => {
+      expect(screen.queryByText('تغيير كلمة المرور الإلزامي')).toBeNull();
+      expect(screen.getByText('مزامنة حساب المدير العام (admin)')).toBeInTheDocument();
+    });
+  });
+
+  it('surfaces a backend refusal verbatim and never refreshes the projection', async () => {
+    mockChangeOwnPassword.mockRejectedValue(
+      new Error('كلمة المرور الحالية غير صحيحة.')
+    );
+    render(SettingsPage);
+
+    await fillSelfChange('WrongPass1', 'Abcdef12', 'Abcdef12');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /تعيين كلمة المرور الجديدة/ })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('كلمة المرور الحالية غير صحيحة.')
+      ).toBeInTheDocument();
+    });
+    expect(mockChangeOwnPassword).toHaveBeenCalledWith('WrongPass1', 'Abcdef12');
+    expect(mockRefreshCurrentUser).not.toHaveBeenCalled();
+    // The operator keeps the form so the corrected retry needs no retyping.
+    expect(screen.getByDisplayValue('WrongPass1')).toBeInTheDocument();
+    expect(screen.getByText('تغيير كلمة المرور الإلزامي')).toBeInTheDocument();
+  });
+
+  it('blocks a policy-violating password locally without invoking the command', async () => {
+    render(SettingsPage);
+
+    await fillSelfChange('TempPass12', 'short', 'short');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /تعيين كلمة المرور الجديدة/ })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
+      ).toBeInTheDocument();
+    });
+    expect(mockChangeOwnPassword).not.toHaveBeenCalled();
+    expect(mockRefreshCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it('blocks a mismatched confirmation locally without invoking the command', async () => {
+    render(SettingsPage);
+
+    await fillSelfChange('TempPass12', 'Abcdef12', 'Abcdef99');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /تعيين كلمة المرور الجديدة/ })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('كلمتا المرور غير متطابقتين')).toBeInTheDocument();
+    });
+    expect(mockChangeOwnPassword).not.toHaveBeenCalled();
+  });
+
+  it('never renders the forced card when the backend flag is inactive', async () => {
+    currentUserValue = { username: 'user', role: 'User' };
+    render(SettingsPage);
+
+    await waitFor(() => {
+      expect(screen.getByText('مزامنة حساب المدير العام (admin)')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('تغيير كلمة المرور الإلزامي')).toBeNull();
+    expect(screen.queryByLabelText(/^كلمة المرور الحالية/)).toBeNull();
+    expect(mockChangeOwnPassword).not.toHaveBeenCalled();
   });
 });

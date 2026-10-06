@@ -85,6 +85,10 @@ pub enum AuthorizationError {
     /// Catch-all deny — emitted by the fail-closed policy default.
     #[error("غير مصرح: صلاحيات غير كافية لتنفيذ هذه العملية")]
     InsufficientPermissions,
+    /// ADR-0063 §5 — the forced credential state refuses every non-allowlisted
+    /// command. A dedicated stable code so the refusal is machine-identifiable.
+    #[error("تغيير كلمة المرور مطلوب قبل المتابعة. يجب تغيير كلمة المرور المؤقتة أولاً.")]
+    PasswordChangeRequired,
 }
 
 impl AuthorizationError {
@@ -97,6 +101,7 @@ impl AuthorizationError {
             AuthorizationError::RequiresUnitNode => "AUTH_REQUIRES_UNIT_NODE",
             AuthorizationError::UnitScopeMismatch => "AUTH_UNIT_SCOPE_MISMATCH",
             AuthorizationError::InsufficientPermissions => "AUTH_INSUFFICIENT_PERMISSIONS",
+            AuthorizationError::PasswordChangeRequired => "AUTH_PASSWORD_CHANGE_REQUIRED",
         }
     }
 }
@@ -171,6 +176,12 @@ pub enum ValidationError {
     /// كلمة مرور ضعيفة
     #[error("Weak password: {reason}")]
     WeakPassword { reason: String },
+
+    /// ADR-0063 §6.4 — the proposed new password equals the stored one. The
+    /// equality is decided by node-bound verification of hashes, never by
+    /// comparing plaintext; `reason` is a static, secret-free explanation.
+    #[error("Password reuse rejected: {reason}")]
+    PasswordReuse { reason: String },
 
     /// اسم المستخدم غير صالح
     #[error("Invalid username: {reason}")]
@@ -312,6 +323,12 @@ pub enum AuthenticationError {
     #[error("Invalid old password for user: {user_id}")]
     InvalidOldPassword { user_id: String },
 
+    /// ADR-0063 §6.2 — the submitted current password does not verify against
+    /// the stored node-bound hash. Deliberately field-less: the display string
+    /// carries no username, user id, or account-existence signal.
+    #[error("Current password is incorrect")]
+    InvalidCurrentPassword,
+
     /// المستخدم محظور
     #[error("User is locked: {username}")]
     UserLocked { username: String },
@@ -421,6 +438,12 @@ impl AppError {
                 message: "كلمة المرور ضعيفة. يجب أن تكون 8 أحرف على الأقل وتحتوي على أرقام ورموز."
                     .to_string(),
                 details: Some(self.to_string()),
+            },
+            AppError::Validation(ValidationError::PasswordReuse { .. }) => UserError {
+                code: "VAL_PASSWORD_REUSE".to_string(),
+                message: "كلمة المرور الجديدة يجب أن تختلف عن كلمة المرور المستخدمة حالياً."
+                    .to_string(),
+                details: None,
             },
             AppError::Validation(ValidationError::InvalidUsername { .. }) => UserError {
                 code: "VAL_USERNAME".to_string(),
@@ -645,6 +668,11 @@ impl AppError {
             AppError::Authentication(AuthenticationError::InvalidOldPassword { .. }) => UserError {
                 code: "AUTH_OLD_PASSWORD".to_string(),
                 message: "كلمة المرور القديمة غير صحيحة.".to_string(),
+                details: None,
+            },
+            AppError::Authentication(AuthenticationError::InvalidCurrentPassword) => UserError {
+                code: "AUTH_CURRENT_PASSWORD".to_string(),
+                message: "كلمة المرور الحالية غير صحيحة.".to_string(),
                 details: None,
             },
             AppError::Authentication(AuthenticationError::PasswordHash { .. }) => UserError {
