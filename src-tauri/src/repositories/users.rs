@@ -423,6 +423,22 @@ impl<'a> UserRepository<'a> {
         )?;
         Ok(count)
     }
+
+    /// ADR-0063 §8.1 — existence of the canonical local UNIT `admin` row.
+    ///
+    /// The durable initialization latch for the `admin_access` first-import
+    /// exemption: `username = 'admin'` bound to the local UNIT `node_id`,
+    /// evaluated WITHOUT any `deleted` or status filter. An admin disable is
+    /// soft (`deleted = 1`) and must not re-open the bootstrap exemption
+    /// (D5, F15). SQL-only, no logic.
+    pub fn admin_exists_for_node(&self, node_code: &str) -> Result<bool, AppError> {
+        let exists = self.executor.query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username = 'admin' AND node_id = ?1)",
+            params![node_code],
+            |row| row.get::<_, i64>(0).map(|v| v == 1),
+        )?;
+        Ok(exists)
+    }
 }
 
 #[cfg(test)]

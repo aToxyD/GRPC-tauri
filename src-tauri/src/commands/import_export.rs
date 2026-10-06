@@ -1775,7 +1775,10 @@ pub fn import_admin_access_package_impl(
                     // no_active_admin} — NO unit_code_matches predicate exists
                     // because the package has no target binding to check;
                     // issuer pinning over the V2 signature chain carries its
-                    // protective role instead.
+                    // protective role instead. `no_active_admin` is the
+                    // ADR-0063 §8.1 durable initialization latch (canonical
+                    // local-admin existence, deletion-insensitive), evaluated
+                    // against the captured local unit code.
                     let verdict = AdminAccessFirstImportPredicatesService::evaluate(
                         &executor,
                         package
@@ -1784,6 +1787,7 @@ pub fn import_admin_access_package_impl(
                             .as_ref()
                             .map(|u| u.to_string())
                             .as_deref(),
+                        local_unit_code.as_deref(),
                     )?;
                     if !verdict.all_hold() {
                         return Err(AppError::BusinessLogic(

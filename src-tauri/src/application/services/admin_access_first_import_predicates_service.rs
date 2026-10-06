@@ -13,9 +13,13 @@
 //! authentication weakening: authentication remains carried entirely by the
 //! certificate ↔ signature verification performed before these predicates run.
 //!
-//! Self-terminating: once the first import succeeds, a canonical Admin
-//! account exists and `no_active_admin` fails closed — the exemption cannot
-//! be replayed on a provisioned node.
+//! Durable initialization latch (ADR-0063 §8.1): `no_active_admin` reports
+//! whether a canonical `admin` row bound to the local UNIT node exists —
+//! without any `deleted` filter. Once the first import succeeds, that row
+//! exists and no supported operation removes it (disable is soft, `deleted =
+//! 1`, and is ignored by the latch), so initialization completion is
+//! monotonic and the exemption cannot be re-opened on a provisioned node
+//! (D5, F15).
 
 use crate::domain::identity::ports::IdentityStorePort;
 use crate::domain::identity::SubjectType;
@@ -28,7 +32,9 @@ pub struct AdminAccessFirstImportVerdict {
     pub anchor_installed: bool,
     /// The package issuer is the locally installed WILAYA anchor.
     pub anchor_is_issuer: bool,
-    /// No canonical Admin account exists yet.
+    /// No canonical `admin` row is bound to the local UNIT node yet — the
+    /// ADR-0063 §8.1 existence latch, evaluated without any `deleted` filter
+    /// (node-bound and deletion-insensitive).
     pub no_active_admin: bool,
 }
 
@@ -48,9 +54,16 @@ impl AdminAccessFirstImportPredicatesService {
     /// supplied certificate): `anchor == issuer` therefore binds the package
     /// issuer to the locally installed trust anchor, closing the cross-WILAYA
     /// acceptance vector without any target binding.
+    ///
+    /// `local_unit_code` is the authoritative local UNIT code captured by the
+    /// import path (ADR-0063 §8.1); `no_active_admin` answers the canonical
+    /// local-admin existence question against it. Fail-closed: a missing or
+    /// empty local UNIT code can never satisfy the latch, so the exemption is
+    /// never admitted without an authoritative local node identity.
     pub fn evaluate(
         executor: &DbExecutor<'_>,
         issuer_identity_id: Option<&str>,
+        local_unit_code: Option<&str>,
     ) -> Result<AdminAccessFirstImportVerdict, AppError> {
         let anchor = executor
             .identity_store()
@@ -61,7 +74,13 @@ impl AdminAccessFirstImportPredicatesService {
             (Some(a), Some(issuer)) => a.identity_id.to_string() == issuer,
             _ => false,
         };
-        let no_active_admin = executor.users().count_active_admins()? == 0;
+        // ADR-0063 §8.1: the durable existence latch — canonical `admin` row
+        // bound to the local UNIT node, deletion-insensitive. Fail closed on
+        // a missing/empty local UNIT code (no authoritative latch input).
+        let no_active_admin = match local_unit_code.map(str::trim) {
+            Some(code) if !code.is_empty() => !executor.users().admin_exists_for_node(code)?,
+            _ => false,
+        };
 
         Ok(AdminAccessFirstImportVerdict {
             anchor_installed,
@@ -78,7 +97,7 @@ impl AdminAccessFirstImportPredicatesService {
         } else if !verdict.anchor_is_issuer {
             "مُصدِر الحزمة ليس مرساة الثقة المحلية المثبتة"
         } else {
-            "يوجد حساب مسؤول نشط بالفعل — الاستيراد الأولي غير متاح"
+            "يوجد حساب مسؤول بالفعل — الاستيراد الأولي غير متاح"
         }
     }
 

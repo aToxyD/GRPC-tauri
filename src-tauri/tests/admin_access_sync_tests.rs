@@ -15,11 +15,15 @@
 //! Section C — first-import predicates service (exact triple):
 //!   C1 all hold; C2 no anchor; C3 issuer ≠ anchor; C4 active admin exists;
 //!   C5 anchor-issuer acceptance gate (SEC-056D/SEC-057: no sequence);
+//!   C7 disabled canonical admin still completes initialization (§8.1);
+//!   C8 foreign-node admin does not satisfy the local latch (§8.1);
+//!   C9 missing/empty local UNIT code fails closed (§8.1);
 //! Section D — import command routing & authorization:
 //!   D1 unauthenticated import fails;
 //!   D2 WILAYA node cannot use the UNIT import path (structural guard);
 //!   D3 post-bootstrap User session rejected by predicates (zero mutation);
-//!   D4 post-bootstrap Admin session re-import succeeds (rotation).
+//!   D4 post-bootstrap Admin session re-import succeeds (rotation);
+//!   D5 the initialization latch survives an admin disable (§8.2/§10, F15).
 //! Section E — OPERATOR PRESERVATION (the security invariant):
 //!   E1 bootstrap import leaves the `.unit` operator row byte-identical and
 //!      both credentials still authenticate;
@@ -367,6 +371,7 @@ fn c1_all_predicates_hold_on_provisioned_unit() {
         let verdict = AdminAccessFirstImportPredicatesService::evaluate(
             &make_executor(db),
             Some(&issuer_id.to_string()),
+            Some("UNIT-9"),
         )
         .expect("evaluate");
         assert!(verdict.all_hold(), "all three predicates must hold");
@@ -382,6 +387,7 @@ fn c2_missing_anchor_fails_closed() {
     let verdict = AdminAccessFirstImportPredicatesService::evaluate(
         &make_executor(db),
         Some(&issuer_id.to_string()),
+        Some("UNIT-9"),
     )
     .expect("evaluate");
     assert!(!verdict.anchor_installed);
@@ -404,6 +410,7 @@ fn c3_foreign_issuer_fails_closed() {
         let verdict = AdminAccessFirstImportPredicatesService::evaluate(
             &make_executor(db),
             Some(&foreign.to_string()),
+            Some("UNIT-9"),
         )
         .expect("evaluate");
         assert!(!verdict.anchor_is_issuer);
@@ -436,13 +443,14 @@ fn c4_existing_admin_blocks_bootstrap() {
         let verdict = AdminAccessFirstImportPredicatesService::evaluate(
             &make_executor(db),
             Some(&issuer_id.to_string()),
+            Some("UNIT-9"),
         )
         .expect("evaluate");
         assert!(!verdict.no_active_admin);
         assert!(!verdict.all_hold());
         assert!(
             AdminAccessFirstImportPredicatesService::rejection_message(&verdict)
-                .contains("يوجد حساب مسؤول نشط")
+                .contains("يوجد حساب مسؤول")
         );
     }
 }
@@ -488,6 +496,124 @@ fn c6_issuer_gate_is_independent_of_ledger_state() {
             &issuer_id.to_string(),
         )
         .expect("anchor-issuer gate holds on a fresh node");
+    }
+}
+
+#[test]
+fn c7_disabled_canonical_admin_completes_initialization() {
+    // ADR-0063 §8.1: the latch is existence-based and deletion-insensitive —
+    // a soft-disabled canonical local admin (`deleted = 1`) still completes
+    // initialization, so the bootstrap exemption stays closed (F15 regression).
+    let state = provisioned_unit_state("UNIT-9");
+    let issuer_id = Uuid::new_v4();
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        seed_anchor(db, issuer_id, ISSUER_SECRET);
+        make_executor(db)
+            .users()
+            .upsert_synced_admin(
+                &Uuid::new_v4().to_string(),
+                "existing-hash",
+                "UNIT-9",
+                true,
+                FIXED_NOW,
+            )
+            .expect("seed disabled canonical admin");
+        let verdict = AdminAccessFirstImportPredicatesService::evaluate(
+            &make_executor(db),
+            Some(&issuer_id.to_string()),
+            Some("UNIT-9"),
+        )
+        .expect("evaluate");
+        assert!(
+            !verdict.no_active_admin,
+            "§8.1: a disabled canonical local admin still completes initialization"
+        );
+        assert!(!verdict.all_hold());
+        assert!(
+            AdminAccessFirstImportPredicatesService::rejection_message(&verdict)
+                .contains("يوجد حساب مسؤول")
+        );
+    }
+}
+
+#[test]
+fn c8_foreign_node_admin_does_not_satisfy_local_latch() {
+    // ADR-0063 §8.1: node binding — a canonical `admin` row under a different
+    // `node_id` never satisfies the LOCAL UNIT predicate, so the local
+    // bootstrap exemption stays eligible subject to the other predicates.
+    let state = provisioned_unit_state("UNIT-9");
+    let issuer_id = Uuid::new_v4();
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        seed_anchor(db, issuer_id, ISSUER_SECRET);
+        make_executor(db)
+            .users()
+            .upsert_synced_admin(
+                &Uuid::new_v4().to_string(),
+                "foreign-hash",
+                "UNIT-OTHER",
+                false,
+                FIXED_NOW,
+            )
+            .expect("seed foreign-node admin");
+        let verdict = AdminAccessFirstImportPredicatesService::evaluate(
+            &make_executor(db),
+            Some(&issuer_id.to_string()),
+            Some("UNIT-9"),
+        )
+        .expect("evaluate");
+        assert!(
+            verdict.no_active_admin,
+            "§8.1: a foreign-node admin must not satisfy the local latch"
+        );
+        assert!(
+            verdict.all_hold(),
+            "local bootstrap remains eligible subject to all other predicates"
+        );
+    }
+}
+
+#[test]
+fn c9_missing_or_empty_local_unit_code_fails_closed() {
+    // ADR-0063 §8.1 fail-closed: without an authoritative local UNIT code the
+    // latch can never be satisfied — no bootstrap admission, even on a node
+    // with no admin row and a valid anchor/issuer pair.
+    let state = provisioned_unit_state("UNIT-9");
+    let issuer_id = Uuid::new_v4();
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        seed_anchor(db, issuer_id, ISSUER_SECRET);
+
+        let missing = AdminAccessFirstImportPredicatesService::evaluate(
+            &make_executor(db),
+            Some(&issuer_id.to_string()),
+            None,
+        )
+        .expect("evaluate without local unit code");
+        assert!(!missing.no_active_admin, "fail closed on missing code");
+        assert!(!missing.all_hold(), "no bootstrap admission");
+
+        let empty = AdminAccessFirstImportPredicatesService::evaluate(
+            &make_executor(db),
+            Some(&issuer_id.to_string()),
+            Some(""),
+        )
+        .expect("evaluate with empty local unit code");
+        assert!(!empty.no_active_admin, "fail closed on empty code");
+        assert!(!empty.all_hold(), "no bootstrap admission");
+
+        let blank = AdminAccessFirstImportPredicatesService::evaluate(
+            &make_executor(db),
+            Some(&issuer_id.to_string()),
+            Some("   "),
+        )
+        .expect("evaluate with blank local unit code");
+        assert!(!blank.no_active_admin, "fail closed on blank code");
+        assert!(!blank.all_hold(), "no bootstrap admission");
     }
 }
 
@@ -580,7 +706,7 @@ fn d3_post_bootstrap_user_session_rejected_with_zero_mutation() {
 
     let err = import_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
         .expect_err("User sessions have no post-bootstrap import path");
-    assert!(err.contains("يوجد حساب مسؤول نشط"), "got: {err}");
+    assert!(err.contains("يوجد حساب مسؤول"), "got: {err}");
 
     let guard = state.get_db().expect("lock");
     let db = guard.as_ref().expect("db");
@@ -664,6 +790,144 @@ fn d4_post_bootstrap_admin_rotation_import_succeeds() {
         canonical_admins, 1,
         "exactly one canonical admin after rotation"
     );
+}
+
+#[test]
+fn d5_initialization_latch_survives_admin_disable() {
+    // ADR-0063 §8.2 / §10: initialization completion is durable. After a
+    // successful bootstrap import, soft-disabling the canonical admin must
+    // NOT re-open the first-import exemption (F15 regression), the rejection
+    // must cause zero business mutation, and the latch still reports
+    // initialization complete when re-evaluated from persisted DB state.
+    let state = provisioned_unit_state("UNIT-9");
+    let issuer_id = Uuid::new_v4();
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        seed_anchor(db, issuer_id, ISSUER_SECRET);
+    }
+    let dir = TempDir::new().expect("temp dir");
+
+    // 1. Initialization succeeds through the first-import exemption.
+    set_session(&state, "User");
+    let first = dir.path().join("first.sync");
+    let p1 = sign_v2_package(
+        admin_package("aa-d5a", issuer_id, fleet_payload(FLEET_PASSWORD)),
+        ISSUER_SECRET,
+    );
+    write_encrypted(&p1, ISSUER_SECRET, &first);
+    let result = import_admin_access_package_impl(&state, first.to_string_lossy().into_owned())
+        .expect("bootstrap import succeeds");
+    assert!(result.admin_updated);
+
+    let operator_before = {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        operator_row(db)
+    };
+
+    // 2. Disable the canonical admin (soft delete — the revocation state).
+    let bootstrap_hash: String = {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        let hash: String = db
+            .get_connection()
+            .query_row(
+                "SELECT password_hash FROM users WHERE username='admin' AND node_id='UNIT-9'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("bootstrap admin row");
+        make_executor(db)
+            .users()
+            .upsert_synced_admin(
+                &Uuid::new_v4().to_string(),
+                &hash,
+                "UNIT-9",
+                true,
+                FIXED_NOW,
+            )
+            .expect("disable canonical admin");
+        hash
+    };
+
+    // 3. A subsequent User bootstrap import is still refused.
+    set_session(&state, "User");
+    let second = dir.path().join("second.sync");
+    let p2 = sign_v2_package(
+        admin_package("aa-d5b", issuer_id, fleet_payload(FLEET_PASSWORD_ROTATED)),
+        ISSUER_SECRET,
+    );
+    write_encrypted(&p2, ISSUER_SECRET, &second);
+    let err = import_admin_access_package_impl(&state, second.to_string_lossy().into_owned())
+        .expect_err("the latch must stay closed after an admin disable");
+    assert!(err.contains("يوجد حساب مسؤول"), "got: {err}");
+
+    // 4. Zero business mutation on rejection: admin credential, package
+    //    ledger, and operator row are all unchanged.
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        let stored_hash: String = db
+            .get_connection()
+            .query_row(
+                "SELECT password_hash FROM users WHERE username='admin' AND node_id='UNIT-9'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("admin row after rejection");
+        assert_eq!(
+            stored_hash, bootstrap_hash,
+            "a rejected import must not rotate the admin credential"
+        );
+        let rejected_recorded: i64 = db
+            .get_connection()
+            .query_row(
+                "SELECT COUNT(*) FROM applied_sync_packages WHERE package_id = 'aa-d5b'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ledger lookup");
+        assert_eq!(
+            rejected_recorded, 0,
+            "the refused package must not be recorded as imported"
+        );
+        let bootstrap_recorded: i64 = db
+            .get_connection()
+            .query_row(
+                "SELECT COUNT(*) FROM applied_sync_packages WHERE package_id = 'aa-d5a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ledger lookup");
+        assert_eq!(
+            bootstrap_recorded, 1,
+            "the bootstrap package stays recorded exactly once"
+        );
+        assert_eq!(
+            operator_row(db),
+            operator_before,
+            "the operator row must stay byte-identical"
+        );
+    }
+
+    // 5. Restart-equivalent: re-evaluate the latch from persisted DB state —
+    //    initialization remains complete.
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        let verdict = AdminAccessFirstImportPredicatesService::evaluate(
+            &make_executor(db),
+            Some(&issuer_id.to_string()),
+            Some("UNIT-9"),
+        )
+        .expect("evaluate after disable");
+        assert!(
+            !verdict.no_active_admin,
+            "§8.1: initialization stays complete after an admin disable"
+        );
+        assert!(!verdict.all_hold());
+    }
 }
 
 // ── Section E: OPERATOR PRESERVATION (security invariant) ────────────────
