@@ -70,6 +70,13 @@ pub enum Action {
     // is always the authenticated principal, never a caller-supplied id.
     ChangeOwnPassword,
 
+    // Canonical local UNIT operator password reset by the local admin
+    // (ADR-0063 §7.1 / D6). Scoped by policy to UNIT node + the canonical
+    // local `admin` (`BOOTSTRAP_ADMIN_USERNAME`); the target is derived
+    // server-side from the local UNIT code — never a caller-supplied username
+    // or unit id.
+    ResetLocalUnitUserPassword,
+
     // Contract-centric procurement (ADR-0055 / SEC-087-F)
     ManageSuppliers,
     ManageContracts,

@@ -103,13 +103,13 @@ contract map entry so the projection has exactly one owner before any code exist
 
 ### Local UNIT Credential Lifecycle
 
-**Status: ratified by ADR-0063 §6 / §7, not yet implemented.** Recorded here so the two
-credential commands have exactly one owning contract before implementation.
+**Status: implemented (ADR-0063 §6 / §7.1).** The two credential commands have exactly one
+owning contract; the identifiers below are the finalized implementation-phase names.
 
-| Command (ratified name) | Owner Contract | Backend locus | Consuming Page |
+| Command (finalized name) | Owner Contract | Backend locus | Consuming Page |
 |-------------------------|---------------|---------------|----------------|
-| Self password change **(RATIFIED, NOT YET IMPLEMENTED)** | sync.contract.ts | `commands/` + `application/` (ADR-0063 §6) | SettingsPage |
-| Local UNIT admin reset of `user` **(RATIFIED, NOT YET IMPLEMENTED)** | sync.contract.ts | `commands/` + `application/` (ADR-0063 §7.1) | SettingsPage |
+| Self password change — **`changeOwnPassword`** | sync.contract.ts | `commands/auth.rs` + `application/services/user_service.rs` (ADR-0063 §6) | SettingsPage |
+| Local UNIT admin reset of `user` — **`resetUnitUserPassword`** | sync.contract.ts | `commands/auth.rs` + `application/services/user_service.rs` (ADR-0063 §7.1) | SettingsPage |
 
 > **Owner-contract rationale.** Both ratified commands extend the **existing**
 > password-command surface, which `sync.contract.ts` already owns (`setFleetAdminPassword`,
@@ -119,9 +119,10 @@ credential commands have exactly one owning contract before implementation.
 > one credential surface across two owners and violate FE-152 / `AGENTS.md` §2 A2.
 >
 > The WILAYA-side `set_unit_user_password` keeps its single existing path and is **evolved, not
-> duplicated** (`ADR-0063` §7.2). The names above are placeholders recorded for ownership
-> traceability only; the final identifiers are an implementation-phase choice and are **not**
-> ratified here.
+> duplicated** (`ADR-0063` §7.2). Neither lifecycle command adds a new projection type or field:
+> §6 re-reads the existing `User` projection (`must_change_password`), and §7.1 mutates
+> credential state with no frontend projection of its own, so no FE-158/FE-160 baseline change
+> is required by this implementation.
 
 ---
 

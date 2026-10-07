@@ -28,6 +28,7 @@ const mockSetFleetAdminPassword = vi.fn();
 const mockExportAdminAccessPackage = vi.fn();
 const mockImportAdminAccessPackage = vi.fn();
 const mockChangeOwnPassword = vi.fn();
+const mockResetUnitUserPassword = vi.fn();
 const mockOpenFile = vi.fn();
 const mockSaveFile = vi.fn();
 const mockCurrentUserSubscribe = vi.fn((listener: (value: unknown) => void) => {
@@ -88,6 +89,7 @@ vi.mock('../../lib/contracts', () => ({
   exportAdminAccessPackage: (...args: any[]) => mockExportAdminAccessPackage(...args),
   importAdminAccessPackage: (...args: any[]) => mockImportAdminAccessPackage(...args),
   changeOwnPassword: (...args: any[]) => mockChangeOwnPassword(...args),
+  resetUnitUserPassword: (...args: any[]) => mockResetUnitUserPassword(...args),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -547,5 +549,139 @@ describe('SettingsPage — ADR-0063 §5/§6 forced credential state (D32)', () =
     expect(screen.queryByText('تغيير كلمة المرور الإلزامي')).toBeNull();
     expect(screen.queryByLabelText(/^كلمة المرور الحالية/)).toBeNull();
     expect(mockChangeOwnPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe('SettingsPage — ADR-0063 §7.1 local UNIT admin reset', () => {
+  const unitAdminSession = { username: 'admin', role: 'Admin' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentUserValue = unitAdminSession;
+    mockGetSettings.mockResolvedValue({
+      configured: true,
+      node_type: 'UNIT',
+      unit_code: 'UNIT-01',
+    });
+  });
+
+  async function fillReset(password: string, confirm: string): Promise<void> {
+    await fireEvent.input(
+      await screen.findByLabelText(/كلمة مرور مؤقتة/),
+      { target: { value: password } }
+    );
+    await fireEvent.input(
+      screen.getByLabelText(/تأكيد كلمة المرور المؤقتة/),
+      { target: { value: confirm } }
+    );
+  }
+
+  it('renders the reset surface for a UNIT Admin with NO target selector', async () => {
+    render(SettingsPage);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('إعادة تعيين كلمة مرور مشغّل الوحدة').length
+      ).toBeGreaterThan(0);
+    });
+    expect(
+      screen.getByRole('button', { name: 'إعادة تعيين كلمة مرور مشغّل الوحدة' })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/كلمة مرور مؤقتة/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/تأكيد كلمة المرور المؤقتة/)).toBeInTheDocument();
+    // ADR-0063 §7.1: the backend derives the target server-side — the renderer
+    // must not offer a username/unit selector.
+    expect(screen.queryByRole('combobox', { name: /الوحدة الهدف/ })).toBeNull();
+    expect(screen.queryByLabelText(/اسم المستخدم الهدف/)).toBeNull();
+  });
+
+  it('hides the reset surface for a UNIT User entirely (admin-only)', async () => {
+    currentUserValue = unitUser;
+    render(SettingsPage);
+
+    await waitFor(() => {
+      expect(screen.getByText('مزامنة حساب المدير العام (admin)')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('إعادة تعيين كلمة مرور مشغّل الوحدة')).toBeNull();
+    expect(screen.queryByLabelText(/كلمة مرور مؤقتة/)).toBeNull();
+  });
+
+  it('resets the operator via IPC (single temp-password arg), clears the form and never refreshes the current user', async () => {
+    mockResetUnitUserPassword.mockResolvedValue(undefined);
+    render(SettingsPage);
+
+    await fillReset('TempUnit123', 'TempUnit123');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /إعادة تعيين كلمة مرور مشغّل الوحدة/ })
+    );
+
+    await waitFor(() => {
+      expect(mockResetUnitUserPassword).toHaveBeenCalledTimes(1);
+      // Exactly ONE argument, the temporary credential — no target param.
+      expect(mockResetUnitUserPassword).toHaveBeenCalledWith('TempUnit123');
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText(/كلمة مرور مؤقتة/)).toHaveValue('');
+      expect(screen.getByLabelText(/تأكيد كلمة المرور المؤقتة/)).toHaveValue('');
+      expect(
+        screen.getByText(/تمت إعادة تعيين كلمة مرور مشغّل الوحدة/)
+      ).toBeInTheDocument();
+    });
+    // The reset target is NOT the admin's session → no projection refresh and
+    // no session/navigation change.
+    expect(mockRefreshCurrentUser).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+    // The plaintext never survives submission.
+    expect(screen.queryByDisplayValue('TempUnit123')).toBeNull();
+  });
+
+  it('surfaces a backend refusal verbatim and keeps the form', async () => {
+    mockResetUnitUserPassword.mockRejectedValue(
+      new Error('لا يمكن إعادة تعيين كلمة مرور مشغّل الوحدة: كلمة المرور ضعيفة.')
+    );
+    render(SettingsPage);
+
+    await fillReset('TempUnit123', 'TempUnit123');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /إعادة تعيين كلمة مرور مشغّل الوحدة/ })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/كلمة المرور ضعيفة/)).toBeInTheDocument();
+    });
+    expect(mockResetUnitUserPassword).toHaveBeenCalledWith('TempUnit123');
+    expect(mockRefreshCurrentUser).not.toHaveBeenCalled();
+    // Both the temporary and the confirmation field must still hold the input.
+    expect(screen.getAllByDisplayValue('TempUnit123')).toHaveLength(2);
+  });
+
+  it('blocks a policy-violating temporary credential locally without invoking the command', async () => {
+    render(SettingsPage);
+
+    await fillReset('0000', '0000');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /إعادة تعيين كلمة مرور مشغّل الوحدة/ })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
+      ).toBeInTheDocument();
+    });
+    expect(mockResetUnitUserPassword).not.toHaveBeenCalled();
+  });
+
+  it('blocks a mismatched confirmation locally without invoking the command', async () => {
+    render(SettingsPage);
+
+    await fillReset('TempUnit123', 'TempUnit999');
+    await fireEvent.click(
+      screen.getByRole('button', { name: /إعادة تعيين كلمة مرور مشغّل الوحدة/ })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('كلمتا المرور غير متطابقتين')).toBeInTheDocument();
+    });
+    expect(mockResetUnitUserPassword).not.toHaveBeenCalled();
   });
 });

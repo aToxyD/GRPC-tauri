@@ -21,6 +21,7 @@
     exportAdminAccessPackage,
     importAdminAccessPackage,
     changeOwnPassword,
+    resetUnitUserPassword,
   } from '../lib/contracts';
   import { openFile, saveFile } from '../lib/tauri';
   import type { Settings } from '../lib/types';
@@ -52,6 +53,9 @@
 
   const selfChangeOp = createOperationGuard({ scope });
   const selfChangeLoading = selfChangeOp.loading;
+
+  const unitResetOp = createOperationGuard({ scope });
+  const unitResetLoading = unitResetOp.loading;
 
   // @category SessionState
   $: user = $userStore;
@@ -110,6 +114,20 @@
   let selfChangeError = '';
   // @category TransientState
   let selfChangeSuccess = '';
+
+  // ── UNIT admin reset of the canonical local operator (ADR-0063 §7.1) ──────
+  // Transient only: never persisted, never rendered back after submission,
+  // never logged. No target selector exists — the backend derives the operator
+  // row server-side from the local UNIT code and is the sole authority for
+  // policy validation and forced-state setting.
+  // @category TransientState
+  let resetUnitPassword = '';
+  // @category TransientState
+  let resetUnitConfirm = '';
+  // @category TransientState
+  let resetUnitError = '';
+  // @category TransientState
+  let resetUnitSuccess = '';
 
   onMount(async () => {
     await initialOp.run(async () => {
@@ -245,6 +263,44 @@
         selfChangeSuccess = 'تم تغيير كلمة المرور بنجاح. يمكنك الآن متابعة العمل بالتطبيق.';
       } catch (e) {
         selfChangeError = formatErrorMessage(e);
+      }
+    });
+  }
+
+  // ADR-0063 §7.1/D6 — local UNIT admin reset of the canonical local operator
+  // `user`. The backend derives the target server-side from the local UNIT
+  // code (no username/unit selector exists) and is the sole authority for
+  // policy validation, node-bound hashing, forced-state setting and audit.
+  // The reset target is NOT the current session, so no projection refresh and
+  // no session/navigation change occurs here.
+  async function handleResetUnitUserPassword() {
+    if (!resetUnitPassword) {
+      resetUnitError = 'أدخل كلمة مرور مؤقتة للمشغّل';
+      return;
+    }
+    if (resetUnitPassword.length < 8) {
+      resetUnitError = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل';
+      return;
+    }
+    if (!/[A-Z]/.test(resetUnitPassword) || !/[a-z]/.test(resetUnitPassword) || !/[0-9]/.test(resetUnitPassword)) {
+      resetUnitError = 'كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم';
+      return;
+    }
+    if (resetUnitPassword !== resetUnitConfirm) {
+      resetUnitError = 'كلمتا المرور غير متطابقتين';
+      return;
+    }
+    await unitResetOp.guard(async () => {
+      try {
+        resetUnitError = '';
+        resetUnitSuccess = '';
+        await resetUnitUserPassword(resetUnitPassword);
+        resetUnitPassword = '';
+        resetUnitConfirm = '';
+        resetUnitSuccess =
+          'تمت إعادة تعيين كلمة مرور مشغّل الوحدة. سيُطلب منه تغييرها إلزامياً عند تسجيل الدخول التالي.';
+      } catch (e) {
+        resetUnitError = formatErrorMessage(e);
       }
     });
   }
@@ -442,6 +498,74 @@
             </AppCard>
           </div>
         {:else}
+        {#if isAdmin}
+          <!-- ADR-0063 §7.1/D6 — local admin reset of the canonical operator.
+               Admin-only (the backend refuses every other actor); visible only
+               outside the forced state because a forced operator cannot reach
+               any admin surface anyway. No target selector: the backend derives
+               the operator row from the local UNIT code. -->
+          <div class="mt-8">
+            <AppCard>
+              <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+                <div class="w-12 h-12 bg-rose-50 dark:bg-rose-900/20 rounded-lg flex items-center justify-center">
+                  <svg class="w-6 h-6 text-rose-600 dark:text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="font-semibold text-gray-800 dark:text-gray-100">إعادة تعيين كلمة مرور مشغّل الوحدة</h3>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">تغيير كلمة مرور الحساب المحلي <code class="font-mono">user</code> (ADR-0063 §7.1)</p>
+                </div>
+              </div>
+              <AppAlert intent="warning">
+                <p class="text-sm leading-relaxed">
+                  تُعيّن كلمة مرور مؤقتة لحساب مشغّل الوحدة المحلي
+                  (<code class="font-mono">user</code>). عند تسجيل الدخول التالي
+                  يُجمَع على المشغّل استبدالها بموجب وضع «تغيير كلمة المرور
+                  الإلزامي» — لا يمكن إرجاعه من الواجهة. لا تقبل الخلفية كلمة
+                  المرور <code class="font-mono">0000</code>، ويُستبدَل الهدف
+                  من رمز الوحدة المحلي حصراً (لا اختيار اسم مستخدم أو وحدة هنا).
+                </p>
+              </AppAlert>
+              <form class="mt-4 space-y-3" on:submit|preventDefault={handleResetUnitUserPassword} novalidate>
+                <AppInput
+                  id="unit-reset-temp"
+                  label="كلمة مرور مؤقتة"
+                  type="password"
+                  bind:value={resetUnitPassword}
+                  placeholder="8 أحرف على الأقل، مع حرف كبير وحرف صغير ورقم"
+                  autocomplete="new-password"
+                  required
+                  disabled={$unitResetLoading}
+                />
+                <AppInput
+                  id="unit-reset-confirm"
+                  label="تأكيد كلمة المرور المؤقتة"
+                  type="password"
+                  bind:value={resetUnitConfirm}
+                  placeholder="أعد إدخال كلمة المرور"
+                  autocomplete="new-password"
+                  required
+                  disabled={$unitResetLoading}
+                />
+                {#if resetUnitError}
+                  <AppAlert intent="danger" dismissible on:dismiss={() => resetUnitError = ''}>{resetUnitError}</AppAlert>
+                {/if}
+                {#if resetUnitSuccess}
+                  <AppAlert intent="success" dismissible on:dismiss={() => resetUnitSuccess = ''}>{resetUnitSuccess}</AppAlert>
+                {/if}
+                <AppButton
+                  type="submit"
+                  variant="primary"
+                  fullWidth
+                  loading={$unitResetLoading}
+                >
+                  إعادة تعيين كلمة مرور مشغّل الوحدة
+                </AppButton>
+              </form>
+            </AppCard>
+          </div>
+        {/if}
         <!-- مزامنة حساب المدير العام (admin_access): استيراد أسطولي -->
         <div class="mt-8">
           <AppCard>

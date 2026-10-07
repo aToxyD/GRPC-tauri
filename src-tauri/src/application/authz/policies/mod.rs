@@ -139,6 +139,29 @@ pub fn authorize(
             _ => Err(AuthorizationError::RequiresUnitNode),
         },
 
+        // ── Local UNIT admin reset of the canonical `user` (ADR-0063 §7.1 / D6) ─
+        // UNIT node only, and only the canonical local `admin` identity
+        // (username `BOOTSTRAP_ADMIN_USERNAME`, an `admin` row bound to the
+        // local UNIT scope — §8.1 / F17 / F18). Every other account is denied
+        // outright, including the operator itself (which owns the §6 self-change).
+        // The target is never caller-supplied: no username or unit id ever
+        // reaches this policy — the service derives it from the local UNIT code.
+        // Role/username checks mirror the principal only; `Principal` carries no
+        // node id, so node binding is structurally guaranteed by the login scope
+        // that minted the session (the login lookup is keyed on the local scope).
+        Action::ResetLocalUnitUserPassword => match resource {
+            ResourceContext::UnitNode { .. }
+                if principal.username
+                    == crate::application::services::identity_provisioning_service::
+                        BOOTSTRAP_ADMIN_USERNAME
+                    && principal.role == UserRole::Admin =>
+            {
+                Ok(())
+            }
+            ResourceContext::UnitNode { .. } => Err(AuthorizationError::InsufficientPermissions),
+            _ => Err(AuthorizationError::RequiresUnitNode),
+        },
+
         // ── Actions requiring authentication (any valid session) ──────────
         // These must still require a valid session — enforced by the command
         // dispatcher (`authorize_command`) before this function is reached.
@@ -275,6 +298,103 @@ mod tests {
             role,
             session_id: Some("s1".to_string()),
         }
+    }
+
+    fn principal_with_name(role: UserRole, username: &str) -> Principal {
+        Principal {
+            user_id: "u1".to_string(),
+            username: username.to_string(),
+            role,
+            session_id: Some("s1".to_string()),
+        }
+    }
+
+    #[test]
+    fn local_unit_admin_reset_is_unit_node_canonical_admin_only() {
+        use crate::application::services::identity_provisioning_service::BOOTSTRAP_ADMIN_USERNAME;
+        use crate::application::services::unit_service::OPERATOR_USERNAME;
+
+        // Canonical local UNIT admin → allowed on a UNIT node.
+        let ok = authorize(
+            &principal_with_name(UserRole::Admin, BOOTSTRAP_ADMIN_USERNAME),
+            Action::ResetLocalUnitUserPassword,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(ok.is_ok());
+
+        // The canonical operator (`user`, User role) owns §6, never §7.1.
+        let denied_operator = authorize(
+            &principal_with_name(UserRole::User, OPERATOR_USERNAME),
+            Action::ResetLocalUnitUserPassword,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(
+                denied_operator,
+                Err(AuthorizationError::InsufficientPermissions)
+            ),
+            "the operator must be denied the admin reset, got: {denied_operator:?}"
+        );
+
+        // Canonical admin username but a non-Admin role.
+        let denied_role = authorize(
+            &principal_with_name(UserRole::User, BOOTSTRAP_ADMIN_USERNAME),
+            Action::ResetLocalUnitUserPassword,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(
+                denied_role,
+                Err(AuthorizationError::InsufficientPermissions)
+            ),
+            "a non-Admin session must be denied, got: {denied_role:?}"
+        );
+
+        // Admin role with a NON-canonical username.
+        let denied_name = authorize(
+            &principal_with_name(UserRole::Admin, "another-admin"),
+            Action::ResetLocalUnitUserPassword,
+            &ResourceContext::UnitNode {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(
+                denied_name,
+                Err(AuthorizationError::InsufficientPermissions)
+            ),
+            "only the canonical admin username may reset, got: {denied_name:?}"
+        );
+
+        // WILAYA / other nodes have no `UnitNode` resource.
+        let denied_wilaya = authorize(
+            &principal_with_name(UserRole::Admin, BOOTSTRAP_ADMIN_USERNAME),
+            Action::ResetLocalUnitUserPassword,
+            &ResourceContext::WilayaNode,
+        );
+        assert!(
+            matches!(denied_wilaya, Err(AuthorizationError::RequiresUnitNode)),
+            "WILAYA nodes must be denied, got: {denied_wilaya:?}"
+        );
+
+        // And a unit-scoped resource cannot be (ab)used for redirects.
+        let denied_scope = authorize(
+            &principal_with_name(UserRole::Admin, BOOTSTRAP_ADMIN_USERNAME),
+            Action::ResetLocalUnitUserPassword,
+            &ResourceContext::UnitScope {
+                unit_id: "unit-a".to_string(),
+            },
+        );
+        assert!(
+            matches!(denied_scope, Err(AuthorizationError::RequiresUnitNode)),
+            "unit-scoped resets must be denied, got: {denied_scope:?}"
+        );
     }
 
     #[test]

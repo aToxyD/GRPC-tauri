@@ -310,6 +310,37 @@ impl<'a> UserRepository<'a> {
         Ok(())
     }
 
+    /// ADR-0063 §7.1 — change a password **and** set the forced credential
+    /// state as one fail-closed unit.
+    ///
+    /// A single `UPDATE` changes both `password_hash` and
+    /// `must_change_password = 1` in one write, so no intermediate state can
+    /// ever be observed. The affected-row count is verified: a zero-row write
+    /// means the target row does not exist (or vanished mid-transaction), so
+    /// the operation fails closed instead of reporting success.
+    ///
+    /// Deliberately the mirror of [`Self::change_password_and_clear_forced_state`]:
+    /// the self-change clears the forced flag (§6) while this admin reset sets
+    /// it (§7.1) — the two directions are two distinct fail-closed units.
+    pub fn change_password_and_set_forced_state(
+        &self,
+        user_id: &str,
+        password_hash: &str,
+        now: &str,
+    ) -> Result<(), AppError> {
+        let updated = self.executor.execute(
+            "UPDATE users SET password_hash = ?1, must_change_password = 1, updated_at = ?2 WHERE id = ?3",
+            params![password_hash, now, user_id],
+        )?;
+        if updated == 0 {
+            return Err(AppError::Internal(
+                "password reset target does not exist".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Enable (`deleted = 0`) or disable (`deleted = 1`) an account.
     /// Disabling is a soft-delete: the row is preserved and re-enableable.
     pub fn set_deleted(&self, user_id: &str, deleted: bool, now: &str) -> Result<(), AppError> {

@@ -5,6 +5,7 @@ use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::application::services::{unit_service::OPERATOR_USERNAME, SettingsService};
 use crate::domain::security::PasswordHashPort;
 
 pub struct UserService<'a> {
@@ -125,5 +126,61 @@ impl<'a> UserService<'a> {
         self.executor
             .users()
             .change_password_and_clear_forced_state(user_id, &new_hash, &now)
+    }
+
+    /// ADR-0063 §7.1 — local UNIT admin reset of the canonical local `user`.
+    ///
+    /// Authorization (UNIT node + canonical `admin`) is owned exclusively by
+    /// `application::authz` — this service performs credential mechanics only,
+    /// so the rule exists in exactly one place.
+    ///
+    /// The target row is derived **server-side** from the authoritative local
+    /// UNIT code (SEC-029: `units.code == users.node_id == Settings.unit_code`):
+    /// no username or unit id is caller-supplied, so a caller can never select
+    /// or redirect the target. A non-UNIT / unconfigured node resolves to no
+    /// usable scope and fails closed.
+    ///
+    /// Fail-closed at every step, and deliberately free of any rate-limiter or
+    /// session interaction (§7.1 F29, F30, F32): the login buckets are
+    /// untouched and the authenticated admin's session is neither invalidated
+    /// nor replaced.
+    pub fn reset_local_operator_password(&self, temporary_password: &str) -> Result<(), AppError> {
+        let settings = SettingsService::new(self.executor).get_settings()?;
+        let local_unit_code = settings
+            .get_unit_id()
+            .ok_or_else(|| {
+                AppError::Internal(
+                    "operator reset requires a configured local UNIT node".to_string(),
+                )
+            })?
+            .to_string();
+
+        // Active only (deleted = 0): a revoked operator has no reset target,
+        // and this operation must never re-enable one.
+        let operator = self
+            .executor
+            .users()
+            .get_user_by_username(OPERATOR_USERNAME, &local_unit_code)?
+            .ok_or_else(|| {
+                AppError::Internal("operator reset target does not exist".to_string())
+            })?;
+
+        // §7.1 — the temporary credential must satisfy the normal policy (F7).
+        // Literal `0000` (and any other weak shape) is rejected here.
+        crate::domain::validation::validate_change_password(temporary_password)?;
+
+        // §7.1 — node-bound hash of the temporary credential (Argon2,
+        // unchanged): `hash_node(temp, <local unit code>)` (F2, F4).
+        let new_hash = self
+            .password_port
+            .hash_node(temporary_password, &local_unit_code)
+            .map_err(crate::errors::AppError::Internal)?;
+
+        // §7.1 — password write + forced-state set as one fail-closed unit on
+        // the caller's transaction executor.
+        let now = Utc::now().to_rfc3339();
+        self.executor
+            .users()
+            .change_password_and_set_forced_state(&operator.id, &new_hash, &now)
     }
 }

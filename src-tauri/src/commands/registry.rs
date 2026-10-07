@@ -24,6 +24,10 @@ fn registered_commands() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 
         commands::get_current_user,
         // ADR-0063 §6 — canonical local UNIT operator self password change
         commands::change_own_password,
+        // ADR-0063 §7.1 — local UNIT admin reset of the canonical `user`
+        // (deliberately NOT in the forced-state allowlist: an operator in the
+        // forced state must rotate via §6, the admin is not in that state).
+        commands::reset_unit_user_password,
         // Identity bootstrap & Challenge–Response (B5, pre-auth)
         commands::get_identity_status,
         commands::begin_wilaya_provision,

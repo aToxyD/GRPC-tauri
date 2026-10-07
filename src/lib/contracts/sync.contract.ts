@@ -79,6 +79,16 @@ export async function changeOwnPassword(currentPassword: string, newPassword: st
   return await safeInvoke('change_own_password', { currentPassword, newPassword });
 }
 
+// ADR-0063 §7.1/D6 — local UNIT admin reset of the canonical local operator
+// `user`. The backend derives the target server-side from the authoritative
+// local UNIT code; no username or unit-identifier parameter exists here. The
+// temporary credential must satisfy the normal policy (literal `0000` is
+// rejected), the target enters the forced credential state (§5/§6), and the
+// write + forced-state set + admin-attributed audit commit atomically.
+export async function resetUnitUserPassword(temporaryPassword: string): Promise<void> {
+  return await safeInvoke('reset_unit_user_password', { temporaryPassword });
+}
+
 export async function setAccountStatus(username: string, enabled: boolean): Promise<void> {
   return await safeInvoke('set_account_status', { username, enabled });
 }

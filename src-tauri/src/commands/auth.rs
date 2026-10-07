@@ -427,6 +427,58 @@ pub fn change_own_password_impl(
     Ok(())
 }
 
+/// ADR-0063 §7.1 — canonical local UNIT operator password reset by the local
+/// admin.
+///
+/// Authorization is `Action::ResetLocalUnitUserPassword` (UNIT node +
+/// canonical local `admin` identity); the target row is derived server-side
+/// from the local UNIT code, never caller-supplied. The temporary credential
+/// must satisfy the normal policy (`0000` is rejected), is node-bound to the
+/// local code (F4), and MUST drive the target into the forced credential
+/// state. The password write, the forced-state set and the `PasswordChange`
+/// audit share one transaction (§7.1 / §2.3). No rate-limiter call and no
+/// session creation/invalidation (§7.1 F29, F30, F32).
+#[tauri::command]
+pub fn reset_unit_user_password(
+    state: State<AppState>,
+    temporary_password: String,
+) -> Result<(), String> {
+    reset_unit_user_password_impl(&state, &temporary_password)
+}
+
+/// Borrowed-state seam for [`reset_unit_user_password`], same rationale as
+/// [`change_own_password_impl`]: the failure paths (target derivation, policy
+/// rejection, node binding) are covered by integration tests through this seam.
+pub fn reset_unit_user_password_impl(
+    state: &AppState,
+    temporary_password: &str,
+) -> Result<(), String> {
+    let (session, _settings) = authorize_command(state, Action::ResetLocalUnitUserPassword, None)
+        .map_err(into_command_error)?;
+    // Advance session activity for an authorized mutating command. The login
+    // rate limiter is deliberately never consulted here (§7.1 / F29).
+    state.touch_session();
+
+    let mut guard = state.get_db().map_err(into_command_error)?;
+    let db = db_mut_or_command_error(guard.as_mut())?;
+
+    // Authenticated ADMIN attribution (§7.1), transactionally with the write.
+    let user_ctx = user_ctx_from_parts(
+        &session.user_id,
+        &session.username,
+        Some(&session.session_id),
+    );
+    let password_port = state.password_port.as_ref();
+
+    AuditTxService::execute_with_audit(db, AuditAction::PasswordChange, &user_ctx, |tx| {
+        UserService::new(tx.executor, password_port)
+            .reset_local_operator_password(temporary_password)
+    })
+    .map_err(into_command_error)?;
+
+    Ok(())
+}
+
 /// Check session status
 #[tauri::command]
 pub fn check_session(state: State<AppState>) -> Result<SessionStatus, String> {
