@@ -373,7 +373,10 @@ fn admin_reset_is_denied_for_every_non_canonical_actor() {
         let guard = state.get_db().expect("db lock");
         let db = guard.as_ref().expect("database");
         db.get_connection()
-            .execute("UPDATE users SET role = 'User' WHERE id = ?1", params![ADMIN_ID])
+            .execute(
+                "UPDATE users SET role = 'User' WHERE id = ?1",
+                params![ADMIN_ID],
+            )
             .expect("demote admin");
     }
     {

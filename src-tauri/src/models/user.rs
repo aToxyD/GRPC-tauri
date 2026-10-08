@@ -98,8 +98,14 @@ pub struct SessionStatus {
 /// **Security contract (ADR-0012 adjacent):**
 /// - `password_hash` MUST be included in both serialization and
 ///   deserialization because the hash must survive the Wilaya→Unit round-trip.
-///   The node-binding re-hash happens inside `NodePackageService::import_unit_node_package`
-///   *after* this struct is deserialized, using the receiving node's ID.
+///   The hash is stored verbatim on import — no re-hash happens inside
+///   `NodePackageService::import_unit_node_package`. Node binding holds
+///   because the import persists the row under `node_id = package.unit.code`,
+///   the same code the WILAYA-side export minted the hash against
+///   (ADR-0063 §4 / F2).
+/// - This struct deliberately carries NO `must_change_password` field: forced
+///   credential state is local policy, set by the `.unit` import itself, never
+///   inherited from an artifact (ADR-0063 §11 / D9).
 /// - This struct is NEVER returned to the frontend; it lives only
 ///   inside encrypted packages that are protected in transit.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS users (
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
     -- ADR-0063: persisted forced credential state. `0` (false) is the safe
     -- default for every account created outside the canonical UNIT bootstrap
-    -- path (fleet admin, sync-delivered accounts, package import).
+    -- path (fleet admin, sync-delivered accounts). The `.unit` operator
+    -- import does NOT rely on this default: it explicitly writes `1`, so a
+    -- provisioned or re-provisioned operator credential always enters the
+    -- forced-password lifecycle (ADR-0063 §11).
     must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
     UNIQUE(username, node_id)
 );

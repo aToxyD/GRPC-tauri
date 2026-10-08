@@ -230,6 +230,19 @@ impl<'a> UserRepository<'a> {
     /// Insert or update raw user data from an imported package (pre-hashed
     /// password), keyed by the node-scoped account identity `(username,
     /// node_id)` — explicit deterministic upsert, never REPLACE semantics.
+    ///
+    /// `must_change_password` (ADR-0063 §11) is an **explicit** application
+    /// decision, never inferred here: the `.unit` import passes `true` so a
+    /// provisioned or re-provisioned operator credential always enters the
+    /// forced-password lifecycle. Unlike [`Self::upsert_user`] (account
+    /// provisioning, whose ON CONFLICT must not disturb local forced state),
+    /// an ON CONFLICT update **does** rewrite the forced flag from the
+    /// caller-provided value: a conflict here means the package replaced the
+    /// credential on the row, and replacement always forces a rotation. On
+    /// both the INSERT and the UPDATE path the value written is the
+    /// application-provided `must_change_password`, never anything read from
+    /// the package (a serialized forced-state value would be inert anyway).
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_raw_user(
         &self,
         id: &str,
@@ -237,17 +250,28 @@ impl<'a> UserRepository<'a> {
         password_hash: &str,
         role: &str,
         node_id: &str,
+        must_change_password: bool,
         now: &str,
     ) -> Result<(), AppError> {
         self.executor.execute(
-            "INSERT INTO users (id, username, password_hash, role, created_at, node_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO users (id, username, password_hash, role, created_at, node_id, updated_at, must_change_password) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(username, node_id) DO UPDATE SET
                  password_hash = excluded.password_hash,
                  role = excluded.role,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 must_change_password = excluded.must_change_password",
             // ADR-0052: row identity is immutable — `id` is never rewritten on
             // conflict so child references (units.user_id) stay valid.
-            rusqlite::params![id, username, password_hash, role, now, node_id, now],
+            rusqlite::params![
+                id,
+                username,
+                password_hash,
+                role,
+                now,
+                node_id,
+                now,
+                must_change_password as i64
+            ],
         )?;
         Ok(())
     }

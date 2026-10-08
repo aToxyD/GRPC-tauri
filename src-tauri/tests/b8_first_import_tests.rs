@@ -182,6 +182,7 @@ fn a5_existing_admin_fails_closed() {
             "hash",
             "Admin",
             "UNIT-9",
+            false,
             &Utc::now().to_rfc3339(),
         )
         .expect("insert admin");

@@ -172,12 +172,18 @@ impl<'a> NodePackageService<'a> {
             .get_user_by_username_raw(&package.user.username, node_id)?
             .map(|u| u.id)
             .unwrap_or_else(|| Uuid::new_v4().to_string());
+        // ADR-0063 §11 (D9): the `.unit` import provisions or replaces the
+        // operator credential with the package-supplied hash, so the local
+        // forced state MUST be set — this value is the importing node's
+        // policy, chosen here and never read from the package (`UserExport`
+        // carries no forced flag; a serialized one would be inert).
         user_repo.upsert_raw_user(
             &user_id,
             &package.user.username,
             &package.user.password_hash,
             &role.to_string(),
             node_id,
+            true,
             &now,
         )?;
 
@@ -228,12 +234,16 @@ impl<'a> NodePackageService<'a> {
             _ => crate::models::UserRole::User,
         };
 
+        // ADR-0063 §11 (D9): same forced-state policy as
+        // `import_unit_node_package` — `.unit` provisioned credentials always
+        // enter the forced-password lifecycle. See the comment above.
         user_repo.upsert_raw_user(
             user_id,
             username,
             password_hash,
             &user_role.to_string(),
             node_id,
+            true,
             &now,
         )?;
 
@@ -332,5 +342,93 @@ mod tests {
             .is_configured()
             .expect("settings readable");
         assert!(!configured, "rejected package must not write settings");
+    }
+
+    // ── ADR-0063 §11 — the `.unit` credential lifecycle ─────────────────────
+
+    fn operator_row(db: &crate::db::Database) -> crate::models::User {
+        db.executor()
+            .users()
+            .get_user_by_username_raw("op", "UA")
+            .expect("operator readable")
+            .expect("operator row exists")
+    }
+
+    #[test]
+    fn fresh_unit_import_forces_the_operator_credential_state() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        NodePackageService::new(db.executor())
+            .import_unit_node_package(&unit_package("User"))
+            .expect("fresh import");
+
+        assert!(
+            operator_row(&db).must_change_password,
+            "ADR-0063 §11: a fresh .unit import must leave the operator in the forced-password lifecycle"
+        );
+    }
+
+    #[test]
+    fn reimport_after_completed_rotation_forces_the_operator_again() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let svc = NodePackageService::new(db.executor());
+        svc.import_unit_node_package(&unit_package("User"))
+            .expect("first import");
+
+        // The operator completes the §6 self-rotation: new node-bound hash and
+        // the forced flag cleared (the exact §6 repository write).
+        let operator = operator_row(&db);
+        db.executor()
+            .users()
+            .change_password_and_clear_forced_state(
+                &operator.id,
+                "rotated-hash",
+                &Utc::now().to_rfc3339(),
+            )
+            .expect("rotation clears the forced state");
+        assert!(
+            !operator_row(&db).must_change_password,
+            "fixture: rotation completed"
+        );
+
+        // Re-provisioning: a fresh `.unit` replaces the credential with the
+        // package-supplied hash and MUST restore the forced state.
+        let mut replacement = unit_package("User");
+        replacement.user.password_hash = "replacement-hash".into();
+        svc.import_unit_node_package(&replacement)
+            .expect("re-import after rotation");
+
+        let after = operator_row(&db);
+        assert_eq!(
+            after.password_hash, "replacement-hash",
+            "credential replacement must follow existing .unit behavior"
+        );
+        assert!(
+            after.must_change_password,
+            "ADR-0063 §11: a .unit re-import after a completed rotation must force the operator again"
+        );
+    }
+
+    #[test]
+    fn reimport_while_already_forced_remains_forced() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let svc = NodePackageService::new(db.executor());
+        svc.import_unit_node_package(&unit_package("User"))
+            .expect("first import");
+        assert!(
+            operator_row(&db).must_change_password,
+            "fixture: the first import forces"
+        );
+
+        let mut second = unit_package("User");
+        second.user.password_hash = "second-hash".into();
+        svc.import_unit_node_package(&second)
+            .expect("re-import while already forced");
+
+        let after = operator_row(&db);
+        assert_eq!(after.password_hash, "second-hash");
+        assert!(
+            after.must_change_password,
+            "ADR-0063 §11: repeated forced import must remain forced"
+        );
     }
 }

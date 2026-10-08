@@ -6,12 +6,17 @@
 //! coverage test is supplemental (it reads the registry source as the single
 //! source of truth for "every registered command" rather than duplicating the
 //! list).
+//!
+//! Slice 5 appends the ADR-0063 §11 counterpart: a `.unit`-imported operator
+//! lands in the very same forced dispatch state this file already enforces.
 
 #[allow(dead_code)]
 mod common;
 
 use grpc_lib::application::authz::Action;
-use grpc_lib::application::services::{AuditTxService, UserContext, UserService};
+use grpc_lib::application::services::{
+    AuditTxService, NodePackageService, UserContext, UserService,
+};
 use grpc_lib::commands::auth::{change_own_password_impl, get_current_user_impl};
 use grpc_lib::commands::{
     authorize_command, enforce_forced_credential_state, AppState, FORCED_STATE_ALLOWED_COMMANDS,
@@ -21,6 +26,7 @@ use grpc_lib::domain::audit::AuditAction;
 use grpc_lib::errors::{
     into_command_error, AppError, AuthenticationError, AuthorizationError, ValidationError,
 };
+use grpc_lib::models::{Unit, UnitNodePackage, UserExport};
 use grpc_lib::repositories::UserRepository;
 use rusqlite::params;
 
@@ -641,4 +647,105 @@ fn password_write_and_forced_state_clear_roll_back_together() {
         count, 0,
         "the audit row must roll back with the transaction"
     );
+}
+
+// ── Slice 5 — ADR-0063 §11: a `.unit`-imported operator ────────────────────
+
+/// The `.unit` payload shape that provisions the canonical local operator.
+fn unit_node_package(password_hash: &str) -> UnitNodePackage {
+    UnitNodePackage {
+        unit: Unit {
+            id: uuid::Uuid::new_v4().to_string(),
+            code: UNIT_CODE.into(),
+            name: "unit-scope-id".into(),
+            wilaya_code: "16".into(),
+            user_id: None,
+            created_at: chrono::Utc::now(),
+        },
+        user: UserExport {
+            username: OPERATOR_USERNAME.into(),
+            password_hash: password_hash.into(),
+            role: "User".into(),
+        },
+        unit_certificate: None,
+        unit_private_key: None,
+    }
+}
+
+/// §11: the `.unit` import itself puts the operator into the forced dispatch
+/// state this file enforces — and the existing §6 path clears it, unchanged.
+#[test]
+fn unit_import_lands_the_operator_in_the_forced_state_gate() {
+    let database = ConnectionFactory::new_for_test().expect("db");
+    let state = AppState::new_for_test(database);
+
+    // The exported credential exactly as WILAYA mints it: the node-bound hash
+    // of the published bootstrap value. The import stores it verbatim under
+    // `node_id = UNIT_CODE` (no re-hash, no second hashing mechanism).
+    let exported_hash = state
+        .password_port
+        .hash_node(BOOTSTRAP_PASSWORD, UNIT_CODE)
+        .expect("exported node-bound hash");
+    {
+        let guard = state.get_db().expect("db lock");
+        let db = guard.as_ref().expect("database");
+        NodePackageService::new(db.executor())
+            .import_unit_node_package(&unit_node_package(&exported_hash))
+            .expect("unit import");
+    }
+
+    // Importing `.unit` configures the node as a UNIT node (existing
+    // `update_unit_node_settings` behavior — unchanged by this slice).
+    let (operator_id, forced) = {
+        let guard = state.get_db().expect("db lock");
+        let db = guard.as_ref().expect("database");
+        let node_type: String = db
+            .get_connection()
+            .query_row("SELECT node_type FROM settings WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .expect("node type");
+        assert_eq!(node_type, "UNIT", "the .unit import configures the node");
+        db.get_connection()
+            .query_row(
+                "SELECT id, must_change_password FROM users WHERE username = ?1 AND node_id = ?2",
+                params![OPERATOR_USERNAME, UNIT_CODE],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .expect("imported operator row")
+    };
+    assert!(
+        forced,
+        "ADR-0063 §11: a .unit-imported operator must be in the forced state"
+    );
+
+    let session = common::create_test_session(&operator_id, OPERATOR_USERNAME, "User");
+    *state.current_session.lock().expect("session mutex") = Some(session);
+
+    // The existing dispatch gate consumes the persisted state: a
+    // non-allowlisted command refuses with a backend error, and the only way
+    // out of the forced state stays reachable.
+    assert_refused(&state, "list_products");
+    assert_allowed(&state, "change_own_password");
+
+    // The existing §6 path completes from this imported state — the slice did
+    // not touch it: rotation succeeds, the forced flag clears, the gate opens.
+    change_own_password_impl(&state, BOOTSTRAP_PASSWORD, POLICY_PASSING)
+        .expect("the imported operator completes the self change");
+    let flag_after = {
+        let guard = state.get_db().expect("db lock");
+        let db = guard.as_ref().expect("database");
+        db.get_connection()
+            .query_row(
+                "SELECT must_change_password FROM users WHERE id = ?1",
+                params![operator_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("forced flag")
+    };
+    assert!(
+        !flag_after,
+        "the existing self-change clears the forced state exactly as before"
+    );
+    assert_allowed(&state, "list_products");
 }

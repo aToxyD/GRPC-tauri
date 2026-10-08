@@ -19,19 +19,28 @@ mod common;
 use tempfile::TempDir;
 
 use grpc_lib::application::services::{
-    FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult, IdentityBootstrapStatusService,
-    IdentityProvisioningService, IdentityTrustAnchorService, InstallWilayaCertificateResult,
-    NodePackageService,
+    AuditTxService, FinalizeUnitProvisionResult, FinalizeWilayaProvisionResult,
+    IdentityBootstrapStatusService, IdentityProvisioningService, IdentityTrustAnchorService,
+    InstallWilayaCertificateResult, NodePackageService, UserContext,
+};
+use grpc_lib::application::sync::{
+    PackageId, SyncPackage, SyncPackageMetadata, SYNC_PACKAGE_SCHEMA_VERSION,
 };
 use grpc_lib::db::{ConnectionFactory, Database};
+use grpc_lib::domain::audit::AuditAction;
 use grpc_lib::domain::identity::{
     CredentialStatus, Ed25519CertificateSignature, IdentityBootstrapState, IdentityCertificate,
     IdentitySignatureVerifier, IdentitySigner, IdentityStorePort, SubjectType,
+    SIGNATURE_VERSION_ED25519,
 };
 use grpc_lib::infrastructure::identity::{AdminKeyProvider, NodeKeyStore};
 use grpc_lib::infrastructure::security::{Ed25519SignatureVerifier, Ed25519SigningProvider};
+use grpc_lib::infrastructure::sync::packages::canonical_json::canonical_bytes_for_integrity;
+use grpc_lib::infrastructure::sync::packages::integrity::{PackageHasher, Sha256PackageHasher};
+use grpc_lib::infrastructure::sync::packages::SerdeJsonSyncPackageDeserializer;
 use grpc_lib::models::{Unit, UnitNodePackage, UserExport};
 use grpc_lib::repositories::RepositoryProvider;
+use rusqlite::params;
 
 /// RFC 8032 §7.1 TEST 1 secret — the matching public key IS the debug-mode
 /// development Root fallback (root_public_key.rs). Never a production key.
@@ -202,6 +211,29 @@ fn packaged_payload(secret: &[u8; 32], certificate: &IdentityCertificate) -> Uni
         },
         unit_certificate: Some(certificate.clone()),
         unit_private_key: Some(secret.to_vec()),
+    }
+}
+
+/// A `.unit` payload carrying only the credential material — no packaged
+/// identity. Used by the ADR-0063 §11 credential-lifecycle tests, which
+/// exercise the operator row write rather than the identity install.
+fn plain_payload(password_hash: &str) -> UnitNodePackage {
+    UnitNodePackage {
+        unit: Unit {
+            id: UNIT_ID.into(),
+            code: UNIT_CODE.into(),
+            name: UNIT_NAME.into(),
+            wilaya_code: UNIT_WILAYA.into(),
+            user_id: None,
+            created_at: chrono::Utc::now(),
+        },
+        user: UserExport {
+            username: "op".into(),
+            password_hash: password_hash.into(),
+            role: "User".into(),
+        },
+        unit_certificate: None,
+        unit_private_key: None,
     }
 }
 
@@ -816,4 +848,138 @@ fn _install_wilaya_certificate_once(unit: &mut Node, wilaya_cert: &IdentityCerti
         outcome,
         InstallWilayaCertificateResult::Installed(_)
     ));
+}
+
+// ── ADR-0063 §11 — the `.unit` credential lifecycle ────────────────────────
+
+fn imported_operator(node: &Node) -> grpc_lib::models::User {
+    node.db
+        .executor()
+        .users()
+        .get_user_by_username_raw("op", UNIT_CODE)
+        .expect("operator readable")
+        .expect("operator row exists")
+}
+
+/// A serialized forced-state value in an artifact is inert (ADR-0063 §11):
+/// it never reaches the domain model and cannot keep a re-provisioned
+/// operator out of the forced-password lifecycle.
+#[test]
+fn serialized_forced_state_field_is_inert_on_import() {
+    // The V2 envelope exactly as the exporter emits it — canonical integrity
+    // over the flagless payload shape (`UserExport` has no forced flag).
+    let mut sealed: SyncPackage<UnitNodePackage> = SyncPackage {
+        metadata: SyncPackageMetadata {
+            created_at: chrono::Utc::now(),
+            export_mode: None,
+            integrity_hash: None,
+            issuer_identity_id: None,
+            package_id: PackageId("pkg-unit-s11-inert".into()),
+            schema_version: SYNC_PACKAGE_SCHEMA_VERSION,
+            signature: Some("test-signature".into()),
+            signature_version: Some(SIGNATURE_VERSION_ED25519),
+            signing_key_id: None,
+            source_node_id: "WILAYA".into(),
+            target_node_id: None,
+        },
+        payload: plain_payload("exported-hash"),
+    };
+    let clean = serde_json::to_value(&sealed).expect("value");
+    let hash = Sha256PackageHasher
+        .hash(&canonical_bytes_for_integrity(&clean).expect("canonical"))
+        .expect("integrity hash");
+    sealed.metadata.integrity_hash = Some(hash);
+
+    // An artifact additionally carries `"must_change_password": false` inside
+    // `user`. The contract has no such field, so the deserializer drops it and
+    // the integrity hash (computed over the parsed shape) still holds.
+    let mut tampered = serde_json::to_value(&sealed).expect("value");
+    tampered["payload"]["user"]["must_change_password"] = serde_json::json!(false);
+    let artifact = tampered.to_string();
+
+    let parsed = SerdeJsonSyncPackageDeserializer::unit_node_package_from_reader(
+        std::io::Cursor::new(artifact.as_bytes()),
+    )
+    .expect("the artifact parses; the serialized forced flag is dropped by the schema");
+
+    let serialized_user = serde_json::to_value(&parsed.payload.user).expect("user value");
+    assert!(
+        serialized_user.get("must_change_password").is_none(),
+        "the serialized flag must not survive into the domain model"
+    );
+
+    // Local policy, not the artifact, decides the resulting state.
+    let node = fresh_node();
+    NodePackageService::new(node.db.executor())
+        .import_unit_node_package(&parsed.payload)
+        .expect("import");
+    assert!(
+        imported_operator(&node).must_change_password,
+        "ADR-0063 §11: the injected `must_change_password: false` must not reach local state"
+    );
+}
+
+/// The forced-state write lives inside the import audit transaction: a
+/// failure after the operator upsert restores the previous credential AND the
+/// previous forced-state value, and writes no audit row.
+#[test]
+fn forced_state_rolls_back_with_the_import_audit_transaction() {
+    let mut unit = fresh_node();
+
+    // Baseline provisioning, then a completed rotation: the pre-import state
+    // is a rotated credential that is NOT forced.
+    NodePackageService::new(unit.db.executor())
+        .import_unit_node_package(&plain_payload("first-hash"))
+        .expect("baseline import");
+    let operator = imported_operator(&unit);
+    unit.db
+        .get_connection()
+        .execute(
+            "UPDATE users SET password_hash = ?1, must_change_password = 0 WHERE id = ?2",
+            params!["rotated-hash", operator.id],
+        )
+        .expect("simulate completed rotation");
+
+    // The real command transaction shape (base import → identity install …).
+    // The step after the operator upsert fails on purpose.
+    let user_ctx = UserContext::new("system", "system_bootstrap", None);
+    let _err = AuditTxService::execute_with_audit(
+        &mut unit.db,
+        AuditAction::ImportNodePackage,
+        &user_ctx,
+        |tx| -> Result<(), grpc_lib::errors::AppError> {
+            NodePackageService::new(tx.executor)
+                .import_unit_node_package(&plain_payload("replacement-hash"))?;
+            Err(grpc_lib::errors::AppError::Internal(
+                "injected failure after the operator upsert".into(),
+            ))
+        },
+    )
+    .expect_err("the injected failure must abort the import transaction");
+
+    // Rollback: previous credential and previous forced state restored.
+    let after = imported_operator(&unit);
+    assert_eq!(
+        after.password_hash, "rotated-hash",
+        "the previous credential must be restored by the rollback"
+    );
+    assert!(
+        !after.must_change_password,
+        "no partial forced state may remain after the rollback"
+    );
+
+    // The import audit row rolls back with the mutation it describes.
+    let audit_rows: i64 = unit
+        .db
+        .get_connection()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE action = ?1",
+            params![AuditAction::ImportNodePackage.as_str()],
+            |row| row.get(0),
+        )
+        .expect("audit count");
+    assert_eq!(
+        audit_rows, 0,
+        "no ImportNodePackage audit row may survive the rollback"
+    );
 }
