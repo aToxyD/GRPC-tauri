@@ -12,10 +12,11 @@
 //! this service is scoped to the local node identity (`"WILAYA"` on a WILAYA
 //! node, the local unit code on a UNIT node).
 
+use crate::application::services::OPERATOR_USERNAME;
 use crate::domain::security::PasswordHashPort;
 use crate::errors::{AppError, BusinessLogicError};
 use crate::infrastructure::security::node_identity_provider::NodeIdentityProvider as _;
-use crate::models::{IdentityAccessPayload, Unit};
+use crate::models::{IdentityAccessPayload, Unit, UserRole};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::Utc;
 use uuid::Uuid;
@@ -241,16 +242,50 @@ impl<'a> UserAccountSyncService<'a> {
         Ok(outcome)
     }
 
+    /// Resolve the canonical UNIT operator for `unit`.
+    ///
+    /// ADR-0052/0063: the authoritative identity is the unique
+    /// `(username = OPERATOR_USERNAME, node_id = unit.code)` pair — never the
+    /// nullable `units.user_id` hint. `_raw` deliberately includes disabled
+    /// (`deleted = 1`) rows: disabled is a normal account state that `export`
+    /// must still observe (`user_enabled = !user.deleted`), so it is a
+    /// caller-level concern, not an identity ambiguity. There is no fallback
+    /// to an arbitrary account: a missing or non-canonical operator fails
+    /// closed.
     fn resolve_unit_user(&self, unit: &Unit) -> Result<crate::models::User, AppError> {
+        let operator = self
+            .executor
+            .users()
+            .get_user_by_username_raw(OPERATOR_USERNAME, &unit.code)?;
+
+        let operator = match operator {
+            // Best-effort guard only: `UserRole::from` maps every non-"Admin"
+            // string to `UserRole::User`, so this rejects an exact stored
+            // "Admin" collision but is NOT raw-role validation. Exact raw-role
+            // enforcement would require a new repository API (deliberately out
+            // of scope).
+            Some(u) if u.node_id == unit.code && u.role == UserRole::User => u,
+            Some(_) => {
+                return Err(Self::not_permitted(
+                    "سجل مشغّل الوحدة لا يطابق الهوية المعيارية (المستخدم/العقدة/الدور) — رفض مغلق",
+                ))
+            }
+            None => return Err(Self::not_found("user", &unit.code)),
+        };
+
+        // `units.user_id` is a nullable consistency hint, never the identity
+        // source. When present it MUST resolve to the canonical operator; a
+        // mismatch or dangling reference fails closed. The link is never
+        // repaired or rewritten here.
         if let Some(user_id) = &unit.user_id {
-            if let Some(user) = self.executor.users().get_user_by_id(user_id)? {
-                return Ok(user);
+            if *user_id != operator.id {
+                return Err(Self::not_permitted(
+                    "مرجع مشغّل الوحدة (units.user_id) لا يطابق الحساب المعياري — رفض مغلق",
+                ));
             }
         }
-        self.executor
-            .users()
-            .get_user_by_node_id(&unit.code)?
-            .ok_or_else(|| Self::not_found("user", &unit.code))
+
+        Ok(operator)
     }
 }
 
@@ -596,6 +631,293 @@ mod tests {
         let err = UserAccountSyncService::new(make_executor(&db), &port)
             .apply(&payload)
             .expect_err("empty admin hash must be rejected");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+        ));
+    }
+
+    /// Build an in-memory `Unit` for exercising `resolve_unit_user` directly
+    /// (the resolver takes `&Unit`). `units.user_id` is arbitrary here so that
+    /// adversarial link states can be tested without raw SQL.
+    fn unit_ref(code: &str, user_id: Option<&str>) -> Unit {
+        Unit {
+            id: format!("unit-{code}"),
+            code: code.to_string(),
+            name: format!("Unit {code}"),
+            wilaya_code: "16".to_string(),
+            user_id: user_id.map(str::to_string),
+            created_at: Utc::now(),
+        }
+    }
+
+    /// The canonical operator is `("user", unit.code)`, not the `units.user_id`
+    /// hint. Even when the unit code collides with a non-unit node (`WILAYA`),
+    /// a reset must target the operator row and leave the WILAYA `admin` hash
+    /// untouched.
+    #[test]
+    fn resolve_targets_operator_for_wilaya_coded_unit_and_preserves_admin() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        set_fleet_password(&db);
+        create_unit(&db, "WILAYA");
+
+        let port = Argon2PasswordHashProvider;
+        let admin_hash = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("admin", "WILAYA")
+            .unwrap()
+            .expect("admin present")
+            .password_hash;
+
+        UserAccountSyncService::new(make_executor(&db), &port)
+            .set_unit_user_password("WILAYA", "NewPass1234")
+            .expect("operator reset");
+
+        let operator = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("user", "WILAYA")
+            .unwrap()
+            .expect("operator present");
+        assert_eq!(operator.role, UserRole::User);
+        assert_eq!(operator.node_id, "WILAYA");
+        assert!(port
+            .verify_node("NewPass1234", "WILAYA", &operator.password_hash)
+            .expect("verify operator"));
+
+        let admin_after = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("admin", "WILAYA")
+            .unwrap()
+            .expect("admin present");
+        assert_eq!(
+            admin_after.password_hash, admin_hash,
+            "WILAYA admin hash must be unchanged by a unit operator reset"
+        );
+
+        let payload = UserAccountSyncService::new(make_executor(&db), &port)
+            .export("WILAYA")
+            .expect("export WILAYA-coded unit");
+        assert_eq!(payload.unit_code, "WILAYA");
+        assert!(port
+            .verify_node("NewPass1234", "WILAYA", &payload.user_password_hash)
+            .expect("verify exported operator hash"));
+    }
+
+    /// A `units.user_id` pointing at another account (the WILAYA `admin`) is a
+    /// consistency violation: both the reset and the export must fail closed
+    /// and the referenced account must be left untouched.
+    #[test]
+    fn resolve_fails_closed_when_link_points_to_fleet_admin() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        set_fleet_password(&db);
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let admin = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("admin", "WILAYA")
+            .unwrap()
+            .expect("admin present");
+        let admin_hash = admin.password_hash.clone();
+
+        let unit = db
+            .executor()
+            .units()
+            .get_unit_by_code("UNIT-9")
+            .unwrap()
+            .expect("unit present");
+        db.executor()
+            .units()
+            .update_unit_user(&unit.id, &admin.id)
+            .expect("relink unit to admin");
+
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .set_unit_user_password("UNIT-9", "NewPass1234")
+            .expect_err("mismatched link must fail closed on reset");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+        ));
+
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .export("UNIT-9")
+            .expect_err("mismatched link must fail closed on export");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+        ));
+
+        let admin_after = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("admin", "WILAYA")
+            .unwrap()
+            .expect("admin present");
+        assert_eq!(
+            admin_after.password_hash, admin_hash,
+            "referenced admin must remain unchanged"
+        );
+    }
+
+    /// A null `units.user_id` is tolerated only because the canonical operator
+    /// resolves; the link is not repaired or required for identity.
+    #[test]
+    fn resolve_tolerates_null_link_with_canonical_operator() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let expected = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("user", "UNIT-9")
+            .unwrap()
+            .expect("operator present");
+
+        let resolved = UserAccountSyncService::new(make_executor(&db), &port)
+            .resolve_unit_user(&unit_ref("UNIT-9", None))
+            .expect("null link resolves canonical operator");
+        assert_eq!(resolved.id, expected.id);
+        assert_eq!(resolved.node_id, "UNIT-9");
+    }
+
+    /// A `units.user_id` naming a non-existent account fails closed; it must
+    /// not fall through to any other row.
+    #[test]
+    fn resolve_fails_closed_on_dangling_link() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .resolve_unit_user(&unit_ref("UNIT-9", Some("ghost-user-id")))
+            .expect_err("dangling link must fail closed");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+        ));
+    }
+
+    /// When the canonical operator is absent, resolution fails closed — even
+    /// if the (bogus) link references a real, differently-scoped account. No
+    /// arbitrary fallback (`get_user_by_node_id`) is permitted.
+    #[test]
+    fn resolve_fails_closed_without_canonical_operator_no_fallback() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        set_fleet_password(&db);
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let admin_id = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("admin", "WILAYA")
+            .unwrap()
+            .expect("admin present")
+            .id;
+        let service = UserAccountSyncService::new(make_executor(&db), &port);
+
+        let err = service
+            .resolve_unit_user(&unit_ref("NOPE", Some(&admin_id)))
+            .expect_err("missing canonical operator must not fall back to a linked account");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound { .. })
+        ));
+
+        let err = service
+            .resolve_unit_user(&unit_ref("NOPE", None))
+            .expect_err("missing canonical operator must fail closed");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound { .. })
+        ));
+    }
+
+    /// Disabled-operator behavior is intentionally unchanged: `export`
+    /// propagates `user_enabled = false`, and `set_unit_user_password` still
+    /// resets without re-enabling (ADR-0063 §7.2 adds no disabled guard here).
+    #[test]
+    fn resolve_preserves_disabled_operator_for_export_and_reset() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        set_fleet_password(&db);
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let operator_id = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("user", "UNIT-9")
+            .unwrap()
+            .expect("operator present")
+            .id;
+        db.executor()
+            .users()
+            .set_deleted(&operator_id, true, "2024-01-02T00:00:00Z")
+            .unwrap();
+
+        let payload = UserAccountSyncService::new(make_executor(&db), &port)
+            .export("UNIT-9")
+            .expect("export disabled operator");
+        assert!(
+            !payload.user_enabled,
+            "disabled operator must propagate as user_enabled = false"
+        );
+
+        UserAccountSyncService::new(make_executor(&db), &port)
+            .set_unit_user_password("UNIT-9", "NewPass1234")
+            .expect("reset disabled operator");
+        let after = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("user", "UNIT-9")
+            .unwrap()
+            .expect("operator present");
+        assert!(after.deleted, "reset must not re-enable the operator");
+        assert!(port
+            .verify_node("NewPass1234", "UNIT-9", &after.password_hash)
+            .expect("verify reset operator hash"));
+    }
+
+    /// Best-effort role guard: a canonical slot (`user`, unit code) carrying
+    /// the exact stored `Admin` role is not a valid operator. Note this is not
+    /// raw-role validation (`UserRole::from` coerces unknown strings).
+    #[test]
+    fn resolve_rejects_canonical_slot_holding_admin_role() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        let operator = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("user", "UNIT-9")
+            .unwrap()
+            .expect("operator present");
+        db.executor()
+            .users()
+            .upsert_user(
+                &operator.id,
+                "user",
+                &operator.password_hash,
+                UserRole::Admin,
+                "UNIT-9",
+                false,
+                "2024-01-01T00:00:00Z",
+            )
+            .unwrap();
+
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .resolve_unit_user(&unit_ref("UNIT-9", None))
+            .expect_err("admin-role row must not resolve as an operator");
         assert!(matches!(
             err,
             AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
