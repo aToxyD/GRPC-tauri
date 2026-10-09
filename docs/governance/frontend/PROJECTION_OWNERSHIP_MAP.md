@@ -112,14 +112,13 @@ owning contract; the identifiers below are the finalized implementation-phase na
 | Local UNIT admin reset of `user` — **`resetUnitUserPassword`** | sync.contract.ts | `commands/auth.rs` + `application/services/user_service.rs` (ADR-0063 §7.1) | SettingsPage |
 
 > **Owner-contract rationale.** Both ratified commands extend the **existing**
-> password-command surface, which `sync.contract.ts` already owns (`setFleetAdminPassword`,
-> `setUnitUserPassword` — `src/lib/contracts/sync.contract.ts:65-70`), and both are consumed
+> password-command surface, which `sync.contract.ts` already owns (`setFleetAdminPassword`
+> — `src/lib/contracts/sync.contract.ts:65-67`), and both are consumed
 > from `SettingsPage`, which already hosts the fleet-password control
 > (`src/pages/SettingsPage.svelte:8,20,125`). Choosing a different contract file would split
 > one credential surface across two owners and violate FE-152 / `AGENTS.md` §2 A2.
 >
-> The WILAYA-side `set_unit_user_password` keeps its single existing path and is **evolved, not
-> duplicated** (`ADR-0063` §7.2). Neither lifecycle command adds a new projection type or field:
+> Neither lifecycle command adds a new projection type or field:
 > §6 re-reads the existing `User` projection (`must_change_password`), and §7.1 mutates
 > credential state with no frontend projection of its own, so no FE-158/FE-160 baseline change
 > is required by this implementation.

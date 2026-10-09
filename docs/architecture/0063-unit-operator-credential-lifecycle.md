@@ -1,8 +1,10 @@
 # ADR 0063: UNIT Operator Credential & Initialization Lifecycle
 
 # Status
-Accepted (2026-10-05); amended by owner-approved Errata E-1 and E-2 (2026-10-06) — see
-`# Errata` at the end of this document. No decision was withdrawn.
+Accepted (2026-10-05); amended by owner-approved Errata E-1 and E-2 (2026-10-06) and
+Erratum E-3 (2026-10-09) — see `# Errata` at the end of this document. E-1/E-2 corrected
+factual and implementation findings; **E-3 withdraws decision D7/§7.2** (the WILAYA-side
+`set_unit_user_password` reset, now removed).
 
 > **Governance state.** This ADR is **Accepted** (2026-10-05) by owner ratification of the
 > eighteen credential/lifecycle decisions enumerated in §2. It is the **authoritative
@@ -24,7 +26,7 @@ Architecture / Security
 
 | Document | Exact locus | Relationship |
 |----------|-------------|--------------|
-| `docs/architecture/0040-identity-access-sync.md` | §"Invariant 13 — local password changes forbidden" (lines 100–108) | **Narrowly amended.** Invariant 13's prohibition on local mutation of a *Wilaya-governed synchronized* credential is narrowed to exclude the two UNIT-local credential transitions this ADR defines (§6, §7). Invariant 13 otherwise stands, including its rule that `set_fleet_admin_password` / `set_unit_user_password` remain the only password-mutation surface for the **fleet `admin`** account and the **WILAYA-side operator mirror**. |
+| `docs/architecture/0040-identity-access-sync.md` | §"Invariant 13 — local password changes forbidden" (lines 100–108) | **Narrowly amended.** Invariant 13's prohibition on local mutation of a *Wilaya-governed synchronized* credential is narrowed to exclude the two UNIT-local credential transitions this ADR defines (§6, §7). Invariant 13 otherwise stands, including its rule that `set_fleet_admin_password` remains the only password-mutation surface for the **fleet `admin`** account (the former **WILAYA-side operator mirror** surface, `set_unit_user_password`, was **removed** by Erratum E-3, 2026-10-09). |
 | `docs/architecture/0052-canonical-unit-operator.md` | §D1 (line 46), §D3 (line 60) | **Amended.** §D1's sentence *"`CreateUnitRequest` carries `{code, name, password}` only … The edit path rotates passwords only"* is superseded by §3 and §9 of this ADR: creation carries `{code, name}` and the edit path can no longer change `code` or rotate a password. §D1's canonical-name rule (`user`), §D2's node-scoped uniqueness, and §D3's structural rename prohibition are **retained unchanged**. |
 | `docs/architecture/0051-admin-access-package.md` | §5 Account Ownership Invariant (lines 77–92), §8 Authorization (line 131) | **Reconciled, unchanged.** §5's byte-for-byte operator-preservation invariant is *preserved* and is the reason the initialization latch in §8 may not be expressed as operator-row state. §8's first-import authorization model is retained and given the additional lifecycle distinction in §10. |
 | `docs/architecture/0044-unit-trust-first-v2-bootstrap.md` | §8 `.unit` V2 Contract (line 242), §8.3 Packaged-Identity Contract (line 285) | **Extended, unchanged.** §8/§8.3 remain the normative `.unit` envelope and packaged-identity contract. §11 adds one constraint on the credential sub-object only. §8.3's verification rule (3) *"`subject_id` == unit package's unit"* is the load-bearing fact for `identity_store` ownership in ADR-0064 §2. |
@@ -49,7 +51,7 @@ this ADR. They are reproduced here so the ADR is self-contained as a governance 
 | D4 | A UNIT-local admin is established through the WILAYA-issued `admin_access` lifecycle. After the initial UNIT user completes the bootstrap password change, the UNIT MUST complete the `admin_access` initialization lifecycle so a local admin exists. This is part of initialization completion. | §8, §10 |
 | D5 | Initialization completion is durable. The **existence** of the appropriate local UNIT admin establishes completion — NOT "currently active admin". If the WILAYA later disables/revokes the admin, the UNIT MUST NOT return to bootstrap state. The lifecycle states are distinguished: initial bootstrap, forced password change, admin establishment, initialization complete, later admin disable/revocation, explicit UNIT deletion. Explicit UNIT deletion is the lifecycle event that destroys the UNIT's identity/state. | §8, §10 |
 | D6 | After initialization, a UNIT admin can reset the canonical local `user` password: authenticated local UNIT admin only; target is the canonical local `user`; the temporary credential satisfies the normal password policy; literal `0000` is NOT used for an ordinary admin reset; the reset sets forced-password-change state; the authenticated admin session is preserved; the operation is audited with authenticated admin attribution; rate limiting and security controls are preserved. No anonymous recovery mechanism is allowed. | §7, §12 |
-| D7 | The existing WILAYA-side UNIT user password reset is reconciled with this lifecycle, not duplicated: it remains backend-authorized, sets forced-password-change state, preserves existing security/audit semantics, and MUST NOT become a competing duplicate reset mechanism. | §7 |
+| D7 | **Withdrawn by Erratum E-3 (2026-10-09, owner-approved).** The former decision retained the WILAYA-side UNIT user password reset on the incorrect premise that setting forced state on the WILAYA-side operator row would propagate through `.unit` export/replacement. The `.unit` package carries no authoritative forced-state flag and UNIT import enforces the state locally, so that premise is false. Under D1 the WILAYA does not supply the operator's operational password; the WILAYA-side reset command is **removed** and no WILAYA-side operator-password reset path remains. | §7.2 (withdrawn), E-3 |
 | D8 | UNIT `code` is immutable after creation, because the password/node identity binding depends on UNIT code / node identity. Mutable UNIT code with compensating password changes is NOT preserved. Update flows MUST reject UNIT code changes. | §9 |
 | D9 | The `.unit` package MUST NOT authoritatively carry a durable `must_change_password` flag. Imported/replaced operator credentials MUST enter the appropriate local forced-password lifecycle. A serialized stale forced-state value MUST NEVER override local security policy. | §11 |
 | D10 | `admin_access` MUST distinguish initial bootstrap, initialization completion, normal post-initialization operation, later admin disable/revocation, and explicit UNIT deletion. `admin_access` MUST NOT silently reopen bootstrap after initialization completion. The existing operator-preservation rule is reconciled with this credential lifecycle without creating privilege escalation. | §10 |
@@ -201,10 +203,14 @@ Every fact below was read from the working tree at commit `3e982990949cc666ccbdc
   `validate_change_password` (F7), resolves the unit by code, resolves the operator, hashes
   with `hash_node(password, unit_code)` (F4), and calls
   `users().change_password(&user.id, &password_hash, &now)`.
+  **[Erratum E-3, 2026-10-09 — owner-approved]** This finding records the pre-removal state;
+  the `set_unit_user_password` command described here has since been **removed** (see E-3).
 * **F26** — `src/lib/contracts/sync.contract.ts:65-70` owns both frontend password commands
   (`setFleetAdminPassword`, `setUnitUserPassword`);
   `src/lib/contracts/inventory.contract.ts:31,43,47` owns `createUnit`, `updateUnit`,
   `deleteUnit`.
+  **[Erratum E-3, 2026-10-09 — owner-approved]** `setUnitUserPassword` has since been
+  removed from `sync.contract.ts` (see E-3).
 * **F27** — `src/pages/UnitsPage.svelte` currently exposes a create modal requiring a
   password (`password` state at line 52, validation at line 104), an edit modal that
   re-submits `{ password: password || "" }` (lines 140-151), a delete modal (lines 88-90),
@@ -395,10 +401,12 @@ All of the following are normative and each is individually fail-closed:
 9. The session MUST be preserved appropriately: the change does not invalidate the actor's
    established session (F32), and MUST NOT mint a new one.
 
-## 7. D6/D7 — Two reset paths, one mechanism, no duplication
+## 7. D6 (D7 withdrawn) — one operator reset, no duplication
 
-Two resets are approved. They are distinguished by **who** authorizes them and are not two
-competing mechanisms.
+Only one operator-password reset is approved: the **local UNIT admin** reset (§7.1/D6). The
+former second path — the WILAYA-side `set_unit_user_password` reset (D7/§7.2) — is
+**withdrawn by Erratum E-3** (2026-10-09) and its command is removed; no WILAYA-side
+operator-password reset remains.
 
 ### 7.1 Local UNIT admin reset of the canonical `user` (D6)
 
@@ -418,20 +426,20 @@ competing mechanisms.
 * Rate limiting and existing security controls are preserved; the operation is authenticated
   and therefore outside the login limiter's scope by construction (F29, F30).
 
-### 7.2 WILAYA reset of the UNIT `user` (D7)
+### 7.2 WILAYA reset of the UNIT `user` (D7) — withdrawn by E-3
 
-The existing mechanism is **evolved, not duplicated**:
+**Withdrawn.** The former decision to retain and evolve the WILAYA-side reset was based on an
+incorrect premise: setting the forced credential state on the WILAYA-side operator row does
+**not** cause a subsequently exported/replaced `.unit` credential to "inherit" the forced
+lifecycle, because the `.unit` package carries no authoritative forced-state flag, any
+serialized value is inert, and UNIT import enforces the local state independently (§11).
 
-* `set_unit_user_password` (`commands/import_export.rs:1569-1592` →
-  `user_account_sync_service.rs:90-108`) remains the single WILAYA-side reset. Its
-  authorization stays `Action::ManageAccountSync` (WILAYA + `AdminOnly`) (F25).
-* It MUST additionally set the forced credential state on the WILAYA-side operator row, so
-  that a subsequently exported/replaced `.unit` credential inherits the forced lifecycle
-  (F22, F23, §11).
-* Its existing `validate_change_password` call (F25) is unchanged.
-* Its existing transactional audit with `AuditAction::UnitUserPasswordUpdated` is unchanged.
-* There MUST NOT be a second WILAYA-side reset path. Any additional surface would be a
-  competing duplicate and is out of scope.
+Under D1 the WILAYA does not supply the operator's operational password, so the command has no
+legitimate role. `set_unit_user_password` is **removed** (backend command + registry entry +
+`sync.contract.ts` export), and there is no WILAYA-side operator-password reset path. The
+**only** supported operator-password reset is the local UNIT admin reset in §7.1 (D6). Before a
+local UNIT admin exists, the documented recovery limitation (§12) is unchanged; no recovery
+path is invented.
 
 ## 8. D4/D5 — Durable initialization completion and the six lifecycle states
 
@@ -471,7 +479,7 @@ evaluated **without any `deleted` or status filter**.
 | State | Entered when | May leave via |
 |-------|--------------|---------------|
 | **initial bootstrap** | operator row created with the bootstrap credential hash (F2) | first login |
-| **forced password change** | first successful bootstrap login, or any reset in §7 (D2, D6, D7) | successful self change (§6) |
+| **forced password change** | first successful bootstrap login, or the §7.1 reset (D2, D6) | successful self change (§6) |
 | **admin establishment** | bootstrap change completed and the `admin_access` import succeeds (D4) | — |
 | **initialization complete** | the §8.1 existence test holds (D5) | terminal until admin disable, UNIT deletion, or code reuse after deletion |
 | **later admin disable / revocation** | `admin_access` arrives with `admin_enabled = false`, or the WILAYA disables the account (F12, F18) | re-enable via `admin_access` |
@@ -641,8 +649,8 @@ performed by this ADR.
    correct the `admin_access_first_import_predicates_service.rs` doc comment (F15) and
    redefine `no_active_admin`.
 6. **Commands/services** — add the self-change command (§6) and the local admin reset
-   command (§7.1); evolve `set_unit_user_password` to set the forced flag (§7.2); enforce
-   `.unit` forced state on import (§11).
+   command (§7.1); **remove** the WILAYA-side `set_unit_user_password` command (D7 withdrawn
+   by E-3 — it is not evolved); enforce `.unit` forced state on import (§11).
 7. **Frontend** — remove password collection from `UnitsPage.svelte` (§3); add the change
    and reset surfaces to `SettingsPage.svelte` (§6, §7.1); render the backend forced-state
    refusal (§5).
@@ -684,13 +692,16 @@ Normative checklist for the implementation phase.
 
 Amendments to this record's **own** text, approved by the owner and entered here rather than
 in a second document, so that exactly one canonical source exists (`AGENTS.md` §7 D2, D3).
-No decision in this ADR is withdrawn; the errata correct one factual finding and one
-implementation locus, and make one category table's contents normative.
+E-1 and E-2 correct one factual finding and one implementation locus and make one category
+table's contents normative; **E-3 withdraws decision D7/§7.2** (the WILAYA-side reset, now
+removed). No other decision is withdrawn.
 
 | ID | Date | Locus | What was wrong | Correction |
 |----|------|-------|----------------|------------|
 | E-1 | 2026-10-06 | Context F33; §5 enforcement bullet; Implementation Boundary item 5 | F33 states that "All 181 `#[tauri::command]` functions … reach `authorize_command`", and §5 derived its enforcement locus from that claim. The claim is **false**: a non-empty set of registered commands (session/projection utilities, frontend bootstrap reads, report/calculation readers, pre-auth ceremony commands) never calls it. | The §5 forced-state enforcement is implemented at the **dispatch** choke point `src-tauri/src/commands/registry.rs::get_invoke_handler`, which runs before every registered command body. `authorize_command` (`commands/guards.rs:110`) is unchanged and remains the single authorization entry point; the forced-state check is additive and sits earlier in the dispatch path. |
 | E-2 | 2026-10-06 | §5 allowlist table | The table enumerated **categories** of allowed operations only, which left the implemented set unverifiable against the record. | The closed allowlist is now normative and enumerated by name: `login`, `logout`, `get_current_user`, `check_session`, `touch_session`, `change_own_password`, `import_admin_access_package`, `get_settings`, `is_configured` (`commands/guards.rs::FORCED_STATE_ALLOWED_COMMANDS`). |
+| E-3 | 2026-10-09 | Decision D7; §7 heading and introduction; §7.2; Implementation Boundary item 6; F25/F26 | D7/§7.2 retained the WILAYA-side `set_unit_user_password` reset and asserted that setting the forced credential on the WILAYA-side operator row makes "a subsequently exported/replaced `.unit` credential inherit the forced lifecycle". That premise is **false**: the `.unit` package carries **no** authoritative `must_change_password`, a serialized value is inert (§11), and UNIT import enforces the local forced state independently. A WILAYA-side reset therefore cannot transmit a forced-credential state through export/import, and under D1 the WILAYA does not supply the operator's operational password. | D7 and §7.2 are **withdrawn**; the WILAYA-side `set_unit_user_password` command is **removed** (backend command + registry entry + `sync.contract.ts` export), leaving no WILAYA-side operator-password reset path. The **only** supported operator-password reset is the UNIT-local authenticated **admin** reset in §7.1 (D6). Before a local UNIT admin exists, the documented recovery limitation (§12) is unchanged; no recovery path is invented. |
 
-Provenance: recorded with the §5 + §6 implementation (Slice 2); approval and scope are
-recorded in `docs/governance/frontend/GOVERNANCE_APPROVALS.md` (2026-10-06 entry).
+Provenance: E-1/E-2 recorded with the §5 + §6 implementation (Slice 2); E-3 recorded with the
+removal of the WILAYA-side `set_unit_user_password` command. Approval and scope are recorded in
+`docs/governance/frontend/GOVERNANCE_APPROVALS.md` (2026-10-06 and 2026-10-09 entries).

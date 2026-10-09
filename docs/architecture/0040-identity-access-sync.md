@@ -71,6 +71,11 @@ hash).
 3. The unit imports the package (`import_identity_access_package(path)`), which
    applies it transactionally.
 
+> **Note (ADR-0063 Erratum E-3, 2026-10-09).** The WILAYA-side `set_unit_user_password`
+> command referenced in step 1 has been **removed**; no WILAYA-side operator-password reset
+> path remains. The only supported operator-password reset is the UNIT-local admin reset in
+> ADR-0063 §7.1.
+
 ## 4. Apply-time reconciliation (normative)
 
 - If a local unit-bound user exists under a different username (e.g. a legacy
@@ -106,6 +111,9 @@ hash).
 - Applies to `admin` and `user` rows governed by the Wilaya.
 - The Wilaya `set_fleet_admin_password` / `set_unit_user_password` commands are
   the only password-mutation surface.
+- **Note (ADR-0063 Erratum E-3, 2026-10-09).** `set_unit_user_password` has since been
+  **removed**; `set_fleet_admin_password` (the fleet `admin`) remains the only Wilaya
+  password-mutation command, and ADR-0063 §7.1 adds the UNIT-local admin reset.
 
 # Consequences
 
