@@ -160,7 +160,6 @@ fn registered_commands() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 
         commands::import_registry_package,
         // Identity & Access Synchronization (B8, ADR-0040)
         commands::set_fleet_admin_password,
-        commands::set_unit_user_password,
         commands::set_account_status,
         // Admin-Only Account Synchronization (`admin_access`, ADR-0051 / D1)
         commands::export_admin_access_package,

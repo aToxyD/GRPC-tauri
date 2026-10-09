@@ -66,10 +66,6 @@ export async function setFleetAdminPassword(password: string): Promise<void> {
   return await safeInvoke('set_fleet_admin_password', { password });
 }
 
-export async function setUnitUserPassword(unitCode: string, password: string): Promise<void> {
-  return await safeInvoke('set_unit_user_password', { unitCode, password });
-}
-
 // ADR-0063 §6/D33 — canonical local UNIT operator self password change.
 // The backend derives the target from the authenticated session (`user_id`
 // is never caller-supplied) and is the sole authority for current-password

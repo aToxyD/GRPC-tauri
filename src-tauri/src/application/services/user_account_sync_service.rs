@@ -87,27 +87,6 @@ impl<'a> UserAccountSyncService<'a> {
         Ok(())
     }
 
-    /// Wilaya: set a unit's `user` password (node-bound to the unit code).
-    pub fn set_unit_user_password(&self, unit_code: &str, password: &str) -> Result<(), AppError> {
-        crate::domain::validation::validate_change_password(password)?;
-
-        let unit = self
-            .executor
-            .units()
-            .get_unit_by_code(unit_code)?
-            .ok_or_else(|| Self::not_found("unit", unit_code))?;
-        let user = self.resolve_unit_user(&unit)?;
-        let password_hash = self
-            .password_port
-            .hash_node(password, unit_code)
-            .map_err(AppError::Internal)?;
-        let now = Utc::now().to_rfc3339();
-        self.executor
-            .users()
-            .change_password(&user.id, &password_hash, &now)?;
-        Ok(())
-    }
-
     /// Wilaya: enable / disable an account (soft-delete semantics).
     ///
     /// `enabled = false` maps to `deleted = 1`: the account is rejected at the
@@ -653,7 +632,7 @@ mod tests {
 
     /// The canonical operator is `("user", unit.code)`, not the `units.user_id`
     /// hint. Even when the unit code collides with a non-unit node (`WILAYA`),
-    /// a reset must target the operator row and leave the WILAYA `admin` hash
+    /// export must resolve the operator row and leave the WILAYA `admin` hash
     /// untouched.
     #[test]
     fn resolve_targets_operator_for_wilaya_coded_unit_and_preserves_admin() {
@@ -671,20 +650,35 @@ mod tests {
             .expect("admin present")
             .password_hash;
 
-        UserAccountSyncService::new(make_executor(&db), &port)
-            .set_unit_user_password("WILAYA", "NewPass1234")
-            .expect("operator reset");
-
+        // Direct, equivalent repository setup: stamp a node-bound operator
+        // credential without touching the WILAYA admin row.
         let operator = db
             .executor()
             .users()
             .get_user_by_username_raw("user", "WILAYA")
             .unwrap()
             .expect("operator present");
-        assert_eq!(operator.role, UserRole::User);
-        assert_eq!(operator.node_id, "WILAYA");
+        db.executor()
+            .users()
+            .change_password(
+                &operator.id,
+                &port
+                    .hash_node("NewPass1234", "WILAYA")
+                    .expect("hash operator credential"),
+                "2024-01-01T00:00:00Z",
+            )
+            .expect("stamp operator credential");
+
+        let operator_after = db
+            .executor()
+            .users()
+            .get_user_by_username_raw("user", "WILAYA")
+            .unwrap()
+            .expect("operator present");
+        assert_eq!(operator_after.role, UserRole::User);
+        assert_eq!(operator_after.node_id, "WILAYA");
         assert!(port
-            .verify_node("NewPass1234", "WILAYA", &operator.password_hash)
+            .verify_node("NewPass1234", "WILAYA", &operator_after.password_hash)
             .expect("verify operator"));
 
         let admin_after = db
@@ -695,7 +689,7 @@ mod tests {
             .expect("admin present");
         assert_eq!(
             admin_after.password_hash, admin_hash,
-            "WILAYA admin hash must be unchanged by a unit operator reset"
+            "WILAYA admin hash must be unchanged by a unit-operator operation"
         );
 
         let payload = UserAccountSyncService::new(make_executor(&db), &port)
@@ -705,11 +699,15 @@ mod tests {
         assert!(port
             .verify_node("NewPass1234", "WILAYA", &payload.user_password_hash)
             .expect("verify exported operator hash"));
+        assert_eq!(
+            payload.admin_password_hash, admin_hash,
+            "export must carry the fleet admin hash, not the operator's"
+        );
     }
 
     /// A `units.user_id` pointing at another account (the WILAYA `admin`) is a
-    /// consistency violation: both the reset and the export must fail closed
-    /// and the referenced account must be left untouched.
+    /// consistency violation: the export must fail closed and the referenced
+    /// account must be left untouched.
     #[test]
     fn resolve_fails_closed_when_link_points_to_fleet_admin() {
         let db = ConnectionFactory::new_for_test().unwrap();
@@ -736,14 +734,6 @@ mod tests {
             .units()
             .update_unit_user(&unit.id, &admin.id)
             .expect("relink unit to admin");
-
-        let err = UserAccountSyncService::new(make_executor(&db), &port)
-            .set_unit_user_password("UNIT-9", "NewPass1234")
-            .expect_err("mismatched link must fail closed on reset");
-        assert!(matches!(
-            err,
-            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
-        ));
 
         let err = UserAccountSyncService::new(make_executor(&db), &port)
             .export("UNIT-9")
@@ -842,10 +832,10 @@ mod tests {
     }
 
     /// Disabled-operator behavior is intentionally unchanged: `export`
-    /// propagates `user_enabled = false`, and `set_unit_user_password` still
-    /// resets without re-enabling (ADR-0063 §7.2 adds no disabled guard here).
+    /// propagates `user_enabled = false` (no disabled guard exists — ADR-0063
+    /// §7.2, which would have added one, was withdrawn by E-3).
     #[test]
-    fn resolve_preserves_disabled_operator_for_export_and_reset() {
+    fn resolve_preserves_disabled_operator_in_export() {
         let db = ConnectionFactory::new_for_test().unwrap();
         configure_producer_as_wilaya(&db);
         set_fleet_password(&db);
@@ -871,20 +861,6 @@ mod tests {
             !payload.user_enabled,
             "disabled operator must propagate as user_enabled = false"
         );
-
-        UserAccountSyncService::new(make_executor(&db), &port)
-            .set_unit_user_password("UNIT-9", "NewPass1234")
-            .expect("reset disabled operator");
-        let after = db
-            .executor()
-            .users()
-            .get_user_by_username_raw("user", "UNIT-9")
-            .unwrap()
-            .expect("operator present");
-        assert!(after.deleted, "reset must not re-enable the operator");
-        assert!(port
-            .verify_node("NewPass1234", "UNIT-9", &after.password_hash)
-            .expect("verify reset operator hash"));
     }
 
     /// Best-effort role guard: a canonical slot (`user`, unit code) carrying

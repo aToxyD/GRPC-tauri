@@ -490,9 +490,6 @@
           "name": "setFleetAdminPassword"
         },
         {
-          "name": "setUnitUserPassword"
-        },
-        {
           "name": "setAccountStatus"
         }
       ],
@@ -531,15 +528,12 @@
           "command": "set_fleet_admin_password"
         },
         {
-          "command": "set_unit_user_password"
-        },
-        {
           "command": "set_account_status"
         }
       ],
       "loc": 82,
-      "exportCount": 13,
-      "commandCount": 13
+      "exportCount": 12,
+      "commandCount": 12
     },
     {
       "name": "orders",

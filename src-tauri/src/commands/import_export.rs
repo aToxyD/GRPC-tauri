@@ -1561,35 +1561,6 @@ pub fn set_fleet_admin_password(state: State<AppState>, password: String) -> Res
     Ok(())
 }
 
-/// Wilaya: set a unit's `user` password (node-bound to the unit code).
-///
-/// The hash authenticates `user` only on the target unit. Wilaya-only (authz
-/// `Action::ManageAccountSync` → Wilaya + AdminOnly).
-#[tauri::command]
-pub fn set_unit_user_password(
-    state: State<AppState>,
-    unit_code: String,
-    password: String,
-) -> Result<(), String> {
-    let (session, _settings) =
-        authorize_command(&state, Action::ManageAccountSync, None).map_err(into_command_error)?;
-    state.touch_session();
-
-    let mut guard = state.get_db().map_err(into_command_error)?;
-    let db = db_mut_or_command_error(guard.as_mut())?;
-
-    let user_ctx = user_ctx_from_session(&session);
-    let password_port = state.password_port.as_ref();
-
-    AuditTxService::execute_with_audit(db, AuditAction::UnitUserPasswordUpdated, &user_ctx, |tx| {
-        UserAccountSyncService::new(tx.executor, password_port)
-            .set_unit_user_password(&unit_code, &password)
-    })
-    .map_err(into_command_error)?;
-
-    Ok(())
-}
-
 /// Wilaya: enable / disable an account (soft-delete semantics).
 ///
 /// `enabled = false` maps to `deleted = 1`. Wilaya-only (authz
