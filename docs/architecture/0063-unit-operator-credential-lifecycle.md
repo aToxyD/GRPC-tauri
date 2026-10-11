@@ -2,9 +2,12 @@
 
 # Status
 Accepted (2026-10-05); amended by owner-approved Errata E-1 and E-2 (2026-10-06) and
-Erratum E-3 (2026-10-09) — see `# Errata` at the end of this document. E-1/E-2 corrected
+Erratum E-3 (2026-10-09); and by Errata E-4 and E-5 (2026-10-10) — see `# Errata` at the end
+of this document. E-1/E-2 corrected
 factual and implementation findings; **E-3 withdraws decision D7/§7.2** (the WILAYA-side
-`set_unit_user_password` reset, now removed).
+`set_unit_user_password` reset, now removed). **E-4 formalizes the mandatory ordered UNIT
+initialization sequence and its dispatch gate; E-5 retires the package-based UNIT admin
+disable/re-enable channel (`admin_enabled` is removed from `AdminAccessPayload`).**
 
 > **Governance state.** This ADR is **Accepted** (2026-10-05) by owner ratification of the
 > eighteen credential/lifecycle decisions enumerated in §2. It is the **authoritative
@@ -54,7 +57,7 @@ this ADR. They are reproduced here so the ADR is self-contained as a governance 
 | D7 | **Withdrawn by Erratum E-3 (2026-10-09, owner-approved).** The former decision retained the WILAYA-side UNIT user password reset on the incorrect premise that setting forced state on the WILAYA-side operator row would propagate through `.unit` export/replacement. The `.unit` package carries no authoritative forced-state flag and UNIT import enforces the state locally, so that premise is false. Under D1 the WILAYA does not supply the operator's operational password; the WILAYA-side reset command is **removed** and no WILAYA-side operator-password reset path remains. | §7.2 (withdrawn), E-3 |
 | D8 | UNIT `code` is immutable after creation, because the password/node identity binding depends on UNIT code / node identity. Mutable UNIT code with compensating password changes is NOT preserved. Update flows MUST reject UNIT code changes. | §9 |
 | D9 | The `.unit` package MUST NOT authoritatively carry a durable `must_change_password` flag. Imported/replaced operator credentials MUST enter the appropriate local forced-password lifecycle. A serialized stale forced-state value MUST NEVER override local security policy. | §11 |
-| D10 | `admin_access` MUST distinguish initial bootstrap, initialization completion, normal post-initialization operation, later admin disable/revocation, and explicit UNIT deletion. `admin_access` MUST NOT silently reopen bootstrap after initialization completion. The existing operator-preservation rule is reconciled with this credential lifecycle without creating privilege escalation. | §10 |
+| D10 | `admin_access` MUST distinguish initial bootstrap, initialization completion, normal post-initialization operation, later admin disable/revocation, and explicit UNIT deletion. `admin_access` MUST NOT silently reopen bootstrap after initialization completion. The existing operator-preservation rule is reconciled with this credential lifecycle without creating privilege escalation. **Amended by Erratum E-5 (2026-10-10): the package-carried `later admin disable/revocation` situation is retired — `admin_access` carries no UNIT-local enable/disable control; see `# Errata`.** | §10 |
 | D11 | For WILAYA Units, a UNIT is **EXPORTED** if the WILAYA-side `identity_store` contains ANY historical identity row for that UNIT, regardless of status (`ACTIVE`, `REVOKED`, `SUPERSEDED`, `EXPIRED`). Once EXPORTED: Edit hidden/disabled, Export hidden/disabled, Delete remains. Enforced in the backend as well as the UI; not UI-only. | `0064` §1, §3 |
 | D12 | WILAYA-side `identity_store` rows with `subject_type = 'UNIT'` are UNIT-owned. Successful UNIT deletion removes them atomically. A later recreation of the same UNIT code starts a clean identity lifecycle; deleted UNIT identity rows are NOT preserved merely to block code reuse. | `0064` §2 |
 | D13 | UNIT deletion is an explicit destructive lifecycle operation: delete all legitimately UNIT-owned data, preserve global/shared data, atomically and fail closed, against an explicit ownership matrix covering indirect ownership where a child table has no `unit_id`. | `0064` §4 |
@@ -130,7 +133,10 @@ Every fact below was read from the working tree at commit `3e982990949cc666ccbdc
   `users.rs:301-320` (`upsert_synced_admin`) writes `deleted = excluded.deleted`, and its
   caller `application/usecases/sync/import_admin_access_package.rs:87-92` passes
   `!input.package.payload.admin_enabled` as that flag. **Disabling a UNIT admin therefore
-  sets `deleted = 1` on an existing row; it never removes the row.**
+  sets `deleted = 1` on an existing row; it never removes the row.** **Amended by Erratum E-5
+  (2026-10-10): the supported `admin_access` import stops passing a lifecycle-state flag (required Slice A
+  change, not current behavior), so
+  the local UNIT admin's `deleted` is no longer writable by any supported operation.**
 * **F13** — `users.rs:363-370` (`count_active_admins`) is
   `SELECT COUNT(*) FROM users WHERE deleted = 0 AND role = 'Admin'` — note it is **not**
   `node_id`-scoped.
@@ -153,16 +159,20 @@ Every fact below was read from the working tree at commit `3e982990949cc666ccbdc
 
 ### 3.4 `admin_access` import and authorization
 
-* **F17** — `application/usecases/sync/import_admin_access_package.rs:24` defines the payload
-  as exactly `{admin_password_hash, admin_enabled}`; the file header (lines 11-14) states it
-  "rejects unknown fields at deserialization, so no target-unit or operator-account material
-  can enter."
+* **F17** — the `admin_access` apply path carries exactly `{admin_password_hash,
+  admin_enabled}` and the file header (lines 11-14) states it "rejects unknown fields at
+  deserialization, so no target-unit or operator-account material can enter." **Amended by
+  Erratum E-5 (2026-10-10): the payload becomes `{admin_password_hash}` only — `admin_enabled`
+  is removed.**
 * **F18** — `import_admin_access_package.rs:83-90` performs exactly two mutations:
   `executor.users().upsert_synced_admin(&Uuid::new_v4()..., &payload.admin_password_hash,
   input.local_unit_code.trim(), !payload.admin_enabled, &now)` followed by
   `registry.mark_imported(&package_id)`. Replay is refused earlier by
   `registry.has_imported(&package_id)` (lines 74-79) with
-  `BusinessLogicError::DuplicateSyncPackage`.
+  `BusinessLogicError::DuplicateSyncPackage`. **Amended by Erratum E-5 (2026-10-10): the
+  supported import path stops writing `deleted` (required Slice A change, not current behavior) — no lifecycle-state
+  flag is derived from the
+  payload.**
 * **F19** — The apply path has **no** dependency on `upsert_synced_user`, on any username
   mutation, or on any UNIT-user password mutation (file header lines 6-14). The operator row
   is structurally unreachable from this kind. This is the implementation of ADR-0051 §5 and
@@ -460,7 +470,11 @@ evaluated **without any `deleted` or status filter**.
 * It is expressible without a schema change, because F12 proves the admin row is only ever
   soft-disabled and `upsert_synced_admin` (F18) is an upsert on
   `UNIQUE(username, node_id)` — no supported operation removes the row. F16 records this
-  monotonicity.
+  monotonicity. **Erratum E-5 (2026-10-10) additionally requires that the supported import
+  path not write `deleted` at all (a required Slice A change — the current importer still
+  writes it through `upsert_synced_admin`); because the latch ignores `deleted`, the
+  monotonicity holds both before and after that change, and no other supported operation can
+  soft-disable the local UNIT admin.**
 * It MUST NOT be expressed as `count_active_admins() == 0` / `== 1` (F13, F14). F15 proves
   that predicate re-opens bootstrap after an admin disable, which D10 forbids and D5
   forbids.
@@ -482,7 +496,7 @@ evaluated **without any `deleted` or status filter**.
 | **forced password change** | first successful bootstrap login, or the §7.1 reset (D2, D6) | successful self change (§6) |
 | **admin establishment** | bootstrap change completed and the `admin_access` import succeeds (D4) | — |
 | **initialization complete** | the §8.1 existence test holds (D5) | terminal until admin disable, UNIT deletion, or code reuse after deletion |
-| **later admin disable / revocation** | `admin_access` arrives with `admin_enabled = false`, or the WILAYA disables the account (F12, F18) | re-enable via `admin_access` |
+| **later admin disable / revocation** | **retired by Erratum E-5 (2026-10-10)**: `admin_access` carries no enable/disable control, so this state cannot be entered through any supported operation; the WILAYA-side `set_account_status` disable (F12) targets the WILAYA-scope fleet admin only, and its export fails closed with no UNIT-delivery channel | — (no package-based exit exists) |
 | **explicit UNIT deletion** | the owner-approved destructive operation | see `0064` |
 
 Two transitions are forbidden outright:
@@ -518,14 +532,16 @@ mapping onto the existing single predicate set (F14) is:
 | initial bootstrap | `anchor_installed` ∧ `anchor_is_issuer` ∧ **§8.1 existence test false** | admit the first `admin_access` import |
 | admin establishment | same set, existence test false, but an import already succeeded | a second, distinct `package_id` still applies via `upsert_synced_admin` (F18 last-arriving-wins); exact-`package_id` replay is still refused (F18) |
 | initialization complete | existence test **true** | the first-import exemption is closed; later distinct `admin_access` packages continue to apply as normal post-initialization operation, never as bootstrap |
-| later admin disable / revocation | existence test **true** (the row survives — F12) | the first-import exemption **stays closed**; `admin_enabled = false` only sets `deleted = 1` |
+| later admin disable / revocation | existence test **true** (the row survives — F12) | the first-import exemption **stays closed**; the package carries **no** enable/disable control — a re-import updates password material only and must not write `deleted` (Erratum E-5; required Slice A change — the current importer still writes it via the shared upsert) |
 | explicit UNIT deletion | the §8.1 test can no longer be true on a deleted unit | see `0064` |
 
 Privilege-escalation guard (D10's second clause):
 
-* I-1 is preserved verbatim. `admin_access` continues to reach only `upsert_synced_admin`
-  and remains structurally incapable of touching the operator row (F19). This ADR therefore
-  does **not** let `admin_access` clear, set, or observe the operator's forced state.
+* I-1 is preserved verbatim. (Current implementation) `admin_access` reaches only
+  `upsert_synced_admin` and remains structurally incapable of touching the operator row
+  (F19); the required Slice A change replaces that call with a dedicated deleted-free `admin`
+  upsert while preserving the same operator-row isolation. This ADR therefore does **not** let
+  `admin_access` clear, set, or observe the operator's forced state.
 * The forced state after an `admin_access`-driven admin lifecycle change is governed by §7
   (local admin reset) and §11 (`.unit` import) only.
 * The structural UNIT-node guard (F20) and the `AuthenticatedOnly` authorization (F20) are
@@ -676,17 +692,69 @@ Normative checklist for the implementation phase.
    refused; forced state is set; the admin's session survives; the audit row carries the
    admin's identity.
 8. A non-admin authenticated caller cannot reset `user`.
-9. After initialization completes, importing an `admin_access` package with
-   `admin_enabled = false` and then re-importing with `admin_enabled = true` does **not**
-   route through the first-import exemption, and the exemption predicates do not report
-   "bootstrap available".
-10. Disabling the local admin and restarting the node leaves initialization complete.
+9. After initialization completes, re-importing an `admin_access` package updates the
+   administrator's password material only; the local admin's lifecycle state is unchanged
+   (not enabled, disabled, deleted, or restored), the first-import exemption stays closed,
+   and the exemption predicates do not report "bootstrap available" (amended by Erratum E-5 —
+   the package carries no enable/disable control).
+10. A soft-disabled local admin row (`deleted = 1`, seeded directly — after E-5 no supported
+    `admin_access` operation may write that field) leaves initialization complete on restart;
+    the initialization latch remains deletion-insensitive.
 11. Changing `code` through any update path is refused.
 12. A `.unit` import on a configured node forces a password change, and any serialized
     `must_change_password` value in an artifact does not change the resulting local state.
 13. `audit_log` has no plaintext password, hash, or pre-hash in any column or in `details`.
 14. `bun run check:arch` reports zero warnings; `cargo clippy -D warnings`, `cargo test`,
     `vitest`, and the release-integrity and documentation-governance scripts pass.
+15. E-4 — On a fresh UNIT (post-`.unit`), the mandatory ordered sequence is: (1) UNIT key
+    import/install, (2) UNIT identity/signature import/install, (3) successful `admin_access`
+    import establishing the local administrator (§8.1 existence test true), (4) successful
+    mandatory operator password change. Initialization is complete **only** when all four
+    stages have succeeded in that order; no stage is skippable or reorderable.
+16. E-4 — The operator MUST NOT succeed at `change_own_password` before stage (3) succeeds:
+    while no local admin exists, the incomplete-initialization gate refuses the change with a
+    backend error (not an empty result), even though the forced credential state is active.
+    A successful `admin_access` import establishes the local admin before password change is
+    permitted.
+17. E-4 — The gate is implemented at the existing command-dispatch boundary
+    (`commands/registry.rs::get_invoke_handler`) and keys on the repository-backed local-admin
+    existence predicate `admin_exists_for_node` for the local UNIT code — **never** on
+    `admin_updated` (which is `true` on every successful import and is not a validity signal)
+    and never on a new persistent flag or schema field.
+18. E-4 — While no local admin exists, a **session-bearing** invocation is admitted only
+    against the §5 list **minus** `change_own_password`: `login`, `logout`,
+    `get_current_user`, `check_session`, `touch_session`, `import_admin_access_package`,
+    `get_settings`, `is_configured` — the only way to leave the state is a successful
+    `import_admin_access_package`. `change_own_password` is refused with a backend error
+    until the §8.1 latch is true, and every other command invoked from a session is refused
+    fail-closed with a backend error. Invocations without a session are NOT bypassed: they
+    proceed to the command's own guards, which remain responsible for each command's
+    authentication, authorization, cryptographic verification, and state-transition checks.
+    In particular, the pre-authentication UNIT bootstrap ceremonies required by stages 1-2 —
+    `get_security_status`, `initialize_app_key`, `import_app_key`, `unlock_app_key`,
+    `get_identity_status`, `begin_unit_provision`, `finalize_unit_provision`,
+    `install_wilaya_certificate` — and the login-screen reads (`get_build_info`,
+    `is_configured`) remain reachable on a fresh UNIT with no session, each gated by its own
+    checks; the E-4 gate relaxes none of them. (`sign_unit_identity_request` is NOT one of
+    these: it is the WILAYA-side post-authentication signing ceremony, WILAYA Admin-only.)
+    Once the latch is true, the §5 forced-state allowlist applies unchanged (including
+    `change_own_password`).
+19. E-4 — A failed `admin_access` import (signature verification, authorization, authz policy,
+    predicate, replay, or validation failure) performs zero mutation (pipeline atomicity) and
+    leaves the gate in the incomplete-initialization state; repeated failure does not change
+    the allowlist. A repeated successful import after completion does not re-open the gate:
+    the §8.1 latch is monotonic and deletion-insensitive (E-5).
+20. E-5 — (Slice A target) An `admin_access` re-import against an existing local admin changes
+    the administrator password material and `updated_at` bookkeeping only; it does not read,
+    write, or preserve-check `deleted`, and does not enable, disable, delete, or restore the
+    account.
+21. E-5 — The exporter continues to fail closed on a missing password hash or a disabled fleet
+    admin (unchanged); the exported payload carries `admin_password_hash` only; `admin_enabled`
+    is neither serialized nor deserialized and pre-change payloads fail closed on
+    `deny_unknown_fields` (no backward compatibility — D18).
+22. E-5 — On a WILAYA node, the WILAYA-scope `set_account_status` disable of the fleet admin
+    continues to work locally and continues to fail export closed; there is no package-based
+    delivery of an enable/disable state to UNIT nodes.
 
 # Errata
 
@@ -694,14 +762,22 @@ Amendments to this record's **own** text, approved by the owner and entered here
 in a second document, so that exactly one canonical source exists (`AGENTS.md` §7 D2, D3).
 E-1 and E-2 correct one factual finding and one implementation locus and make one category
 table's contents normative; **E-3 withdraws decision D7/§7.2** (the WILAYA-side reset, now
-removed). No other decision is withdrawn.
+removed). **E-4 formalizes the mandatory ordered UNIT initialization sequence and its dispatch
+gate; E-5 retires the package-based UNIT admin disable/re-enable channel.** No other decision
+is withdrawn.
 
 | ID | Date | Locus | What was wrong | Correction |
 |----|------|-------|----------------|------------|
 | E-1 | 2026-10-06 | Context F33; §5 enforcement bullet; Implementation Boundary item 5 | F33 states that "All 181 `#[tauri::command]` functions … reach `authorize_command`", and §5 derived its enforcement locus from that claim. The claim is **false**: a non-empty set of registered commands (session/projection utilities, frontend bootstrap reads, report/calculation readers, pre-auth ceremony commands) never calls it. | The §5 forced-state enforcement is implemented at the **dispatch** choke point `src-tauri/src/commands/registry.rs::get_invoke_handler`, which runs before every registered command body. `authorize_command` (`commands/guards.rs:110`) is unchanged and remains the single authorization entry point; the forced-state check is additive and sits earlier in the dispatch path. |
 | E-2 | 2026-10-06 | §5 allowlist table | The table enumerated **categories** of allowed operations only, which left the implemented set unverifiable against the record. | The closed allowlist is now normative and enumerated by name: `login`, `logout`, `get_current_user`, `check_session`, `touch_session`, `change_own_password`, `import_admin_access_package`, `get_settings`, `is_configured` (`commands/guards.rs::FORCED_STATE_ALLOWED_COMMANDS`). |
 | E-3 | 2026-10-09 | Decision D7; §7 heading and introduction; §7.2; Implementation Boundary item 6; F25/F26 | D7/§7.2 retained the WILAYA-side `set_unit_user_password` reset and asserted that setting the forced credential on the WILAYA-side operator row makes "a subsequently exported/replaced `.unit` credential inherit the forced lifecycle". That premise is **false**: the `.unit` package carries **no** authoritative `must_change_password`, a serialized value is inert (§11), and UNIT import enforces the local forced state independently. A WILAYA-side reset therefore cannot transmit a forced-credential state through export/import, and under D1 the WILAYA does not supply the operator's operational password. | D7 and §7.2 are **withdrawn**; the WILAYA-side `set_unit_user_password` command is **removed** (backend command + registry entry + `sync.contract.ts` export), leaving no WILAYA-side operator-password reset path. The **only** supported operator-password reset is the UNIT-local authenticated **admin** reset in §7.1 (D6). Before a local UNIT admin exists, the documented recovery limitation (§12) is unchanged; no recovery path is invented. |
+| E-4 | 2026-10-10 | §8/§10 (D4/D5/D10); §5 allowlist (`commands/guards.rs::FORCED_STATE_ALLOWED_COMMANDS`); Verification Expectations | The record stated D4's mandate that "the UNIT MUST complete the `admin_access` initialization lifecycle" and that initialization completion is the §8.1 existence latch, but it did not constrain **ordering**: nothing forbade the operator from completing the mandatory password change *before* a local admin existed, so a node could clear the forced state and reach normal operational commands with no local admin while `change_own_password` remained on the §5 allowlist. | The UNIT initialization sequence is **mandatory and ordered**: (1) UNIT key import/install → (2) UNIT identity/signature import/install → (3) successful `admin_access` import establishing the local administrator → (4) successful mandatory operator password change — and only then is initialization complete. No stage may be skipped or reordered. The operator MUST NOT succeed at `change_own_password` before stage (3) succeeds. The intended implementation gate sits at the existing command-dispatch boundary (`commands/registry.rs::get_invoke_handler`) and keys on the repository-backed §8.1 existence predicate `admin_exists_for_node` for the local UNIT code — **never** `admin_updated` (always `true` after any successful import), never a new persistent flag or schema field. While no local admin exists, the admitted allowlist for **session-bearing** invocations is the §5 list minus `change_own_password` — `login`, `logout`, `get_current_user`, `check_session`, `touch_session`, `import_admin_access_package`, `get_settings`, `is_configured`; `change_own_password` cannot complete the mandatory password-change stage before a successful `admin_access` import establishes the local administrator, and every other command invoked from a session is refused fail-closed. Invocations without a session are NOT bypassed: they proceed to the command's own guards (authentication, authorization, cryptographic verification, and state-transition checks), which keeps the pre-authentication UNIT bootstrap ceremonies of stages 1-2 reachable on a fresh UNIT while relaxing none of their checks. Acceptance criteria are appended to `# Verification Expectations` (items 15-19). This record specifies the intended seam and behavior only; documentation alone does not implement or enforce the gate. Implementation remains a separately scoped slice (Slice B), not part of payload-field removal. |
+| E-5 | 2026-10-10 | Decision D10; F12; F17; F18; §8.2 state table ("later admin disable / revocation"); §10 table; Verification Expectations item 9; ADR-0051 §4 | The record (following ADR-0051) treated `admin_enabled = false` as a package-deliverable UNIT-admin disable and `admin_enabled = true` as a re-enable — a complete package-driven enable/disable lifecycle. That channel is **latent by construction**: `export_admin_access` hard-codes `admin_enabled: true` and fails closed for a missing or disabled fleet admin (`user_account_sync_service.rs:154-175`), so no production artifact can carry `false`; no supported import path may change the local admin's lifecycle state. | `admin_enabled` is **removed** from `AdminAccessPayload` (ADR-0051 E-1). `admin_access` carries no UNIT-local enable/disable control: a successful import creates the local administrator when absent and, on re-import against an existing UNIT-local administrator, may update **only** the row's `password_hash` and `updated_at` — it must not update or depend on the existing value of `id`, `created_at`, `node_id`, `role`, `deleted`, or `must_change_password` (INSERT initializes a new canonical admin with `deleted = 0`, via an explicit value or the verified database default); it does not enable, disable, delete, or restore an existing account. The shared `deleted` column/model field is retained for other user-account and legacy `identity_access` behavior, and the legacy shared-upsert behavior is unchanged, but the supported UNIT `admin_access` import path must not write it. Text describing `admin_enabled = false`, package-driven disable/re-enable, and false→true transitions is corrected herein (D10, F17, F18, §8.2, §10, VE item 9; acceptance criteria appended as VE items 20-22). Unrelated local/WILAYA authorization and security guarantees are unchanged; exporter fail-closed conditions for a missing/disabled fleet admin or empty password hash are preserved; no envelope change and no version bump. **Current implementation caveat:** the current official importer still applies the payload through `upsert_synced_admin`, whose conflict path writes `password_hash`, `role`, `deleted`, and `updated_at`; the payload-field removal and the deleted-free upsert above are **required Slice A changes**, not current runtime behavior. Implementation remains a separately scoped slice (Slice A). |
 
 Provenance: E-1/E-2 recorded with the §5 + §6 implementation (Slice 2); E-3 recorded with the
 removal of the WILAYA-side `set_unit_user_password` command. Approval and scope are recorded in
 `docs/governance/frontend/GOVERNANCE_APPROVALS.md` (2026-10-06 and 2026-10-09 entries).
+E-4 and E-5 are governance/documentation records (2026-10-10; approval and scope in
+`docs/governance/frontend/GOVERNANCE_APPROVALS.md` 2026-10-10 entry); their implementation
+slices (A: payload-field removal; B: initialization-order gate) remain separately scoped and
+unapproved.

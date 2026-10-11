@@ -56,12 +56,33 @@ It is NOT a targeted UNIT package. No sentinel target values (`"*"`, `"ALL"`, nu
 
 ## 4. Payload (normative)
 
+> **Erratum E-1 (2026-10-10, owner-approved):** `admin_enabled` is **removed** from the
+> normative payload below — the payload is the fleet-wide administrator password hash **only**
+> (`{admin_password_hash}`), exactly as the exporter has always emitted it. See `# Errata` at
+> the end of this document.
+
 ```text
 AdminAccessPayload {
-    admin_password_hash,
-    admin_enabled
+    admin_password_hash
 }
 ```
+
+> **Implementation status (Slice A — required, not yet performed):** the current official
+> `admin_access` importer still applies the payload through the shared `upsert_synced_admin`,
+> whose conflict path writes `password_hash`, `role`, `deleted`, and `updated_at`. The
+> deleted-free write set stated below is the **required Slice A target**, not current runtime
+> behavior.
+
+`admin_access` carries **no** UNIT-local enable/disable control: a successful import creates
+the local administrator when absent and, on re-import against an existing UNIT-local
+administrator, may update **only** the row's `password_hash` and `updated_at`; it MUST NOT
+update or depend on the existing value of `id`, `created_at`, `node_id`, `role`, `deleted`,
+or `must_change_password`, must not enable, disable, delete, or otherwise change the
+lifecycle state of an existing UNIT-local administrator account, and never relies on reading
+or preserving an existing `deleted` value. Pre-change payloads carrying `admin_enabled` are
+not compatibility requirements (the application has not been officially deployed — ADR-0063
+D18); strict unknown-field rejection (`deny_unknown_fields`) makes them fail deserialization,
+fail-closed (Erratum E-1).
 
 The payload MUST NOT contain any of:
 
@@ -81,7 +102,7 @@ The synchronized username is structurally canonical (`admin`) — it is hard-cod
 admin_access owns ONLY the canonical `admin` account.
 ```
 
-After `.unit` provisioning, the operator-selected username remains authoritative and the provisioning-established node-bound password remains authoritative. After `admin_access` import, the `admin` account may be created or updated according to the package; the UNIT operator account MUST remain unchanged.
+After `.unit` provisioning, the operator-selected username remains authoritative and the provisioning-established node-bound password remains authoritative. After `admin_access` import, the canonical local `admin` account is created when absent; on re-import only its `password_hash` and `updated_at` may change. `admin_access` never enables, disables, deletes, or restores the account (Erratum E-1); the UNIT operator account MUST remain unchanged.
 
 Explicitly normative:
 
@@ -89,7 +110,7 @@ Explicitly normative:
 * `admin_access` MUST NOT replace the UNIT operator password (hash or domain).
 * `admin_access` MUST NOT modify the UNIT operator row in any way — id, username, role, `node_id`, password hash, enabled/deleted state.
 
-The invariant is byte-for-byte and holds on BOTH acceptance and rejection branches of every import attempt. It is enforced structurally at the implementation boundary: the `admin_access` application path reaches only the Admin-only repository operation (`upsert_synced_admin`) and contains no dependency on UNIT-user synchronization code (`upsert_synced_user`, `update_username`, unit-user password mutation).
+The invariant is byte-for-byte and holds on BOTH acceptance and rejection branches of every import attempt. It is enforced structurally at the implementation boundary: the `admin_access` application path reaches only the Admin-only repository operation (`upsert_synced_admin`) and contains no dependency on UNIT-user synchronization code (`upsert_synced_user`, `update_username`, unit-user password mutation). (That repository operation is the **current** implementation; the required Slice A change replaces it with a dedicated deleted-free `admin` upsert that preserves the same operator-row isolation.)
 
 ## 6. Security Model
 
@@ -150,10 +171,12 @@ FIRST IMPORT — narrow fail-closed bootstrap exemption (parallel to ADR-0045's 
 ```text
 anchor_installed   — an ACTIVE WILAYA certificate is installed locally
 anchor_is_issuer   — the package issuer equals the installed anchor identity
-no_active_admin    — zero active Admin accounts exist locally
+no_active_admin    — the ADR-0063 §8.1 local-admin EXISTENCE test: no `users` row with
+                     `username = 'admin'` AND `node_id` = the local UNIT code, evaluated with
+                     NO `deleted` filter (Erratum E-1 — the latch is deletion-insensitive)
 ```
 
-`unit_code_matches` is deliberately absent: the package has no target binding to check. Its protective role is replaced — not weakened — by issuer pinning over the V2 signature chain. This is not an authentication bypass: authentication remains carried entirely by the certificate↔signature chain. The exemption self-terminates: once an active Admin exists, imports revert permanently to AdminOnly. A predicate service parallel to the existing one evaluates these checks; the certified `identity_access` predicate service remains untouched.
+`unit_code_matches` is deliberately absent: the package has no target binding to check. Its protective role is replaced — not weakened — by issuer pinning over the V2 signature chain. This is not an authentication bypass: authentication remains carried entirely by the certificate↔signature chain. The exemption self-terminates: once the §8.1 existence test holds (a local UNIT admin row exists), imports revert permanently to AdminOnly (Erratum E-1). A predicate service parallel to the existing one evaluates these checks; the certified `identity_access` predicate service remains untouched.
 
 ## 9. Decision D1 (ratified)
 
@@ -194,3 +217,12 @@ Governed by the ARCHITECTURE_FREEZE amendments dated 2026-08-22:
 * §2.7 — `admin_access` added to the WILAYA-only security-critical kind scope.
 
 Related: ADR-0040 (historical dual-purpose semantics; superseded in part by §5/§9 here), ADR-0044/0045 (bootstrap-exemption precedent), ADR-0046 (kind-scoping model), ADR-0047 (V2-only), ADR-0050 (normal-login model — untouched).
+
+# Errata
+
+Amendments to this record's **own** text, approved by the owner and entered here rather than
+in a second document, so that exactly one canonical source exists (`AGENTS.md` §7 D2, D3).
+
+| ID | Date | Locus | What was wrong | Correction |
+|----|------|-------|----------------|------------|
+| E-1 | 2026-10-10 | §4 (normative payload); §8 first-import predicates | §4 specified `AdminAccessPayload { admin_password_hash, admin_enabled }`, implying `admin_access` carries a UNIT-local enable/disable control, and §8's `no_active_admin` ("zero active Admin accounts") implied the bootstrap exemption depends on *enabled* admins. Neither matches the authorized design: the exporter never emits `admin_enabled = false` (`user_account_sync_service.rs::export_admin_access` fails closed on a missing or disabled fleet admin), no supported import path may change the local admin's lifecycle state, and ADR-0063 §8.1 defines the latch as an **existence** test (`admin_exists_for_node`, no `deleted` filter) that a soft-disabled local admin still satisfies (ADR-0063 D5). | `admin_enabled` is **removed** from the normative payload; the payload is exactly `{admin_password_hash}`. Strict unknown-field rejection (`deny_unknown_fields`) is retained and remains mandatory. Pre-change payloads are **not** compatibility requirements: the application has not been officially deployed (ADR-0063 D18) and no producer release emits `admin_enabled = false`; a pre-change artifact carrying `admin_enabled` fails deserialization fail-closed. `admin_access` carries **no** UNIT-local enable/disable control: import creates the local administrator when absent and, on re-import, may update only the row's `password_hash` and `updated_at` — it must not update or depend on the existing value of `id`, `created_at`, `node_id`, `role`, `deleted`, or `must_change_password`, and never enables, disables, deletes, or restores an account. The shared `deleted` column/model field remains for other user-account and legacy behavior, but the supported UNIT import path must not write it (**Slice A target**, not current behavior — the current importer still writes `deleted` via the shared upsert; see ADR-0063 E-5). §8 `no_active_admin` is reconciled to the ADR-0063 §8.1 existence test. §13 test-matrix and §14 freeze-reference requirements are unchanged; no envelope change and no version bump. |
