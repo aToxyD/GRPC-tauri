@@ -441,8 +441,9 @@ fn cross_unit_trust_artifact_acceptance_regression() {
 
     // --- 3. No privilege escalation: trust packages contain only certs ---
     // Trust packages carry `TrustPackagePayload { certificates, revocations }`.
-    // There are no admin_password_hash, admin_enabled, user_password_hash,
-    // or any credential material that could be misused for escalation.
+    // There are no admin_password_hash, user_password_hash,
+    // or any credential/lifecycle material that could be misused for
+    // escalation.
     for (label, pkg) in [("A", &pkg_a), ("B", &pkg_b)] {
         // The payload is a TrustPackagePayload — structurally it can only
         // contain certificates and revocations. Verify the certificate

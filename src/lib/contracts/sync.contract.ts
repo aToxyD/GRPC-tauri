@@ -92,9 +92,8 @@ export async function setAccountStatus(username: string, enabled: boolean): Prom
 // ── Admin-Only account synchronization (admin_access, ADR-0051 / D1) ──────
 // SEC-033: fleet-level export — the backend enumerates the authoritative
 // UNIT target set; the renderer expresses fleet intent only. Each emitted
-// package keys its own per-(issuer, target) transport stream and carries
-// ONLY {admin_password_hash, admin_enabled}; the renderer never receives
-// credential material — status metadata only.
+// package carries ONLY {admin_password_hash} (ADR-0051 Erratum E-1); the
+// renderer never receives credential material — it deals in file paths only.
 
 export async function exportAdminAccessPackage(filePath: string): Promise<SyncExportResult> {
   return await safeInvoke('export_admin_access_package', { filePath });

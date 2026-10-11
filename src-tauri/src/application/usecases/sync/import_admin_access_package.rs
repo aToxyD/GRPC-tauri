@@ -5,7 +5,8 @@
 //! ADR-0051 §5 (Account Ownership Invariant): `.unit` provisioning owns the
 //! UNIT-local operator account; `admin_access` owns ONLY the canonical
 //! `admin` account. This usecase is the structural enforcement of that
-//! boundary — its apply path reaches ONLY [`crate::repositories::UsersRepository::upsert_synced_admin`]
+//! boundary — its apply path reaches ONLY
+//! [`crate::repositories::UserRepository::upsert_canonical_admin`]
 //! and deliberately contains NO dependency on UNIT-user synchronization code
 //! (`upsert_synced_user`, username mutation of any kind, unit-user password
 //! mutation) — ADR-0052: operator usernames are structurally immutable.
@@ -13,8 +14,9 @@
 //! on both acceptance and rejection branches.
 //!
 //! The payload ([`AdminAccessPayload`]) carries exactly
-//! `{admin_password_hash, admin_enabled}` and rejects unknown fields at
-//! deserialization, so no target-unit or operator-account material can enter.
+//! `{admin_password_hash}` (ADR-0051 Erratum E-1) and rejects unknown fields
+//! at deserialization, so no target-unit or operator-account material — and
+//! no pre-change legacy `admin_enabled` flag — can enter.
 //! The synchronized username is structurally canonical (`admin`, hard-coded
 //! by the repository upsert) and is never transported.
 //!
@@ -88,11 +90,14 @@ pub fn execute(
     }
 
     let now = chrono::Utc::now().to_rfc3339();
-    executor.users().upsert_synced_admin(
+    // Official `admin_access` apply: the deleted-free canonical upsert
+    // (ADR-0051 E-1 / ADR-0063 E-5). No lifecycle-state flag is derived from
+    // the payload — on re-import only `password_hash` and `updated_at` may
+    // change, and `deleted` is never read, written, or preserved here.
+    executor.users().upsert_canonical_admin(
         &Uuid::new_v4().to_string(),
         &input.package.payload.admin_password_hash,
         input.local_unit_code.trim(),
-        !input.package.payload.admin_enabled,
         &now,
     )?;
     registry.mark_imported(&package_id)?;

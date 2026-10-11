@@ -1593,7 +1593,7 @@ pub fn set_account_status(
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin-Only B8 Account Synchronization (`admin_access`, ADR-0051 — Accepted
 // 2026-08-22). Fleet-wide WILAYA → all UNIT nodes; payload is exactly
-// `{admin_password_hash, admin_enabled}`; the UNIT operator account is
+// `{admin_password_hash}` (ADR-0051 Erratum E-1); the UNIT operator account is
 // structurally unreachable from this kind.
 // ─────────────────────────────────────────────────────────────────────────────
 

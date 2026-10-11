@@ -44,8 +44,10 @@ pub struct IdentityAccessPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AdminAccessPayload {
-    /// Fleet-wide `admin` hash (admin derivation domain).
+    /// Fleet-wide `admin` hash (admin derivation domain). The ONLY payload
+    /// field: the package carries no UNIT-local enable/disable control
+    /// (ADR-0051 Erratum E-1 / ADR-0063 Erratum E-5). A pre-change artifact
+    /// carrying `admin_enabled` fails deserialization fail-closed via
+    /// `deny_unknown_fields` — no compatibility path exists.
     pub admin_password_hash: String,
-    /// `true` when the fleet `admin` account is enabled.
-    pub admin_enabled: bool,
 }

@@ -170,7 +170,6 @@ impl<'a> UserAccountSyncService<'a> {
 
         Ok(crate::models::AdminAccessPayload {
             admin_password_hash: admin.password_hash,
-            admin_enabled: true,
         })
     }
 
@@ -456,6 +455,84 @@ mod tests {
             err,
             AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
         ));
+    }
+
+    #[test]
+    fn export_admin_access_fails_closed_without_fleet_admin_password() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        create_unit(&db, "UNIT-9");
+
+        db.executor()
+            .users()
+            .change_password(
+                &db.executor()
+                    .users()
+                    .get_user_by_username_raw("admin", "WILAYA")
+                    .unwrap()
+                    .unwrap()
+                    .id,
+                "",
+                "2024-01-01T00:00:00Z",
+            )
+            .unwrap();
+
+        let port = Argon2PasswordHashProvider;
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .export_admin_access()
+            .expect_err("export must fail closed on an unset fleet password");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+        ));
+    }
+
+    #[test]
+    fn export_admin_access_fails_closed_when_fleet_admin_disabled() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        set_fleet_password(&db);
+        create_unit(&db, "UNIT-9");
+
+        let port = Argon2PasswordHashProvider;
+        UserAccountSyncService::new(make_executor(&db), &port)
+            .set_account_status("admin", false)
+            .expect("disable admin");
+
+        let err = UserAccountSyncService::new(make_executor(&db), &port)
+            .export_admin_access()
+            .expect_err("export must fail closed on a disabled fleet admin");
+        assert!(matches!(
+            err,
+            AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted { .. })
+        ));
+    }
+
+    /// ADR-0051 Erratum E-1: the emitted official payload carries the fleet
+    /// admin hash ONLY — no lifecycle-state field (or any substitute) is
+    /// serialized.
+    #[test]
+    fn export_admin_access_carries_hash_only() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        configure_producer_as_wilaya(&db);
+        set_fleet_password(&db);
+
+        let port = Argon2PasswordHashProvider;
+        let payload = UserAccountSyncService::new(make_executor(&db), &port)
+            .export_admin_access()
+            .expect("export admin access");
+
+        let value = serde_json::to_value(&payload).expect("serialize payload");
+        assert!(
+            value.get("admin_enabled").is_none(),
+            "the official payload must not serialize admin_enabled"
+        );
+        assert!(
+            port
+                .verify_admin(FLEET_PASSWORD, &payload.admin_password_hash)
+                .expect("verify admin"),
+            "the exported hash must authenticate the fleet password"
+        );
     }
 
     #[test]

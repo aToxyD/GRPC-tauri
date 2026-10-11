@@ -428,6 +428,44 @@ impl<'a> UserRepository<'a> {
         Ok(())
     }
 
+    /// Upsert the canonical local UNIT `admin` account for the OFFICIAL
+    /// `admin_access` import path (ADR-0051, ADR-0063 Erratum E-5). Username
+    /// is fixed to `admin`, role to `Admin`; the row is keyed by
+    /// `(username, node_id)` (ADR-0052).
+    ///
+    /// Deleted-free by construction: the `admin_access` payload is
+    /// `{admin_password_hash}` only — it carries NO lifecycle-state flag — so
+    /// neither the INSERT nor the ON CONFLICT branch reads, writes, or
+    /// preserves `deleted`. The INSERT never names the column, so a newly
+    /// created canonical admin inherits the schema default `deleted = 0`. On
+    /// re-import against an existing row, ONLY `password_hash` and
+    /// `updated_at` change; `id`, `created_at`, `node_id`, `role`, `deleted`,
+    /// and `must_change_password` are never updated or depended on. A
+    /// soft-disabled local admin (`deleted = 1`) therefore stays disabled
+    /// after a re-import — `admin_access` can never restore, re-enable,
+    /// disable, or delete an account (Erratum E-5 / Slice A).
+    ///
+    /// Deliberately separate from [`Self::upsert_synced_admin`], which
+    /// remains the shared B8 method used by the legacy `identity_access`
+    /// apply path and keeps its full `deleted` write behavior unchanged.
+    pub fn upsert_canonical_admin(
+        &self,
+        id: &str,
+        password_hash: &str,
+        node_id: &str,
+        now: &str,
+    ) -> Result<(), AppError> {
+        self.executor.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at, node_id, updated_at) VALUES (?1, 'admin', ?2, 'Admin', ?3, ?4, ?5)
+             ON CONFLICT(username, node_id) DO UPDATE SET
+                 password_hash = excluded.password_hash,
+                 updated_at = excluded.updated_at",
+            params![id, password_hash, now, node_id, now],
+        )?;
+
+        Ok(())
+    }
+
     /// List all users ordered by creation date (newest first)
     pub fn list_users(&self) -> Result<Vec<User>, AppError> {
         Ok(self.executor.query_all(
@@ -688,6 +726,122 @@ mod tests {
             .expect("canonical admin present");
         assert_eq!(admin.role, UserRole::Admin);
         assert_eq!(admin.password_hash, "fleet-hash");
+    }
+
+    /// ADR-0063 Erratum E-5 (Slice A): the dedicated official `admin_access`
+    /// upsert is deleted-free. A newly created canonical admin inherits
+    /// `deleted = 0` from the schema default, and a re-import against a
+    /// soft-disabled admin changes ONLY `password_hash` and `updated_at` —
+    /// it must neither restore/re-enable the row nor rewrite any lifecycle or
+    /// identity field.
+    #[test]
+    fn test_upsert_canonical_admin_is_deleted_free() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let repo = UserRepository::new(make_executor(&db));
+
+        // New canonical admin: `deleted` is never named → schema default 0.
+        repo.upsert_canonical_admin("admin-1", "hash-v1", "UNIT-1", "2024-01-01T00:00:00Z")
+            .unwrap();
+        let admin = repo
+            .get_user_by_username_raw("admin", "UNIT-1")
+            .unwrap()
+            .expect("canonical admin present");
+        assert_eq!(admin.role, UserRole::Admin);
+        assert_eq!(admin.node_id, "UNIT-1");
+        assert_eq!(admin.password_hash, "hash-v1");
+        assert!(
+            !admin.deleted,
+            "new canonical admin starts non-deleted (schema default)"
+        );
+        let original_id = admin.id.clone();
+        let original_created_at = admin.created_at.to_rfc3339();
+
+        // Seed the soft-disabled lifecycle state directly.
+        repo.set_deleted(&original_id, true, "2024-01-02T00:00:00Z")
+            .unwrap();
+        assert!(repo
+            .get_user_by_username_raw("admin", "UNIT-1")
+            .unwrap()
+            .expect("row present")
+            .deleted);
+
+        // Official re-import: password material + updated_at only.
+        repo.upsert_canonical_admin("admin-1", "hash-v2", "UNIT-1", "2024-01-03T00:00:00Z")
+            .unwrap();
+        let after = repo
+            .get_user_by_username_raw("admin", "UNIT-1")
+            .unwrap()
+            .expect("row present");
+        assert_eq!(after.password_hash, "hash-v2", "password material updated");
+        assert_eq!(after.id, original_id, "id never rewritten");
+        assert_eq!(
+            after.created_at.to_rfc3339(),
+            original_created_at,
+            "created_at unchanged"
+        );
+        assert_eq!(after.node_id, "UNIT-1", "node_id unchanged");
+        assert_eq!(after.role, UserRole::Admin, "role unchanged");
+        assert!(
+            after.deleted,
+            "soft-disabled admin must stay disabled (no lifecycle alteration)"
+        );
+        assert!(
+            !after.must_change_password,
+            "must_change_password unchanged (schema default false)"
+        );
+        let updated_at: String = db
+            .get_connection()
+            .query_row(
+                "SELECT updated_at FROM users WHERE id = 'admin-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("updated_at");
+        assert_eq!(
+            updated_at, "2024-01-03T00:00:00Z",
+            "updated_at advanced to the re-import timestamp"
+        );
+    }
+
+    /// ADR-0051/ADR-0063: the legacy shared `upsert_synced_admin` (routed by
+    /// the `identity_access` apply path) must keep its `deleted` write
+    /// behavior unchanged — enabling and re-disabling an admin row are still
+    /// expressed through the shared method alone.
+    #[test]
+    fn test_legacy_upsert_synced_admin_still_toggles_deleted() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let repo = UserRepository::new(make_executor(&db));
+
+        repo.upsert_synced_admin("admin-2", "hash-v1", "UNIT-2", false, "2024-01-01T00:00:00Z")
+            .unwrap();
+        let admin = repo
+            .get_user_by_username_raw("admin", "UNIT-2")
+            .unwrap()
+            .expect("canonical admin present");
+        assert!(!admin.deleted);
+
+        // Disable through the shared path (legacy lifecycle control).
+        repo.upsert_synced_admin("admin-2", "hash-v2", "UNIT-2", true, "2024-01-02T00:00:00Z")
+            .unwrap();
+        let disabled = repo
+            .get_user_by_username_raw("admin", "UNIT-2")
+            .unwrap()
+            .expect("row present");
+        assert!(disabled.deleted, "shared upsert still writes deleted = 1");
+        assert_eq!(disabled.password_hash, "hash-v2");
+
+        // Re-enable through the shared path.
+        repo.upsert_synced_admin("admin-2", "hash-v3", "UNIT-2", false, "2024-01-03T00:00:00Z")
+            .unwrap();
+        let reenabled = repo
+            .get_user_by_username_raw("admin", "UNIT-2")
+            .unwrap()
+            .expect("row present");
+        assert!(
+            !reenabled.deleted,
+            "shared upsert still writes deleted = 0 (re-enable)"
+        );
+        assert_eq!(reenabled.password_hash, "hash-v3");
     }
 
     /// ADR-0063: `upsert_user` persists the forced credential state on the

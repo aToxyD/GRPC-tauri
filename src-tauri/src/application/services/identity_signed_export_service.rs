@@ -149,7 +149,7 @@ impl<'a> IdentitySignedExportService<'a> {
     /// Export the fleet Admin synchronization package (ADR-0051, kind
     /// `admin_access`) as an Ed25519-signed V2 sync package to `target_path`.
     ///
-    /// The payload carries ONLY `{admin_password_hash, admin_enabled}`
+    /// The payload carries ONLY `{admin_password_hash}`
     /// (structural isolation from any operator-account material). The identity
     /// of the issuing node (`issuer_identity_id`) binds authenticity; no
     /// transport sequence is assigned (SEC-056D/SEC-057).

@@ -161,7 +161,7 @@ fn configure_producer_as_wilaya(db: &Database) {
 }
 
 /// Fleet-wide Admin-Only payload (ADR-0051): exactly
-/// `{admin_password_hash, admin_enabled}` — no UNIT dimension exists.
+/// `{admin_password_hash}` — no UNIT dimension exists.
 fn admin_payload(db: &Database) -> AdminAccessPayload {
     let port = Argon2PasswordHashProvider;
     UserAccountSyncService::new(make_executor(db), &port)

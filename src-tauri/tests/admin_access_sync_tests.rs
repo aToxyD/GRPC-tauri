@@ -2,10 +2,12 @@
 //! 2026-08-22, Decision D1).
 //!
 //! Section A — `AdminAccessPayload` structure (strict deserialization):
-//!   A1 exactly `{admin_password_hash, admin_enabled}` is accepted;
+//!   A1 exactly `{admin_password_hash}` is accepted;
 //!   A2 `unit_code` rejected;
 //!   A3 operator-user material (`user_password_hash`) rejected;
-//!   A4 any unknown field rejected (`deny_unknown_fields`).
+//!   A4 any unknown field rejected (`deny_unknown_fields`);
+//!   A5 serialized payload carries NO `admin_enabled` (ADR-0051 E-1);
+//!   A6 pre-change artifact carrying `admin_enabled` fails closed.
 //! Section B — export command boundary (authz / fail-closed):
 //!   B1 unauthenticated export fails;
 //!   B2 UNIT-node session cannot export (Wilaya-only);
@@ -161,7 +163,6 @@ fn fleet_payload(hash_input: &str) -> AdminAccessPayload {
     let port = Argon2PasswordHashProvider;
     AdminAccessPayload {
         admin_password_hash: port.hash_admin(hash_input).expect("admin hash"),
-        admin_enabled: true,
     }
 }
 
@@ -259,14 +260,14 @@ fn operator_row(db: &Database) -> (String, String, String, String, String, i64) 
 
 #[test]
 fn a1_exact_payload_is_accepted() {
-    let json = r#"{"admin_password_hash":"argon2-hash","admin_enabled":true}"#;
+    let json = r#"{"admin_password_hash":"argon2-hash"}"#;
     let parsed: Result<AdminAccessPayload, _> = serde_json::from_str(json);
     parsed.expect("exact payload must deserialize");
 }
 
 #[test]
 fn a2_unit_code_field_is_rejected() {
-    let json = r#"{"admin_password_hash":"h","admin_enabled":true,"unit_code":"UNIT-9"}"#;
+    let json = r#"{"admin_password_hash":"h","unit_code":"UNIT-9"}"#;
     assert!(
         serde_json::from_str::<AdminAccessPayload>(json).is_err(),
         "unit_code must be structurally rejected"
@@ -277,16 +278,14 @@ fn a2_unit_code_field_is_rejected() {
 fn a3_operator_credential_fields_are_rejected() {
     assert!(
         serde_json::from_str::<AdminAccessPayload>(
-            r#"{"admin_password_hash":"h","admin_enabled":true,"user_password_hash":"x"}"#
+            r#"{"admin_password_hash":"h","user_password_hash":"x"}"#
         )
         .is_err(),
         "user password hash must be structurally rejected"
     );
     assert!(
-        serde_json::from_str::<AdminAccessPayload>(
-            r#"{"admin_password_hash":"h","admin_enabled":true,"username":"usera"}"#
-        )
-        .is_err(),
+        serde_json::from_str::<AdminAccessPayload>(r#"{"admin_password_hash":"h","username":"usera"}"#)
+            .is_err(),
         "operator username must be structurally rejected"
     );
 }
@@ -295,10 +294,36 @@ fn a3_operator_credential_fields_are_rejected() {
 fn a4_unknown_fields_are_rejected() {
     assert!(
         serde_json::from_str::<AdminAccessPayload>(
-            r#"{"admin_password_hash":"h","admin_enabled":true,"something_else":1}"#
+            r#"{"admin_password_hash":"h","something_else":1}"#
         )
         .is_err(),
         "deny_unknown_fields must reject any extra field"
+    );
+}
+
+/// ADR-0051 Erratum E-1 / ADR-0063 Erratum E-5 (Slice A): the official
+/// payload never serializes a lifecycle-state field — `admin_enabled` is
+/// gone from the wire shape entirely.
+#[test]
+fn a5_serialized_payload_has_no_admin_enabled() {
+    let payload = fleet_payload(FLEET_PASSWORD);
+    let value = serde_json::to_value(&payload).expect("serialize payload");
+    assert!(
+        value.get("admin_enabled").is_none(),
+        "serialized AdminAccessPayload must not contain admin_enabled"
+    );
+    assert!(value.get("admin_password_hash").is_some());
+}
+
+/// ADR-0051 Erratum E-1: a pre-change artifact carrying the removed
+/// `admin_enabled` field fails deserialization fail-closed via
+/// `deny_unknown_fields`. Regression for a previously shaped artifact — NO
+/// compatibility path exists (D18).
+#[test]
+fn a6_pre_change_admin_enabled_artifact_is_rejected() {
+    let json = r#"{"admin_password_hash":"argon2-hash","admin_enabled":true}"#;
+    serde_json::from_str::<AdminAccessPayload>(json).expect_err(
+        "a pre-change payload carrying admin_enabled must fail closed",
     );
 }
 
@@ -928,6 +953,127 @@ fn d5_initialization_latch_survives_admin_disable() {
         );
         assert!(!verdict.all_hold());
     }
+}
+
+/// ADR-0051 Erratum E-1 / ADR-0063 Erratum E-5 (Slice A): the official
+/// `admin_access` re-import is deleted-free. A soft-disabled canonical local
+/// admin re-imported with a rotated fleet credential must STAY disabled —
+/// only `password_hash` and `updated_at` change; `id`, `created_at`,
+/// `node_id`, `role`, `deleted`, and `must_change_password` remain
+/// byte-identical.
+#[test]
+fn d6_reimport_never_touches_disabled_admin_lifecycle_state() {
+    let state = provisioned_unit_state("UNIT-9");
+    let issuer_id = Uuid::new_v4();
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        seed_anchor(db, issuer_id, ISSUER_SECRET);
+        // Seed a soft-disabled canonical local admin directly (deleted = 1) —
+        // after E-5 no supported `admin_access` operation may write `deleted`,
+        // so the disabled state is seeded exactly like the D5 revocation
+        // fixture.
+        make_executor(db)
+            .users()
+            .upsert_synced_admin(
+                &Uuid::new_v4().to_string(),
+                "seeded-hash",
+                "UNIT-9",
+                true,
+                FIXED_NOW,
+            )
+            .expect("seed disabled canonical admin");
+    }
+
+    type AdminRow = (String, String, String, String, i64, String, i64, i64);
+    let read_admin_row = |db: &Database| -> AdminRow {
+        let query = format!(
+            "SELECT id, password_hash, node_id, role, deleted, created_at, must_change_password, \
+             CASE WHEN updated_at = '{FIXED_NOW}' THEN 1 ELSE 0 END \
+             FROM users WHERE username='admin' AND node_id='UNIT-9'"
+        );
+        db.get_connection()
+            .query_row(
+                &query,
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .expect("admin row")
+    };
+
+    let admin_before = {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        read_admin_row(db)
+    };
+    assert_eq!(
+        admin_before.4, 1,
+        "fixture must be a soft-disabled canonical admin"
+    );
+    assert_eq!(
+        admin_before.7, 1,
+        "fixture updated_at must equal the seeded FIXED_NOW timestamp"
+    );
+
+    set_session(&state, "Admin");
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("reimport.sync");
+    let package = sign_v2_package(
+        admin_package("aa-d6", issuer_id, fleet_payload(FLEET_PASSWORD_ROTATED)),
+        ISSUER_SECRET,
+    );
+    write_encrypted(&package, ISSUER_SECRET, &path);
+    let result = import_admin_access_package_impl(&state, path.to_string_lossy().into_owned())
+        .expect("Admin re-import succeeds");
+    assert!(result.admin_updated);
+
+    let admin_after = {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        read_admin_row(db)
+    };
+
+    // Lifecycle and identity fields byte-identical.
+    assert_eq!(admin_after.0, admin_before.0, "id unchanged");
+    assert_eq!(admin_after.2, admin_before.2, "node_id unchanged");
+    assert_eq!(admin_after.3, admin_before.3, "role unchanged");
+    assert_eq!(
+        admin_after.4, 1,
+        "deleted unchanged — the soft-disabled admin stays disabled"
+    );
+    assert_eq!(admin_after.5, admin_before.5, "created_at unchanged");
+    assert_eq!(
+        admin_after.6, admin_before.6,
+        "must_change_password unchanged"
+    );
+    assert_eq!(
+        admin_after.7, 0,
+        "updated_at advanced past the seeded re-import timestamp"
+    );
+
+    // Password material updated as intended.
+    let port = Argon2PasswordHashProvider;
+    assert!(
+        port
+            .verify_admin(FLEET_PASSWORD_ROTATED, &admin_after.1)
+            .expect("verify rotated"),
+        "password material must be updated to the rotated fleet credential"
+    );
+    assert_ne!(
+        admin_after.1, "seeded-hash",
+        "the seeded hash must be replaced"
+    );
 }
 
 // ── Section E: OPERATOR PRESERVATION (security invariant) ────────────────
