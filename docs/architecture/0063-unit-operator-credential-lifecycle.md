@@ -13,9 +13,11 @@ disable/re-enable channel (`admin_enabled` is removed from `AdminAccessPayload`)
 > eighteen credential/lifecycle decisions enumerated in §2. It is the **authoritative
 > amendment record** for the frozen documents listed in §1 — those files are NOT edited by
 > this ADR (per `AGENTS.md` §8 C1 and `docs/architecture/ARCHITECTURE_FREEZE.md` §4).
-> **Implementation is authorized but NOT yet performed**: this record is governance/design
-> only. No Rust, Svelte, TypeScript, schema, or test change accompanies it. `# Verification
-> Expectations` is the normative implementation checklist for the follow-on work.
+> **Implementation is authorized and is carried out under separate, individually recorded
+> slices** (approval and scope in `docs/governance/frontend/GOVERNANCE_APPROVALS.md`). This
+> record itself is governance/design only and accompanies no Rust, Svelte, TypeScript, schema,
+> or test change; `# Verification Expectations` is the normative implementation checklist for
+> the follow-on work.
 
 # Date
 2026-10-05
@@ -780,5 +782,9 @@ removal of the WILAYA-side `set_unit_user_password` command. Approval and scope 
 E-4 and E-5 are governance/documentation records (2026-10-10; approval and scope in
 `docs/governance/frontend/GOVERNANCE_APPROVALS.md` 2026-10-10 entry); the implementation
 slice A (payload-field removal) is implemented and owner-accepted (2026-10-11, commit
-`7259e2e`; approval in the `GOVERNANCE_APPROVALS.md` 2026-10-11 entry), while slice B
-(initialization-order gate) remains separately scoped and unapproved.
+`7259e2e`; approval in the `GOVERNANCE_APPROVALS.md` 2026-10-11 entry). Slice B
+(initialization-order gate) is implemented in commit
+`ea1986a85b2ee1073f7b0937e1be1397f2745e6f` (`ea1986a`) and owner-accepted with the designated
+approval date 2026-10-12, cross-referenced to the `GOVERNANCE_APPROVALS.md` 2026-10-12 Slice B
+entry (recorded 2026-10-13 under explicit owner authorization — the approval date is the
+designated date, not a contemporaneous record).
