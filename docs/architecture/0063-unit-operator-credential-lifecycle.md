@@ -134,9 +134,9 @@ Every fact below was read from the working tree at commit `3e982990949cc666ccbdc
   caller `application/usecases/sync/import_admin_access_package.rs:87-92` passes
   `!input.package.payload.admin_enabled` as that flag. **Disabling a UNIT admin therefore
   sets `deleted = 1` on an existing row; it never removes the row.** **Amended by Erratum E-5
-  (2026-10-10): the supported `admin_access` import stops passing a lifecycle-state flag (required Slice A
-  change, not current behavior), so
-  the local UNIT admin's `deleted` is no longer writable by any supported operation.**
+  (2026-10-10), implemented by Slice A (2026-10-11, commit `7259e2e`): the supported
+  `admin_access` import no longer passes a lifecycle-state flag, so the local UNIT admin's
+  `deleted` is no longer writable by any supported operation.**
 * **F13** — `users.rs:363-370` (`count_active_admins`) is
   `SELECT COUNT(*) FROM users WHERE deleted = 0 AND role = 'Admin'` — note it is **not**
   `node_id`-scoped.
@@ -169,10 +169,9 @@ Every fact below was read from the working tree at commit `3e982990949cc666ccbdc
   input.local_unit_code.trim(), !payload.admin_enabled, &now)` followed by
   `registry.mark_imported(&package_id)`. Replay is refused earlier by
   `registry.has_imported(&package_id)` (lines 74-79) with
-  `BusinessLogicError::DuplicateSyncPackage`. **Amended by Erratum E-5 (2026-10-10): the
-  supported import path stops writing `deleted` (required Slice A change, not current behavior) — no lifecycle-state
-  flag is derived from the
-  payload.**
+  `BusinessLogicError::DuplicateSyncPackage`. **Amended by Erratum E-5 (2026-10-10),
+  implemented by Slice A (2026-10-11, commit `7259e2e`): the supported import path no longer
+  writes `deleted` — no lifecycle-state flag is derived from the payload.**
 * **F19** — The apply path has **no** dependency on `upsert_synced_user`, on any username
   mutation, or on any UNIT-user password mutation (file header lines 6-14). The operator row
   is structurally unreachable from this kind. This is the implementation of ADR-0051 §5 and
@@ -468,11 +467,11 @@ evaluated **without any `deleted` or status filter**.
 
 * This is a durable existence fact, not an activity fact, exactly as D5 requires.
 * It is expressible without a schema change, because F12 proves the admin row is only ever
-  soft-disabled and `upsert_synced_admin` (F18) is an upsert on
+  soft-disabled and the canonical admin upsert (F18; now the deleted-free
+  `upsert_canonical_admin` — Slice A, commit `7259e2e`) is an upsert on
   `UNIQUE(username, node_id)` — no supported operation removes the row. F16 records this
-  monotonicity. **Erratum E-5 (2026-10-10) additionally requires that the supported import
-  path not write `deleted` at all (a required Slice A change — the current importer still
-  writes it through `upsert_synced_admin`); because the latch ignores `deleted`, the
+  monotonicity. **Erratum E-5 (2026-10-10), implemented by Slice A (2026-10-11): the supported
+  import path does not write `deleted` at all; because the latch ignores `deleted`, the
   monotonicity holds both before and after that change, and no other supported operation can
   soft-disable the local UNIT admin.**
 * It MUST NOT be expressed as `count_active_admins() == 0` / `== 1` (F13, F14). F15 proves
@@ -530,17 +529,18 @@ mapping onto the existing single predicate set (F14) is:
 | Lifecycle situation | Existing predicate set | Required behavior |
 |---------------------|------------------------|-------------------|
 | initial bootstrap | `anchor_installed` ∧ `anchor_is_issuer` ∧ **§8.1 existence test false** | admit the first `admin_access` import |
-| admin establishment | same set, existence test false, but an import already succeeded | a second, distinct `package_id` still applies via `upsert_synced_admin` (F18 last-arriving-wins); exact-`package_id` replay is still refused (F18) |
+| admin establishment | same set, existence test false, but an import already succeeded | a second, distinct `package_id` still applies via the canonical admin upsert (`upsert_synced_admin` at ADR time, now the deleted-free `upsert_canonical_admin` — F18/Slice A; last-arriving-wins); exact-`package_id` replay is still refused (F18) |
 | initialization complete | existence test **true** | the first-import exemption is closed; later distinct `admin_access` packages continue to apply as normal post-initialization operation, never as bootstrap |
-| later admin disable / revocation | existence test **true** (the row survives — F12) | the first-import exemption **stays closed**; the package carries **no** enable/disable control — a re-import updates password material only and must not write `deleted` (Erratum E-5; required Slice A change — the current importer still writes it via the shared upsert) |
+| later admin disable / revocation | existence test **true** (the row survives — F12) | the first-import exemption **stays closed**; the package carries **no** enable/disable control — a re-import updates password material only and does not write `deleted` (Erratum E-5, implemented by Slice A — commit `7259e2e`; the importer no longer writes it via the shared upsert) |
 | explicit UNIT deletion | the §8.1 test can no longer be true on a deleted unit | see `0064` |
 
 Privilege-escalation guard (D10's second clause):
 
-* I-1 is preserved verbatim. (Current implementation) `admin_access` reaches only
-  `upsert_synced_admin` and remains structurally incapable of touching the operator row
-  (F19); the required Slice A change replaces that call with a dedicated deleted-free `admin`
-  upsert while preserving the same operator-row isolation. This ADR therefore does **not** let
+* I-1 is preserved verbatim. `admin_access` reaches only the canonical admin upsert and
+  remains structurally incapable of touching the operator row (F19); Slice A (commit
+  `7259e2e`) implemented the dedicated deleted-free `upsert_canonical_admin` in place of the
+  earlier shared `upsert_synced_admin` call, preserving the same operator-row isolation. This
+  ADR therefore does **not** let
   `admin_access` clear, set, or observe the operator's forced state.
 * The forced state after an `admin_access`-driven admin lifecycle change is governed by §7
   (local admin reset) and §11 (`.unit` import) only.
@@ -772,12 +772,13 @@ is withdrawn.
 | E-2 | 2026-10-06 | §5 allowlist table | The table enumerated **categories** of allowed operations only, which left the implemented set unverifiable against the record. | The closed allowlist is now normative and enumerated by name: `login`, `logout`, `get_current_user`, `check_session`, `touch_session`, `change_own_password`, `import_admin_access_package`, `get_settings`, `is_configured` (`commands/guards.rs::FORCED_STATE_ALLOWED_COMMANDS`). |
 | E-3 | 2026-10-09 | Decision D7; §7 heading and introduction; §7.2; Implementation Boundary item 6; F25/F26 | D7/§7.2 retained the WILAYA-side `set_unit_user_password` reset and asserted that setting the forced credential on the WILAYA-side operator row makes "a subsequently exported/replaced `.unit` credential inherit the forced lifecycle". That premise is **false**: the `.unit` package carries **no** authoritative `must_change_password`, a serialized value is inert (§11), and UNIT import enforces the local forced state independently. A WILAYA-side reset therefore cannot transmit a forced-credential state through export/import, and under D1 the WILAYA does not supply the operator's operational password. | D7 and §7.2 are **withdrawn**; the WILAYA-side `set_unit_user_password` command is **removed** (backend command + registry entry + `sync.contract.ts` export), leaving no WILAYA-side operator-password reset path. The **only** supported operator-password reset is the UNIT-local authenticated **admin** reset in §7.1 (D6). Before a local UNIT admin exists, the documented recovery limitation (§12) is unchanged; no recovery path is invented. |
 | E-4 | 2026-10-10 | §8/§10 (D4/D5/D10); §5 allowlist (`commands/guards.rs::FORCED_STATE_ALLOWED_COMMANDS`); Verification Expectations | The record stated D4's mandate that "the UNIT MUST complete the `admin_access` initialization lifecycle" and that initialization completion is the §8.1 existence latch, but it did not constrain **ordering**: nothing forbade the operator from completing the mandatory password change *before* a local admin existed, so a node could clear the forced state and reach normal operational commands with no local admin while `change_own_password` remained on the §5 allowlist. | The UNIT initialization sequence is **mandatory and ordered**: (1) UNIT key import/install → (2) UNIT identity/signature import/install → (3) successful `admin_access` import establishing the local administrator → (4) successful mandatory operator password change — and only then is initialization complete. No stage may be skipped or reordered. The operator MUST NOT succeed at `change_own_password` before stage (3) succeeds. The intended implementation gate sits at the existing command-dispatch boundary (`commands/registry.rs::get_invoke_handler`) and keys on the repository-backed §8.1 existence predicate `admin_exists_for_node` for the local UNIT code — **never** `admin_updated` (always `true` after any successful import), never a new persistent flag or schema field. While no local admin exists, the admitted allowlist for **session-bearing** invocations is the §5 list minus `change_own_password` — `login`, `logout`, `get_current_user`, `check_session`, `touch_session`, `import_admin_access_package`, `get_settings`, `is_configured`; `change_own_password` cannot complete the mandatory password-change stage before a successful `admin_access` import establishes the local administrator, and every other command invoked from a session is refused fail-closed. Invocations without a session are NOT bypassed: they proceed to the command's own guards (authentication, authorization, cryptographic verification, and state-transition checks), which keeps the pre-authentication UNIT bootstrap ceremonies of stages 1-2 reachable on a fresh UNIT while relaxing none of their checks. Acceptance criteria are appended to `# Verification Expectations` (items 15-19). This record specifies the intended seam and behavior only; documentation alone does not implement or enforce the gate. Implementation remains a separately scoped slice (Slice B), not part of payload-field removal. |
-| E-5 | 2026-10-10 | Decision D10; F12; F17; F18; §8.2 state table ("later admin disable / revocation"); §10 table; Verification Expectations item 9; ADR-0051 §4 | The record (following ADR-0051) treated `admin_enabled = false` as a package-deliverable UNIT-admin disable and `admin_enabled = true` as a re-enable — a complete package-driven enable/disable lifecycle. That channel is **latent by construction**: `export_admin_access` hard-codes `admin_enabled: true` and fails closed for a missing or disabled fleet admin (`user_account_sync_service.rs:154-175`), so no production artifact can carry `false`; no supported import path may change the local admin's lifecycle state. | `admin_enabled` is **removed** from `AdminAccessPayload` (ADR-0051 E-1). `admin_access` carries no UNIT-local enable/disable control: a successful import creates the local administrator when absent and, on re-import against an existing UNIT-local administrator, may update **only** the row's `password_hash` and `updated_at` — it must not update or depend on the existing value of `id`, `created_at`, `node_id`, `role`, `deleted`, or `must_change_password` (INSERT initializes a new canonical admin with `deleted = 0`, via an explicit value or the verified database default); it does not enable, disable, delete, or restore an existing account. The shared `deleted` column/model field is retained for other user-account and legacy `identity_access` behavior, and the legacy shared-upsert behavior is unchanged, but the supported UNIT `admin_access` import path must not write it. Text describing `admin_enabled = false`, package-driven disable/re-enable, and false→true transitions is corrected herein (D10, F17, F18, §8.2, §10, VE item 9; acceptance criteria appended as VE items 20-22). Unrelated local/WILAYA authorization and security guarantees are unchanged; exporter fail-closed conditions for a missing/disabled fleet admin or empty password hash are preserved; no envelope change and no version bump. **Current implementation caveat:** the current official importer still applies the payload through `upsert_synced_admin`, whose conflict path writes `password_hash`, `role`, `deleted`, and `updated_at`; the payload-field removal and the deleted-free upsert above are **required Slice A changes**, not current runtime behavior. Implementation remains a separately scoped slice (Slice A). |
+| E-5 | 2026-10-10 | Decision D10; F12; F17; F18; §8.2 state table ("later admin disable / revocation"); §10 table; Verification Expectations item 9; ADR-0051 §4 | The record (following ADR-0051) treated `admin_enabled = false` as a package-deliverable UNIT-admin disable and `admin_enabled = true` as a re-enable — a complete package-driven enable/disable lifecycle. That channel is **latent by construction**: `export_admin_access` hard-codes `admin_enabled: true` and fails closed for a missing or disabled fleet admin (`user_account_sync_service.rs:154-175`), so no production artifact can carry `false`; no supported import path may change the local admin's lifecycle state. | `admin_enabled` is **removed** from `AdminAccessPayload` (ADR-0051 E-1). `admin_access` carries no UNIT-local enable/disable control: a successful import creates the local administrator when absent and, on re-import against an existing UNIT-local administrator, may update **only** the row's `password_hash` and `updated_at` — it must not update or depend on the existing value of `id`, `created_at`, `node_id`, `role`, `deleted`, or `must_change_password` (INSERT initializes a new canonical admin with `deleted = 0`, via an explicit value or the verified database default); it does not enable, disable, delete, or restore an existing account. The shared `deleted` column/model field is retained for other user-account and legacy `identity_access` behavior, and the legacy shared-upsert behavior is unchanged, but the supported UNIT `admin_access` import path must not write it. Text describing `admin_enabled = false`, package-driven disable/re-enable, and false→true transitions is corrected herein (D10, F17, F18, §8.2, §10, VE item 9; acceptance criteria appended as VE items 20-22). Unrelated local/WILAYA authorization and security guarantees are unchanged; exporter fail-closed conditions for a missing/disabled fleet admin or empty password hash are preserved; no envelope change and no version bump. **Implementation status:** Slice A (the payload-field removal and the deleted-free canonical upsert above) is implemented in commit `7259e2e` (2026-10-11) and owner-accepted per the `GOVERNANCE_APPROVALS.md` 2026-10-11 entry; the official `admin_access` importer now applies the payload through the deleted-free `upsert_canonical_admin`, whose conflict path updates only `password_hash` and `updated_at` (a newly inserted row inherits the schema default `deleted = 0`), while the earlier shared `upsert_synced_admin` conflict path (which additionally wrote `role` and `deleted`) remains only for the legacy `identity_access` apply path. |
 
 Provenance: E-1/E-2 recorded with the §5 + §6 implementation (Slice 2); E-3 recorded with the
 removal of the WILAYA-side `set_unit_user_password` command. Approval and scope are recorded in
 `docs/governance/frontend/GOVERNANCE_APPROVALS.md` (2026-10-06 and 2026-10-09 entries).
 E-4 and E-5 are governance/documentation records (2026-10-10; approval and scope in
-`docs/governance/frontend/GOVERNANCE_APPROVALS.md` 2026-10-10 entry); their implementation
-slices (A: payload-field removal; B: initialization-order gate) remain separately scoped and
-unapproved.
+`docs/governance/frontend/GOVERNANCE_APPROVALS.md` 2026-10-10 entry); the implementation
+slice A (payload-field removal) is implemented and owner-accepted (2026-10-11, commit
+`7259e2e`; approval in the `GOVERNANCE_APPROVALS.md` 2026-10-11 entry), while slice B
+(initialization-order gate) remains separately scoped and unapproved.
