@@ -31,7 +31,8 @@ pub use types::AppState;
 
 // Re-export guards
 pub use guards::{
-    authorize_command, enforce_forced_credential_state, FORCED_STATE_ALLOWED_COMMANDS,
+    authorize_command, enforce_forced_credential_state, enforce_unit_initialization_order,
+    FORCED_STATE_ALLOWED_COMMANDS, INITIALIZATION_ALLOWED_COMMANDS,
 };
 
 // Re-export identity bootstrap/challenge commands (B5)

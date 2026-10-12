@@ -60,6 +60,15 @@ impl<'a> UserService<'a> {
         self.executor.users().get_user_by_id(id)
     }
 
+    /// ADR-0063 §8.1 — whether the canonical local UNIT `admin` row exists for
+    /// `node_code`. This is the durable, deletion-insensitive initialization
+    /// latch consumed by the dispatch-level initialization-order gate
+    /// (Erratum E-4). Thin delegation to the SQL-only repository predicate; the
+    /// SQL stays in `repositories/`.
+    pub fn admin_exists_for_node(&self, node_code: &str) -> Result<bool, AppError> {
+        self.executor.users().admin_exists_for_node(node_code)
+    }
+
     /// ADR-0063 §6 — canonical local UNIT operator self password change.
     ///
     /// `user_id` is always the authenticated session's own id, supplied by the

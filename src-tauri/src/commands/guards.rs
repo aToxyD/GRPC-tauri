@@ -185,6 +185,117 @@ pub fn enforce_forced_credential_state(state: &AppState, command: &str) -> Resul
     Ok(())
 }
 
+/// ADR-0063 Erratum E-4 — the **closed** allowlist of commands that may proceed
+/// while a configured UNIT node's initialization is incomplete (no local
+/// administrator row exists for the local UNIT code).
+///
+/// Normatively this is the §5 forced-state allowlist
+/// ([`FORCED_STATE_ALLOWED_COMMANDS`]) **minus** `change_own_password`: the
+/// mandatory operator password change (stage 4) may not complete before the
+/// `admin_access` import establishes the local administrator (stage 3). The set
+/// is enumerated explicitly rather than derived so the two distinct security
+/// policies are never coupled by construction; the required set relationship is
+/// pinned by a regression test
+/// (`INITIALIZATION_ALLOWED_COMMANDS` == `FORCED_STATE_ALLOWED_COMMANDS` minus
+/// `change_own_password`).
+pub const INITIALIZATION_ALLOWED_COMMANDS: &[&str] = &[
+    // Session establishment / teardown / inspection
+    "login",
+    "logout",
+    "get_current_user",
+    "check_session",
+    "touch_session",
+    // The only way out of the incomplete-initialization state (ADR-0063 §10/E-4)
+    "import_admin_access_package",
+    // Rendering prerequisites for the incomplete-initialization screen
+    "get_settings",
+    "is_configured",
+];
+
+/// ADR-0063 Erratum E-4 — UNIT initialization-order gate.
+///
+/// This is one half of the dispatch enforcement seam, invoked from the single
+/// dispatch point [`crate::commands::registry::get_invoke_handler`] **before**
+/// [`enforce_forced_credential_state`], so incomplete initialization always
+/// takes precedence over the forced-password-change refusal.
+///
+/// Dispatch-level restriction only: it neither authenticates nor authorizes.
+/// Every admitted command retains its own guards — in particular
+/// `import_admin_access_package` keeps its `AuthenticatedOnly` authorization and
+/// its in-transaction first-import predicates.
+///
+/// The gate applies only to a **configured UNIT**
+/// (`settings.configured && settings.is_unit()`). It must not key on
+/// `node_type` alone: the settings repository falls back to
+/// [`crate::models::NodeType::Unit`] when the persisted `node_type` string does
+/// not parse, and the initial schema seeds a fresh node as `UNCONFIGURED`, so
+/// `is_unit()` is `true` on a fresh node as well. WILAYA nodes are never
+/// subjected to a UNIT-local admin requirement.
+///
+/// Semantics (mirroring [`enforce_forced_credential_state`]):
+/// * allowlisted command → `Ok`,
+/// * no session → `Ok` (defers to the command's own guards; pre-authentication
+///   initialization ceremonies remain reachable),
+/// * expired / absolutely-expired session → `Ok` (defers authentication failure
+///   to the command's own guards),
+/// * not a configured UNIT → `Ok`,
+/// * configured UNIT with a local admin row → `Ok`,
+/// * configured UNIT with no local admin row (or no resolvable local code) →
+///   `Err(InitializationIncomplete)` for every non-allowlisted command,
+/// * trusted-settings or admin-existence lookup failure → propagated (fail
+///   closed); a missing local code is treated as "no local admin", never as
+///   completion.
+pub fn enforce_unit_initialization_order(state: &AppState, command: &str) -> Result<(), AppError> {
+    if INITIALIZATION_ALLOWED_COMMANDS.contains(&command) {
+        return Ok(());
+    }
+
+    let session = match state.get_session() {
+        Ok(session) => session,
+        Err(AppError::Authentication(AuthenticationError::SessionNotFound)) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if session.is_expired() || session.is_absolutely_expired() {
+        return Ok(());
+    }
+
+    let settings = state.get_settings()?;
+    if !settings.configured || !settings.is_unit() {
+        return Ok(());
+    }
+
+    // The §8.1 latch is keyed on the local UNIT code (SEC-029:
+    // `units.code == users.node_id == Settings.unit_code`). A configured UNIT
+    // must resolve a code; its absence is an abnormal/incomplete state, so fail
+    // closed by treating it as "no local admin" rather than assuming
+    // completion.
+    let admin_exists = match settings.unit_code.as_deref().map(str::trim) {
+        Some(code) if !code.is_empty() => {
+            let db_guard = state.get_db()?;
+            let Some(db) = db_guard.as_ref() else {
+                return Err(AppError::Internal("Database is closed".to_string()));
+            };
+            UserService::new(db.executor(), state.password_port.as_ref())
+                .admin_exists_for_node(code)?
+        }
+        _ => false,
+    };
+
+    if admin_exists {
+        return Ok(());
+    }
+
+    log::warn!(
+        target: "grpc::authz",
+        "unit initialization incomplete; refused command: command={} username={}",
+        command,
+        session.username
+    );
+    Err(AppError::Authorization(
+        AuthorizationError::InitializationIncomplete,
+    ))
+}
+
 /// Helper to convert session to principal
 fn build_principal(session: &CurrentSession) -> Principal {
     Principal {

@@ -89,6 +89,11 @@ pub enum AuthorizationError {
     /// command. A dedicated stable code so the refusal is machine-identifiable.
     #[error("تغيير كلمة المرور مطلوب قبل المتابعة. يجب تغيير كلمة المرور المؤقتة أولاً.")]
     PasswordChangeRequired,
+    /// ADR-0063 Erratum E-4 — the UNIT initialization sequence is incomplete
+    /// (no local administrator established yet). A dedicated stable code so the
+    /// refusal is distinguishable from the mandatory password-rotation state.
+    #[error("لم تكتمل تهيئة الوحدة بعد. يجب استيراد حزمة وصول المسؤول (admin_access) أولاً.")]
+    InitializationIncomplete,
 }
 
 impl AuthorizationError {
@@ -102,6 +107,7 @@ impl AuthorizationError {
             AuthorizationError::UnitScopeMismatch => "AUTH_UNIT_SCOPE_MISMATCH",
             AuthorizationError::InsufficientPermissions => "AUTH_INSUFFICIENT_PERMISSIONS",
             AuthorizationError::PasswordChangeRequired => "AUTH_PASSWORD_CHANGE_REQUIRED",
+            AuthorizationError::InitializationIncomplete => "AUTH_INITIALIZATION_INCOMPLETE",
         }
     }
 }

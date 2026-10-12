@@ -1,5 +1,7 @@
 use crate::commands;
-use crate::commands::guards::enforce_forced_credential_state;
+use crate::commands::guards::{
+    enforce_forced_credential_state, enforce_unit_initialization_order,
+};
 use crate::commands::types::AppState;
 use crate::errors::{into_command_error, AppError};
 use tauri::ipc::Invoke;
@@ -263,6 +265,15 @@ pub fn get_invoke_handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync
                 )));
             return true;
         };
+
+        if let Err(e) = enforce_unit_initialization_order(state.inner(), invoke.message.command()) {
+            // ADR-0063 Erratum E-4: the UNIT initialization-order gate runs
+            // first, so incomplete initialization takes precedence over the
+            // forced-password-change refusal. Rejected as a real command error,
+            // same wire shape as a command returning `Err(String)`.
+            invoke.resolver.reject(into_command_error(e));
+            return true;
+        }
 
         if let Err(e) = enforce_forced_credential_state(state.inner(), invoke.message.command()) {
             // ADR-0063 §5: a real command rejection carrying the same wire
