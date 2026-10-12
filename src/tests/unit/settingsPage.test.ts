@@ -431,7 +431,7 @@ describe('SettingsPage — ADR-0063 §5/§6 forced credential state (D32)', () =
     });
   }
 
-  it('renders ONLY the forced self-change surface while the backend flag is active', async () => {
+  it('renders the forced self-change surface and keeps the admin_access import reachable', async () => {
     render(SettingsPage);
 
     await waitFor(() => {
@@ -443,16 +443,77 @@ describe('SettingsPage — ADR-0063 §5/§6 forced credential state (D32)', () =
     expect(screen.getByLabelText(/^كلمة المرور الحالية/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^كلمة المرور الجديدة/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^تأكيد كلمة المرور الجديدة/)).toBeInTheDocument();
-    // Every other UNIT section stays hidden — the backend rejects those
-    // commands anyway, so the renderer must not offer them.
-    expect(screen.queryByText('مزامنة حساب المدير العام (admin)')).toBeNull();
+    // ADR-0063 §10/E-4: `import_admin_access_package` is the only exit from
+    // incomplete initialization, so the SAME import surface must stay
+    // reachable while the forced state is active. The backend allowlists it in
+    // both the forced-state and initialization-order gates.
+    expect(screen.getByText('مزامنة حساب المدير العام (admin)')).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /استيراد حزمة حساب المدير العام/ })
-    ).toBeNull();
+      screen.getByRole('button', { name: /استيراد حزمة حساب المدير العام/ })
+    ).toBeInTheDocument();
+    // WILAYA-only export never renders on a UNIT node.
     expect(
       screen.queryByRole('button', { name: /تصدير حزمة حساب المدير العام/ })
     ).toBeNull();
     // The forced card never re-opens the normal surface on its own.
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('lets a forced operator complete the admin_access import via the existing path', async () => {
+    mockOpenFile.mockResolvedValue('/tmp/grpc-admin-access.sync');
+    mockImportAdminAccessPackage.mockResolvedValue({
+      admin_updated: true,
+      package_id: 'aa-pkg-1',
+      imported_by: 'user',
+      timestamp: '2026-08-22T00:00:00Z',
+    });
+    render(SettingsPage);
+
+    const importButton = await screen.findByRole('button', {
+      name: /استيراد حزمة حساب المدير العام/,
+    });
+    await fireEvent.click(importButton);
+
+    await waitFor(() => {
+      expect(mockOpenFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: [{ name: 'حزمة حساب المدير العام', extensions: ['sync'] }],
+        })
+      );
+      expect(mockImportAdminAccessPackage).toHaveBeenCalledWith('/tmp/grpc-admin-access.sync');
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/تمت مزامنة حساب المدير العام بنجاح/)).toBeInTheDocument();
+    });
+    // The import never changes the operator credential, creates a session, or
+    // navigates; the forced form stays until the backend projection clears it.
+    expect(mockChangeOwnPassword).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByText('تغيير كلمة المرور الإلزامي')).toBeInTheDocument();
+  });
+
+  it('presents the import failure state while forced and keeps the import surface', async () => {
+    mockOpenFile.mockResolvedValue('/tmp/grpc-admin-access.sync');
+    mockImportAdminAccessPackage.mockRejectedValue(
+      new Error('حزمة الحسابات غير صالحة (التوقيع غير متطابق)')
+    );
+    render(SettingsPage);
+
+    const importButton = await screen.findByRole('button', {
+      name: /استيراد حزمة حساب المدير العام/,
+    });
+    await fireEvent.click(importButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/خطأ في استيراد حزمة حساب المدير العام: حزمة الحسابات غير صالحة/)
+      ).toBeInTheDocument();
+    });
+    // The failure never hides the import surface, and the forced form persists.
+    expect(
+      screen.getByRole('button', { name: /استيراد حزمة حساب المدير العام/ })
+    ).toBeInTheDocument();
+    expect(screen.getByText('تغيير كلمة المرور الإلزامي')).toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
   });
 

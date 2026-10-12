@@ -429,10 +429,11 @@
           <AppAlert intent="success" dismissible on:dismiss={() => selfChangeSuccess = ''}>{selfChangeSuccess}</AppAlert>
         {/if}
         {#if mustChangePassword}
-          <!-- ADR-0063 §5/§6 — forced credential state: the ONLY actionable
-               surface while `must_change_password` is active. Every other
-               section stays hidden because the backend rejects all
-               non-allowlisted commands until the change succeeds. -->
+          <!-- ADR-0063 §5/§6 — forced credential state: the mandatory password
+               change. Every other section stays hidden because the backend
+               rejects all non-allowlisted commands until the change succeeds —
+               except the `admin_access` import (the only exit from incomplete
+               initialization), which stays reachable below. -->
           <div class="mt-8">
             <AppCard>
               <div class="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
@@ -566,6 +567,14 @@
             </AppCard>
           </div>
         {/if}
+        {/if}
+
+        <!-- SEC-014 / ADR-0063 §10/E-4: `import_admin_access_package` is the
+             only exit from incomplete initialization, so this SAME import
+             surface must stay reachable while the forced credential state is
+             active (the backend allowlists it in both the forced and
+             initialization gates). It remains confined to the UNIT branch and
+             is identical in the forced and non-forced states. -->
         <!-- مزامنة حساب المدير العام (admin_access): استيراد أسطولي -->
         <div class="mt-8">
           <AppCard>
@@ -618,7 +627,6 @@
             </AppButton>
           </AppCard>
         </div>
-        {/if}
       {/if}
     {/if}
   </div>
