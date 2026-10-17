@@ -124,6 +124,22 @@ The following contracts, boundaries, and guarantees are **frozen** and may not b
 - **🔒 Atomic year closure** — `FiscalClosingService` closes year atomically: status update + snapshot + FIFO reclassification + audit. All-or-nothing.
 - **🔒 FIFO reclassification, not deletion** — year close reclassifies `source_type` from `ORDER` to `OPENING`. No data moved, copied, or deleted.
 - **🔒 Immutable closed years** — closed fiscal years receive no new mutations. Cache entries for closed years are never invalidated.
+  **Sanctioned exception (ADR-0064 — Accepted 2026-10-05) — limited to the first sentence of this
+  bullet ("closed fiscal years receive no new mutations"):** that sentence does not bar the
+  UNIT-owned destructive purge defined by `docs/architecture/0064-unit-export-state-and-owned-data-deletion.md`
+  §6.1 and executed by the ADR-0064 deletion transaction; the §6.1 Class-A UNIT-owned rows MAY be
+  purged even when their `fiscal_year` / `origin_fiscal_year` / `report_year` is archived. This is a
+  **permanent business-policy** carve-out, not a temporary `[arch:allow-*]` code suppression, and it
+  is not subject to the 90-day expiry rule for temporary architecture suppressions
+  (`docs/architecture/ARCHITECTURAL_INVARIANTS.md` §3). The exception is scoped to the UNIT-owned
+  destructive purge and nothing else: it does not authorize any other mutation of a closed year and
+  does not change what "closed" means for any other write path. This exception does **not** modify,
+  address, or authorize the second sentence of this bullet — "Cache entries for closed years are
+  never invalidated" — and it does **not** authorize the invalidation of cache entries for closed
+  fiscal years. §2.4's other bullets, §2.3 in its entirety, and §2.5 determinism remain in force.
+  The §6.2 protected set remains fully protected and is never re-derived or re-scoped. The deletion
+  transaction's fail-closed preflight and ownership-integrity rules are governed by ADR-0064
+  §4.6–§4.7 and §9.3.3, not restated here.
 - **🔒 Single open year** — exactly one fiscal year may be open at any time. `SingleOpenFiscalYear` invariant.
 - **🔒 Origin immutability** — `fifo_stock_layers.origin_fiscal_year` is immutable after creation. `OriginImmutable` invariant.
 - **🔒 All-or-nothing transitions** — fiscal transition IDs are recorded in `AppliedTransitions`. Replayed transitions are rejected.

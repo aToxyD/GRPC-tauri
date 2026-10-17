@@ -8,29 +8,71 @@ Accepted (2026-10-05)
 > **All owner decisions U-1 through U-4 are closed; no decision is pending.** It is the
 > **authoritative amendment record** for the frozen documents listed in §1 — those files are NOT
 > edited by this ADR (per `AGENTS.md` §8 C1 and `docs/architecture/ARCHITECTURE_FREEZE.md` §4).
-> **Implementation is authorized but NOT yet performed**: governance/design only. No Rust,
-> Svelte, TypeScript, schema, or test change accompanies it.
+> **Implementation performed**: WILAYA UNIT owned-data deletion flow, fail-closed preflight guards,
+> frontend confirmation/safeguard wiring, and integration tests implemented per this ADR.
 >
 > Companion to `docs/architecture/0063-unit-operator-credential-lifecycle.md`, which owns the
 > credential and initialization lifecycle. This ADR owns the UNIT **lifecycle projection** and
 > the **destructive purge**. The two are coupled at exactly one point, recorded in §5.3: the
 > local operator row is UNIT-owned, and `audit_log` is not.
 
+> **Revision 2 — forensic amendment (documentation only, 2026-10-15).** This revision corrects
+> the repository evidence cited by Revision 1, resolves the canonical-operator ambiguity
+> (D1/§5.5), moves the D14 audit-reference gate into the **initial preflight inside the
+> deletion transaction** (D2/§4.6), adds an explicit ownership-source **and** deletion-predicate
+> matrix for every Class-A entity (D6/§4.1), defines NULL-ownership and cascade-safety policy
+> (D3/§4.8), adds aggregate-integrity fail-closed rules for supplier orders, contract
+> allocations, and order-item allocations (D4/D5/§4.7), adds a fail-closed policy for
+> `daily_report_meal_items.fifo_layer_id` (D8/§4.9), corrects the inaccurate NULL-unit
+> `OUT`-movement claim (D9/§4.1 A11), and documents the real migration mechanism and its
+> compatibility consequences (D11/§8). It introduces **no** new schema, migration, trigger,
+> code, or test change, and **no** new owner-level business decision: the D13/D15/D16
+> destructive-purge policy is preserved unchanged (D10), and any question that repository
+> evidence cannot settle is recorded in §9.3 rather than invented. Source references were
+> re-derived from working-tree HEAD `0513ae5885f644b91a2e941de3f61394893fd1db`; Revision 1's
+> cited commit `3e98299` is superseded for **all** line references. Decisions not restated here
+> are unchanged.
+>
+> **Owner ratification — Q6 (2026-10-15).** The supplier-order ownership anomaly that Revision 2
+> recorded as the open question **Q6** in §9.3.3 is hereby **resolved**: **Option A — fail-closed
+> rejection** is the binding decision, and **Option B (delete the target-owned item) is rejected**.
+> The normative rule lives in §4.7 D4 and is restated in the resolved-decision block of §9.3.3.
+> This ratification adds exactly one owner-level decision and changes no other owner-ratified
+> decision (D11–D22 unchanged); it authorizes no implementation beyond the Phase-0 preflight
+> rejection already specified.
+>
+> **Owner decisions — Q1–Q5 (recorded in this governance phase).** The remaining
+> governance/owner questions that Revision 2 recorded in §9.3.3 are **owner-resolved**:
+> **Q1** — Option A, amend `ARCHITECTURE_FREEZE.md` §2.4 (performed through the separate
+> RFC-to-ADR process); **Q2** (`fifo_layer_id` FK) and **Q3** (`NOT NULL` hardening) — Option B,
+> deferred to a separate schema review; **Q4** (WILAYA import enforcement) and **Q5** (cross-UNIT
+> repair path) — Option A, approved policy that is **not yet implemented**. With the previously
+> ratified **Q6** (Option A) this closes the §9.3.3 register; none reopens an owner-ratified
+> decision (D11–D22). See §9.3.3.
+>
+> **Label disambiguation.** The `(Dn/§x.y)` markers introduced by this revision — e.g. "D1/§5.5",
+> "D2/§4.6", "D11/§8" — are **Revision-2 forensic-review item numbers** identifying this
+> revision's mechanical corrections. They are **distinct from** the owner-ratified decision set
+> `D11–D22` in the *Owner-ratified decision set* section below. Where the two could be confused
+> (only the number `D11` appears in both), the Revision-2 item is always cited together with its
+> section and never denotes an owner decision. §9.3.2 restates the same mechanical choices under
+> the collision-free label `R1–R10`.
+
 # Date
-2026-10-05
+2026-10-05 (Revision 2: 2026-10-15)
 
 # Owner
 Architecture / Security / Data Governance
 
 # Reference
 
-## 1. Documents amended or qualified by this ADR (frozen files are NOT edited)
+## 1. Documents amended or qualified by this ADR (frozen files are not edited by this ADR)
 
 | Document | Exact locus | Relationship |
 |----------|-------------|--------------|
 | `docs/architecture/0055-contract-centric-procurement.md` | line 83 — *"`CANCELLED` excludes the allocation from normal obligation selection; historical fulfillment is never erased"* | **Qualified, not edited.** This sentence is sound for every non-destructive context and remains authoritative there. It is qualified for exactly one situation: explicit UNIT destruction, where `contract_allocations` rows owned by the destroyed UNIT are removed. §7 defines the boundary. No other allocation-retention reading changes. |
 | `docs/architecture/0061-unit-wilaya-allocation-fulfillment-state-sync.md` | §7 "Released / inactive allocations" (line 225) | **Qualified, not edited.** §7's permanence argument rests on three verified repository facts — no `DELETE FROM contract_allocations` exists today, `deleted` is never set to `1` on an allocation, and the allocation FKs are `ON DELETE RESTRICT`. This ADR is the decision that first introduces a bounded `DELETE FROM contract_allocations`. §7 defines the boundary and restates the parts of §7 that survive unchanged (no re-keying, no re-parenting, no archival table). |
-| `docs/architecture/ARCHITECTURE_FREEZE.md` | §2.4 Fiscal Semantics (line 122), §2.5 Reproducibility & Determinism (line 131), §2.3 Audit Trail (line 113) | **Re-scoped, not edited.** §6 of this ADR re-scopes §2.4's "Immutable closed years" and "Origin immutability" bullets for UNIT-owned destructive purge only, and §7 names the one §2.5 consequence. §2.3 (dual-write, hash chain, transactional audit, additive-only schema, single repository, deterministic ordering, chain invariant) is inherited **unchanged** and is a constraint on this ADR's own audit obligation. |
+| `docs/architecture/ARCHITECTURE_FREEZE.md` | §2.4 Fiscal Semantics (line 122), §2.5 Reproducibility & Determinism (line 131), §2.3 Audit Trail (line 113) | **Re-scoped, not edited by this ADR.** §6 of this ADR re-scopes §2.4's "Immutable closed years" and "Origin immutability" bullets for UNIT-owned destructive purge only, and §7 names the one §2.5 consequence. Per the owner's Q1 decision (Option A, §9.3.3), the §2.4 "Immutable closed years" bullet was subsequently amended — **through the separate RFC-to-ADR process** (`docs/architecture/rfcs/2026-10-16-freeze-2-4-unit-owned-destructive-purge-exception.md`), **not by this ADR** — to record a narrow, permanent sanctioned exception limited to that bullet's first sentence; §2.4's second sentence and other bullets are untouched. §2.3 (dual-write, hash chain, transactional audit, additive-only schema, single repository, deterministic ordering, chain invariant) is inherited **unchanged** and is a constraint on this ADR's own audit obligation. |
 | `docs/architecture/0044-unit-trust-first-v2-bootstrap.md` | §8.3 Packaged-Identity Contract (line 285) | **Referenced, unchanged.** Its verification rule (3) — *"`subject_id` == unit package's unit"* — is the load-bearing fact that makes §2's ownership join key exact. |
 | `docs/architecture/0051-admin-access-package.md` | §5 Account Ownership Invariant (line 77) | **Referenced, unchanged.** §5's operator-preservation invariant holds for `admin_access`; this ADR governs the separate, owner-approved explicit deletion event. |
 | `docs/architecture/0052-canonical-unit-operator.md` | §D1 (line 46), §D2 (line 48) | **Referenced, unchanged.** §D2's `UNIQUE(username, node_id)` is what makes node-scoped ownership of operator rows exact. §D1's `CreateUnitRequest` clause is superseded by `0063` §3, not by this ADR. |
@@ -51,14 +93,26 @@ Architecture / Security / Data Governance
 | D21 | **Node-global and shared fiscal data preserved (closes U-3 / A2, A3).** `opening_balance_snapshots` is node-global and MUST be preserved. `inventory_stocks` is shared/node-global because it has no unit dimension and MUST be preserved. No adjustment, recomputation, decrement, or other mutation of `inventory_stocks` is performed during UNIT deletion. No new business calculation is introduced to compensate for preserved node-global or shared tables. | §4.2 B4/B6, §6.2 |
 | D22 | **Audit gate scope (closes U-3 / A4).** `audit_log` remains globally preserved and additive. The canonical-user deletion gate applies to the foreign key `audit_log.user_id` reference only. The gate is **not** extended to the free-text audit references in `entity_id`, `target_id`, or `entity_name`. | §5.1, §5.4 |
 
+> **Revision 2 does not add or reopen an owner-ratified decision.** The D11–D22 set above is
+> unchanged. Revision 2 refines the *design mechanics* required to implement D13 (ownership
+> matrix, preflight, deletion order, NULL/cascade safety, aggregate integrity, FIFO
+> references) and D14 (gate placement) so that the already-ratified policy is correct and
+> fail-closed. Where a mechanical choice could not be derived from repository evidence, it was
+> listed in §9.3 as an unresolved question with its consequence, **not** silently decided. (The
+> Q1–Q6 items have since been owner-resolved; see §9.3.3.)
+
 # Context
 
 ## 3. Inspected repository facts
 
 Every fact was read from the working tree at commit
-`3e982990949cc666ccbdc697ee20b8111be6c16c`. Line references are exact. The authoritative
-schema is the repository's single migration file
-`src-tauri/src/db/migrations/001_initial.sql`, which defines **44 tables**.
+`0513ae5885f644b91a2e941de3f61394893fd1db` (Revision 2). Revision 1 cited commit
+`3e982990949cc666ccbdc697ee20b8111be6c16c`; the schema file and several code files changed
+after that commit (see §3.5), so **every line reference below is a current-HEAD reference**
+and Revision 1's line numbers are superseded. The authoritative schema is the repository's
+single migration file `src-tauri/src/db/migrations/001_initial.sql`, which defines **44
+tables** (45 textual `CREATE TABLE` matches; the 45th is the phrase inside a comment at line
+644).
 
 ### 3.1 The `identity_store` shape and the exact UNIT join key
 
@@ -70,7 +124,7 @@ schema is the repository's single migration file
   **There is no `unit_uuid` column and no `unit_code` column.**
 * **G2** — For a UNIT subject, `subject_id` holds the **UUID string of the `units` row id**.
   Verified twice, independently:
-  * `application/services/identity_provisioning_service.rs:405-419` —
+  * `application/services/identity_provisioning_service.rs:405-418` —
     `let unit_id = request.subject_id.to_string();` then
     `self.db.executor().units().get_unit(&unit_id)?` and, on miss, the error
     *"CSR subject_id {unit_id} does not correspond to a known local unit"*. The code
@@ -83,31 +137,55 @@ schema is the repository's single migration file
   `SET not_after`. Consequently a `deleted = 0` filter on `identity_store` is a no-op in
   production, and "any historical row" is exactly "any row".
 * **G4** — A UNIT identity row is written to the WILAYA store by
-  `identity_provisioning_service.rs:472-500` (`sign_unit_bootstrap_request`), which calls
-  `store.upsert(&signed, now)` after a `CredentialGuard::check` Accept verdict and treats
-  Replay as an idempotent no-op.
+  `identity_provisioning_service.rs::sign_unit_bootstrap_request` (declared at line 452;
+  `store.upsert(&signed, now)` at line 481), which runs after a `CredentialGuard::check`
+  Accept verdict and treats Replay as an idempotent no-op.
 * **G5** — `identity_store.issuer_identity_id` on a UNIT subject row always holds the
   **WILAYA** identity id in production: `identity_provisioning_service.rs:256` sets
   `signed.issuer_identity_id = Some(issuer_identity.identity_id)` where `issuer_identity` is
   resolved by `NodeIdentityResolver::resolve_local_signer(self.db, node_key_store,
-  SubjectType::Wilaya)` (line 424). It never holds the UNIT's own `identity_id`. (The
+  SubjectType::Wilaya)` (line 420). It never holds the UNIT's own `identity_id`. (The
   `SubjectType::Unit => Some(Uuid::new_v4())` mapping at
   `identity_rotation_service.rs:288` is inside a `#[cfg(test)]` helper.)
 * **G6** — No table in the schema has a foreign key to `identity_store`. The only text columns
   that hold identity identifiers are `identity_store.issuer_identity_id`,
-  `applied_sync_packages.issuer_identity_id` (line 598, the **issuing** identity of an
-  imported package), `registry_snapshots.wilaya_identity_id` (line 678), and
-  `audit_log.actor_id` (line 564, a free-text actor attribution, indexed but not a foreign
-  key). By G5, none of these can hold a UNIT subject's own `identity_id` on a WILAYA node.
-* **G7** — A partial index exists: `CREATE INDEX … ON identity_store(subject_type, subject_id)
-  WHERE status = 'ACTIVE' AND deleted = 0;` (line 905). It is **partial on ACTIVE**, so it
-  cannot serve D11's status-agnostic query. A separate status-agnostic lookup is required.
+  `applied_sync_packages.issuer_identity_id` (line 605, the **issuing** identity of an
+  imported package), `registry_snapshots.wilaya_identity_id` (line 685), and
+  `audit_log.actor_id` (line 571, a free-text actor attribution, indexed by
+  `idx_audit_actor_timestamp`, line 842, but not a foreign key). By G5,
+  `identity_store.issuer_identity_id` on a UNIT subject row can only hold the **WILAYA**
+  identity, and `registry_snapshots.wilaya_identity_id` likewise names a WILAYA identity, so
+  neither can hold the deleted row's own `identity_id`. The `applied_sync_packages` column is
+  the exception, handled by **G6b**.
+* **G6b (Revision 2)** — `applied_sync_packages.issuer_identity_id` is **not** constrained to
+  WILAYA issuers. The V2 issuer gate accepts a UNIT issuer for four package kinds —
+  `STOCK_MOVEMENTS`, `DAILY_REPORT`, `MONTHLY_SUMMARY`, `CONTRACT_FULFILLMENT`
+  (`sync_package_identity_verification_service.rs:60-65`) — and the importer records the
+  package's `issuer_identity_id` verbatim (`commands/import_export.rs:2034`). A WILAYA node can
+  therefore retain an `applied_sync_packages` row that names a UNIT identity whose local
+  `identity_store` row a later purge removes. Because no foreign key targets `identity_store`
+  (G6), this retained value is a **non-resolving historical provenance identifier**, not a
+  referential error, and it is intentionally retained under D22.
+* **G7** — A partial index exists: `CREATE UNIQUE INDEX … ON identity_store(subject_type,
+  subject_id) WHERE status = 'ACTIVE' AND deleted = 0;` (schema lines 911–912,
+  `idx_identity_active_subject`). It is **partial on ACTIVE**, so it cannot serve D11's
+  status-agnostic query. A separate status-agnostic lookup is required.
 
 ### 3.2 The current deletion path
 
-* **G8** — `application/services/unit_service.rs:120-129` (`delete_unit`) reads the unit's
-  `user_id` via `unit_repo.delete_unit(unit_id)?` and then calls
-  `user_repo.delete_user(&user_id)?`.
+* **G8** — `application/services/unit_service.rs:148-156` (`delete_unit`) reads the unit's
+  associated `user_id` via `unit_repo.delete_unit(unit_id)?` and then calls
+  `user_repo.delete_user(&user_id)?`. The `user_id` is taken from the `units` row as read at
+  delete time — it is **not** re-derived from the canonical `(username, node_id)` key.
+* **G8b (Revision 2)** — The current IPC command `commands/units.rs:77-94` (`delete_unit`)
+  **already** executes that service body inside
+  `AuditTxService::execute_with_audit(db, AuditAction::DeleteUnit, &user_ctx, |tx| …)` (line
+  88). Revision 1's framing of the current path as non-transactional is therefore
+  inaccurate: the transaction and the `AuditAction::DeleteUnit` audit write already exist at
+  the command. What is missing is the ownership matrix, the canonical-operator resolution,
+  the in-transaction preflight, and the D14 gate — all of which the service body must
+  perform **inside** the closure the command already supplies. No new transaction facility
+  is introduced (§4.6).
 * **G9** — `src-tauri/src/repositories/units.rs:212-225` (`delete_unit`) does exactly two
   statements: `SELECT user_id FROM units WHERE id = ?1` and
   `DELETE FROM units WHERE id = ?1`. It returns `Option<String>`.
@@ -117,15 +195,26 @@ schema is the repository's single migration file
   consumption rows. It performs **no** child cleanup, **no** `identity_store` cleanup, and
   **no** `monthly_reports` / `stock_movements` / `daily_reports` cleanup (those three carry no
   foreign key to `units` at all, so nothing cascades and nothing blocks).
-* **G11** — `src-tauri/src/repositories/users.rs:345-350` (`delete_user`) is
-  `DELETE FROM users WHERE id = ?1`.
-* **G12** — `audit_log.user_id TEXT REFERENCES users(id) ON DELETE SET NULL` (schema line 549).
-  Therefore G11 silently nullifies attribution for every audit row that referenced the
+* **G11** — `src-tauri/src/repositories/users.rs:493-495` (`delete_user`) is
+  `DELETE FROM users WHERE id = ?1`. Two resolution helpers exist:
+  `get_user_by_username(username, node_scope)` (lines 37-65) filters `deleted = 0` and
+  matches on `username = ?1 AND COALESCE(node_id, 'WILAYA') = ?2`; and
+  `get_user_by_username_raw(username, node_scope)` (lines 72-99) is the same query **without**
+  the `deleted = 0` filter. `users` is `UNIQUE(username, node_id)` (`001_initial.sql:49`), so
+  at most one row exists per canonical key.
+* **G12** — `audit_log.user_id TEXT REFERENCES users(id) ON DELETE SET NULL` (schema line
+  555). Therefore G11 silently nullifies attribution for every audit row that referenced the
   operator. This is the silent FK-nullification reliance D14 forbids.
-* **G13** — `application/services/audit_tx_service.rs:25-66`
-  (`execute_with_audit`) opens a real transaction (`conn.transaction()?`), runs the closure,
-  and **rolls back on any error**. It is the correct atomicity boundary for a destructive
-  operation and already carries the `AuditAction` needed.
+* **G13** — `application/services/audit_tx_service.rs:25-94` (`execute_with_audit` at lines
+  25-35 delegates to `execute_with_audit_metadata` at lines 39-94) opens a real transaction
+  (`conn.transaction()?`, line 50), runs the closure, and **on closure error returns `Err`
+  with the transaction dropped — i.e. an automatic rollback — and writes no audit row**
+  (lines 57-68). The success audit entry (`log_success`) is written only **after** the
+  closure returns `Ok` (lines 70-83), inside the same transaction, immediately before
+  `tx.commit()` (line 86). **Accurate failure semantics (D2): a failed deletion persists no
+  `audit_log` row at all — not even a `status = 'Failed'` row.** Any documentation or test
+  that claims otherwise is wrong. It is nevertheless the correct atomicity boundary for a
+  destructive operation and already carries the `AuditAction` needed.
 
 ### 3.3 Fiscal immutability enforcement, and which tables it actually covers
 
@@ -154,17 +243,19 @@ schema is the repository's single migration file
   data that includes UNIT-owned rows.** See §9 for the consequence this creates.
 * **G18** — `opening_balance_snapshots` has **no** `unit_id`; it is keyed by product and fiscal
   year. It is therefore a global-preserve table and is untouched by any UNIT purge.
-* **G19** — `fifo_stock_layers.origin_fiscal_year INTEGER NOT NULL DEFAULT 0` is the field
-  named by `ARCHITECTURE_FREEZE.md` §2.4's "Origin immutability" bullet. It is a property of
-  a *row's* value over time; the row itself is UNIT-owned via
-  `fifo_stock_layers.unit_id NOT NULL REFERENCES units(id) ON DELETE RESTRICT`.
+* **G19** — `fifo_stock_layers.origin_fiscal_year INTEGER NOT NULL DEFAULT 0` (schema line
+  240) is the field named by `ARCHITECTURE_FREEZE.md` §2.4's "Origin immutability" bullet. It
+  is a property of a *row's* value over time; the row itself is UNIT-owned via
+  `fifo_stock_layers.unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (schema
+  lines 229–230).
 
 ### 3.4 The `units` ↔ `users` relationship
 
 * **G20** — `units.user_id TEXT` with `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE
-  SET NULL` (schema lines 45–60). On a WILAYA node, `units.user_id` points at the
-  WILAYA-side operator mirror row, which `unit_service.rs:41-79` creates with
-  `username = "user"`, `role = User`, `node_id = <unit code>`.
+  SET NULL` (schema lines 52–63). On a WILAYA node, `units.user_id` points at the
+  WILAYA-side operator mirror row, which `unit_service.rs::create_unit` (lines 69-116, the
+  operator upsert at lines 88-98) creates with `username = OPERATOR_USERNAME` (`"user"`,
+  constant at line 18), `role = User`, `node_id = <unit code>`.
 * **G21** — Ownership of that row is **node-scoped by `node_id`, not by foreign key**. G12's
   `ON DELETE SET NULL` means deleting it would also blank `units.user_id`; the unit row is
   being deleted anyway, so this is not a blocker, but it is the reason the purge MUST delete
@@ -172,6 +263,133 @@ schema is the repository's single migration file
 * **G22** — `users` is shared: the same table also holds the WILAYA fleet `admin`, the local
   UNIT `admin`, and any other account. Only rows whose `node_id` equals the destroyed UNIT's
   code (and the canonical username `user`) are UNIT-owned. The rest are global-preserve.
+
+### 3.5 Revision 2 — corrected schema, write-path, and runtime facts
+
+These facts were re-derived from current HEAD (`0513ae5`). They correct or extend Revision 1
+and are the evidentiary basis for the §4 predicates and the §4.6 preflight. All schema line
+references are to `src-tauri/src/db/migrations/001_initial.sql`.
+
+**G23 — Reported-absent tables.** The tables `supplier_order_receipts` and `inventory_layers`
+**do not exist** anywhere in `src-tauri/src` or `src-tauri/tests` (zero matches). The actual
+FIFO table is `fifo_stock_layers` (schema lines 227-252). `inventory_layer_consumptions`
+**exists** (schema lines 254-266): columns `id`, `unit_id TEXT NOT NULL → units(id) ON DELETE
+RESTRICT`, `movement_id TEXT NOT NULL → stock_movements(id)` (no explicit action → `NO
+ACTION`), `layer_id TEXT NOT NULL → fifo_stock_layers(id)` (no explicit action → `NO ACTION`),
+`quantity`, `unit_cost`, `total_cost`, `consumed_at`.
+
+**G24 — Direct, NOT NULL `unit_id` foreign keys.** Each of the following carries a **direct,
+`NOT NULL`** `unit_id` with `REFERENCES units(id) ON DELETE RESTRICT`, and is therefore a
+**direct Class-A entity** (not merely indirect):
+`fifo_stock_layers` (lines 229-230), `inventory_layer_consumptions` (lines 256-257),
+`contracts` (lines 403, 418), `contract_allocations` (lines 456, 472). `unit_suppliers` is
+direct too, via a composite primary key with `unit_id → units(id) ON DELETE RESTRICT` (lines
+392, 396).
+
+**G25 — Independently nullable supplier-order ownership.** `supplier_orders.unit_id TEXT`
+(schema line 332) and `supplier_order_items.unit_id TEXT` (line 345) are **each nullable**
+and **each independently foreign-keyed** to `units(id) ON DELETE RESTRICT` (lines 335, 360).
+`supplier_order_items.order_id → supplier_orders(id) ON DELETE CASCADE` (line 358). At the
+**schema level** a header can be target-owned while an item is `NULL`- or other-owned, and
+vice versa. The ordinary production create path threads **one** settings-derived `unit_id`
+through both the header and every item
+(`commands/orders.rs:39,201-221` → `order_service.rs:391,434` → `repositories/orders.rs:64,93`),
+so a fresh order cannot diverge. The **only** divergence path is
+`OrderService::update_supplier_order` (`order_service.rs:458`), which writes items with
+`order.unit_id.clone().unwrap_or_else(|| unit_id.to_string())` while the header
+`UPDATE` (`repositories/orders.rs:150`) **never touches `unit_id`** — so a pre-existing
+`NULL`-unit order can end up with target-unit items under a `NULL` header. No `UPDATE`
+anywhere writes `unit_id` on either table, and **no sync-import or row-level restore path
+exists** for either table (backup restore is a whole-file atomic swap,
+`infrastructure/backup/sqlite_backup_adapter.rs:647-689`).
+
+**G26 — Contract/allocation ownership divergence.** `contracts.unit_id` and
+`contract_allocations.unit_id` are both `NOT NULL` (G24). The ordinary authoring INSERT
+(`repositories/contracts.rs:472`, caller `application/services/contract_service.rs:151`) binds
+`unit_id = &contract.unit_id`, so equality holds **by construction**. The WILAYA-side catalog
+import INSERT (`repositories/contracts.rs:1106`, caller
+`application/services/sync_import_execution_service.rs:342,350`) binds the **payload**
+allocation's `unit_id` and applies only a per-row `in_scope` filter; it performs **no**
+`allocation.unit_id == contract.unit_id` check, and the import validator
+(`application/sync/import_validation.rs:197-249`) never inspects allocation unit
+consistency. For a UNIT importer the scope check makes equality hold transitively; the
+`WILAYA`/`None` branch is **unreachable through the wired command**
+(`application/usecases/sync/import_contract_catalog_package.rs:117-123` rejects a `None`
+importer) but is reachable by calling `import_contract_catalog_sync` directly (tests). This
+is the residual divergence risk D5 addresses.
+
+**G27 — `daily_report_meal_items.fifo_layer_id` has no foreign key.**
+`daily_report_meal_items.fifo_layer_id TEXT` (schema line 312) has **no** FK, **no** `CHECK`,
+and **no** unit column. The table's only FKs are `meal_id → daily_report_meals(id) ON DELETE
+CASCADE` (line 316) and `product_id → products(id)` (`NO ACTION`, line 317). The live writer
+(`repositories/reports.rs:265` via `daily_report_service.rs:248-256`) always writes a layer
+that was consumed through a **unit-scoped** FIFO query
+(`repositories/fifo_layers.rs:235` filters `unit_id = ?1`), and the sync daily-report import
+always writes `NULL` (`import_daily_report_package.rs:137`,
+`sync_import_execution_service.rs:116`). A dead method
+(`SyncImportExecutionService::import_monthly_report` → `insert_raw_meal_item`) could write a
+payload-supplied layer id with no validation, but it has **no caller**. The database
+therefore cannot itself prove that a surviving report row does not reference a deleted
+UNIT's layer; §4.9 makes this a fail-closed preflight check.
+
+**G28 — `inventory_layer_consumptions` writer coupling.** The sole production writer is
+`daily_report_service.rs:164` (`FifoRepository::create_consumption_record`, repository at
+`repositories/fifo_layers.rs:283-326`). It passes `unit_id_str`, the same
+`movement_id` just written with `unit_id = unit_id_str` (`daily_report_service.rs:153,156`),
+and layer ids produced by `consume_fifo_typed(unit_id_str, …)`
+(`daily_report_service.rs:101`, unit-filtered at `fifo_layers.rs:235`). Production therefore
+keeps the consumption's `unit_id`, the movement's `unit_id`, and the layer's `unit_id`
+aligned **by construction**, while the schema permits divergence and the FK actions are
+`NO ACTION` in both directions. §4.10 makes a cross-UNIT reference a fail-closed preflight
+error rather than a late FK failure.
+
+**G29 — `daily_reports.unit_id` can legitimately be `NULL` in production.**
+`daily_reports.unit_id TEXT` (schema line 275) has no FK. The local path
+(`daily_report_service.rs:224`, `insert_daily_report_header` taking `Option<&str>`,
+`reports.rs:202-219`) errors on a missing unit, but the **sync import** path
+(`reports.rs:495-511 insert_raw_daily_report`) writes `report.unit_id.as_deref()` verbatim,
+so a sync-delivered report may carry `NULL`. `monthly_reports.unit_id` is `NOT NULL` with no
+FK (schema line 533). §4.8 states the preservation policy for the `NULL` case.
+
+**G30 — `stock_movements.unit_id` NULL provenance (corrects Revision 1).** The schema allows
+`NULL` for any movement type except `IN` (`CHECK (movement_type != 'IN' OR unit_id IS NOT
+NULL)`, line 224). In **current production**, however:
+* the only `OUT` producer (`daily_report_service.rs:141-156`) always sets
+  `unit_id = Some(unit_id_str)` and fails closed when the unit is missing
+  (`daily_report_service.rs:76-80`);
+* no production code constructs an `OPENING` movement directly (no constructor call site); the
+  generic sync import persists a payload-supplied `movement_type`, so it **can** write an
+  `OPENING` row, but it forces a concrete `unit_id` (next bullet); and
+* the stock-movement import (`sync_import_execution_service.rs:411-413`, sole production
+  caller `import_stock_movements_package.rs:91`) forces `Some(unit)`.
+Revision 1's statement that "in current production, `unit_id IS NULL` rows are `OUT`
+movements" is therefore **inaccurate**. `NULL`-unit rows are reachable only from legacy data
+or from test-only `import_stock_movements(…, None)` invocations (e.g.
+`tests/import_stock_movements_integrity_tests.rs:108,181`). The conservative preservation
+rule is retained for a **different, verified** reason: the repository cannot prove what such
+a row represents, so the purge refuses to guess (§4.1 A11, §4.8).
+
+**G31 — Migration runner mechanism.** `src-tauri/src/db/migrations.rs` defines exactly one
+migration (`migrations_vec()`, lines 10-18: version `1`, the consolidated
+`include_str!("migrations/001_initial.sql")`). `run_migrations` (lines 88-169) creates
+`schema_version` if absent, reads `MAX(version)`, and applies a migration **only when
+`current_version < version`** (line 116), then records the version (lines 138-145) and
+commits. The initial schema uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT
+EXISTS`. Consequences: (i) editing `001_initial.sql` has **no effect on any database already
+recorded at version 1**; (ii) the initial schema is applied exactly once per database; (iii)
+D18's "modify the authoritative initial schema directly" instruction is valid only for a
+**fresh** or **recreated** database. This is documented as a compatibility consequence in
+§8 and §D11.
+
+**G32 — `audit_log` gate column.** `audit_log.user_id TEXT REFERENCES users(id) ON DELETE SET
+NULL` (schema line 555) is the only FK column by which a surviving `audit_log` row retains an
+attribution to the canonical operator. `username` is `NOT NULL` but is a text copy, not a
+constraint; `entity_id`, `entity_name`, `target_id`, and `actor_id` are plain text with **no**
+foreign key. The D14 gate reads `user_id` only (§5.1, D22).
+
+**G33 — No unit-deletion tests exist today.** `grep` for `delete_unit`, `DeleteUnit`, and
+`deleteUnit` across `src-tauri/tests` returns **zero** matches. The §Verification Expectations
+therefore describe new tests, all of which must be added during implementation.
 
 # Decision
 
@@ -198,11 +416,10 @@ Normative properties of this predicate:
   "historical".
 * It joins on `subject_id = units.id`, which G2 establishes twice over.
 * It is **monotone while the `units` row exists**: no operation removes or reassigns an
-  `identity_store` row, and `identity_store.upsert` is an upsert on
-  `(subject_type, subject_id, credential_id, generation)`
-  (`repositories/identity_store.rs:202-226`). EXPORTED therefore cannot revert to
-  non-EXPORTED while the unit lives — the same monotonicity property ADR-0063 §8 requires of
-  the initialization latch.
+  `identity_store` row, and `identity_store.upsert` conflicts on the primary key `identity_id`
+  (`ON CONFLICT(identity_id) DO UPDATE`, `repositories/identity_store.rs:202-226`). EXPORTED
+  therefore cannot revert to non-EXPORTED while the unit lives — the same monotonicity property
+  ADR-0063 §8 requires of the initialization latch.
 * G7 forbids relying on the existing ACTIVE-partial index; a status-agnostic query is
   required.
 * "EXPORTED" is a **derived backend projection**, never a stored flag. No column is added for
@@ -290,11 +507,16 @@ identity_store row with subject_type = 'ADMIN'  →  global-preserve
   through its predecessor's identity history. D12 explicitly rejects preserving the rows to
   block reuse.
 * **Exact dependency behaviour, stated rather than assumed** (D13 class C, §4.5): by G6 no
-  foreign key references `identity_store`; by G5 no `issuer_identity_id` value inside this
-  database can hold the deleted row's own `identity_id`; by G6 the `applied_sync_packages` and
-  `registry_snapshots` columns store the *issuer's* identity id, which for a UNIT subject is
-  the WILAYA identity and is therefore retained. Deletion therefore raises **no** referential
-  error and leaves **no** dangling identifier inside this database.
+  foreign key references `identity_store`, so deleting a UNIT identity row raises **no**
+  referential error. `identity_store.issuer_identity_id` on the deleted row disappears with the
+  row, and by G5 every other UNIT subject row's `issuer_identity_id` holds the WILAYA identity;
+  `registry_snapshots.wilaya_identity_id` likewise holds a WILAYA identity. The one retained
+  identifier that can **stop resolving** is `applied_sync_packages.issuer_identity_id` (G6b): an
+  accepted package kind may have been signed by the UNIT, so after the purge the retained
+  historical-provenance value names an `identity_store` row that no longer exists. This is a
+  **non-resolving identifier, not a foreign-key violation** (no FK targets `identity_store`), and
+  it is deliberately retained (D22). Deletion therefore raises no referential error and leaves no
+  *referential* dangling edge; the retained provenance value may be non-resolving **by design**.
 * Cross-node trust material that other nodes hold about the destroyed identity is outside this
   database and outside this ADR's scope. This ADR makes no claim about other nodes.
 
@@ -338,27 +560,39 @@ Classification rules used:
 
 Verified against `src-tauri/src/db/migrations/001_initial.sql`.
 
-| # | Table | Ownership evidence |
-|---|-------|--------------------|
-| A1 | `supplier_order_item_allocations` | **Indirect.** No `unit_id`. Reached via `item_id → supplier_order_items(id)` (line 482, CASCADE) and via `allocation_id → contract_allocations(id)` (line 483, RESTRICT). Both parents are A-row sets. |
-| A2 | `contract_allocation_exceptions` | **Indirect.** No `unit_id`. `allocation_id → contract_allocations(id)` RESTRICT (line 471). |
-| A3 | `inventory_layer_consumptions` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 249–250). Also `movement_id → stock_movements(id)` and `layer_id → fifo_stock_layers(id)` with no explicit `ON DELETE` (default `NO ACTION`). |
-| A4 | `contract_allocations` | **Direct.** `unit_id … REFERENCES units(id) ON DELETE RESTRICT` (line 465). Also `contract_id → contracts(id)` RESTRICT, `contract_product_id → contract_products(id)` RESTRICT, `product_id → products(id)` `NO ACTION`. |
-| A5 | `contract_products` | **Indirect.** No `unit_id`. `contract_id → contracts(id)` CASCADE (line 417). Retained as Class A because A4's `contract_product_id` RESTRICT requires it to be deleted *after* A4. |
-| A6 | `supplier_order_items` | **Direct.** `unit_id … REFERENCES units(id) ON DELETE RESTRICT` (line 353); `order_id → supplier_orders(id)` CASCADE (line 333); `product_id → products(id)` `NO ACTION`. |
-| A7 | `contracts` | **Direct.** `unit_id … REFERENCES units(id) ON DELETE RESTRICT` (line 411); `supplier_id → suppliers(id)` RESTRICT. |
-| A8 | `supplier_orders` | **Direct.** `unit_id … REFERENCES units(id) ON DELETE RESTRICT` (line 328); `supplier_id → suppliers(id)` RESTRICT. |
-| A9 | `unit_suppliers` | **Direct.** `PRIMARY KEY (unit_id, supplier_id)` with `unit_id → units(id)` RESTRICT (line 389) and `supplier_id → suppliers(id)` RESTRICT. |
-| A10 | `fifo_stock_layers` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 222–223); `product_id → products(id)` RESTRICT. Carries `origin_fiscal_year` (G19) and `fiscal_year`-bearing inventory valuation. |
-| A11 | `stock_movements` | **Direct, partial — see D20.** `unit_id TEXT` (line 211) with **no** foreign key to `units`; `product_id → products(id)` RESTRICT (line 215); carries `fiscal_year` (line 216). `CHECK (movement_type != 'IN' OR unit_id IS NOT NULL)`. Only rows with concrete UNIT attribution are purged; see D20 below the table. |
-| A12 | `daily_report_meal_items` | **Indirect.** No `unit_id`. `meal_id → daily_report_meals(id)` CASCADE (line 299); `product_id → products(id)` `NO ACTION`. |
-| A13 | `daily_report_meals` | **Indirect.** No `unit_id`. `daily_report_id → daily_reports(id)` CASCADE (line 280). |
-| A14 | `daily_reports` | **Direct.** `unit_id TEXT` nullable (line 268) with **no** foreign key; `fiscal_year` (line 276). |
-| A15 | `monthly_reports` | **Direct.** `unit_id TEXT NOT NULL` (line 526) with **no** foreign key at all; `UNIQUE(unit_id, report_year, report_month)`; no `deleted` column, so no soft-delete exists here. |
-| A16 | `unit_monthly_snapshots` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE` (line 519); `product_id → products(id)` CASCADE. Listed as Class A even though the FK would cascade, so the purge is explicit and auditable rather than implicit. |
-| A17 | `identity_store` rows with `subject_type = 'UNIT'` | **Direct**, keyed `subject_id = units.id` (G2). See §2. |
-| A18 | `users` row with `username = 'user'` and `node_id = <this unit's code>` | **Node-scoped direct.** The canonical operator. See §5 for its hard-delete gate. |
-| A19 | `units` (the row itself) | The root. Last. |
+| # | Entity | Ownership source and deletion predicate |
+|---|--------|-----------------------------------------|
+| A1 | `supplier_order_item_allocations` | **Indirect (two-sided).** No `unit_id` column. `item_id → supplier_order_items(id)` CASCADE (line 499) and `allocation_id → contract_allocations(id)` RESTRICT (line 500). **Ownership path:** both parents must independently resolve to the target UNIT. **Predicate:** delete a row **iff** (its `item_id` parent has `unit_id = <target>`) **and** (its `allocation_id` parent has `unit_id = <target>`). If the item-parent and allocation-parent imply different UNITs, or either cannot be resolved to a proven UNIT, **fail closed before any DELETE** (§4.7). Must run before A4 (allocation RESTRICT) and before A6 (item CASCADE parent). |
+| A2 | `contract_allocation_exceptions` | **Indirect.** No `unit_id`. `allocation_id → contract_allocations(id)` RESTRICT (line 486). **Ownership path:** derive through the allocation. **Predicate:** delete `WHERE allocation_id IN (SELECT id FROM contract_allocations WHERE unit_id = <target>)`. Must run before A4. |
+| A3 | `inventory_layer_consumptions` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 256-257); `movement_id → stock_movements(id)` and `layer_id → fifo_stock_layers(id)`, both default `NO ACTION` (lines 258-261). **Predicate:** delete `WHERE unit_id = <target>`. Must run before A10 and A11 (`NO ACTION`). Cross-UNIT safety preflight in §4.10: reject if any **non-target** consumption references a target-owned movement or layer. |
+| A4 | `contract_allocations` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 456, 472); `contract_id → contracts(id)` RESTRICT (470), `contract_product_id → contract_products(id)` RESTRICT (471), `product_id → products(id)` `NO ACTION` (473). **Predicate:** delete `WHERE unit_id = <target>`, after the §4.7 integrity check that `unit_id == parent contracts.unit_id`. Must run before A5 (A4→A5 RESTRICT) and A7 (A4→A7 RESTRICT), and after A1/A2 (their RESTRICT into A4). |
+| A5 | `contract_products` | **Indirect.** No `unit_id`. `contract_id → contracts(id)` CASCADE (line 448). **Ownership path:** derive through the contract. **Predicate:** delete `WHERE contract_id IN (SELECT id FROM contracts WHERE unit_id = <target>)`. Must run after A4 (A4.contract_product_id RESTRICT) and before A7. |
+| A6 | `supplier_order_items` | **Direct.** `unit_id TEXT` FK `REFERENCES units(id) ON DELETE RESTRICT` (lines 345, 360); `order_id → supplier_orders(id)` CASCADE (line 358); `product_id → products(id)` `NO ACTION` (line 359). **Predicate:** delete `WHERE unit_id = <target>`, after the §4.7 D4 aggregate-integrity check (a target order may not have a `NULL`/other-unit item; a target item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion — Q6 resolved, §4.7 D4/§9.3.3). Must run after A1 and before A8. |
+| A7 | `contracts` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 403, 418); `supplier_id → suppliers(id)` RESTRICT (line 419). **Predicate:** delete `WHERE unit_id = <target>`, after A4 and A5. |
+| A8 | `supplier_orders` | **Direct.** `unit_id TEXT` FK `REFERENCES units(id) ON DELETE RESTRICT` (lines 332, 335); `supplier_id → suppliers(id)` RESTRICT (line 334). **Predicate:** delete `WHERE unit_id = <target>`, after A6. `NULL`-unit orders are **preserved** (§4.8). |
+| A9 | `unit_suppliers` | **Direct.** `PRIMARY KEY (unit_id, supplier_id)`; `unit_id → units(id)` RESTRICT (line 396); `supplier_id → suppliers(id)` RESTRICT (line 397). **Predicate:** delete `WHERE unit_id = <target>`. |
+| A10 | `fifo_stock_layers` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 229-230); `product_id → products(id)` RESTRICT (line 232). Carries `origin_fiscal_year` (G19, line 240). **Predicate:** delete `WHERE unit_id = <target>`, after A3 and after the §4.9 surviving-report-FIFO preflight. |
+| A11 | `stock_movements` | **Direct, partial — see D20.** `unit_id TEXT` (line 218) with **no** foreign key to `units`; `product_id → products(id)` RESTRICT (line 223); carries `fiscal_year` (line 221). `CHECK (movement_type != 'IN' OR unit_id IS NOT NULL)` (line 224). **Predicate:** delete `WHERE unit_id = <target>`; `unit_id IS NULL` rows are **preserved** (§4.8). Must run after A3 (`NO ACTION`). |
+| A12 | `daily_report_meal_items` | **Indirect.** No `unit_id`. `meal_id → daily_report_meals(id)` CASCADE (line 316); `product_id → products(id)` `NO ACTION` (line 317); `fifo_layer_id` **no FK** (line 312, §4.9). **Ownership path:** meal → report. **Predicate:** delete `WHERE meal_id IN (SELECT m.id FROM daily_report_meals m JOIN daily_reports r ON m.daily_report_id = r.id WHERE r.unit_id = <target>)`. Must run before A13. |
+| A13 | `daily_report_meals` | **Indirect.** No `unit_id`. `daily_report_id → daily_reports(id)` CASCADE (line 301). **Ownership path:** report. **Predicate:** delete `WHERE daily_report_id IN (SELECT id FROM daily_reports WHERE unit_id = <target>)`. Must run after A12 and before A14. |
+| A14 | `daily_reports` | **Direct.** `unit_id TEXT` nullable (line 275) with **no** foreign key; `fiscal_year` (line 283). **Predicate:** delete `WHERE unit_id = <target>`. `NULL`-unit reports are **preserved** (§4.8); this is a real production possibility via sync import (G29). |
+| A15 | `monthly_reports` | **Direct.** `unit_id TEXT NOT NULL` (line 533) with **no** foreign key at all; `UNIQUE(unit_id, report_year, report_month)` (line 546); no `deleted` column. **Predicate:** delete `WHERE unit_id = <target>`. |
+| A16 | `unit_monthly_snapshots` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE` (line 526); `product_id → products(id) ON DELETE CASCADE` (line 527). **Predicate:** delete `WHERE unit_id = <target>` **explicitly**, even though the FK would cascade — so the purge is deterministic and auditable rather than dependent on SQLite cascade behaviour (`ARCHITECTURE_FREEZE.md` §2.5). |
+| A17 | `identity_store` rows with `subject_type = 'UNIT'` | **Direct**, keyed `subject_id = units.id` (G2). **Predicate:** delete `WHERE subject_type = 'UNIT' AND subject_id = <target>`. No inbound FK exists (G6). See §2. |
+| A18 | `users` row with `username = 'user'` and `node_id = <this unit's code>` | **Node-scoped direct.** The canonical operator, additionally required to equal `units.user_id` (D1, §5.5). **Predicate:** resolve (D1), apply the D14 gate (D2, §4.6), then `DELETE FROM users WHERE id = <resolved id>`. |
+| A19 | `units` (the row itself) | The root. **Predicate:** delete `WHERE id = <target>`, last. |
+
+**Class-A count (Revision 2).** There are **19 Class-A entities**: the sixteen dedicated
+schema tables A1-A16 plus the three row-scoped targets A17-A19 (`identity_store` UNIT rows,
+the canonical operator `users` row, and the `units` root row). Revision 1's phrases "sixteen
+Class-A tables" in §9.2 and the Verification Expectations understate this and are corrected
+here and there. Direct-owned entities are A3, A4, A6-A11, A14-A19; indirect entities are A1,
+A2, A5, A12, A13.
+
+**Predicate discipline (normative).** Every predicate above is expressed only in terms of
+foreign-key/ownership columns. No predicate may use product identity, monetary amounts,
+timestamps, names, `notes`, `reference_id`, `username`, or temporal adjacency as a
+substitute for ownership evidence (D20.3; §4.8).
 
 #### A11 special handling — the NULL-unit stock movement exception (D20)
 
@@ -369,16 +603,29 @@ CHECK (movement_type != 'IN' OR unit_id IS NOT NULL)
 ```
 
 Only `IN` movements are *required* to carry a `unit_id`. `OUT` and `OPENING` movements may carry
-`unit_id IS NULL`. Verified repository facts:
+`unit_id IS NULL` at the schema level. Verified repository facts (G30, correcting Revision 1):
 
-* `StockMovementType::Opening` (`models/inventory.rs:21,29,37,44`) has **no writer**: the only
-  references are the enum itself, a parser (`application/reporting/fiscal_year_summary.rs:116`),
-  and the balance equation (`application/services/stock_movement_service.rs:66`). No code path
-  inserts an `OPENING` movement.
-* Therefore, in current production, `unit_id IS NULL` rows are `OUT` movements.
+* `StockMovementType::Opening` (`models/inventory.rs`) has **no dedicated production
+  constructor**: its only typed references are the enum itself, the reporting parser
+  (`application/reporting/fiscal_year_summary.rs:116`), and the balance equation
+  (`application/services/stock_movement_service.rs:66`). No production path builds an
+  `Opening` value. The generic `insert_raw_stock_movement`
+  (`repositories/stock_movements.rs:157`) does persist a **payload-supplied** `movement_type`, so
+  a sync import **can** persist an `OPENING` row — but that import forces a concrete `unit_id`
+  (next bullets), so it never produces a **NULL-unit** `OPENING` movement.
+* The only `OUT` producer (`daily_report_service.rs:141-156`) always writes
+  `unit_id = Some(unit_id_str)` and fails closed when the unit is missing
+  (`daily_report_service.rs:76-80`).
+* The stock-movement sync import forces `Some(unit)`
+  (`sync_import_execution_service.rs:411-413`; sole production caller
+  `import_stock_movements_package.rs:91`).
+* Therefore **Revision 1's claim that "in current production `unit_id IS NULL` rows are `OUT`
+  movements" is inaccurate**: no production writer creates a NULL-unit `OUT` or `OPENING`
+  movement. NULL-unit rows are reachable only from legacy data or from test-only
+  `import_stock_movements(…, None)` invocations.
 
-Because the schema admits a NULL attribution, the purge MUST scope A11 explicitly rather than
-delete the table's rows wholesale:
+Because the schema admits a NULL attribution and such rows **do** exist in some databases, the
+purge MUST scope A11 explicitly rather than delete the table's rows wholesale:
 
 ```text
 DELETE FROM stock_movements WHERE unit_id = <target unit id>
@@ -394,11 +641,12 @@ Three rules are normative:
   claim that a NULL-unit row belongs to the deleted UNIT. Such widening would be a business
   inference this ADR does not authorize.
 
-This is the deliberate, bounded answer to the ambiguity recorded as **A1**: the repository cannot
-prove what a NULL-unit row represents, so the purge refuses to guess and preserves it. The cost
-is stated, not hidden: after a purge, surviving NULL-unit `OUT` movements remain while the
-UNIT-attributed movements they once shared a history with are gone. **No compensating business
-calculation is introduced** (D21.4).
+This is the deliberate, bounded answer to the ambiguity recorded as **A1**. The verified
+rationale is now precise: the repository cannot prove what a NULL-unit row represents (the
+schema permits it; production does not currently create it), so the purge refuses to guess and
+preserves it. The cost is stated, not hidden: after a purge, surviving NULL-unit movements
+remain while the UNIT-attributed movements they once shared a history with are gone. **No
+compensating business calculation is introduced** (D21.4).
 
 ### 4.2 Class B — global-preserve (retain verbatim)
 
@@ -406,7 +654,7 @@ calculation is introduced** (D21.4).
 |---|-------|---------------|
 | B1 | `settings` | Node singleton (`id INTEGER PRIMARY KEY CHECK (id = 1)`). Carries `node_type`, `unit_name`, `wilaya_code`, `current_year`. Holds the local unit code that scopes ownership — deleting it would destroy the node's own configuration, not a UNIT's data. |
 | B2 | `products` | Node-global catalog. `UNIQUE`-keyed by `id`; referenced with `RESTRICT`/`NO ACTION` by A4, A6, A12. Deleting the UNIT releases those references; the catalog survives. |
-| B3 | `product_tax_classifications` | `product_id → products(id)` CASCADE. Owned by B2, not by any UNIT. |
+| B3 | `product_tax_classifications` | `product_id → products(id)` `RESTRICT` (schema line 163). Owned by B2, not by any UNIT. |
 | B4 | `inventory_stocks` | **Shared / node-global — ratified by D21.3.** **Has no `unit_id`** (G-from-schema: columns are `product_id`, `quantity`, `unit`, `consumption_unit`, `last_updated`, `updated_at`, `node_id`, `deleted`; `UNIQUE(product_id, consumption_unit)`). On a WILAYA node there is exactly **one shared stock row per product across all units**, so the row is not attributable to any single UNIT. Preserved verbatim; see D21.3–D21.4. |
 | B5 | `suppliers` | Node-global catalog; `RESTRICT`-referenced by A7, A8, A9. |
 | B6 | `opening_balance_snapshots` | **Node-global — ratified by D21.2.** **No `unit_id`** (G18); `UNIQUE(product_id, fiscal_year)`, so there is one opening row per product per year and **no unit dimension at all**. Explicitly protected by D15 and by `FiscalHistoricalGuard::assert_opening_snapshot_mutable` (G14), pinned by `immutable_historical_mutation_tests.rs` `case_d` (G16). Preserved verbatim; see D21.2–D21.4. |
@@ -472,49 +720,293 @@ Three rules are normative:
 
 ### 4.4 Deletion order (child-first, deterministic)
 
-Derived from the verified foreign-key graph so that no `RESTRICT` or `NO ACTION` edge is
-violated at any intermediate step:
+The **entire §4.6 preflight must complete before the first `DELETE`**. The ordered statements
+below are derived from the verified foreign-key graph so that no `RESTRICT` or `NO ACTION` edge
+is violated at any intermediate step. `<id>` is the target `units.id` and `<code>` is the target
+`units.code`.
 
 ```text
- 1. supplier_order_item_allocations      (A1; before A6 and before A4 — RESTRICT both ways)
- 2. contract_allocation_exceptions       (A2; before A4 — RESTRICT)
- 3. inventory_layer_consumptions         (A3; before A10 and A11 — NO ACTION)
- 4. contract_allocations                 (A4; before A5 and A7 — RESTRICT)
- 5. contract_products                    (A5; after A4 — RESTRICT from A4)
- 6. supplier_order_items                 (A6; after A1 — CASCADE parent)
- 7. contracts                            (A7; after A4, A5)
- 8. supplier_orders                      (A8; after A6 — CASCADE parent)
- 9. unit_suppliers                       (A9)
-10. fifo_stock_layers                    (A10; after A3)
-11. stock_movements  WHERE unit_id = <units.id>                        (A11; after A3; NULL-unit rows PRESERVED per D20)
-12. daily_report_meal_items              (A12)
-13. daily_report_meals                   (A13; after A12)
-14. daily_reports                        (A14; after A13)
-15. monthly_reports                      (A15; no FK at all)
-16. unit_monthly_snapshots               (A16)
-17. identity_store  WHERE subject_type = 'UNIT' AND subject_id = <units.id>   (A17)
-18. FAIL-CLOSED GATE: audit_log reference count for the canonical operator   (§5)
-19. users  WHERE username = 'user' AND node_id = <units.code>               (A18)
-20. units  WHERE id = <units.id>                                            (A19)
+Phase 0 — read-only preflight (NO DELETE), inside the same transaction:   §4.6
+  P1. resolve the target units row (id, code); fail closed if absent
+  P2. resolve the canonical operator (username='user' AND node_id=<code>); require units.user_id
+      = resolved id; fail closed on missing / NULL / mismatch (canonical-key duplicate is
+      defensive; unreachable under UNIQUE + NOT NULL)                             §5.5
+  P3. D14 GATE: SELECT COUNT(*) FROM audit_log WHERE user_id = <resolved operator id>;
+      if > 0 -> return Err (abort before any scan and before any DELETE)          §5.1
+  P4. aggregate-integrity checks (supplier orders; contracts/allocations;
+      supplier_order_item_allocations two-sided ownership)                        §4.7
+  P5. cross-UNIT reference checks (inventory_layer_consumptions; any other
+      RESTRICT/NO ACTION row owned by a different UNIT)                           §4.10
+  P6. surviving-report FIFO-reference check (daily_report_meal_items.fifo_layer_id) §4.9
+  P7. if any check fails -> return Err; nothing is deleted
+
+Phase 1 — deletion (child-first), only after Phase 0 passes:
+  1. supplier_order_item_allocations   WHERE item_id ∈ target items AND allocation_id ∈ target allocations   (A1)
+  2. contract_allocation_exceptions    WHERE allocation_id ∈ target allocations                              (A2)
+  3. inventory_layer_consumptions      WHERE unit_id = <id>                                                  (A3)
+  4. contract_allocations              WHERE unit_id = <id>                                                  (A4)
+  5. contract_products                 WHERE contract_id ∈ target contracts                                  (A5)
+  6. supplier_order_items              WHERE unit_id = <id>                                                  (A6)
+  7. contracts                         WHERE unit_id = <id>                                                  (A7)
+  8. supplier_orders                   WHERE unit_id = <id>  (NULL-unit orders PRESERVED, §4.8)              (A8)
+  9. unit_suppliers                    WHERE unit_id = <id>                                                  (A9)
+ 10. fifo_stock_layers                 WHERE unit_id = <id>                                                  (A10)
+ 11. stock_movements                   WHERE unit_id = <id>  (NULL-unit rows PRESERVED per D20)              (A11)
+ 12. daily_report_meal_items           WHERE meal_id ∈ target reports' meals                                 (A12)
+ 13. daily_report_meals                WHERE daily_report_id ∈ target reports                                (A13)
+ 14. daily_reports                     WHERE unit_id = <id>  (NULL-unit reports PRESERVED, §4.8)            (A14)
+ 15. monthly_reports                   WHERE unit_id = <id>                                                  (A15)
+ 16. unit_monthly_snapshots            WHERE unit_id = <id>  (explicit; FK would cascade)                    (A16)
+ 17. identity_store                    WHERE subject_type = 'UNIT' AND subject_id = <id>                    (A17)
+ 18. users                             WHERE id = <resolved operator id>                                      (A18)
+ 19. units                             WHERE id = <id>                                                        (A19)
+
+Phase 2 — success audit: execute_with_audit writes the DeleteUnit row, then COMMIT (§5).
 ```
 
-Steps 12–16 would partially cascade today (`daily_reports` → meals → items;
-`units` → `unit_monthly_snapshots`). They are listed explicitly so that the purge is
-deterministic and its effect is auditable rather than dependent on SQLite cascade
-behaviour, satisfying `ARCHITECTURE_FREEZE.md` §2.5's determinism requirement.
+**Ordering rules that are load-bearing (not cosmetic).**
+
+* A1 must precede A4 and A6 because its `allocation_id` FK is `RESTRICT` into A4 and its
+  `item_id` FK is `CASCADE` from A6.
+* A2 must precede A4 (`RESTRICT`).
+* A3 must precede A10 and A11 because its `layer_id`/`movement_id` FKs are `NO ACTION` into
+  those tables.
+* A4 must precede A5 (`contract_product_id RESTRICT`) and A7 (`contract_id RESTRICT`).
+* A5 must precede A7 (A5's parent is A7, `CASCADE`).
+* A6 must precede A8 (A6's parent is A8, `CASCADE`).
+* A12 → A13 → A14 follow the report hierarchy (`CASCADE` downward), but are performed
+  explicitly so the purge is deterministic.
+* A16 is explicit even though `units → unit_monthly_snapshots` is `CASCADE`.
+
+**Cascade-safety rule (D3).** Because A6→A8 and A5→A7 and A12→A13→A14 are `CASCADE` edges, the
+preflight (P4) MUST prove that deleting each target parent cannot cascade-delete a child whose
+ownership is `NULL` or belongs to a different UNIT. If it can, the deletion is **rejected in
+Phase 0** — the purge never relies on discovering this from an FK failure after some rows are
+already deleted.
 
 ### 4.5 Atomicity and fail-closed behaviour
 
-* The whole sequence runs in **one** transaction. `AuditTxService::execute_with_audit`
-  (`audit_tx_service.rs:25-66`) already provides exactly this: real transaction, closure,
-  rollback on any error (G13). D13's atomicity requirement is satisfied by reusing it rather
-  than by introducing a second transaction facility.
-* Any failure at any step rolls back **everything**, including steps already executed. There
-  is no partial deletion, no tombstone, no "delete what we could" behaviour.
-* The gate at step 18 is evaluated **inside** that transaction, so a unit whose operator has
-  audit history is never partially purged (D14).
-* No tombstone model is introduced (D14). If deletion fails, the UNIT row survives intact and
-  the operation is retryable.
+* The whole sequence (Phase 0 and Phase 1, plus the success audit row) runs in **one**
+  transaction. `AuditTxService::execute_with_audit` (`audit_tx_service.rs:25-94`) provides
+  exactly this: real transaction, closure, rollback on any error (G13). The `delete_unit` IPC
+  command already invokes it (`commands/units.rs:88`, G8b). D13's atomicity requirement is
+  satisfied by **reusing** it, not by introducing a second transaction facility.
+* Any failure at any step — including the Phase-0 gate or any preflight check — rolls back
+  **everything**. There is no partial deletion, no tombstone, no "delete what we could"
+  behaviour.
+* **Accurate failure semantics:** when the closure returns `Err`, the transaction is dropped and
+  rolled back and **no `audit_log` row is written at all** — not even a `status = 'Failed'` row
+  (G13). This ADR does not claim a failed-audit record is persisted, because no separate durable
+  mechanism for it exists. A UNIT whose operator has audit history is therefore refused with the
+  UNIT fully intact and the operation retryable.
+* The D14 gate is evaluated in Phase 0 **before** any scan and **before** any `DELETE`, so a unit
+  whose operator has audit history is never partially purged (D2, D14).
+* No tombstone model is introduced (D14). If deletion fails, the UNIT row survives intact.
+
+### 4.6 Initial deletion preflight (D2 — normative, same transaction)
+
+The preflight in Phase 0 of §4.4 is part of the **initial** deletion operation, not a late-stage
+check. It is executed inside the transaction opened by `AuditTxService::execute_with_audit`
+(§4.5) and consists of the following **ordered** steps:
+
+1. **Enter the transaction** through the existing supported mechanism —
+   `AuditTxService::execute_with_audit(db, AuditAction::DeleteUnit, &user_ctx, |tx| …)`. The
+   service receives `tx.executor`; it does not open a second transaction.
+2. **Minimal target identity.** Load the target `units` row and keep `id` and `code`. If it does
+   not exist, fail closed.
+3. **Canonical operator resolution** exactly per §5.5 (D1): resolve
+   `username = 'user' AND node_id = <code>`, require the resolved row's `id` to equal
+   `units.user_id`, and fail closed on missing / `NULL` / mismatch — plus on a canonical-key
+   duplicate, which is defensive and unreachable under the current `UNIQUE(username, node_id)` +
+   `node_id NOT NULL` schema (D1.5).
+4. **D14 audit-reference gate** (D2, §5.1): count `audit_log` rows with
+   `user_id = <resolved operator id>`. If the count is non-zero, **abort immediately** — before
+   any detailed ownership scan and before any `DELETE`. The gate is not weakened, delayed, or
+   moved after the deletes, and historical attribution is not nullified to make deletion
+   succeed.
+5. **Ownership and integrity scans (read-only).** Only if the gate passes, evaluate:
+   the supplier-order aggregate integrity (§4.7), the contract/allocation integrity (§4.7), the
+   two-sided `supplier_order_item_allocations` ownership check (§4.7), the cross-UNIT
+   `NO ACTION`/`RESTRICT` reference check (§4.10), and the surviving-report FIFO-reference
+   check (§4.9). All are read-only.
+6. **Any failure aborts.** If any check cannot prove safety, return `Err`; the transaction rolls
+   back and nothing is deleted.
+7. **Deletion and success audit.** Only after all checks pass, run the Phase-1 statements of
+   §4.4, then return `Ok` so that `execute_with_audit` writes the successful `DeleteUnit` audit
+   row and commits.
+
+**Why the gate is first (D2).** Placing the gate in Phase 0 makes the permanent-block outcome
+(U-1) observable **before** any work is done and guarantees the operation is all-or-nothing with
+no late surprise. A design that deleted data and then discovered the D14 block is forbidden.
+
+### 4.7 Aggregate-integrity and indirect-ownership fail-closed rules (D4, D5, D6)
+
+The preflight MUST reject inconsistent parent/child relationships that could cause the target
+deletion to remove another UNIT's data, or remove a row whose ownership cannot be proven. Three
+aggregates are governed:
+
+**D4 — `supplier_orders` ↔ `supplier_order_items`.** Ownership is independently nullable on both
+tables (G25), and `supplier_order_items.order_id → supplier_orders(id)` is `CASCADE`. An item's
+ownership is established **directly** by its own `unit_id`; an order's ownership is established by
+the order's `unit_id`. The Phase-0 preflight MUST apply exactly one of the following outcomes to
+every `supplier_order_items` row whose own `unit_id = <target>` **or** whose parent order's
+`unit_id = <target>`:
+
+| Item `unit_id` | Parent order `unit_id` | Outcome |
+|----------------|------------------------|---------|
+| `<target>` | `<target>` | Item is target-owned; deleted with A6. |
+| `NULL`, or another UNIT | `<target>` | **Fail closed.** The order's `CASCADE` edge would remove a child that is not proven target-owned (D3.3). This is the case-independent invariant: for every item whose parent order's `unit_id = <target>`, the item's `unit_id` MUST equal `<target>`. |
+| `<target>` | `NULL` or another UNIT | **Fail closed — Q6 resolved (Option A).** The aggregate is inconsistent: a target-owned item hangs off a `NULL`/foreign order. The Phase-0 preflight **aborts** before any `DELETE`; nothing is deleted and the UNIT remains undeletable until the record is repaired (below). |
+
+* An item owned by neither the target nor a target order — e.g. a `NULL` item under a preserved
+  `NULL`/other-unit order — is **not involved** and is untouched (D3.1, D3.2). A `NULL`-unit
+  **order** is preserved (§4.8).
+* **Q6 — target-owned item under a `NULL`/other-unit order (resolved: Option A, fail-closed).**
+  A row whose own `unit_id = <target>` but whose parent order is `NULL`-owned or owned by another
+  UNIT is the Q6 anomaly. Per the owner-ratified decision (§9.3.3), the Phase-0 preflight **MUST
+  ABORT the entire deletion before executing any `DELETE` statement**. The item is **never** deleted
+  with the target, and another UNIT's order is **never** deleted to reach it. The conflict MUST be
+  detected in the preflight; a transaction rollback *after* a `DELETE` has been issued is **not** a
+  substitute for the required preflight rejection. The preflight reports the conflicting
+  `supplier_order_items.id` — together with its `order_id` and the two ownership values
+  (`supplier_order_items.unit_id` and the parent `supplier_orders.unit_id`) — so an administrator
+  can investigate it; the target UNIT remains undeletable until the record is repaired through an
+  authorized operational procedure (Q5). This is the cross-UNIT/unprovable relationship of D3.4
+  and is treated as a data-integrity anomaly, not as permission to repair or partially delete the
+  aggregate.
+* All of these checks run in **Phase 0, before any `DELETE`**, so the `CASCADE` edge can never
+  remove a row the policy requires preserving. This is the exact cascade-safety rule of §4.4.
+
+**D5 — `contracts` ↔ `contract_allocations`.** Both `unit_id` columns are `NOT NULL`
+(G24). The required invariant: for every `contract_allocations` row whose own `unit_id =
+<target>` **or** whose parent `contracts.unit_id = <target>`, the allocation's `unit_id` MUST
+equal the parent contract's `unit_id`. If they disagree, deletion **fails closed** — it does
+not assume either side proves safe ownership. The ordinary authoring path guarantees equality by
+construction (G26); the residual risk is the WILAYA-side catalog import
+(`sync_import_execution_service.rs:342,350`), which binds the payload allocation's unit with no
+cross-check (G26). Write-time enforcement on this importer is **owner-approved policy (Q4,
+§9.3.3)** but is **not yet implemented**; until it is, this D5 preflight is the only control.
+
+**D6 (A1) — `supplier_order_item_allocations` two-sided ownership.** Ownership must be proven on
+**both** parents. A row is safe to delete **iff** its `item_id` resolves to a
+`supplier_order_items` row with `unit_id = <target>` **and** its `allocation_id` resolves to a
+`contract_allocations` row with `unit_id = <target>`. If the two parents imply different UNITs,
+or either relationship cannot establish safe ownership, the deletion **fails closed** rather
+than deleting on the strength of one parent alone.
+
+**Write-path validation (not implemented here).** The preflight is the authoritative control.
+Two write-path controls are in view: (a) the contract-catalog importer asserting
+`allocation.unit_id == contract.unit_id` on every accepted row (G26) is **owner-approved policy
+(Q4, §9.3.3)** and is **required**; (b) `OrderService::update_supplier_order` not being able to
+produce a `NULL`-header/target-item mismatch (G25) remains a **recommendation**. This ADR
+**requires** the preflight; it implements neither write-path control.
+
+**Import and restore paths (assessed, not just ordinary construction).** There is **no
+row-level sync/import or restore path** for `supplier_orders`/`supplier_order_items`; backup
+restore is a whole-file swap (G25), so a restored database simply reproduces whatever
+inconsistency the backup contained, and the preflight then fails closed. The contract-allocation
+catalog import **is** a row-level path and is the residual risk named above (G26). The
+`contract_fulfillment` import path validates the resolved allocation's unit against the importing
+unit (`import_contract_fulfillment_package.rs:183-188`) and never inserts/updates an allocation
+row, so it cannot create the D5 divergence.
+
+**Defense-in-depth triggers (optional, NOT added here).** A database trigger that rejects a
+`supplier_order_items` insert/update whose `unit_id` differs from its parent order, or a
+`contract_allocations` insert/update whose `unit_id` differs from its parent contract, would be
+a valid defense-in-depth measure. This revision deliberately **does not add triggers and does
+not alter the migration** (§Explicitly Out of Scope); it records the option so a later,
+owner-approved schema revision may adopt it. Triggers would only protect **new** writes, not
+pre-existing inconsistent rows, so the preflight remains necessary regardless.
+
+**Fresh-database vs upgrade.** D18 permits editing the authoritative initial schema for a
+**fresh** database. Per G31, an already-initialized database at schema version 1 **never
+re-executes** `001_initial.sql`, so a schema-level guarantee added later (e.g. `NOT NULL` or a
+trigger) does **not** reach existing databases through this mechanism. Any such hardening must
+therefore be paired with the runtime preflight, or be paired with an explicit database-recreation
+step (D18's "application not deployed" posture). This distinction is normative: the ADR MUST NOT
+imply that editing the initial schema upgrades an existing database.
+
+### 4.8 Nullable ownership and cascade safety (D3)
+
+A `NULL` `unit_id` **never proves ownership** of the target UNIT. The policy below is per column,
+not per table, and `WHERE unit_id = <id>` on a single table is **not** sufficient proof that the
+whole operation preserves `NULL`-owned rows.
+
+| Column | Nullability | Policy |
+|--------|-------------|--------|
+| `stock_movements.unit_id` | nullable, no FK (line 218) | Delete only `unit_id = <id>`. `NULL` rows **preserved** (D20; §4.1 A11). |
+| `daily_reports.unit_id` | nullable, no FK (line 275) | Delete only `unit_id = <id>`. `NULL` rows **preserved**. Real production possibility via sync import (G29). |
+| `supplier_orders.unit_id` | nullable, FK RESTRICT (lines 332, 335) | Delete only `unit_id = <id>`. `NULL` orders **preserved**. |
+| `supplier_order_items.unit_id` | nullable, FK RESTRICT (lines 345, 360) | Delete only `unit_id = <id>`. `NULL` items under a preserved (`NULL`/other) order are **preserved**; a `NULL`/other-unit item under a target order fails closed; a target item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion (§4.7 D4; Q6 resolved §9.3.3). |
+
+Rules:
+
+* **D3.1** — `NULL` is preserved, never inferred. No predicate may widen a `NULL`-unit set by
+  product, notes, `reference_id`, `username`, amount, or time (D20.3).
+* **D3.2** — Indirect ownership of a `NULL`-unit parent's children does **not** make those
+  children target-owned unless a separate, non-null ownership column proves it. Meals/items of a
+  preserved (`NULL`-unit) report are preserved; a `NULL` item under a preserved order is
+  preserved.
+* **D3.3 — Cascade safety.** Before any `DELETE`, the preflight MUST verify that no `CASCADE`
+  edge reachable from a row being deleted can remove a child whose `unit_id` is `NULL` or
+  belongs to another UNIT. The reachable `CASCADE` edges are:
+  `supplier_orders → supplier_order_items` (order_id),
+  `contracts → contract_products` (contract_id; the child has no unit, so ownership is its
+  parent's), and `daily_reports → daily_report_meals → daily_report_meal_items`. The
+  `supplier_orders → supplier_order_items` edge is the only one with an independent nullable
+  ownership column on the child; §4.7 D4 is its guard. `units → unit_monthly_snapshots` and
+  `products → unit_monthly_snapshots` cascade only rows already scoped by the target id.
+* **D3.4** — A cross-UNIT or unprovable relationship is a **preflight rejection**, never an
+  implicit cascade deletion.
+
+### 4.9 FIFO references in surviving historical reports (D8)
+
+`daily_report_meal_items.fifo_layer_id` has **no foreign key** to `fifo_stock_layers` (G27), so
+SQLite will not stop a surviving report row from pointing at a FIFO layer that the purge removes.
+
+* **Surviving report rows.** After the purge, the report rows that survive are exactly those
+  `daily_report_meals`/`daily_report_meal_items` whose report `daily_reports.unit_id` is `NULL`
+  or another UNIT (A14 preserves them, §4.8).
+* **Fail-closed policy.** The Phase-0 preflight MUST detect any **surviving**
+  `daily_report_meal_items` row (`meal_id` not in the target reports) whose `fifo_layer_id`
+  equals an `id` in the target-owned `fifo_stock_layers` set. If any such row exists, the
+  deletion **fails closed**. The purge neither leaves a dangling `fifo_layer_id` nor deletes
+  another UNIT's report data to remove the reference.
+* **Why this is unlikely but must be checked.** The live writer always pairs a report with a
+  layer consumed through the unit-scoped FIFO query, and the sync daily-report import always
+  writes `NULL` (G27), so a same-unit pairing is the expected production shape. The dead
+  `import_monthly_report`/`insert_raw_meal_item` path could in principle have written a
+  cross-unit id, and legacy data cannot be disproven, so the check is mandatory.
+* **No schema change here.** Adding a foreign key or a unit column is a schema decision that
+  touches the frozen initial baseline; the owner has **deferred** it to a separate schema review
+  (Q2, §9.3.3). This revision does not add it.
+* If the domain's historical-report semantics ever justify retaining such a reference rather
+  than failing closed, that is an owner decision, not an implementation choice; it is currently
+  **not ratified**, so the default is fail-closed.
+
+### 4.10 Cross-UNIT `RESTRICT` / `NO ACTION` reference safety
+
+Deleting a target-owned parent can be blocked by a **non-target** child that references it, and
+silently deleting such a child would remove another UNIT's data. The preflight MUST reject the
+operation when any of the following holds. These are `NO ACTION`/`RESTRICT` edges, so absent a
+preflight the operation would fail late (after possibly deleting earlier rows in the same
+transaction, then rolling back) — the preflight converts that into a deterministic early
+rejection.
+
+| Referencing row | Referenced target row | Action | Rule |
+|-----------------|-----------------------|--------|------|
+| `inventory_layer_consumptions` (any `unit_id`, incl. other UNIT) | target `fifo_stock_layers` (via `layer_id`) | `NO ACTION` | Reject if a non-target consumption references a target layer. |
+| `inventory_layer_consumptions` (any `unit_id`) | target `stock_movements` (via `movement_id`) | `NO ACTION` | Reject if a non-target consumption references a target movement. |
+| `supplier_order_item_allocations` | target `contract_allocations` (via `allocation_id`) | `RESTRICT` | Reject unless the item parent is also target-owned (§4.7 D6). |
+| `contract_allocation_exceptions` | target `contract_allocations` (via `allocation_id`) | `RESTRICT` | Deleted in A2; ownership derived through the allocation. |
+| `contract_allocations` (any `unit_id`) | target `contract_products` (via `contract_product_id`) | `RESTRICT` | **Reject** if a non-target allocation (`unit_id ≠ <target>`) references a `contract_products` line owned by a target contract (deleted in A5): A4 deletes only `unit_id = <target>`, so A5 would otherwise break late. Also **reject** any allocation whose `contract_id` differs from the `contract_id` of the referenced `contract_product_id` (structural inconsistency the schema permits; detected here rather than by FK rollback). |
+| `contract_allocations` | target `contracts` (via `contract_id`) | `RESTRICT` | A4 runs before A7; the non-target case is rejected by §4.7 D5. |
+| `supplier_order_items` | target `supplier_orders` (via `order_id`) | `CASCADE` | Reject a `NULL`/other-unit item under a target order; a target item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion (Option A; resolved §9.3.3). Guarded by §4.7 D4. |
+
+Because production writers keep these aligned by construction (G26, G28), a violation indicates
+pre-existing inconsistency or a non-production/manual write. The safe response is a fail-closed
+rejection with a diagnosable error, and an owner-approved repair path if such data is ever
+encountered (see §9.3).
 
 ## 5. (D14) Audit deletion safety
 
@@ -522,10 +1014,21 @@ behaviour, satisfying `ARCHITECTURE_FREEZE.md` §2.5's determinism requirement.
 
 ```text
 The canonical local UNIT operator may be hard-deleted only when
-    SELECT COUNT(*) FROM audit_log WHERE user_id = <operator id>
+    SELECT COUNT(*) FROM audit_log WHERE user_id = <resolved operator id>
   evaluates to zero.
 If it is non-zero, UNIT deletion fails closed and the entire transaction rolls back.
 ```
+
+Here `<resolved operator id>` is the id produced by the canonical resolution in §5.5 (D1) — the
+row matched by `username = 'user'` **and** `node_id = <unit code>`, cross-checked against
+`units.user_id`. The gate never accepts any other id, and it is not reached unless resolution
+has already succeeded.
+
+**Placement (D2).** The gate is part of the **Phase-0 preflight** (§4.5, §4.6, step P3), inside
+the transaction opened by `AuditTxService::execute_with_audit` and **before any ownership scan
+and before any `DELETE`**. A non-zero count aborts the transaction with the UNIT fully intact;
+it is never discovered after rows have been removed (§4.5's accurate failure semantics: on abort
+**no** `audit_log` row — including no `status = 'Failed'` row — is persisted, G13).
 
 **Scope of the gate (D22.1).** The gate reads exactly one thing: the **foreign key** column
 `audit_log.user_id`. It is a reference-integrity precondition on the canonical operator row
@@ -580,6 +1083,77 @@ describing something that was deliberately destroyed is the historical truth, no
 §2.3). This ADR makes no schema change to it and alters no `ON DELETE` clause (§5.2). No audit
 row is deleted, rewritten, or re-attributed by a UNIT purge, other than the one `DeleteUnit` row
 the deletion itself writes under §2.3.
+
+### 5.5 Canonical operator resolution (D1)
+
+D14 says "the canonical local UNIT operator may be hard-deleted". D1 fixes **which `users` row
+that is**, so the gate (§5.1) and the delete (A18) always name the same row. A18 in §4.1 and
+preflight step P2/§4.6 step 3 both delegate here.
+
+**D1.1 — Resolution key.** Resolve the operator by the canonical node-scoped key, never by a
+bare username and never by `units.user_id` alone:
+
+```text
+username  = OPERATOR_USERNAME ("user")   -- constants: unit_service.rs:18
+node scope = target units.code            -- the row is created with node_id = code (G20)
+```
+
+`users` is `UNIQUE(username, node_id)` (`001_initial.sql:49`), so this key identifies **at most
+one** row per scope. Resolution MUST use the **raw** helper
+`UserRepository::get_user_by_username_raw(username, node_scope)`
+(`repositories/users.rs:72-99`), which omits the `deleted = 0` filter. `get_user_by_username`
+(`repositories/users.rs:37-65`) is **active-only** and MUST NOT be used: a soft-deleted
+(`deleted = 1`) canonical operator row is still UNIT-owned and must still be deleted with the
+UNIT (otherwise the purge would leave a node-scoped operator row whose `node_id` names a unit
+that no longer exists).
+
+**D1.2 — Cross-check against `units.user_id`.** After resolution, the resolved row's `id` MUST
+equal the target `units.user_id`. On a WILAYA node `UnitService::create_unit`
+(`unit_service.rs:88-98` inserts the operator, `:102` stores `user_id` on the unit row) makes
+this equality hold **by construction**, so the cross-check is a guard against later drift, not a
+new requirement on the happy path.
+
+**D1.3 — Fail-closed conditions (normative).** The preflight returns `Err` — aborting the whole
+transaction in Phase 0, before any `DELETE` — when **any** of the following holds:
+
+* **missing** — no `users` row matches the canonical key;
+* **`NULL`** — `units.user_id IS NULL` for the target row;
+* **duplicate** — the canonical key resolves to more than one row. Under the current schema this
+  state is **not reachable** (`UNIQUE(username, node_id)` guarantees at most one row, and
+  `node_id` is `NOT NULL`), so the branch is retained as **defensive future-proofing**; if kept
+  normative it MUST be discharged by a **counting** query on the canonical key, never by the
+  single-row helper (D1.5);
+* **mismatch** — the resolved row's `id` differs from `units.user_id`.
+
+There is **no fallback**: the purge does not "delete by `units.user_id` when the key misses", does
+not "delete by key when `user_id` is `NULL`", and does not pick one of several candidate rows.
+Each such case is a preflight rejection (§4.6 step 6), never a best-effort deletion.
+
+**D1.4 — Why the canonical key, not `units.user_id` alone.** The current path
+(`unit_service.rs:148-156`) reads `units.user_id` and deletes by that id (G8, G9, G11). Taken
+alone that id proves nothing about *ownership*: `units.user_id` is a plain nullable FK
+(`001_initial.sql:57-62`, `ON DELETE SET NULL`) and could be repointed or blanked independently
+of the `(username, node_id)` key that actually encodes "this operator belongs to this unit code".
+The canonical key is the ownership fact; `units.user_id` is the corroborating constraint. A
+disagreement is exactly the inconsistency the preflight must refuse rather than guess through.
+
+**D1.5 — Duplicate detection is defensive, not reachable under the current schema.** A
+`(username = 'user', node_id = NULL)` row **cannot exist**: `users.node_id` is
+`TEXT NOT NULL DEFAULT 'WILAYA'` (`001_initial.sql:40`), and `UNIQUE(username, node_id)`
+(`001_initial.sql:49`) admits at most one canonical row per scope. Because there is no `NULL`
+`node_id`, the earlier `COALESCE(node_id, 'WILAYA')` collision cannot arise. The duplicate branch
+of D1.3 is therefore **future-proofing** for a schema that drops the `NOT NULL` constraint, not a
+state reachable today. It also cannot be discharged by the current lookup: `get_user_by_username_raw`
+issues `query_row_optional` (`users.rs:80`), which returns **at most one** row and so cannot
+observe two matches even if they existed. If duplicate detection is retained as a normative
+requirement, the preflight MUST run its own counting query on the canonical key
+(`SELECT COUNT(*) FROM users WHERE username = ?1 AND node_id = ?2`) rather than a single-row fetch.
+The `units.user_id` cross-check (D1.2) is unaffected and remains normative.
+
+**D1.6 — Relationship to the D14 gate.** The gate (§5.1) counts
+`audit_log WHERE user_id = <resolved operator id>`. The resolved id from D1.1–D1.3 is
+therefore the *only* id the gate may use; a mismatch (D1.3) is rejected **before** the gate is
+evaluated, so a failed resolution never proceeds to scan or delete.
 
 ## 6. (D15) Archived fiscal-year exception and its exact boundary
 
@@ -698,9 +1272,17 @@ reclassification rather than deletion; single open year; all-or-nothing transiti
 reclassification bullet is untouched: year close still moves nothing and deletes nothing, and
 the §6.1 exception operates on a later, separate, explicitly owner-approved event.
 
-Qualified: "Immutable closed years — closed fiscal years receive no new mutations" and "Cache
-entries for closed years are never invalidated" do not bar the §6.1 UNIT-owned purge. They
-continue to bar every other mutation of a closed year.
+Qualified — **first sentence only**: "Immutable closed years — closed fiscal years receive no new
+mutations" does not bar the §6.1 UNIT-owned purge. It continues to bar every other mutation of a
+closed year.
+
+The bullet's **second sentence** — "Cache entries for closed years are never invalidated" — is
+**not** re-scoped and remains in force in full. `fiscal_export_snapshots` for a closed year are
+**not** invalidated, modified, or recomputed because a UNIT is deleted; historical snapshots
+retain the values captured at their original issuance time, and their recorded `movement_count` /
+`report_count` continue to describe the pre-deletion state (§9.1 C-c). This is consistent with
+the freeze-document amendment (Q1, §9.3.3), which is scoped to the first sentence and expressly
+does not authorize cache invalidation.
 
 Surviving and untouched by this ADR: §2.3 in its entirety, and §2.5's determinism
 requirements. §4.4's explicit ordering exists partly to satisfy §2.5.
@@ -727,6 +1309,33 @@ ADR shortens their retention.
   lookup — is made directly in `src-tauri/src/db/migrations/001_initial.sql`, the repository's
   only migration file. No migration is created for development-database compatibility.
 
+### 8.1 Migration mechanism and its compatibility consequence (D18, G31)
+
+The rule above is only correct together with the mechanism that applies it. Verified at HEAD
+(G31): `src-tauri/src/db/migrations.rs` defines **exactly one** migration — version `1`, the
+consolidated `include_str!("migrations/001_initial.sql")` (`migrations_vec()`, lines 10-18) — and
+`run_migrations` (lines 88-169) applies a migration **only when `current_version < version`**
+(line 116), then records the version and commits. The initial schema itself uses
+`CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`.
+
+Three consequences are normative:
+
+1. **Editing `001_initial.sql` affects only a fresh database.** A database already recorded at
+   schema version 1 never re-executes the initial schema, so a later edit (an added index, a
+   tightened constraint, a trigger) does **not** reach it. D18's "modify the authoritative
+   initial schema directly" instruction is valid **only** for a fresh or recreated database.
+2. **The initial schema is applied exactly once per database.** There is no incremental migration
+   path in this repository, and this ADR does not create one.
+3. **D18's posture is load-bearing here.** D18 states the application has not been deployed and
+   there is no legacy production database to preserve, which is precisely why editing the
+   baseline is permissible at all. This ADR MUST NOT imply that editing the initial schema
+   upgrades an existing database; where a runtime guarantee is needed for an existing database,
+   it is supplied by the §4.6 preflight, not by the schema edit.
+
+This is the same distinction §4.7 ("Fresh-database vs upgrade") applies to the aggregate-integrity
+guarantees. D18 remains an owner-ratified decision; this section records its mechanism, not a new
+decision.
+
 # Consequences
 
 ## Data loss (explicit and bounded)
@@ -741,6 +1350,11 @@ ADR shortens their retention.
 * `inventory_stocks` quantities and `opening_balance_snapshots` survive unchanged while the
   UNIT-attributed movements that partly explain them are gone (D21). The resulting
   unreconciled state is **accepted, not repaired** — D21.4 forbids any compensating calculation.
+* **Fail-closed refusals are a normal outcome, not an error state.** A UNIT deletion is rejected
+  (whole transaction rolled back, nothing deleted, operation retryable) whenever the §4.6
+  preflight cannot prove safety: the D14 audit gate (§5.1), a canonical-operator mismatch
+  (§5.5), an aggregate inconsistency (§4.7), a cross-UNIT reference (§4.10), or a surviving-report
+  FIFO reference (§4.9). None of these leaves partial state behind.
 
 ## Trust and identity
 
@@ -764,6 +1378,12 @@ ADR shortens their retention.
 * ADR-0061 §7's permanence argument and ADR-0055 line 83 both retain force everywhere except
   inside a destroyed UNIT. §7 states the surviving text explicitly so no reader has to infer
   it.
+* Revision 2 adds no ratification. It refines the mechanics of the already-accepted D13 and D14
+  and records every question it could not settle in §9.3 as open, rather than deciding it. In
+  particular, whether `ARCHITECTURE_FREEZE.md` §2.4 itself must be amended through the
+  RFC-to-ADR process was recorded as **open** (Q1). It is now **owner-resolved (Option A)** and
+  that amendment has been performed through the RFC-to-ADR process; this ADR still performs no
+  freeze-document edit (§9.3.3).
 
 ## Compatibility
 
@@ -787,6 +1407,12 @@ ADR shortens their retention.
   `PROJECTION_OWNERSHIP_MAP.md` governance update, and recording the required follow-up here is
   the correct place for it (Implementation Boundary item 7). Until that update lands, the map
   understates the ratified shape; this ADR, and specifically §1.1 and D19, are authoritative.
+* **Schema-edit compatibility (D18/G31).** No migration is introduced. Any baseline edit this ADR
+  later requires reaches **only a fresh or recreated database**; a database already at schema
+  version 1 is unaffected (§8.1). The runtime guarantees that must hold on *existing* databases —
+  the ownership matrix, the canonical-operator cross-check, the D14 gate, and the §4.7/§4.9/§4.10
+  preflight — are therefore supplied by code, not by the schema. There is no upgrade path and
+  none is claimed.
 
 # Contradictions discovered, and owner decisions (all closed)
 
@@ -810,6 +1436,35 @@ Recorded rather than silently resolved, per the standing instruction.
 * **C-d** — The current `delete_unit` path (G8–G10) is already broken for any UNIT with
   owned data, because of `ON DELETE RESTRICT`. §4 replaces it; nothing here depends on the old
   behaviour surviving.
+
+**Revision 2 forensic corrections (Revision 1's cited evidence vs. current HEAD).** The
+following were found while re-deriving every material claim at HEAD
+`0513ae5`; they are recorded here so a reader of Revision 1 is not misled. Each is a
+documentation contradiction resolved in place, not an owner decision (§9.2).
+
+* **C-e** — Revision 1 asserted the existence of tables `supplier_order_receipts` and
+  `inventory_layers` and reasoned about their ownership. Neither table exists anywhere in
+  `src-tauri/src` or `src-tauri/tests` (G23). The FIFO table is `fifo_stock_layers`; there is no
+  receipts table. Corrected throughout §4 and removed from the matrix.
+* **C-f** — Revision 1 stated that "in current production, `stock_movements` rows with
+  `unit_id IS NULL` are `OUT` movements", citing the only `OUT` producer. Verified false (G30):
+  that producer always writes `Some(unit_id_str)` and fails closed when the unit is missing, no
+  production code creates an `OPENING` movement, and the stock-movement import forces
+  `Some(unit)`. The **preservation rule is retained** (§4.1 A11, D20) but for the corrected
+  reason: the repository cannot prove what such a legacy row represents.
+* **C-g** — Revision 1 framed the current `delete_unit` path as non-transactional with no audit
+  write. Verified false (G8b): `commands/units.rs:77-94` already wraps the service body in
+  `AuditTxService::execute_with_audit(AuditAction::DeleteUnit, …)`. What is missing is the
+  ownership matrix, canonical-operator resolution, in-transaction preflight, and the D14 gate —
+  not the transaction or the audit action.
+* **C-h** — Revision 1 counted "sixteen Class-A tables" and used that figure in §9.2 and the
+  Verification Expectations. The correct count is **nineteen Class-A entities** (A1–A19): the
+  sixteen dedicated tables plus the row-scoped `identity_store` UNIT rows, the canonical
+  operator `users` row, and the `units` root row (§4.1 Class-A count note). The "sixteen"
+  language is corrected in both places.
+
+These four corrections change **no** owner-ratified decision (D11–D22). They correct the
+evidence and mechanics only, as recorded in the Revision 2 header note.
 
 ## 9.2 Owner decisions: all closed (U-1, U-2, U-3, U-4)
 
@@ -862,10 +1517,10 @@ ratified answers are both recorded so no future reader has to re-derive them.
     free-text `entity_id`, `target_id`, or `entity_name` columns (D22.2). Encoded at §5.1,
     §5.4, and §4.3 C7.
 
-  Also ratified by the same closure: all sixteen Class-A UNIT-owned tables remain purgeable
-  regardless of fiscal year, subject to §4.4's FK ordering and D20's explicit exception (**D13 +
-  §6.1 + D20**); `FiscalHistoricalGuard` **MUST NOT be modified** (**D21.5**, §6.3); and
-  node-global fiscal machinery remains preserved and protected (**D21.1**, §6.2).
+  Also ratified by the same closure: all **nineteen** Class-A UNIT-owned entities (A1–A19)
+  remain purgeable regardless of fiscal year, subject to §4.4's FK ordering and D20's explicit
+  exception (**D13 + §6.1 + D20**); `FiscalHistoricalGuard` **MUST NOT be modified** (**D21.5**,
+  §6.3); and node-global fiscal machinery remains preserved and protected (**D21.1**, §6.2).
 * **U-4 — `OPERATIONAL_LIMITATIONS` / `CLAIM_VERIFICATION_MATRIX` reconciliation.** *(Status:
   closed — resolved in this ADR's governance phase, not deferred.)* Both documents are governed by
   `scripts/check_docs_governance.ts`, and `CLAIM_VERIFICATION_MATRIX.md:31` explicitly requires
@@ -886,12 +1541,109 @@ ratified answers are both recorded so no future reader has to re-derive them.
     baselines were not modified.
 
 
+## 9.3 Decision register (Revision 2)
+
+This register separates three kinds of item so no future reader confuses a verified fact, a
+resolved mechanical design choice, and an owner/governance question. **No item here reopens an
+owner-ratified decision (D11–D22).** Where repository evidence could not settle a question, it was
+recorded with its consequence — never silently decided; the governance/owner questions are now
+resolved (§9.3.3).
+
+### 9.3.1 Verified invariants (facts, re-derived at HEAD `0513ae5`)
+
+| Ref | Invariant | Evidence |
+|-----|-----------|----------|
+| V1 | The `identity_store` UNIT join key is `units.id` (no `unit_uuid`/`unit_code` column). | G2 |
+| V2 | `identity_store.deleted` is never set to `1` in production. | G3 |
+| V3 | No FK targets `identity_store`; a UNIT subject's own `identity_id` is not stored as a live reference elsewhere, but `applied_sync_packages.issuer_identity_id` may retain a **non-resolving** UNIT issuer id after the purge. | G5, G6, G6b |
+| V4 | `supplier_orders`/`supplier_order_items` `unit_id` are independently nullable with a divergence path only via `OrderService::update_supplier_order`. | G25 |
+| V5 | `contracts`/`contract_allocations` unit equality holds by construction except the WILAYA-side catalog import. | G26 |
+| V6 | `daily_report_meal_items.fifo_layer_id` has no FK; a surviving report could dangle after purge. | G27 |
+| V7 | Production keeps consumption/movement/layer `unit_id` aligned by construction. | G28 |
+| V8 | `daily_reports.unit_id` can legitimately be `NULL` (sync import); `monthly_reports.unit_id` is `NOT NULL`. | G29 |
+| V9 | No production writer creates a NULL-unit `OUT` or `OPENING` movement (the sync import can persist a payload `OPENING`, but forces a concrete `unit_id`). | G30 |
+| V10 | The migration runner applies `001_initial.sql` exactly once per database (version 1). | G31 |
+| V11 | `AuditTxService` persists no `audit_log` row when the closure returns `Err`. | G13 |
+| V12 | No unit-deletion tests exist today. | G33 |
+
+### 9.3.2 Resolved design choices (mechanics of D11–D22, decided in this revision)
+
+| Ref | Choice | Where |
+|-----|--------|-------|
+| R1 | Canonical operator = `username='user'` AND `node_id=<unit code>`, cross-checked against `units.user_id`; resolved via the raw (soft-delete-inclusive) helper; fail closed on missing/`NULL`/mismatch and on a *canonical-key* duplicate (defensive; unreachable under `UNIQUE(username, node_id)` + `node_id NOT NULL`). | §5.5 (D1) |
+| R2 | The D14 audit gate is a Phase-0 preflight step, before any scan and before any `DELETE`, inside the existing transaction. | §4.5, §4.6 (D2) |
+| R3 | Conservative *preserve* policy for every nullable `unit_id`; ownership never inferred from non-ownership columns. | §4.8, §4.1 A11 (D3/D20) |
+| R4 | Supplier-order aggregate: a target order may not have a `NULL`/other-unit item (fail closed); a target-owned item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion (Q6 resolved — Option A, fail-closed rejection; §9.3.3). | §4.7 (D4) |
+| R5 | Contract/allocation: allocation `unit_id` must equal parent contract `unit_id`; violation fails closed. | §4.7 (D5) |
+| R6 | `supplier_order_item_allocations` is deleted only when *both* parents are target-owned; else fail closed. | §4.7 (D6) |
+| R7 | A surviving report's `fifo_layer_id` pointing at a purged layer fails closed. | §4.9 (D8) |
+| R8 | Cross-UNIT `RESTRICT`/`NO ACTION` references fail closed in preflight rather than late — including a non-target `contract_allocations` row referencing a target `contract_products` line (§4.10). | §4.10 (D6/D7) |
+| R9 | Class-A count is 19 entities (A1–A19). | §4.1 |
+| R10 | D18 migration posture: edit the baseline for fresh DBs only; no migrations; runtime preflight covers existing DBs. | §8.1 (owner D18; Revision-2 item D11) |
+
+### 9.3.3 Owner decisions (Q1–Q6) — resolved
+
+All six governance/owner questions that Revision 2 recorded — Q1–Q6 — are now **owner-resolved**.
+Revision 2 listed them with their consequences rather than silently deciding them; each resolved
+outcome is recorded below and the normative ADR text has been reconciled to it. No item in this
+set remains open, and none of the resolutions reopens an owner-ratified decision (D11–D22). The
+default for every deletion sub-case remains safe rejection.
+
+| Ref | Question (as originally recorded) | Owner-approved outcome |
+|-----|-----------------------------------|------------------------|
+| Q1 | Does the `ARCHITECTURE_FREEZE.md` §2.4 re-scoping require a formal freeze-document amendment (RFC-to-ADR Step 3.4), or is this ADR's qualification sufficient? | **Option A — amend.** The "Immutable closed years" bullet's **first sentence** was amended in `ARCHITECTURE_FREEZE.md` §2.4 through the separate RFC-to-ADR process (`docs/architecture/rfcs/2026-10-16-freeze-2-4-unit-owned-destructive-purge-exception.md`) to record a narrow, **permanent business-policy** sanctioned exception for the §6.1 UNIT-owned purge. This ADR remains the qualification record and performs no freeze-document edit itself. |
+| Q2 | Should `daily_report_meal_items.fifo_layer_id` gain a foreign key to `fifo_stock_layers` (and/or a unit column)? | **Option B — defer.** No foreign key or unit column is added by this ADR; the question is deferred to a separate, dedicated schema review. The §4.9 preflight remains the operative protection. |
+| Q3 | Should `supplier_orders.unit_id` / `supplier_order_items.unit_id` (and `daily_reports.unit_id`) be tightened to `NOT NULL` (or constrained) in the baseline? | **Option B — defer.** The columns stay nullable in the baseline for now; `NOT NULL` hardening is deferred to a separate schema review (coordinated with Q2). The §4.7/§4.8 preflight remains the guard, and `NULL` is never treated as proof of ownership. |
+| Q4 | Should the WILAYA-side contract-catalog import enforce `allocation.unit_id == contract.unit_id` at write time? | **Option A — enforce (policy, not yet implemented).** The importer MUST reject a contract-catalog import when an allocation's `unit_id` differs from its parent contract's `unit_id`, return an explicit validation error, and fail closed with transaction atomicity (no partial commit, no automatic repair/reassignment/inference). **Verified at HEAD `0513ae5`: this enforcement does NOT exist.** It remains a separate, independently authorized implementation change. Until it lands, the §4.7 D5 preflight is the only control. |
+| Q5 | Is there an owner-approved repair path for a cross-UNIT reference that the preflight rejects? | **Option A — controlled external operational repair (policy only).** The deletion remains rejected, no automatic/speculative repair occurs during preflight or purge; an authorized operator uses a documented, controlled repair procedure **outside** the deletion operation, using trusted evidence (never inferred from the target UNIT or one side alone), with auditability/integrity checks and preflight re-run. **Verified at HEAD `0513ae5`: no repair tool/service/UI exists.** |
+| Q6 | Should a `supplier_order_items` row owned by the target under a `NULL`/other-unit parent order abort the deletion? | **Option A — fail-closed rejection** (ratified 2026-10-15). Abort before any `DELETE`; no partial deletion, no automatic repair/reassignment. The UNIT remains undeletable until the inconsistency is repaired and preflight passes. Full rule below and §4.7 D4. |
+
+**Resolved owner decision — Q6 (supplier-order ownership conflict; ratified 2026-10-15).**
+
+**Decision: Option A — Fail-Closed Rejection. Option B is rejected.**
+
+If a `supplier_order_items` row has `unit_id = <target>` while its parent `supplier_orders` row
+has `unit_id IS NULL` or `unit_id != <target>`, the UNIT-deletion Phase-0 preflight **MUST ABORT
+the entire deletion before executing any `DELETE` statement**. The conflict MUST be detected in
+the preflight; transaction rollback *after* a `DELETE` has been issued is **not** a substitute
+for the required preflight rejection. Option A binds the §4.7 D4 rule above; **Option B — delete
+the target-owned item anyway — is rejected.**
+
+The preflight MUST identify and report the conflicting record sufficiently for an administrator
+to investigate it. It does so through the existing delete-rejection error path — the
+`DeleteForbidden { resource, reason }` business-logic error (`src-tauri/src/errors/mod.rs`,
+surfaced with code `BIZ_DELETE`) — carrying the real columns of the two rows:
+`supplier_order_items.id` (the conflicting item) with its `order_id`, plus the two ownership
+values `supplier_order_items.unit_id` and `supplier_orders.unit_id`. No new error variant,
+identifier, column, or UI element is introduced.
+
+*Rationale.* A supplier order and its items form one business and financial aggregate. A parent
+order owned by another UNIT, or with ambiguous (`NULL`) ownership, cannot be presumed to belong
+exclusively to the target UNIT; deleting an item under such a parent could mutate another UNIT's
+procurement, inventory, accounting, or synchronization records. The WILAYA node owns the shared
+database, so deleting one UNIT must not silently alter another UNIT's records. An ownership
+mismatch is a data-integrity anomaly, not permission to repair or partially delete the aggregate.
+
+*Remediation.* The target UNIT remains undeletable until the conflicting record has been audited
+and repaired through an explicit, authorized operational procedure; once repaired, deletion may
+be retried. This ADR defines **no** automatic repair, reassignment, or deletion policy; remediation
+is the controlled external operational-repair policy of Q5 above (§9.3.3).
+
+**Governance note (Q1).** `docs/architecture/ARCHITECTURE_FREEZE.md` §4's RFC-to-ADR process
+(Step 3.4) owns the freeze-document edit, and the §2.4 "Immutable closed years" first-sentence
+amendment was performed through it per the owner's Q1 decision (Option A). This ADR itself
+performs no freeze-document edit (`AGENTS.md` §8 C1). The amendment does not weaken the freeze:
+it is limited to that bullet's first sentence, and §2.4's second sentence, §2.4's other bullets,
+§2.3, §2.5, and the §6.2 protected set remain in force.
+
 # Explicitly Out of Scope
 
 * Any application, schema, migration, or test implementation.
 * Credential and initialization lifecycle — `docs/architecture/0063-unit-operator-credential-lifecycle.md`.
 * Modifying ADR-0040, ADR-0051, ADR-0052, ADR-0055, ADR-0061, or
-  `ARCHITECTURE_FREEZE.md`. This ADR is their qualification record.
+  `ARCHITECTURE_FREEZE.md`. This ADR is their qualification record. (The §2.4 amendment made
+  under the owner's Q1 decision is performed through the separate RFC-to-ADR process, not by this
+  ADR; see §1 and §9.3.3.)
 * Extending `FiscalHistoricalGuard`, or changing any of the five
   `immutable_historical_mutation_tests.rs` cases (§6.3).
 * Altering `audit_log`'s schema or its `ON DELETE SET NULL` clause (§5.2).
@@ -910,22 +1662,58 @@ ratified answers are both recorded so no future reader has to re-derive them.
 * Widening `UnitView` beyond `list_units`, renaming `is_exported`, or introducing an enum
   lifecycle state (D19.6, D19.10).
 * Any frontend-side re-derivation of `is_exported` (D19.7).
+* **Adding database triggers, constraints, or new foreign keys** as part of this ADR. §4.7
+  records defense-in-depth triggers, and the `fifo_layer_id` FK (Q2) and `NOT NULL` hardening (Q3)
+  are now owner-approved **deferrals** to a separate, dedicated schema review; none is added here.
+* **Creating any migration** or otherwise changing how `001_initial.sql` is applied (§8.1, D18).
+* **Enforcing `allocation.unit_id == contract.unit_id` on the WILAYA-side catalog import write
+  path** *in this documentation-only ADR* (§4.7, §9.3.3 Q4). The owner has approved this
+  enforcement as **required policy (Option A)**; it is **not yet implemented** and is a separate,
+  independently authorized change. This ADR requires only the runtime preflight today.
+* **Amending `ARCHITECTURE_FREEZE.md` §2.4** *through this ADR*. The owner resolved Q1 as
+  **Option A** (the amendment is required) and it has been performed through the separate
+  RFC-to-ADR process; this ADR performs no freeze-document edit under any reading. See §1 and
+  §9.3.3.
+* **Building a repair tool, service, or UI for cross-UNIT/reference inconsistencies** that the
+  preflight rejects. The owner has approved a **controlled external operational-repair policy**
+  (Q5, §9.3.3 Option A), but this ADR builds none and asserts no tool exists. Fail-closed
+  rejection is specified; the repair procedure is owned outside this ADR.
 
 # Implementation Boundary
 
 Ordered work items, each independently verifiable. Listed for traceability only; none is
 performed by this ADR.
 
-1. **Repository** — add ownership-matrix delete statements to
+1. **Repository** — add ownership-matrix delete statements (A1–A19) to
    `src-tauri/src/repositories/units.rs` (replacing the two-statement `delete_unit` at lines
    212–225), in the §4.4 order, including the `unit_id = <units.id>` predicate on `stock_movements`
-   (D20.1) and **preserving** `unit_id IS NULL` rows (D20.2); add the `identity_store` delete
-   (A17) and the `users` delete (A18); add the `audit_log` reference-count predicate (§5.1,
-   `user_id` only per D22.1); add the status-agnostic `identity_store` existence query (§1.1,
-   D19.9) and its port method in `domain/identity/ports.rs`.
-2. **Service** — rewrite `application/services/unit_service.rs::delete_unit` to run the
-   sequence inside `AuditTxService::execute_with_audit` with `AuditAction::DeleteUnit`,
-   applying §5's gate in-transaction.
+   (D20.1) and **preserving** `unit_id IS NULL` rows (D20.2) and `NULL`-unit `daily_reports`
+   (§4.8); add the `identity_store` delete (A17) and the `users` delete (A18); add the following
+   **read-only preflight queries** used by the service (all in the repository, no SQL elsewhere):
+   * the D14 `audit_log` reference count for the resolved operator id (§5.1, `user_id` only per
+     D22.1);
+   * the canonical-operator lookup backing §5.5 (reuse `get_user_by_username_raw`,
+     `repositories/users.rs:72-99`) plus the target `units` row read for the `units.user_id`
+     cross-check;
+   * the §4.7 aggregate-integrity checks (supplier-order item ownership; contract/allocation unit
+     equality; two-sided `supplier_order_item_allocations` ownership);
+   * the §4.10 cross-UNIT reference checks (non-target `inventory_layer_consumptions` referencing
+     target `fifo_stock_layers`/`stock_movements`; a non-target `contract_allocations` row
+     referencing a target `contract_products` line, including the allocation/contract-product
+     `contract_id` match);
+   * the §4.9 surviving-report `fifo_layer_id` check;
+   * the status-agnostic `identity_store` existence query (§1.1, D19.9) and its port method in
+     `domain/identity/ports.rs`.
+
+   The repository exposes these as **facts** (counts / existence / mismatched ids); the domain
+   and service layer own the pass/fail decision (`AGENTS.md` §3: SQL confined to `repositories/`,
+   business rules in `domain/`/`application/`).
+2. **Service** — rewrite `application/services/unit_service.rs::delete_unit` to run the **entire
+   Phase-0 preflight followed by the Phase-1 deletes** inside the existing
+   `AuditTxService::execute_with_audit` closure with `AuditAction::DeleteUnit`
+   (already wired at `commands/units.rs:88`, G8b): resolve the canonical operator (§5.5), apply
+   §5's gate before any scan and before any `DELETE`, then run the §4.7/§4.9/§4.10 checks, then
+   the ordered deletes. No second transaction facility is introduced.
 3. **Domain** — add the EXPORTED predicate (§1) and the "Edit/Export refused while EXPORTED"
    validation (§3) to the unit domain's validation layer; add the `UnitView` DTO with
    `is_exported: bool` and its derivation from the domain-owned predicate (§1.1, D19.1–D19.3,
@@ -946,6 +1734,10 @@ performed by this ADR.
    `list_units` only); that update is deliberately **not** performed by this ADR (§Compatibility).
    The remaining documentation work is to re-verify the two qualified claims still describe the
    shipped behaviour once implementation lands.
+8. **Tests** — add the deletion test suite required by the Verification Expectations, including
+   the cross-UNIT, aggregate-integrity, canonical-operator-mismatch, and surviving-report FIFO
+   fail-closed cases. No such tests exist today (G33). Tests must not require a database
+   migration (§8.1).
 
 # Verification Expectations
 
@@ -967,8 +1759,9 @@ Normative checklist for the implementation phase.
 5. Delete remains available in the EXPORTED state.
 6. Deleting a UNIT with rows in every Class-A table succeeds and leaves zero Class-A rows
    behind, with no foreign-key violation at any intermediate step of §4.4.
-7. All sixteen Class-A tables are purgeable **regardless of their `fiscal_year`**, including
-   `archived`, `closed`, and `open` years — the §6.1 grant is not year-scoped (D13, D15, §6.1).
+7. All **nineteen** Class-A entities (A1–A19) are purgeable **regardless of their `fiscal_year`**,
+   including `archived`, `closed`, and `open` years — the §6.1 grant is not year-scoped (D13, D15,
+   §6.1).
 8. `stock_movements` rows with `unit_id = <target unit>` are deleted while `unit_id IS NULL` rows
    for the same products are **preserved** and byte-identical afterwards (D20.1, D20.2).
 9. A NULL-unit `OUT` movement is **not** deleted even when its `product_id`, `reference_id`,
@@ -986,16 +1779,20 @@ Normative checklist for the implementation phase.
     free-text columns, and no row was deleted, rewritten, or re-attributed by the purge (D22.3,
     D22.4).
 14. `SELECT COUNT(*) FROM identity_store WHERE subject_type = 'UNIT' AND subject_id = <id>`
-    returns 0 after deletion, and the deletion leaves no dangling identifier in
-    `identity_store.issuer_identity_id`, `applied_sync_packages.issuer_identity_id`, or
-    `registry_snapshots.wilaya_identity_id` (§2).
+    returns 0 after deletion. No FK references `identity_store`, so deletion raises no referential
+    error. `identity_store.issuer_identity_id` and `registry_snapshots.wilaya_identity_id` hold
+    WILAYA identity ids and remain resolving. A retained
+    `applied_sync_packages.issuer_identity_id` that named the destroyed UNIT may become a
+    **non-resolving historical-provenance identifier** (G6b); this is expected, is not a
+    foreign-key violation, and is retained under D22 (§2).
 15. A UNIT code can be recreated immediately after deletion, and the recreated unit is **not**
     EXPORTED (§1, D12).
 16. `audit_log` rows referencing the canonical operator cause deletion to fail closed, with the
     entire transaction rolled back: the `units` row, every Class-A row, and the `identity_store`
     rows all survive unchanged, and no tombstone is written (§5, D14).
-17. The `audit_log` reference check is observed to execute inside the deletion transaction
-    (assert by inducing a failure after it and confirming rollback).
+17. The `audit_log` reference check is observed to execute inside the deletion transaction, as a
+    Phase-0 step **before any scan and before any `DELETE`** (assert by inducing a failure after it
+    and confirming rollback of the whole operation, §4.5/§4.6, D2).
 18. A UNIT whose owned rows carry an **archived** `fiscal_year` is deletable, and no
      `FiscalHistoricalGuard` assertion fires during the purge (§6).
 19. `fiscal_year_status`, `opening_balance_snapshots`, `fiscal_export_snapshots`,
@@ -1011,3 +1808,36 @@ Normative checklist for the implementation phase.
 23. No password, hash, or pre-hash appears in any `audit_log` column or `details` payload.
 24. `bun run check:arch` reports zero warnings; `cargo clippy -D warnings`, `cargo test`,
     `vitest`, and the release-integrity and documentation-governance scripts pass.
+
+**Revision 2 additions — mechanics of D13/D14 (§4.6–§4.10, §5.5).**
+
+25. **Preflight-first.** A UNIT that the preflight rejects is left **completely untouched**: the
+    `units` row, every Class-A row, and every `identity_store` row survive, and no partial delete
+    occurred. Assert by forcing each rejection and diffing the database (§4.6).
+26. **Canonical-operator resolution (§5.5).** Deletion fails closed, with nothing deleted, when
+    any of these holds: no `users` row matches `username='user' AND node_id=<code>`; `units.user_id
+    IS NULL`; the canonical key resolves to more than one row (defensive — unreachable under the
+    current `UNIQUE(username, node_id)` + `node_id NOT NULL` schema; if implemented, by a counting
+    query on the canonical key); or the resolved id differs from `units.user_id`. A soft-deleted
+    (`deleted = 1`) canonical operator row is still resolved and deleted with the UNIT.
+27. **No reliance on `ON DELETE` nullification.** An operator with audit history is refused; the
+    `audit_log.user_id` column is never left nullified by a purge (§5.2, C3).
+28. **Aggregate integrity fails closed (§4.7).** Deletion is rejected in Phase 0, before any
+    `DELETE`, when a target `supplier_orders` row has a `NULL`/other-unit item, when a target
+    `supplier_order_items` row hangs off a `NULL`/other-unit order (the Q6 anomaly — Q6 resolved:
+    Option A, fail-closed rejection, §9.3.3), or when a `contract_allocations.unit_id` disagrees
+    with its parent `contracts.unit_id`.
+29. **Two-sided allocation ownership (§4.7 D6).** A `supplier_order_item_allocations` row whose
+    item parent and allocation parent do not both resolve to the target UNIT causes fail-closed
+    rejection.
+30. **Cross-UNIT references fail closed (§4.10).** A non-target `inventory_layer_consumptions`
+    row referencing a target-owned `fifo_stock_layers` or `stock_movements` row, or a non-target
+    `contract_allocations` row referencing a target-owned `contract_products` line, causes
+    fail-closed rejection before any delete.
+31. **Surviving-report FIFO reference fails closed (§4.9).** A surviving
+    `daily_report_meal_items` row (`meal_id` not in the target reports) whose `fifo_layer_id`
+    equals a target-owned `fifo_stock_layers.id` causes fail-closed rejection; no dangling
+    `fifo_layer_id` is produced.
+32. **Migration compatibility (§8.1).** No migration is introduced; an already-initialized
+    database at schema version 1 is not re-provisioned, and the runtime guarantees hold without a
+    schema change.
