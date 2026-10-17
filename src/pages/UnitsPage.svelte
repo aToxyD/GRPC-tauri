@@ -39,6 +39,8 @@
   let editingUnit: Unit | null = null;
   // @category UiState
   let deletingUnit: Unit | null = null;
+  // @category UiState
+  let deleteInFlight = false;
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
@@ -153,13 +155,25 @@
       return;
     }
 
+    // In-flight guard: ignore re-entrant confirmations while the first
+    // `delete_unit` call is still pending. This prevents a duplicate
+    // submission from issuing a second backend deletion. `unitsOp` is
+    // intentionally not reused here: it also serializes list loads and
+    // exports, so a delete confirmed while a load/export is in flight would
+    // be silently dropped.
+    if (deleteInFlight) return;
+
+    deleteInFlight = true;
     try {
       await deleteUnit(deletingUnit.id);
       setSuccessWithTimeout(`تم حذف الوحدة ${deletingUnit.code} بنجاح.`);
       closeModal();
       loadData();
     } catch (e) {
+      // Fail closed: keep the dialog open and surface the backend error.
       unitsOp.error.set("خطأ: " + formatErrorMessage(e));
+    } finally {
+      deleteInFlight = false;
     }
   }
 
@@ -468,6 +482,6 @@
 
   <svelte:fragment slot="actions">
     <AppButton variant="secondary" on:click={closeModal}>إلغاء</AppButton>
-    <AppButton variant="danger" on:click={deleteUnitData}>حذف</AppButton>
+    <AppButton variant="danger" on:click={deleteUnitData} disabled={deleteInFlight}>حذف</AppButton>
   </svelte:fragment>
 </AppDialog>

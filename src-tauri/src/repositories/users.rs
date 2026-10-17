@@ -99,6 +99,23 @@ impl<'a> UserRepository<'a> {
         Ok(result)
     }
 
+    /// Count users matching the canonical operator key (`username`, node scope), including
+    /// disabled (`deleted = 1`) rows. ADR-0064 §5.5 D1.5: duplicate detection for the canonical
+    /// operator is defensive (unreachable under `UNIQUE(username, node_id)`), but if retained as
+    /// normative it MUST be discharged by a counting query rather than the single-row helper.
+    pub fn count_canonical_operators(
+        &self,
+        username: &str,
+        node_scope: &str,
+    ) -> Result<i64, AppError> {
+        let count: i64 = self.executor.query_row(
+            "SELECT COUNT(*) FROM users WHERE username = ?1 AND COALESCE(node_id, 'WILAYA') = ?2",
+            [username, node_scope],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     /// Get a user by node binding, including disabled rows.
     /// B8 apply path: resolves the local unit-bound user to canonicalize its
     /// name before upserting the synchronized accounts.

@@ -5,11 +5,39 @@
 
 use crate::errors::AppError;
 use crate::models::{CreateUnitRequest, Unit, UserRole};
-use crate::repositories::{DbExecutor, RepositoryProvider};
+use crate::repositories::{DbExecutor, RepositoryProvider, SupplierOrderOwnershipConflict};
 use chrono::Utc;
 use uuid::Uuid;
 
 use crate::domain::security::PasswordHashPort;
+
+/// Render one nullable ownership value for a domain error message. SQL `NULL`
+/// is shown explicitly as `NULL` so both sides of an ownership inconsistency are
+/// visible to an administrator.
+fn ownership_display(value: &Option<String>) -> &str {
+    match value {
+        Some(v) => v.as_str(),
+        None => "NULL",
+    }
+}
+
+/// Render an ADR-0064 §4.7 (D4/Q6) supplier-order ownership conflict for a domain
+/// error message.
+fn format_supplier_order_conflicts(conflicts: &[SupplierOrderOwnershipConflict]) -> String {
+    conflicts
+        .iter()
+        .map(|c| {
+            format!(
+                "item={} order={} item.unit_id={} order.unit_id={}",
+                c.item_id,
+                c.order_id,
+                ownership_display(&c.item_unit_id),
+                ownership_display(&c.order_unit_id),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
 
 /// Canonical UNIT operator username (ADR-0052). Every UNIT operator account
 /// is named `user`; uniqueness is node-scoped to the unit code, so operators
@@ -144,14 +172,153 @@ impl<'a> UnitService<'a> {
             .ok_or_else(|| AppError::Internal(format!("Unit not found: {}", unit_id)))
     }
 
-    /// Delete unit and its associated user atomically.
+    /// Delete unit with full fail-closed preflight per ADR-0064.
     pub fn delete_unit(&self, unit_id: &str) -> Result<(), AppError> {
-        let user_repo = self.executor.users();
-        let unit_repo = self.executor.units();
+        use crate::errors::BusinessLogicError;
 
-        if let Some(user_id) = unit_repo.delete_unit(unit_id)? {
-            user_repo.delete_user(&user_id)?;
+        let unit_repo = self.executor.units();
+        let user_repo = self.executor.users();
+
+        // P1: resolve target units row
+        let unit = unit_repo
+            .get_unit(unit_id)?
+            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                resource: "unit".to_string(),
+                id: unit_id.to_string(),
+            }))?;
+
+        let unit_code = &unit.code;
+        let unit_user_id_from_db = unit.user_id.as_deref();
+
+        // P2: canonical operator resolution (D1.1) — raw lookup (includes deleted = 1).
+        // D1.5: duplicate detection is discharged by a counting query, not the single-row helper.
+        let canonical_count =
+            user_repo.count_canonical_operators(OPERATOR_USERNAME, unit_code)?;
+        if canonical_count > 1 {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: "Multiple canonical operators resolve for this unit code".to_string(),
+            }));
         }
+        let canonical = user_repo
+            .get_user_by_username_raw(OPERATOR_USERNAME, unit_code)?
+            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: "Canonical operator not found for this unit".to_string(),
+            }))?;
+
+        // P2 cross-check (D1.2/D1.3): units.user_id must equal the resolved id and must not be NULL.
+        if unit_user_id_from_db.is_none() || unit_user_id_from_db != Some(canonical.id.as_str()) {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: "Units.user_id and canonical operator id mismatch".to_string(),
+            }));
+        }
+        let resolved_user_id = canonical.id.clone();
+
+        // P3: D14 gate - audit_log must have no entries for the operator
+        let audit_count = unit_repo.count_audit_log_for_user(&resolved_user_id)?;
+        if audit_count > 0 {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: "Operator has audit history".to_string(),
+            }));
+        }
+
+        // P4: aggregate-integrity checks
+        let soi_conflicts = unit_repo.find_supplier_order_items_with_conflicting_parents(unit_id)?;
+        if !soi_conflicts.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Target-owned supplier order item(s) hang off a NULL/foreign order: {}",
+                    format_supplier_order_conflicts(&soi_conflicts)
+                ),
+            }));
+        }
+
+        let so_conflicts = unit_repo.find_supplier_orders_with_conflicting_children(unit_id)?;
+        if !so_conflicts.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Target order(s) own a NULL/foreign child item: {}",
+                    format_supplier_order_conflicts(&so_conflicts)
+                ),
+            }));
+        }
+
+        let alloc_mismatches = unit_repo.find_contract_allocation_unit_mismatches(unit_id)?;
+        if !alloc_mismatches.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Contract allocation(s) disagree with their parent contract unit: {}",
+                    alloc_mismatches.join(", ")
+                ),
+            }));
+        }
+
+        let soa_mismatches = unit_repo.find_soa_two_sided_mismatches(unit_id)?;
+        if !soa_mismatches.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Supplier order item allocation(s) cannot prove two-sided target ownership: {}",
+                    soa_mismatches.join(", ")
+                ),
+            }));
+        }
+
+        // P5: cross-UNIT reference checks
+        let ilm_to_fifo = unit_repo.find_crossunit_ilm_to_fifo(unit_id)?;
+        if !ilm_to_fifo.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Non-target consumption(s) reference target FIFO layers: {}",
+                    ilm_to_fifo.join(", ")
+                ),
+            }));
+        }
+
+        let ilm_to_mvmt = unit_repo.find_crossunit_ilm_to_movement(unit_id)?;
+        if !ilm_to_mvmt.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Non-target consumption(s) reference target stock movements: {}",
+                    ilm_to_mvmt.join(", ")
+                ),
+            }));
+        }
+
+        let alloc_to_cp = unit_repo.find_alloc_to_contract_product_conflicts(unit_id)?;
+        if !alloc_to_cp.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Contract allocation(s) reference target contract products unsafely: {}",
+                    alloc_to_cp.join(", ")
+                ),
+            }));
+        }
+
+        // P6: surviving-report FIFO reference check
+        let surviving_fifo_refs = unit_repo.find_surviving_report_fifo_refs(unit_id)?;
+        if !surviving_fifo_refs.is_empty() {
+            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                resource: "unit".to_string(),
+                reason: format!(
+                    "Surviving report item(s) reference target FIFO layers: {}",
+                    surviving_fifo_refs.join(", ")
+                ),
+            }));
+        }
+
+        // Phase 1: purge
+        unit_repo.purge_unit_owned_data(unit_id, &resolved_user_id)?;
+
         Ok(())
     }
 

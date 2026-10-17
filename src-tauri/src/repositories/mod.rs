@@ -70,7 +70,7 @@ pub use sync_conflicts::SyncConflictRepository;
 pub use system::SystemRepository;
 pub use telemetry::TelemetryRepository;
 pub use timeline::TimelineRepository;
-pub use units::UnitRepository;
+pub use units::{SupplierOrderOwnershipConflict, UnitRepository};
 pub use users::UserRepository;
 
 impl crate::architecture::Repository for AnomalyRepository<'_> {}
