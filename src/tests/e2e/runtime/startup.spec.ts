@@ -126,12 +126,16 @@ test.describe('Tauri Application Startup Integrity & Lifecycle', () => {
       const dbPath = driver.getDbPath();
       expect(fs.existsSync(dbPath)).toBe(true);
 
-      // Verify default login form is visible (identity field is pinned or a
-      // fixed selector since SEC-026 / ADR-0052 — never free-text).
+      // Verify the login shell rendered. On a fresh sandbox the node is
+      // unconfigured and still `UNINITIALIZED`, so the login controls are
+      // intentionally NOT rendered (fail-closed visibility gate) and the
+      // first-run setup entry is presented instead (ADR-0052 stays the identity
+      // contract; only its visibility is gated).
+      await page.waitForSelector('[data-testid="login-page"]', { state: 'visible' });
       const usernameField = page.locator('#username');
       const passwordInput = page.locator('input[placeholder*="كلمة المرور"]');
-      await expect(usernameField).toBeVisible();
-      await expect(passwordInput).toBeVisible();
+      await expect(usernameField).toHaveCount(0);
+      await expect(passwordInput).toHaveCount(0);
 
       // Verify that isConfigured() initially evaluates to false in fresh sandbox
       const configBannerText = await page.evaluate(async () => {

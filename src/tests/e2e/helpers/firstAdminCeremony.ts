@@ -101,6 +101,14 @@ const E2E_WILAYA_NAME = 'Alger';
 
 /** LoginPage renders two `role="tab"` buttons; index 1 is the admin-key tab. */
 const AUTH_TAB_SELECTOR = '[role="tab"]';
+
+/**
+ * Stable, always-present marker on the LoginPage shell. The auth tabs are gated
+ * behind `loginEligible` and are therefore ABSENT on a fresh, unconfigured node
+ * (`UNINITIALIZED`), so they can no longer be used as the "webview attached"
+ * settle guard. This marker renders immediately on mount instead.
+ */
+const LOGIN_PAGE_SELECTOR = '[data-testid="login-page"]';
 const ADMIN_KEY_TAB_INDEX = 1;
 /** Admin-key passphrase field. */
 const PASSPHRASE_INPUT = '#passphrase';
@@ -246,8 +254,11 @@ export interface FirstAdminCeremonyResult {
 /**
  * Invokes a Tauri command over the real IPC bridge, waiting for the bridge to
  * exist first (the same pattern as `RuntimeContracts`).
+ *
+ * Exported so other runtime specs can exercise the exact command the UI invokes
+ * without depending on a login form that is now gated behind `loginEligible`.
  */
-async function invoke<T>(
+export async function invokeTauri<T>(
   page: Page,
   command: string,
   args?: Record<string, unknown>
@@ -314,9 +325,10 @@ export async function performFirstAdminCeremony(
   // ── Settle ────────────────────────────────────────────────────────────────
   // The SPA performs an initial client-side route redirect once the webview
   // attaches. Evaluating across that navigation destroys the execution context
-  // ("Execution context was destroyed"), so wait for the login view to render
-  // first — the same guard `ensureLoginIdentity` already applies.
-  await page.waitForSelector(AUTH_TAB_SELECTOR, {
+  // ("Execution context was destroyed"), so wait for the login view shell to
+  // render first. The auth tabs are gated behind `loginEligible` and are not
+  // present yet on this fresh node, so the always-rendered shell is the guard.
+  await page.waitForSelector(LOGIN_PAGE_SELECTOR, {
     state: 'visible',
     timeout: CEREMONY_STEP_TIMEOUT,
   });
@@ -324,7 +336,7 @@ export async function performFirstAdminCeremony(
   // ── E. begin_wilaya_provision (pre-auth) ───────────────────────────────────
   // Generates the node keypair, persists `node_identity.key` into the ADR-0062
   // identity directory, and writes the unsigned CSR to `csrPath`.
-  const csr = await invoke<IdentityCertificateDto>(page, 'begin_wilaya_provision', {
+  const csr = await invokeTauri<IdentityCertificateDto>(page, 'begin_wilaya_provision', {
     requestFilePath: csrPath,
   });
   expect(csr.subject_type).toBe('WILAYA');
@@ -340,7 +352,7 @@ export async function performFirstAdminCeremony(
   expect(csr.signature ?? null).toBeNull();
   expect(existsSync(csrPath)).toBe(true);
   expect(existsSync(path.join(identityDataDir, NODE_KEY_FILE))).toBe(true);
-  expect(await invoke<IdentityBootstrapState>(page, 'get_identity_status')).toBe(
+  expect(await invokeTauri<IdentityBootstrapState>(page, 'get_identity_status')).toBe(
     'WAITING_FOR_ROOT_CERTIFICATE'
   );
 
@@ -360,7 +372,7 @@ export async function performFirstAdminCeremony(
   // ── G. finalize_wilaya_provision (pre-auth) ───────────────────────────────
   // Verifies the Root signature against `GRPC_ROOT_PUBLIC_KEY`, checks the cert
   // public key matches the node key, and installs the ACTIVE WILAYA identity.
-  const finalized = await invoke<FinalizeWilayaProvisionResultDto>(
+  const finalized = await invokeTauri<FinalizeWilayaProvisionResultDto>(
     page,
     'finalize_wilaya_provision',
     { certFilePath: signedCertPath }
@@ -375,13 +387,13 @@ export async function performFirstAdminCeremony(
   const wilayaCertificate = finalized.Provisioned;
   expect(wilayaCertificate.subject_type).toBe('WILAYA');
   expect(wilayaCertificate.status).toBe('ACTIVE');
-  expect(await invoke<IdentityBootstrapState>(page, 'get_identity_status')).toBe('WILAYA_ACTIVE');
+  expect(await invokeTauri<IdentityBootstrapState>(page, 'get_identity_status')).toBe('WILAYA_ACTIVE');
 
   // ── H. issue_first_admin_key (pre-auth on a node with no ACTIVE ADMIN) ────
   // Creates the `users` row with an EMPTY password hash and writes `.adminkey`.
   // `set_fleet_admin_password` is deliberately NOT used: that is the separate
   // fleet-admin credential, not the bootstrap identity.
-  const adminCertificate = await invoke<IdentityCertificateDto>(
+  const adminCertificate = await invokeTauri<IdentityCertificateDto>(
     page,
     'issue_first_admin_key',
     { subjectUsername: E2E_ADMIN_USERNAME, passphrase: E2E_ADMIN_PASSPHRASE }
@@ -389,7 +401,7 @@ export async function performFirstAdminCeremony(
   expect(adminCertificate.subject_type).toBe('ADMIN');
   expect(existsSync(path.join(identityDataDir, ADMINKEY_FILE))).toBe(true);
   // Empty password hash + present `.adminkey` is exactly the `Ready` projection.
-  expect(await invoke<IdentityBootstrapState>(page, 'get_identity_status')).toBe('READY');
+  expect(await invokeTauri<IdentityBootstrapState>(page, 'get_identity_status')).toBe('READY');
 
   // ── I. Mandatory reload ───────────────────────────────────────────────────
   // The ceremony above ran over IPC, so the frontend's `identityState` is stale

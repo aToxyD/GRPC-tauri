@@ -48,14 +48,31 @@
   let password = '';
   // @category TransientState
   let localError = '';
+  // @category ProjectionState — fail-closed readiness latch: stays false until
+  // every required initial status read (security / configuration / settings /
+  // identity) has resolved successfully. Login controls never render before
+  // this is true, so there is no pre-read flash.
+  let statusLoaded = false;
   // @category ProjectionState
-  let isAppConfigured = true;
+  let isAppConfigured = false;
+  // @category ProjectionState — `get_settings().configured`. This is a distinct
+  // read from `is_configured()`; both must agree (and neither may be optimized
+  // away) before a node is treated as genuinely uninitialized.
+  let settingsConfigured = false;
   // @category ProjectionState
   let isUnitNode = false;
+  // @category UiState — transient first-run WILAYA/UNIT entry selection. It is
+  // UI-only: never persisted and never written to backend settings. It is only
+  // meaningful while the node is genuinely uninitialized.
+  let setupTab: 'WILAYA' | 'UNIT' = 'UNIT';
 
   // ADR-0052: WILAYA nodes authenticate exclusively as `admin`; the identity
   // field state mirrors the rendered (readonly) field at all times.
   $: if (!isUnitNode) username = 'admin';
+  // The admin-key tab is WILAYA-only. Whenever the node is identified as UNIT
+  // (e.g. after settings load), silently fall back to the password tab so the
+  // hidden tab cannot remain "selected" with no corresponding UI.
+  $: if (isUnitNode && authTab === 'adminkey') authTab = 'password';
 
   // @category ProjectionState
   let loginAttempts = 0;
@@ -94,16 +111,35 @@
   // Response (`.adminkey`) remains available as the recovery / high-assurance
   // path (admin-key tab). The backend gate still routes accounts without a
   // usable password credential (identity-only ADMIN ceremony) to the challenge.
+  //
+  // `WILAYA_ACTIVE` is deliberately NOT included: at that state no ACTIVE ADMIN
+  // credential and no `.adminkey` exist yet, so the challenge path cannot
+  // succeed. Presenting it would be a non-functional affordance (the backend
+  // fails closed regardless).
   // @category UiState
   $: adminkeyAvailable =
-    identityState === 'WILAYA_ACTIVE' ||
     identityState === 'ADMIN_PROVISIONED' ||
     identityState === 'READY';
+  // UNIT-only identity/bootstrap states. They can arise ONLY on the UNIT chain
+  // (both require a configured UNIT node key), so they are safe to branch on for
+  // presentation isolation and must never surface WILAYA-only setup UI.
+  // @category UiState
+  $: unitOnlyState =
+    identityState === 'UNIT_WAITING_FOR_CERTIFICATE' ||
+    identityState === 'UNIT_ACTIVE';
   // @category UiState
   $: wilayaBootstrapActive =
     !isUnitNode &&
+    !unitOnlyState &&
     (identityState === 'UNINITIALIZED' ||
       identityState === 'WAITING_FOR_ROOT_CERTIFICATE' ||
+      // `WILAYA_ACTIVE` is deliberately kept for BOTH paths. The identity
+      // projection cannot distinguish a finalized WILAYA node (still awaiting
+      // first-admin-key issuance) from a UNIT node that installed the WILAYA
+      // trust anchor (still awaiting `.unit` import): both report the same
+      // state with no node key exposed. Hiding the WILAYA continuation here
+      // would strand the WILAYA operator; the backend stays fail-closed for the
+      // UNIT case (`issue_first_admin_key` requires a node key).
       identityState === 'WILAYA_ACTIVE');
   // @category UiState
   $: unitBootstrapActive =
@@ -118,6 +154,62 @@
   // authoritative enforcement.
   // @category UiState
   $: unitAnchorInstalled = identityState === 'WILAYA_ACTIVE';
+
+  // ADR-0050 / first-admin ceremony: a genuinely uninitialized node owns no
+  // node key, is not configured by either authoritative read, and reports the
+  // untouched `UNINITIALIZED` bootstrap chain.
+  // @category UiState
+  $: genuinelyUninitialized =
+    statusLoaded &&
+    !isAppConfigured &&
+    !settingsConfigured &&
+    identityState === 'UNINITIALIZED';
+
+  // Login visibility is a PRESENTATION gate, never an authorization decision —
+  // the backend remains authoritative and fail-closed. It must not gate on
+  // `isAppConfigured` alone: WILAYA configuration is POST-auth, so requiring it
+  // would deadlock the first-admin ceremony. `statusLoaded` makes it fail closed
+  // (hidden) until every status read succeeds.
+  // @category UiState
+  $: loginEligible =
+    statusLoaded &&
+    (isAppConfigured ||
+      identityState === 'ADMIN_PROVISIONED' ||
+      identityState === 'READY' ||
+      identityState === 'UNIT_ACTIVE');
+
+  // @category UiState — classification: an unconfigured `WILAYA_ACTIVE` node is
+  // AMBIGUOUS. The identity projection cannot distinguish a finalized WILAYA
+  // node awaiting its first administrator key from a UNIT node that installed
+  // the WILAYA trust anchor and still awaits its `.unit` package. The path is
+  // never inferred from this state; instead the selector stays available and the
+  // operator decides which single continuation to view.
+  $: ambiguousWilayaActive =
+    statusLoaded &&
+    !isAppConfigured &&
+    !settingsConfigured &&
+    identityState === 'WILAYA_ACTIVE';
+
+  // @category UiState — selection surface: the selector is offered in exactly
+  // the two states where the operator must choose a continuation (a fresh node,
+  // or the ambiguous `WILAYA_ACTIVE` above). In every other state the identity
+  // projection alone decides which continuation is drawn.
+  $: showSetupSelector = genuinelyUninitialized || ambiguousWilayaActive;
+
+  // @category UiState — rendering exclusivity: the WILAYA-only continuation
+  // states are unambiguous and always draw the WILAYA section; the selector
+  // states draw ONLY the selected continuation, so the WILAYA first-admin form
+  // and the UNIT entry can never be visible at the same time. Never shown on a
+  // configured node.
+  $: showWilayaSetup =
+    !isAppConfigured &&
+    wilayaBootstrapActive &&
+    (!showSetupSelector || setupTab === 'WILAYA');
+  // @category UiState — rendering exclusivity (UNIT entry): only while the UNIT
+  // continuation is selected in a selector state. Withheld from every
+  // unambiguous WILAYA continuation state and from any configured node.
+  $: showUnitSetup =
+    !isAppConfigured && showSetupSelector && setupTab === 'UNIT';
 
   // @category UiState
   $: displayError = $loginError || localError;
@@ -141,16 +233,24 @@
     }
   }
 
-  async function refreshNodeType() {
+  async function refreshNodeType(): Promise<boolean> {
+    let ok = true;
     try {
       const settings = await getSettings();
+      settingsConfigured = settings.configured;
       isUnitNode = settings.configured && settings.node_type === 'UNIT';
     } catch {
+      // Fail closed: an unreadable settings projection is never treated as a
+      // configured node. `settingsConfigured` gates the setup selector, so a
+      // read failure simply keeps the selector/phasing conservative.
+      settingsConfigured = false;
       isUnitNode = false;
+      ok = false;
     }
     // ADR-0052: seed the identity field per node class — the canonical UNIT
     // operator by default, or the pinned fleet admin on WILAYA.
     username = isUnitNode ? 'user' : 'admin';
+    return ok;
   }
 
   async function refreshIdentityStatus() {
@@ -161,10 +261,49 @@
     }
   }
 
+  /**
+   * Re-reads the authoritative status projections after a provisioning command
+   * rejected, without retrying the command or regenerating/replacing identity.
+   *
+   * A rejected command is NOT proof of no side effects: `begin_wilaya_provision`
+   * and `begin_unit_provision` persist the node signing key BEFORE writing the
+   * CSR file, so the command can reject while `get_identity_status` has already
+   * moved off `UNINITIALIZED`. Trusting the stale projection would leave the
+   * first-run selector (and the login gate) presenting a state the backend no
+   * longer holds.
+   *
+   * The ORIGINAL operation error is always preserved — a failed refresh never
+   * masks it. When either read fails, `statusLoaded` is reset to `false`, which
+   * re-arms every fail-closed gate (setup selector + login controls) until the
+   * page is reloaded and the initial reads succeed again; the uncertainty is
+   * appended to the original error instead.
+   */
+  async function refreshAfterProvisionFailure(operationError: string): Promise<void> {
+    const settingsOk = await refreshNodeType();
+    let identityOk = true;
+    try {
+      identityState = await getIdentityStatus();
+    } catch {
+      identityOk = false;
+    }
+    if (settingsOk && identityOk) {
+      localError = operationError;
+      return;
+    }
+    localError =
+      operationError + ' — تعذر تأكيد حالة العقدة بعد الفشل؛ أعد فتح الصفحة للتحقق.';
+    statusLoaded = false;
+  }
+
   onMount(async () => {
     // ADR-0041: if the app key does not resolve (locked store / unprovisioned),
     // route to the Security Setup / Unlock page — the DB is deferred and no
     // command below can run yet.
+    //
+    // Every required initial status read is tracked; a single failure leaves
+    // `statusLoaded` false (fail closed) so the login controls stay hidden.
+    let readsOk = true;
+
     try {
       const security = await getSecurityStatus();
       appKeySource = security.source;
@@ -174,14 +313,56 @@
       }
     } catch (e) {
       console.error('Failed to read security status:', e);
+      readsOk = false;
     }
+
     try {
       isAppConfigured = await isConfigured();
     } catch (e) {
+      console.error('Failed to read configuration state:', e);
       isAppConfigured = false;
+      readsOk = false;
     }
-    await refreshNodeType();
-    await refreshIdentityStatus();
+
+    if (!(await refreshNodeType())) {
+      readsOk = false;
+    }
+
+    try {
+      identityState = await getIdentityStatus();
+    } catch (e) {
+      console.error('Failed to read identity status:', e);
+      localError = 'تعذر قراءة حالة الهوية: ' + formatErrorMessage(e);
+      readsOk = false;
+    }
+
+    // Fail closed: partial success never marks initialization complete.
+    statusLoaded = readsOk;
+    // The `grpc_setup_node_type` session value is a transient UI HINT only. It
+    // is applied solely in the two states that expose the selector (a genuinely
+    // uninitialized node, or the ambiguous unconfigured `WILAYA_ACTIVE`), where
+    // it preselects a tab WITHOUT suppressing the other continuation — the
+    // selector always keeps both reachable. It must never override a definitive
+    // identity state: `WAITING_FOR_ROOT_CERTIFICATE` and the UNIT-only states
+    // are decided by the identity projection alone.
+    if (
+      readsOk &&
+      !isAppConfigured &&
+      !settingsConfigured &&
+      (identityState === 'UNINITIALIZED' || identityState === 'WILAYA_ACTIVE')
+    ) {
+      const savedNodeType =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem('grpc_setup_node_type')
+          : null;
+      if (savedNodeType === 'WILAYA' || savedNodeType === 'UNIT') {
+        setupTab = savedNodeType;
+      }
+    }
+    if (!readsOk && !localError) {
+      localError = 'تعذر قراءة حالة تهيئة العقدة. تحقق من النظام ثم أعد المحاولة.';
+    }
+
     try {
       const window = getAppWindow();
       await window.setResizable(true);
@@ -213,7 +394,9 @@
           showSuccess('تم استيراد حزمة التكوين بنجاح! يمكنك الآن تسجيل الدخول.');
         }
       } catch (e) {
-        localError = 'خطأ في استيراد الحزمة: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في استيراد الحزمة: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -231,7 +414,9 @@
         await refreshIdentityStatus();
         showSuccess('تم إنشاء طلب التوقيع وحفظه. سلّمه إلى المرجع لاعتماد العقدة.');
       } catch (e) {
-        localError = 'خطأ في بدء تهيئة الهوية: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في بدء تهيئة الهوية: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -254,7 +439,9 @@
             : 'الشهادة مطابقة لما تم استيراده مسبقاً.'
         );
       } catch (e) {
-        localError = 'خطأ في تفعيل الشهادة: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في تفعيل الشهادة: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -272,7 +459,9 @@
         await refreshIdentityStatus();
         showSuccess('تم إصدار المفتاح الإداري. يمكنك الآن تسجيل الدخول عبر المفتاح.');
       } catch (e) {
-        localError = 'خطأ في إصدار المفتاح الإداري: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في إصدار المفتاح الإداري: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -293,7 +482,9 @@
         await refreshIdentityStatus();
         showSuccess('تم إنشاء طلب توقيع الوحدة وحفظه. سلّمه إلى عقدة WILAYA للاعتماد.');
       } catch (e) {
-        localError = 'خطأ في بدء تهيئة الوحدة: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في بدء تهيئة الوحدة: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -316,7 +507,9 @@
             : 'الشهادة مطابقة لما تم تثبيته مسبقاً.'
         );
       } catch (e) {
-        localError = 'خطأ في تثبيت شهادة WILAYA: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في تثبيت شهادة WILAYA: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -339,7 +532,9 @@
             : 'الشهادة مطابقة لما تم استيراده مسبقاً.'
         );
       } catch (e) {
-        localError = 'خطأ في تفعيل هوية الوحدة: ' + formatErrorMessage(e);
+        await refreshAfterProvisionFailure(
+          'خطأ في تفعيل هوية الوحدة: ' + formatErrorMessage(e)
+        );
       }
     });
   }
@@ -450,7 +645,7 @@
   }
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900" dir="rtl">
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900" dir="rtl" data-testid="login-page">
   <div class="w-full max-w-md">
   <AppCard elevated padding="lg">
 
@@ -514,7 +709,14 @@
       </div>
     {/if}
 
-    <!-- التبويبات -->
+    <!--
+      Login controls are gated on `loginEligible` — a PRESENTATION gate only;
+      the backend remains authoritative and fail-closed. They never render
+      until every required status read succeeds (no pre-read flash) and stay
+      hidden on an unconfigured node that is not yet authenticatable.
+    -->
+    {#if loginEligible}
+    <!-- التبويبات — المفتاح الإداري خاص بـ WILAYA فقط؛ يُخفى كلياً على عقد UNIT -->
     <div class="flex mb-4 border-b border-gray-200 dark:border-gray-700" role="tablist">
       <button
         type="button"
@@ -525,6 +727,7 @@
       >
         كلمة المرور
       </button>
+      {#if !isUnitNode}
       <button
         type="button"
         role="tab"
@@ -535,6 +738,7 @@
       >
         المفتاح الإداري
       </button>
+      {/if}
     </div>
 
     <!-- نموذج الدخول بكلمة المرور -->
@@ -619,9 +823,79 @@
       </AppButton>
     </form>
     {/if}
+    {/if}
 
-    <!-- استيراد حزمة التكوين -->
-    {#if !isAppConfigured}
+    <!--
+      Continuation selector (WILAYA / UNIT). Presentation-only: the choice is
+      transient in-memory state and never reaches backend settings or the
+      database. It is offered while the node is genuinely uninitialized
+      (`identityState === 'UNINITIALIZED'`) and while an unconfigured node is in
+      the AMBIGUOUS `WILAYA_ACTIVE` state — where the identity projection cannot
+      say whether the pending step is WILAYA first-admin-key issuance or a UNIT
+      `.unit` import. It selects which SINGLE continuation renders; it never
+      changes an established node type (the backend refuses any restart /
+      identity change) and never proves the persisted provisioning path.
+    -->
+    {#if showSetupSelector}
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 text-center">
+          اختر نوع العقدة
+        </p>
+        <div class="flex gap-2" role="group" aria-label="نوع العقدة">
+          <button
+            type="button"
+            aria-pressed={setupTab === 'WILAYA'}
+            class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {setupTab === 'WILAYA' ? 'border-civil-blue bg-civil-blue/10 text-civil-blue font-bold shadow-sm' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}"
+            on:click={() => {
+              setupTab = 'WILAYA';
+              if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('grpc_setup_node_type', 'WILAYA');
+            }}
+          >
+            ولاية (WILAYA)
+          </button>
+          <button
+            type="button"
+            aria-pressed={setupTab === 'UNIT'}
+            class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {setupTab === 'UNIT' ? 'border-civil-blue bg-civil-blue/10 text-civil-blue font-bold shadow-sm' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}"
+            on:click={() => {
+              setupTab = 'UNIT';
+              if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('grpc_setup_node_type', 'UNIT');
+            }}
+          >
+            وحدة (UNIT)
+          </button>
+        </div>
+      </div>
+    {/if}
+
+    <!--
+      Ambiguous unconfigured `WILAYA_ACTIVE`: the identity projection cannot
+      distinguish a finalized WILAYA node (first-admin key pending) from a UNIT
+      anchor-first node (`.unit` import pending). The selector above lets the
+      operator choose, and exactly ONE continuation is drawn below for the
+      current selection — never both. This note never selects a path.
+    -->
+    {#if ambiguousWilayaActive}
+      <div class="mt-6">
+        <AppAlert intent="info">
+          <p class="text-xs leading-relaxed">
+            حالة التهيئة غير حاسمة: اختر المسار المناسب من المحدّد أعلاه. إن كانت
+            هذه عقدة ولاية (WILAYA) فاختر «ولاية» لإكمال إصدار المفتاح الإداري الأول؛
+            وإن كانت وحدة (UNIT) فاختر «وحدة» لتثبيت مرساة الثقة ثم استيراد حزمة
+            <code class="font-mono">.unit</code>. يُعرض مسار واحد فقط في كل مرة،
+            ويبقى الخادم المرجع النهائي للمسار الصحيح.
+          </p>
+        </AppAlert>
+      </div>
+    {/if}
+
+    <!-- استيراد حزمة التكوين — UNIT-path entry (trust-anchor install + `.unit`
+         import). Rendered only while the UNIT continuation is selected in a
+         selector state (genuinely uninitialized, or ambiguous `WILAYA_ACTIVE`);
+         never shown for WILAYA-chain continuation states
+         (`WAITING_FOR_ROOT_CERTIFICATE`, `ADMIN_PROVISIONED`, `READY`) nor on a
+         configured node. See the `showUnitSetup` derivation. -->
+    {#if showUnitSetup}
       <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
         <p class="text-sm text-gray-500 dark:text-gray-400 text-center">لم يتم تكوين العقدة بعد</p>
         <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
@@ -656,7 +930,7 @@
     {/if}
 
     <!-- تهيئة الهوية (B5: offline Root bootstrap) -->
-    {#if wilayaBootstrapActive}
+    {#if showWilayaSetup}
       <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium text-gray-700 dark:text-gray-300">تهيئة الهوية</p>

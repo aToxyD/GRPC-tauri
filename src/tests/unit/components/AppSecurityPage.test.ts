@@ -72,7 +72,7 @@ describe('AppSecurityPage — APPKEY-001 fleet provisioning UX', () => {
       expect(container.textContent).toContain('GRPC_APP_KEY');
     });
     expect(container.textContent).toContain('نفس قيمة مفتاح WILAYA');
-    expect(container.textContent).toContain('فشل فك تشفير حزمة .unit');
+    expect(container.textContent).toContain('هذه العقدة وحدة (UNIT) تابعة لـ WILAYA');
     expect(container.textContent).toContain('قبل أول تشغيل');
     expect(container.textContent).toContain('أعد تشغيل التطبيق');
     expect(container.textContent).toContain('أداة التوفير المحمولة');
@@ -82,6 +82,8 @@ describe('AppSecurityPage — APPKEY-001 fleet provisioning UX', () => {
     mockGetSecurityStatus.mockResolvedValue(status({ source: 'none' }));
 
     render(AppSecurityPage);
+
+    await fireEvent.click(await screen.findByRole('tab', { name: 'ولاية (WILAYA)' }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /إنشاء المفتاح وفتح التطبيق/ })).toBeInTheDocument();

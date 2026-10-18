@@ -84,9 +84,13 @@ describe('LoginPage — B8 import relocated to Settings (SEC-014 Phase 4)', () =
   });
 
   it('keeps the `.unit` configuration ceremony intact', async () => {
-    // The pre-configuration `.unit` flow renders only while the node is not
-    // yet configured.
+    // The UNIT entry block renders only while the UNIT path has not started:
+    // a genuinely uninitialized node with neither configuration read satisfied.
+    // (A `settings.configured === true`, `UNIT_ACTIVE` node has already imported
+    // the `.unit`, so the entry is no longer a valid continuation there.)
     mockIsConfigured.mockResolvedValue(false);
+    mockGetSettings.mockResolvedValue({ configured: false, node_type: 'UNCONFIGURED' });
+    mockGetIdentityStatus.mockResolvedValue('UNINITIALIZED');
     render(LoginPage);
 
     await screen.findByText('لم يتم تكوين العقدة بعد');

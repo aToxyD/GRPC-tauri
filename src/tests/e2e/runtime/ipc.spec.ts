@@ -35,7 +35,10 @@ test.describe('Real IPC Validation & Filesystem Sandboxing', () => {
   test('malformed IPC payloads are rejected gracefully by Rust types', async ({ tauriApp }) => {
     const { page } = tauriApp;
 
-    await page.waitForSelector('#username');
+    // The login controls are gated behind `loginEligible` and are hidden on this
+    // fresh, unconfigured node; wait for the always-rendered shell instead so the
+    // IPC bridge is attached before exercising malformed payloads.
+    await page.waitForSelector('[data-testid="login-page"]');
     // Send malformed payload to a command and assert error propagation
     const ipcError = await page.evaluate(async () => {
       for (let i = 0; i < 50; i++) {

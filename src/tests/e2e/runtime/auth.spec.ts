@@ -1,34 +1,52 @@
 import { test, expect } from '../fixtures/tauriApp';
 import { RuntimeContracts } from '../contracts/runtimeContracts';
-import { ensureLoginIdentity } from '../helpers/login';
-import { performFirstAdminCeremony } from '../helpers/firstAdminCeremony';
+import { invokeTauri, performFirstAdminCeremony } from '../helpers/firstAdminCeremony';
 
 test.describe('Tauri Authentication Runtime Lifecycle & Lockout', () => {
   test.skip(process.platform !== 'win32', 'Tauri IPC backend is required and only supported on Windows in E2E tests');
 
-  test('rate limiter blocks access after 5 consecutive invalid login attempts', async ({ tauriApp }) => {
+  test('rate limiter blocks access after repeated invalid login attempts', async ({ tauriApp }) => {
     const { page } = tauriApp;
 
-    await ensureLoginIdentity(page, 'admin');
-    const passwordInput = page.locator('input[placeholder*="كلمة المرور"]');
-    const submitBtn = page.locator('button:has-text("تسجيل الدخول")');
+    // The login controls are gated behind `loginEligible` and are intentionally
+    // hidden on this fresh, unconfigured node, so the authoritative control is
+    // exercised directly over IPC — the exact `login` command the form invokes.
+    //
+    // Backend contract (`src-tauri/src/commands/auth.rs`,
+    // `src-tauri/src/domain/rate_limiter.rs`):
+    //   - attempts 1..`DEFAULT_MAX_ATTEMPTS` (5) RESOLVE with `success: false`
+    //     and the generic invalid-credentials message: `admin` has no credential
+    //     on a fresh node (B6-A seeds no password admin), so each attempt takes
+    //     the generic-failure path that records a per-user rate-limiter hit;
+    //   - the attempt AT the threshold is REJECTED (the IPC promise throws),
+    //     because the per-user gate returns `Err(...)` — never a resolved
+    //     lockout `LoginResponse`.
+    // Modelling both shapes is required; asserting a resolved lockout can never
+    // pass. The fixture starts a fresh sandbox (its own persisted rate-limiter
+    // store), so no lockout state leaks in from another test.
+    const GENERIC_FAILURE = 'اسم المستخدم أو كلمة المرور غير صحيحة';
+    const MAX_ATTEMPTS = 5;
 
-    // Fill in incorrect details 5 times — the identity is fixed (ADR-0052),
-    // only the wrong credential rotates per attempt.
-    for (let i = 0; i < 5; i++) {
-      await passwordInput.fill(`wrong_password_${i}`);
-      await submitBtn.click();
-
-      // Wait for IPC return and UI update
-      await expect(page.locator('text=محاولات تسجيل الدخول:')).toContainText(`${i + 1}/5`);
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const response = await invokeTauri<{ success: boolean; message: string }>(page, 'login', {
+        request: { username: 'admin', password: `wrong_password_${i}` },
+      });
+      expect(response.success).toBe(false);
+      expect(response.message).toContain(GENERIC_FAILURE);
     }
 
-    // Verify rate limit lockout propagation
-    const errorLocators = page.locator('.bg-red-50, .text-red-700');
-    await expect(errorLocators.first()).toBeVisible();
-    const texts = await errorLocators.allInnerTexts();
-    const joinedText = texts.join(' | ');
-    expect(joinedText).toMatch(/محظور|تجاوز الحد/);
+    // The attempt at the threshold rejects; capture the message regardless of the
+    // rejection shape (Tauri rejects with the raw backend error value).
+    let lockoutMessage = '';
+    try {
+      await invokeTauri(page, 'login', {
+        request: { username: 'admin', password: 'wrong_password_lockout' },
+      });
+      throw new Error('expected the 6th invalid attempt to be rejected by the rate limiter');
+    } catch (error) {
+      lockoutMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(lockoutMessage).toMatch(/تجاوز الحد/);
   });
 
   test('successful authentication, session bootstrap, and node redirection', async ({ tauriAdminApp }) => {

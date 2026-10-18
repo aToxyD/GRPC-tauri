@@ -85,8 +85,11 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
         `document.querySelector('#security-passphrase').closest('form').querySelector('button[type=submit]').click()`,
       );
 
-      // Unlock success routes to the login page.
-      await driver.client.waitFor('#username', 25000);
+      // Unlock success routes to the node-readiness surface. On a fresh node the
+      // identity is still `UNINITIALIZED`, so the login controls are gated and
+      // intentionally hidden (fail-closed visibility gate); the always-rendered
+      // shell proves the route rendered.
+      await driver.client.waitFor('[data-testid="login-page"]', 25000);
 
       // Backend proof: store persisted, DB bootstrapped, store-derived key.
       expect(fs.existsSync(driver.appKeyPath)).toBe(true);
@@ -104,17 +107,16 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       expect(configured.ok).toBe(true);
       expect(configured.value).toBe(false);
 
-      // Login gate is reachable against the bootstrapped DB. Fresh nodes have
-      // no seeded admin (B6-A: fleets bootstrap via the offline Root flow), so
-      // `admin/admin` is rejected gracefully — proving the full auth IPC path
-      // round-trips on the unlocked DB.
-      // ADR-0052: `#username` is read-only and pre-pinned to `admin` — only
-      // the wrong credential needs entering.
-      await driver.client.fill('#password', 'admin');
-      await driver.client.execute(
-        `document.querySelector('#username').closest('form').querySelector('button[type=submit]').click()`,
-      );
-      await driver.waitForBodyText('اسم المستخدم أو كلمة المرور غير صحيحة', 25000);
+      // Login gate round-trips against the bootstrapped DB. Fresh nodes have no
+      // seeded admin (B6-A: fleets bootstrap via the offline Root flow), so the
+      // credential is rejected gracefully — proving the full auth IPC path works
+      // on the unlocked DB. The UI form is gated behind `loginEligible` (hidden
+      // while `UNINITIALIZED`), so the same command the form invokes is
+      // exercised directly.
+      const loginResult = await driver.invoke<{ success: boolean }>('login', {
+        request: { username: 'admin', password: 'admin' },
+      });
+      expect(loginResult.success).toBe(false);
     } finally {
       await driver.stop();
     }
@@ -160,7 +162,7 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       await driver.client.execute(
         `document.querySelector('#security-unlock-passphrase').closest('form').querySelector('button[type=submit]').click()`,
       );
-      await driver.client.waitFor('#username', 25000);
+      await driver.client.waitFor('[data-testid="login-page"]', 25000);
 
       // Same node identity: the encrypted store and the setup-time backup are
       // byte-identical across the restart.
@@ -206,7 +208,7 @@ test.describe('ADR-0041 /security app-key lifecycle (Release binary)', () => {
       await driver.client.execute(
         `document.querySelector('#security-unlock-passphrase').closest('form').querySelector('button[type=submit]').click()`,
       );
-      await driver.client.waitFor('#username', 25000);
+      await driver.client.waitFor('[data-testid="login-page"]', 25000);
       expect((await driver.invoke<Record<string, unknown>>('get_security_status')).unlocked).toBe(true);
     } finally {
       await driver.stop();

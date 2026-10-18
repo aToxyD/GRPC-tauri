@@ -53,6 +53,8 @@
   // validated App Key to the OS keyring. Explicit opt-in, default false.
   // @category UiState
   let remember = false;
+  // @category UiState — First-run node type tab in setup mode
+  let setupTab: 'WILAYA' | 'UNIT' = 'UNIT';
   // @category TransientState
   let forgetResult = '';
   // @category TransientState
@@ -183,6 +185,9 @@
       await initializeAppKey(passphrase, backupPath, remember);
       passphrase = '';
       confirmPassphrase = '';
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('grpc_setup_node_type', 'WILAYA');
+      }
       showSuccess('تم إعداد مفتاح التطبيق بنجاح. احتفظ بنسخة المفتاح في مكان آمن.');
       push('/login');
     });
@@ -219,6 +224,9 @@
         importPassphrase = '';
         importArtifactPath = '';
         importSuccess = true;
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('grpc_setup_node_type', 'UNIT');
+        }
         showSuccess('تم استيراد مفتاح الأسطول وفتح التطبيق. يمكنك الآن تسجيل الدخول.');
         push('/login');
       });
@@ -358,83 +366,182 @@
           </div>
         {/if}
 
-        {#if setupMode && status?.source === 'none'}
-          <div class="mb-4 space-y-3">
-            <AppAlert intent="danger">
-              <p class="text-sm font-semibold">لا يوجد مفتاح App متاح بعد</p>
-              <p class="text-xs mt-1 leading-relaxed">
-                إذا كانت هذه العقدة وحدة (UNIT) تابعة لـ WILAYA، يجب توفير
-                <code class="font-mono">GRPC_APP_KEY</code> بنفس قيمة مفتاح WILAYA
-                <b>قبل أول تشغيل</b>. إنشاء مفتاح محلي جديد يختلف عن مفتاح WILAYA
-                وسيؤدي إلى <b>فشل فك تشفير حزمة .unit</b> عند الاستيراد (Fail-Closed).
+        {#if setupMode}
+          {#if status?.source === 'none'}
+            <div class="mb-5">
+              <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 text-center mb-2.5">
+                اختر نوع العقدة لبدء إعداد الأمان:
               </p>
-            </AppAlert>
-            <AppCard>
-              <p class="text-sm font-semibold text-gray-900 dark:text-white">
-                مسار الأسطول — لديّ مفتاح WILAYA (موصى به لعقد UNIT)
-              </p>
-              <ol class="text-xs text-gray-600 dark:text-gray-300 mt-2 list-decimal list-inside space-y-1">
-                <li>
-                  احصل على قيمة مفتاح الأسطول من WILAYA (أداة التوفير المحمولة
-                  <code class="font-mono"> grpc-app-key.age</code>).
-                </li>
-                <li>
-                  اضبط متغير البيئة <code class="font-mono">GRPC_APP_KEY</code> بنفس
-                  القيمة تماماً.
-                </li>
-                <li>
-                  أعد تشغيل التطبيق — سيعرض هذا القسم حالة «مفتاح الأسطول متوفر عبر
-                  GRPC_APP_KEY».
-                </li>
-                <li>
-                  لا تنشئ مفتاحاً محلياً في مسار الأسطول: المفتاح المحلي الجديد مختلف
-                  عن مفتاح WILAYA ويفشل فك تشفير <code class="font-mono">.unit</code>.
-                </li>
-              </ol>
-              <div class="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
-                <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">
-                  أو استورد الملف المحمول مباشرة: يقرأ التطبيق
-                  <code class="font-mono">grpc-app-key.age</code> من WILAYA ويخزنه
-                  محلياً مشفراً بكلمة مرور — بدون تعديل الملف الأصلي.
-                </p>
-                {#if importSuccess}
-                  <AppAlert intent="success">
-                    <p class="text-sm">تم استيراد مفتاح الأسطول بنجاح.</p>
-                  </AppAlert>
-                {/if}
-                {#if importError}
-                  <AppAlert intent="danger">
-                    <p class="text-sm">{importError}</p>
-                  </AppAlert>
-                {/if}
-                <form class="space-y-2" on:submit|preventDefault={handleImport}>
-                  <div class="flex items-center gap-2">
-                    <AppButton
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={$loading}
-                      on:click={pickArtifact}
-                    >
-                      اختيار الملف…
-                    </AppButton>
-                    {#if importArtifactPath}
-                      <code class="text-xs text-gray-600 dark:text-gray-300 truncate flex-1" dir="ltr">
-                        {importArtifactPath}
-                      </code>
-                    {:else}
-                      <span class="text-xs text-gray-400 flex-1">لم يتم اختيار ملف بعد</span>
+              <div class="flex gap-2" role="tablist" aria-label="نوع العقدة">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={setupTab === 'WILAYA'}
+                  class="flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors {setupTab === 'WILAYA' ? 'border-civil-blue bg-civil-blue/10 text-civil-blue font-bold shadow-sm' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}"
+                  on:click={() => { setupTab = 'WILAYA'; localError = ''; }}
+                >
+                  ولاية (WILAYA)
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={setupTab === 'UNIT'}
+                  class="flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors {setupTab === 'UNIT' ? 'border-civil-blue bg-civil-blue/10 text-civil-blue font-bold shadow-sm' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}"
+                  on:click={() => { setupTab = 'UNIT'; localError = ''; }}
+                >
+                  وحدة (UNIT)
+                </button>
+              </div>
+            </div>
+
+            {#if setupTab === 'UNIT'}
+              <div class="mb-4 space-y-3">
+                <AppAlert intent="danger">
+                  <p class="text-sm font-semibold">لا يوجد مفتاح App متاح بعد</p>
+                  <p class="text-xs mt-1 leading-relaxed">
+                    هذه العقدة وحدة (UNIT) تابعة لـ WILAYA، يجب توفير
+                    <code class="font-mono">GRPC_APP_KEY</code> بنفس قيمة مفتاح WILAYA
+                    <b>قبل أول تشغيل</b>.
+                  </p>
+                </AppAlert>
+                <AppCard>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                    مسار الأسطول — لديّ مفتاح WILAYA (موصى به لعقد UNIT)
+                  </p>
+                  <ol class="text-xs text-gray-600 dark:text-gray-300 mt-2 list-decimal list-inside space-y-1">
+                    <li>
+                      احصل على قيمة مفتاح الأسطول من WILAYA (أداة التوفير المحمولة
+                      <code class="font-mono"> grpc-app-key.age</code>).
+                    </li>
+                    <li>
+                      اضبط متغير البيئة <code class="font-mono">GRPC_APP_KEY</code> بنفس
+                      القيمة تماماً.
+                    </li>
+                    <li>
+                      أعد تشغيل التطبيق — سيعرض هذا القسم حالة «مفتاح الأسطول متوفر عبر
+                      GRPC_APP_KEY».
+                    </li>
+                    <li>
+                      لا تنشئ مفتاحاً محلياً في مسار الأسطول: المفتاح المحلي الجديد مختلف
+                      عن مفتاح WILAYA ويفشل فك تشفير <code class="font-mono">.unit</code>.
+                    </li>
+                  </ol>
+                  <div class="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+                    <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                      أو استورد الملف المحمول مباشرة: يقرأ التطبيق
+                      <code class="font-mono">grpc-app-key.age</code> من WILAYA ويخزنه
+                      محلياً مشفراً بكلمة مرور — بدون تعديل الملف الأصلي.
+                    </p>
+                    {#if importSuccess}
+                      <AppAlert intent="success">
+                        <p class="text-sm">تم استيراد مفتاح الأسطول بنجاح.</p>
+                      </AppAlert>
                     {/if}
+                    {#if importError}
+                      <AppAlert intent="danger">
+                        <p class="text-sm">{importError}</p>
+                      </AppAlert>
+                    {/if}
+                    <form class="space-y-2" on:submit|preventDefault={handleImport}>
+                      <div class="flex items-center gap-2">
+                        <AppButton
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={$loading}
+                          on:click={pickArtifact}
+                        >
+                          اختيار الملف…
+                        </AppButton>
+                        {#if importArtifactPath}
+                          <code class="text-xs text-gray-600 dark:text-gray-300 truncate flex-1" dir="ltr">
+                            {importArtifactPath}
+                          </code>
+                        {:else}
+                          <span class="text-xs text-gray-400 flex-1">لم يتم اختيار ملف بعد</span>
+                        {/if}
+                      </div>
+                      <AppInput
+                        id="security-import-passphrase"
+                        label="كلمة مرور التخزين المحلي"
+                        type="password"
+                        bind:value={importPassphrase}
+                        placeholder="8 أحرف على الأقل"
+                        autocomplete="new-password"
+                        disabled={$loading}
+                      />
+                      <label class="flex items-center gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          bind:checked={remember}
+                          class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+                        />
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                          تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+                        </span>
+                      </label>
+                      <AppButton type="submit" variant="primary" size="sm" fullWidth loading={$loading}>
+                        استيراد المفتاح وفتح التطبيق
+                      </AppButton>
+                    </form>
                   </div>
+                </AppCard>
+              </div>
+            {:else}
+              <div class="space-y-4">
+                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+                  إعداد مفتاح محلي (عقدة مستقلة / WILAYA)
+                  <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+                </div>
+
+                <form class="space-y-4" on:submit|preventDefault={handleInitialize} novalidate>
+                  <AppAlert intent="warning">
+                    <p class="text-sm leading-relaxed">
+                      سيتم توليد مفتاح تشفير جديد وتخزينه محمياً بكلمة مرور. <b>فقدان كلمة المرور
+                      يعني فقدان البيانات</b> — احتفظ بها في مكان آمن.
+                    </p>
+                    {#if status?.source === 'none'}
+                      <p class="text-xs mt-2 leading-relaxed">
+                        هذا المسار مخصص للعقد المستقلة أو عقدة WILAYA. إذا كانت العقدة UNIT
+                        تابعة للأسطول، اختر تبويب «وحدة (UNIT)» أعلاه.
+                      </p>
+                    {/if}
+                  </AppAlert>
+
                   <AppInput
-                    id="security-import-passphrase"
-                    label="كلمة مرور التخزين المحلي"
+                    id="security-passphrase"
+                    label="كلمة مرور المفتاح"
                     type="password"
-                    bind:value={importPassphrase}
+                    bind:value={passphrase}
                     placeholder="8 أحرف على الأقل"
                     autocomplete="new-password"
+                    required
                     disabled={$loading}
                   />
+
+                  <AppInput
+                    id="security-confirm-passphrase"
+                    label="تأكيد كلمة المرور"
+                    type="password"
+                    bind:value={confirmPassphrase}
+                    placeholder="أعد إدخال كلمة المرور"
+                    autocomplete="new-password"
+                    required
+                    disabled={$loading}
+                  />
+
+                  <label class="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      bind:checked={exportBackup}
+                      class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+                    />
+                    <span class="text-sm text-gray-700 dark:text-gray-300">
+                      تصدير نسخة احتياطية من المفتاح (مرة واحدة فقط)
+                    </span>
+                  </label>
+
                   <label class="flex items-center gap-3 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -445,88 +552,82 @@
                       تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
                     </span>
                   </label>
-                  <AppButton type="submit" variant="primary" size="sm" fullWidth loading={$loading}>
-                    استيراد المفتاح وفتح التطبيق
+                  <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+                    لا يُخزَّن أي شيء متعلق بحساب المستخدم — يبقى تسجيل الدخول بكلمة المرور إلزامياً.
+                  </p>
+
+                  <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
+                    إنشاء المفتاح وفتح التطبيق
                   </AppButton>
                 </form>
               </div>
-            </AppCard>
-            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
-              أو — إعداد مفتاح محلي (عقدة مستقلة / WILAYA)
-              <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+            {/if}
+          {:else}
+            <div class="space-y-4">
+              <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+                إعداد مفتاح محلي
+                <span class="flex-1 border-t border-gray-300 dark:border-gray-600"></span>
+              </div>
+
+              <form class="space-y-4" on:submit|preventDefault={handleInitialize} novalidate>
+                <AppAlert intent="warning">
+                  <p class="text-sm leading-relaxed">
+                    سيتم توليد مفتاح تشفير جديد وتخزينه محمياً بكلمة مرور. <b>فقدان كلمة المرور
+                    يعني فقدان البيانات</b> — احتفظ بها في مكان آمن.
+                  </p>
+                </AppAlert>
+
+                <AppInput
+                  id="security-passphrase"
+                  label="كلمة مرور المفتاح"
+                  type="password"
+                  bind:value={passphrase}
+                  placeholder="8 أحرف على الأقل"
+                  autocomplete="new-password"
+                  required
+                  disabled={$loading}
+                />
+
+                <AppInput
+                  id="security-confirm-passphrase"
+                  label="تأكيد كلمة المرور"
+                  type="password"
+                  bind:value={confirmPassphrase}
+                  placeholder="أعد إدخال كلمة المرور"
+                  autocomplete="new-password"
+                  required
+                  disabled={$loading}
+                />
+
+                <label class="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    bind:checked={exportBackup}
+                    class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+                  />
+                  <span class="text-sm text-gray-700 dark:text-gray-300">
+                    تصدير نسخة احتياطية من المفتاح (مرة واحدة فقط)
+                  </span>
+                </label>
+
+                <label class="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    bind:checked={remember}
+                    class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
+                  />
+                  <span class="text-sm text-gray-700 dark:text-gray-300">
+                    تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
+                  </span>
+                </label>
+
+                <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
+                  إنشاء المفتاح وفتح التطبيق
+                </AppButton>
+              </form>
             </div>
-          </div>
-        {/if}
-
-        {#if setupMode}
-          <form class="space-y-4" on:submit|preventDefault={handleInitialize} novalidate>
-            <AppAlert intent="warning">
-              <p class="text-sm leading-relaxed">
-                سيتم توليد مفتاح تشفير جديد وتخزينه محمياً بكلمة مرور. <b>فقدان كلمة المرور
-                يعني فقدان البيانات</b> — احتفظ بها في مكان آمن.
-              </p>
-              {#if status?.source === 'none'}
-                <p class="text-xs mt-2 leading-relaxed">
-                  هذا المسار صحيح فقط للعقد المستقلة أو عقدة WILAYA. إذا كانت العقدة UNIT
-                  تابعة للأسطول، استخدم مسار <code class="font-mono">GRPC_APP_KEY</code>
-                  أعلاه — المفتاح المحلي المتباين سيفشل فك تشفير حزمة
-                  <code class="font-mono">.unit</code>.
-                </p>
-              {/if}
-            </AppAlert>
-
-            <AppInput
-              id="security-passphrase"
-              label="كلمة مرور المفتاح"
-              type="password"
-              bind:value={passphrase}
-              placeholder="8 أحرف على الأقل"
-              autocomplete="new-password"
-              required
-              disabled={$loading}
-            />
-
-            <AppInput
-              id="security-confirm-passphrase"
-              label="تأكيد كلمة المرور"
-              type="password"
-              bind:value={confirmPassphrase}
-              placeholder="أعد إدخال كلمة المرور"
-              autocomplete="new-password"
-              required
-              disabled={$loading}
-            />
-
-            <label class="flex items-center gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                bind:checked={exportBackup}
-                class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">
-                تصدير نسخة احتياطية من المفتاح (مرة واحدة فقط)
-              </span>
-            </label>
-
-            <label class="flex items-center gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                bind:checked={remember}
-                class="w-4 h-4 text-civil-blue focus:ring-civil-blue"
-              />
-              <span class="text-sm text-gray-700 dark:text-gray-300">
-                تذكر مفتاح التطبيق على هذا الجهاز (فتح تلقائي بعد الآن)
-              </span>
-            </label>
-            <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
-              لا يُخزَّن أي شيء متعلق بحساب المستخدم — يبقى تسجيل الدخول بكلمة المرور إلزامياً.
-            </p>
-
-            <AppButton type="submit" variant="primary" size="lg" fullWidth loading={$loading}>
-              إنشاء المفتاح وفتح التطبيق
-            </AppButton>
-          </form>
+          {/if}
         {:else}
           <form class="space-y-4" on:submit|preventDefault={handleUnlock} novalidate>
             <AppAlert intent="warning">

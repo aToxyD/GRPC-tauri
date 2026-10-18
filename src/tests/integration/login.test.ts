@@ -62,6 +62,10 @@ describe('Login Page Integration Flow', () => {
         vi.clearAllMocks();
         currentUser.set(null);
         mockIsConfigured.mockResolvedValue(true);
+        // Node settings are a required initial status read for the login
+        // visibility gate (statusLoaded). Default to a configured WILAYA node;
+        // individual tests override as needed.
+        mockGetSettings.mockResolvedValue({ configured: true, node_type: 'WILAYA' });
         mockGetIdentityStatus.mockResolvedValue('UNINITIALIZED');
         mockGetSecurityStatus.mockResolvedValue({ requires_action: false });
     });
@@ -69,7 +73,7 @@ describe('Login Page Integration Flow', () => {
     it('should display error if fields are submitted empty', async () => {
         render(LoginPage);
 
-        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+        const submitBtn = await screen.findByRole('button', { name: /تسجيل الدخول/i });
         await fireEvent.click(submitBtn);
 
         await waitFor(() => {
@@ -94,8 +98,8 @@ describe('Login Page Integration Flow', () => {
         render(LoginPage);
 
         // ADR-0052: identity is pinned per node class — no free-text field.
-        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
-        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+        const passwordInput = await screen.findByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = await screen.findByRole('button', { name: /تسجيل الدخول/i });
 
         await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
         await fireEvent.click(submitBtn);
@@ -120,8 +124,8 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
-        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+        const passwordInput = await screen.findByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = await screen.findByRole('button', { name: /تسجيل الدخول/i });
 
         await fireEvent.input(passwordInput, { target: { value: 'TempPass12' } });
         await fireEvent.click(submitBtn);
@@ -151,8 +155,8 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
-        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+        const passwordInput = await screen.findByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = await screen.findByRole('button', { name: /تسجيل الدخول/i });
 
         await fireEvent.input(passwordInput, { target: { value: 'Abcdef12' } });
         await fireEvent.click(submitBtn);
@@ -175,8 +179,8 @@ describe('Login Page Integration Flow', () => {
         render(LoginPage);
 
         // ADR-0052: only the credential varies — the identity stays pinned.
-        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
-        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+        const passwordInput = await screen.findByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = await screen.findByRole('button', { name: /تسجيل الدخول/i });
 
         await fireEvent.input(passwordInput, { target: { value: 'wrongpass' } });
         await fireEvent.click(submitBtn);
@@ -217,8 +221,8 @@ describe('Login Page Integration Flow', () => {
 
         render(LoginPage);
 
-        const passwordInput = screen.getByPlaceholderText(/كلمة المرور/i);
-        const submitBtn = screen.getByRole('button', { name: /تسجيل الدخول/i });
+        const passwordInput = await screen.findByPlaceholderText(/كلمة المرور/i);
+        const submitBtn = await screen.findByRole('button', { name: /تسجيل الدخول/i });
 
         await fireEvent.input(passwordInput, { target: { value: 'supersecret' } });
         await fireEvent.click(submitBtn);

@@ -35,10 +35,38 @@ export class ViteDriver {
     await this.context.addInitScript(() => {
       (window as any).__TAURI_INTERNALS__ = {
         invoke: (_cmd: string, _args?: unknown, _options?: unknown): Promise<unknown> => {
-          // Return a sensible default for is_configured so the login page
-          // renders correctly (false = unconfigured = show login form).
+          // The login visibility gate (statusLoaded / loginEligible) requires
+          // the four initial status reads to RESOLVE. Return a settled,
+          // eligible, configured WILAYA node so the LoginPage renders its login
+          // controls and the runtime-stability spec can exercise them without a
+          // real backend. (Previously only is_configured was answered, and the
+          // ungated page rendered the form regardless of the rejected reads.)
+          if (_cmd === 'get_security_status') {
+            return Promise.resolve({
+              provisioned: true,
+              unlocked: true,
+              store_path: '',
+              source: 'env',
+              requires_action: false,
+            });
+          }
           if (_cmd === 'is_configured') {
-            return Promise.resolve(false);
+            return Promise.resolve(true);
+          }
+          if (_cmd === 'get_settings') {
+            return Promise.resolve({
+              id: 1,
+              node_type: 'WILAYA',
+              unit_name: null,
+              unit_code: null,
+              current_year: new Date().getFullYear(),
+              wilaya_code: '01',
+              wilaya_name: 'Adrar',
+              configured: true,
+            });
+          }
+          if (_cmd === 'get_identity_status') {
+            return Promise.resolve('READY');
           }
           // `login` must RESOLVE with a failed `LoginResponse`, not reject:
           // the page's client-side lockout latch (LoginPage.svelte) increments
