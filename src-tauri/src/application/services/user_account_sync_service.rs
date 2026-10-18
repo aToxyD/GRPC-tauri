@@ -236,20 +236,19 @@ impl<'a> UserAccountSyncService<'a> {
             .users()
             .get_user_by_username_raw(OPERATOR_USERNAME, &unit.code)?;
 
-        let operator = match operator {
-            // Best-effort guard only: `UserRole::from` maps every non-"Admin"
-            // string to `UserRole::User`, so this rejects an exact stored
-            // "Admin" collision but is NOT raw-role validation. Exact raw-role
-            // enforcement would require a new repository API (deliberately out
-            // of scope).
-            Some(u) if u.node_id == unit.code && u.role == UserRole::User => u,
-            Some(_) => {
-                return Err(Self::not_permitted(
+        let operator =
+            match operator {
+                // Best-effort guard only: `UserRole::from` maps every non-"Admin"
+                // string to `UserRole::User`, so this rejects an exact stored
+                // "Admin" collision but is NOT raw-role validation. Exact raw-role
+                // enforcement would require a new repository API (deliberately out
+                // of scope).
+                Some(u) if u.node_id == unit.code && u.role == UserRole::User => u,
+                Some(_) => return Err(Self::not_permitted(
                     "سجل مشغّل الوحدة لا يطابق الهوية المعيارية (المستخدم/العقدة/الدور) — رفض مغلق",
-                ))
-            }
-            None => return Err(Self::not_found("user", &unit.code)),
-        };
+                )),
+                None => return Err(Self::not_found("user", &unit.code)),
+            };
 
         // `units.user_id` is a nullable consistency hint, never the identity
         // source. When present it MUST resolve to the canonical operator; a
@@ -528,8 +527,7 @@ mod tests {
             "the official payload must not serialize admin_enabled"
         );
         assert!(
-            port
-                .verify_admin(FLEET_PASSWORD, &payload.admin_password_hash)
+            port.verify_admin(FLEET_PASSWORD, &payload.admin_password_hash)
                 .expect("verify admin"),
             "the exported hash must authenticate the fleet password"
         );

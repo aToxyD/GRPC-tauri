@@ -180,140 +180,164 @@ impl<'a> UnitService<'a> {
         let user_repo = self.executor.users();
 
         // P1: resolve target units row
-        let unit = unit_repo
-            .get_unit(unit_id)?
-            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+        let unit = unit_repo.get_unit(unit_id)?.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
                 resource: "unit".to_string(),
                 id: unit_id.to_string(),
-            }))?;
+            })
+        })?;
 
         let unit_code = &unit.code;
         let unit_user_id_from_db = unit.user_id.as_deref();
 
         // P2: canonical operator resolution (D1.1) — raw lookup (includes deleted = 1).
         // D1.5: duplicate detection is discharged by a counting query, not the single-row helper.
-        let canonical_count =
-            user_repo.count_canonical_operators(OPERATOR_USERNAME, unit_code)?;
+        let canonical_count = user_repo.count_canonical_operators(OPERATOR_USERNAME, unit_code)?;
         if canonical_count > 1 {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: "Multiple canonical operators resolve for this unit code".to_string(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: "Multiple canonical operators resolve for this unit code".to_string(),
+                },
+            ));
         }
         let canonical = user_repo
             .get_user_by_username_raw(OPERATOR_USERNAME, unit_code)?
-            .ok_or_else(|| AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: "Canonical operator not found for this unit".to_string(),
-            }))?;
+            .ok_or_else(|| {
+                AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: "Canonical operator not found for this unit".to_string(),
+                })
+            })?;
 
         // P2 cross-check (D1.2/D1.3): units.user_id must equal the resolved id and must not be NULL.
         if unit_user_id_from_db.is_none() || unit_user_id_from_db != Some(canonical.id.as_str()) {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: "Units.user_id and canonical operator id mismatch".to_string(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: "Units.user_id and canonical operator id mismatch".to_string(),
+                },
+            ));
         }
         let resolved_user_id = canonical.id.clone();
 
         // P3: D14 gate - audit_log must have no entries for the operator
         let audit_count = unit_repo.count_audit_log_for_user(&resolved_user_id)?;
         if audit_count > 0 {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: "Operator has audit history".to_string(),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: "Operator has audit history".to_string(),
+                },
+            ));
         }
 
         // P4: aggregate-integrity checks
-        let soi_conflicts = unit_repo.find_supplier_order_items_with_conflicting_parents(unit_id)?;
+        let soi_conflicts =
+            unit_repo.find_supplier_order_items_with_conflicting_parents(unit_id)?;
         if !soi_conflicts.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Target-owned supplier order item(s) hang off a NULL/foreign order: {}",
-                    format_supplier_order_conflicts(&soi_conflicts)
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Target-owned supplier order item(s) hang off a NULL/foreign order: {}",
+                        format_supplier_order_conflicts(&soi_conflicts)
+                    ),
+                },
+            ));
         }
 
         let so_conflicts = unit_repo.find_supplier_orders_with_conflicting_children(unit_id)?;
         if !so_conflicts.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Target order(s) own a NULL/foreign child item: {}",
-                    format_supplier_order_conflicts(&so_conflicts)
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Target order(s) own a NULL/foreign child item: {}",
+                        format_supplier_order_conflicts(&so_conflicts)
+                    ),
+                },
+            ));
         }
 
         let alloc_mismatches = unit_repo.find_contract_allocation_unit_mismatches(unit_id)?;
         if !alloc_mismatches.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Contract allocation(s) disagree with their parent contract unit: {}",
-                    alloc_mismatches.join(", ")
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Contract allocation(s) disagree with their parent contract unit: {}",
+                        alloc_mismatches.join(", ")
+                    ),
+                },
+            ));
         }
 
         let soa_mismatches = unit_repo.find_soa_two_sided_mismatches(unit_id)?;
         if !soa_mismatches.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
                     "Supplier order item allocation(s) cannot prove two-sided target ownership: {}",
                     soa_mismatches.join(", ")
                 ),
-            }));
+                },
+            ));
         }
 
         // P5: cross-UNIT reference checks
         let ilm_to_fifo = unit_repo.find_crossunit_ilm_to_fifo(unit_id)?;
         if !ilm_to_fifo.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Non-target consumption(s) reference target FIFO layers: {}",
-                    ilm_to_fifo.join(", ")
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Non-target consumption(s) reference target FIFO layers: {}",
+                        ilm_to_fifo.join(", ")
+                    ),
+                },
+            ));
         }
 
         let ilm_to_mvmt = unit_repo.find_crossunit_ilm_to_movement(unit_id)?;
         if !ilm_to_mvmt.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Non-target consumption(s) reference target stock movements: {}",
-                    ilm_to_mvmt.join(", ")
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Non-target consumption(s) reference target stock movements: {}",
+                        ilm_to_mvmt.join(", ")
+                    ),
+                },
+            ));
         }
 
         let alloc_to_cp = unit_repo.find_alloc_to_contract_product_conflicts(unit_id)?;
         if !alloc_to_cp.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Contract allocation(s) reference target contract products unsafely: {}",
-                    alloc_to_cp.join(", ")
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Contract allocation(s) reference target contract products unsafely: {}",
+                        alloc_to_cp.join(", ")
+                    ),
+                },
+            ));
         }
 
         // P6: surviving-report FIFO reference check
         let surviving_fifo_refs = unit_repo.find_surviving_report_fifo_refs(unit_id)?;
         if !surviving_fifo_refs.is_empty() {
-            return Err(AppError::BusinessLogic(BusinessLogicError::DeleteForbidden {
-                resource: "unit".to_string(),
-                reason: format!(
-                    "Surviving report item(s) reference target FIFO layers: {}",
-                    surviving_fifo_refs.join(", ")
-                ),
-            }));
+            return Err(AppError::BusinessLogic(
+                BusinessLogicError::DeleteForbidden {
+                    resource: "unit".to_string(),
+                    reason: format!(
+                        "Surviving report item(s) reference target FIFO layers: {}",
+                        surviving_fifo_refs.join(", ")
+                    ),
+                },
+            ));
         }
 
         // Phase 1: purge

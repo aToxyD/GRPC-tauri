@@ -1,7 +1,5 @@
 use crate::commands;
-use crate::commands::guards::{
-    enforce_forced_credential_state, enforce_unit_initialization_order,
-};
+use crate::commands::guards::{enforce_forced_credential_state, enforce_unit_initialization_order};
 use crate::commands::types::AppState;
 use crate::errors::{into_command_error, AppError};
 use tauri::ipc::Invoke;

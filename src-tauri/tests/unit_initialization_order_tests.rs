@@ -183,7 +183,15 @@ fn expired_session_defers_authentication_failure() {
 fn incomplete_initialization_refuses_normal_and_change_password_commands() {
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     for command in INITIALIZATION_ALLOWED_COMMANDS {
@@ -202,7 +210,8 @@ fn incomplete_initialization_refuses_normal_and_change_password_commands() {
 
     // The refusal is a real backend error with a stable code and a non-empty
     // command-error message (never an empty/success result).
-    let err = enforce_unit_initialization_order(&state, "change_own_password").expect_err("refused");
+    let err =
+        enforce_unit_initialization_order(&state, "change_own_password").expect_err("refused");
     assert_eq!(err.to_user_error().code, "AUTH_INITIALIZATION_INCOMPLETE");
     let message = into_command_error(err);
     assert!(!message.trim().is_empty(), "refusal must not be empty");
@@ -215,7 +224,15 @@ fn incomplete_initialization_blocks_even_without_the_forced_state() {
     // the initialization gate is the blocking authority.
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, false, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        false,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     assert!(enforce_forced_credential_state(&state, "list_products").is_ok());
@@ -229,7 +246,15 @@ fn incomplete_initialization_blocks_even_without_the_forced_state() {
 fn initialization_incomplete_takes_precedence_over_the_forced_state() {
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     // Ordinary command: incomplete initialization surfaces first.
@@ -246,7 +271,15 @@ fn initialization_incomplete_takes_precedence_over_the_forced_state() {
 
     // Establish the local admin: the initialization gate becomes a no-op and the
     // forced gate's own refusal takes over.
-    insert_user(&state, ADMIN_ID, ADMIN_USERNAME, "Admin", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        ADMIN_ID,
+        ADMIN_USERNAME,
+        "Admin",
+        UNIT_CODE,
+        true,
+        false,
+    );
     match dispatch_gate(&state, "list_products") {
         Err(AppError::Authorization(AuthorizationError::PasswordChangeRequired)) => {}
         other => panic!("expected PasswordChangeRequired, got {other:?}"),
@@ -261,8 +294,24 @@ fn initialization_incomplete_takes_precedence_over_the_forced_state() {
 fn after_admin_and_password_change_both_gates_admit_normal_commands() {
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, false, false);
-    insert_user(&state, ADMIN_ID, ADMIN_USERNAME, "Admin", UNIT_CODE, false, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        false,
+        false,
+    );
+    insert_user(
+        &state,
+        ADMIN_ID,
+        ADMIN_USERNAME,
+        "Admin",
+        UNIT_CODE,
+        false,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     assert_ok_init(&state, "list_products");
@@ -289,7 +338,15 @@ fn fresh_unconfigured_node_is_not_misclassified_as_a_unit() {
     // repository falls back to `NodeType::Unit` on parse failure, so `is_unit()`
     // is true — but the gate must still be a no-op because `configured` is false.
     let state = base_state();
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     assert_ok_init(&state, "list_products");
@@ -301,7 +358,15 @@ fn configured_unit_without_a_resolvable_code_fails_closed() {
     // Configured UNIT but no `units` row → `Settings.unit_code` is `None`.
     let state = base_state();
     configure_unit(&state, false);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     assert_ok_init(&state, "get_settings");
@@ -315,8 +380,24 @@ fn configured_unit_without_a_resolvable_code_fails_closed() {
 fn soft_disabled_admin_row_preserves_the_deletion_insensitive_latch() {
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
-    insert_user(&state, ADMIN_ID, ADMIN_USERNAME, "Admin", UNIT_CODE, false, true);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
+    insert_user(
+        &state,
+        ADMIN_ID,
+        ADMIN_USERNAME,
+        "Admin",
+        UNIT_CODE,
+        false,
+        true,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     // The admin row exists (deleted = 1): initialization is complete, so the
@@ -332,7 +413,15 @@ fn soft_disabled_admin_row_preserves_the_deletion_insensitive_latch() {
 fn database_unavailable_fails_closed() {
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     // Remove the database handle to simulate an unavailable trusted context.
@@ -372,7 +461,15 @@ fn initialization_allowlist_is_forced_allowlist_minus_change_own_password() {
 fn every_registered_command_is_either_admitted_or_refused_while_incomplete() {
     let state = base_state();
     configure_unit(&state, true);
-    insert_user(&state, OPERATOR_ID, OPERATOR_USERNAME, "User", UNIT_CODE, true, false);
+    insert_user(
+        &state,
+        OPERATOR_ID,
+        OPERATOR_USERNAME,
+        "User",
+        UNIT_CODE,
+        true,
+        false,
+    );
     set_session(&state, OPERATOR_ID, OPERATOR_USERNAME, "User");
 
     let names = registry_command_names();

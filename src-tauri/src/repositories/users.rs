@@ -776,11 +776,12 @@ mod tests {
         // Seed the soft-disabled lifecycle state directly.
         repo.set_deleted(&original_id, true, "2024-01-02T00:00:00Z")
             .unwrap();
-        assert!(repo
-            .get_user_by_username_raw("admin", "UNIT-1")
-            .unwrap()
-            .expect("row present")
-            .deleted);
+        assert!(
+            repo.get_user_by_username_raw("admin", "UNIT-1")
+                .unwrap()
+                .expect("row present")
+                .deleted
+        );
 
         // Official re-import: password material + updated_at only.
         repo.upsert_canonical_admin("admin-1", "hash-v2", "UNIT-1", "2024-01-03T00:00:00Z")
@@ -829,8 +830,14 @@ mod tests {
         let db = ConnectionFactory::new_for_test().unwrap();
         let repo = UserRepository::new(make_executor(&db));
 
-        repo.upsert_synced_admin("admin-2", "hash-v1", "UNIT-2", false, "2024-01-01T00:00:00Z")
-            .unwrap();
+        repo.upsert_synced_admin(
+            "admin-2",
+            "hash-v1",
+            "UNIT-2",
+            false,
+            "2024-01-01T00:00:00Z",
+        )
+        .unwrap();
         let admin = repo
             .get_user_by_username_raw("admin", "UNIT-2")
             .unwrap()
@@ -848,8 +855,14 @@ mod tests {
         assert_eq!(disabled.password_hash, "hash-v2");
 
         // Re-enable through the shared path.
-        repo.upsert_synced_admin("admin-2", "hash-v3", "UNIT-2", false, "2024-01-03T00:00:00Z")
-            .unwrap();
+        repo.upsert_synced_admin(
+            "admin-2",
+            "hash-v3",
+            "UNIT-2",
+            false,
+            "2024-01-03T00:00:00Z",
+        )
+        .unwrap();
         let reenabled = repo
             .get_user_by_username_raw("admin", "UNIT-2")
             .unwrap()

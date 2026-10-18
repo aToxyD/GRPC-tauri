@@ -283,7 +283,10 @@ impl<'a> UnitRepository<'a> {
 
     /// Preflight: D5 (§4.7) - for every allocation whose own unit_id = target OR whose parent
     /// contract's unit_id = target, the allocation's unit_id MUST equal the parent contract's.
-    pub fn find_contract_allocation_unit_mismatches(&self, unit_id: &str) -> Result<Vec<String>, AppError> {
+    pub fn find_contract_allocation_unit_mismatches(
+        &self,
+        unit_id: &str,
+    ) -> Result<Vec<String>, AppError> {
         let rows: Vec<String> = self.executor.query_all(
             r#"SELECT ca.id
                FROM contract_allocations ca
@@ -362,7 +365,10 @@ impl<'a> UnitRepository<'a> {
     /// when (a) a non-target allocation references such a line, or (b) the referencing
     /// allocation's `contract_id` differs from the referenced contract_product's `contract_id`
     /// (structural inconsistency the schema permits; detected here rather than by FK rollback).
-    pub fn find_alloc_to_contract_product_conflicts(&self, unit_id: &str) -> Result<Vec<String>, AppError> {
+    pub fn find_alloc_to_contract_product_conflicts(
+        &self,
+        unit_id: &str,
+    ) -> Result<Vec<String>, AppError> {
         let rows: Vec<String> = self.executor.query_all(
             r#"SELECT ca.id
                FROM contract_allocations ca
@@ -377,7 +383,11 @@ impl<'a> UnitRepository<'a> {
 
     /// Execute Phase 1 purge: delete Class-A entities in ADR-0064 §4.4 order
     /// All deletes scoped to unit_id as specified. Assumes preflight passed.
-    pub fn purge_unit_owned_data(&self, unit_id: &str, resolved_user_id: &str) -> Result<(), AppError> {
+    pub fn purge_unit_owned_data(
+        &self,
+        unit_id: &str,
+        resolved_user_id: &str,
+    ) -> Result<(), AppError> {
         // A1: supplier_order_item_allocations
         self.executor.execute(
             r#"DELETE FROM supplier_order_item_allocations
@@ -422,22 +432,16 @@ impl<'a> UnitRepository<'a> {
         )?;
 
         // A7: contracts
-        self.executor.execute(
-            "DELETE FROM contracts WHERE unit_id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM contracts WHERE unit_id = ?1", [unit_id])?;
 
         // A8: supplier_orders (NULL preserved as per §4.8)
-        self.executor.execute(
-            "DELETE FROM supplier_orders WHERE unit_id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM supplier_orders WHERE unit_id = ?1", [unit_id])?;
 
         // A9: unit_suppliers
-        self.executor.execute(
-            "DELETE FROM unit_suppliers WHERE unit_id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM unit_suppliers WHERE unit_id = ?1", [unit_id])?;
 
         // A10: fifo_stock_layers
         self.executor.execute(
@@ -446,10 +450,8 @@ impl<'a> UnitRepository<'a> {
         )?;
 
         // A11: stock_movements (NULL preserved as per D20)
-        self.executor.execute(
-            "DELETE FROM stock_movements WHERE unit_id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM stock_movements WHERE unit_id = ?1", [unit_id])?;
 
         // A12: daily_report_meal_items
         self.executor.execute(
@@ -470,16 +472,12 @@ impl<'a> UnitRepository<'a> {
         )?;
 
         // A14: daily_reports (NULL preserved as per §4.8)
-        self.executor.execute(
-            "DELETE FROM daily_reports WHERE unit_id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM daily_reports WHERE unit_id = ?1", [unit_id])?;
 
         // A15: monthly_reports
-        self.executor.execute(
-            "DELETE FROM monthly_reports WHERE unit_id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM monthly_reports WHERE unit_id = ?1", [unit_id])?;
 
         // A16: unit_monthly_snapshots
         self.executor.execute(
@@ -494,16 +492,12 @@ impl<'a> UnitRepository<'a> {
         )?;
 
         // A18: users (canonical operator)
-        self.executor.execute(
-            "DELETE FROM users WHERE id = ?1",
-            [resolved_user_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM users WHERE id = ?1", [resolved_user_id])?;
 
         // A19: units
-        self.executor.execute(
-            "DELETE FROM units WHERE id = ?1",
-            [unit_id],
-        )?;
+        self.executor
+            .execute("DELETE FROM units WHERE id = ?1", [unit_id])?;
 
         Ok(())
     }

@@ -58,11 +58,8 @@ impl Harness {
     fn create_unit(&mut self, code: &str, name: &str) -> (String, String) {
         let admin = self.admin_id.clone();
         let ctx = UserContext::new(&admin, "admin", None);
-        let (unit, user_id) = AuditTxService::execute_with_audit(
-            &mut self.db,
-            AuditAction::CreateUnit,
-            &ctx,
-            |tx| {
+        let (unit, user_id) =
+            AuditTxService::execute_with_audit(&mut self.db, AuditAction::CreateUnit, &ctx, |tx| {
                 UnitService::new(tx.executor, &Argon2PasswordHashProvider).create_unit(
                     &CreateUnitRequest {
                         code: code.to_string(),
@@ -70,9 +67,8 @@ impl Harness {
                     },
                     "WILAYA-1",
                 )
-            },
-        )
-        .expect("create unit");
+            })
+            .expect("create unit");
         (unit.id, user_id)
     }
 
@@ -80,12 +76,9 @@ impl Harness {
     fn delete(&mut self, unit_id: &str) -> Result<(), AppError> {
         let admin = self.admin_id.clone();
         let ctx = UserContext::new(&admin, "admin", None);
-        AuditTxService::execute_with_audit(
-            &mut self.db,
-            AuditAction::DeleteUnit,
-            &ctx,
-            |tx| UnitService::new(tx.executor, &Argon2PasswordHashProvider).delete_unit(unit_id),
-        )
+        AuditTxService::execute_with_audit(&mut self.db, AuditAction::DeleteUnit, &ctx, |tx| {
+            UnitService::new(tx.executor, &Argon2PasswordHashProvider).delete_unit(unit_id)
+        })
     }
 
     fn scalar(&self, sql: &str) -> i64 {
@@ -111,7 +104,9 @@ fn is_delete_forbidden(err: &AppError) -> bool {
 /// Extract the rejection reason from a `DeleteForbidden` error (panics otherwise).
 fn delete_forbidden_reason(err: &AppError) -> String {
     match err {
-        AppError::BusinessLogic(BusinessLogicError::DeleteForbidden { reason, .. }) => reason.clone(),
+        AppError::BusinessLogic(BusinessLogicError::DeleteForbidden { reason, .. }) => {
+            reason.clone()
+        }
         other => panic!("expected DeleteForbidden, got {other:?}"),
     }
 }
@@ -169,7 +164,15 @@ fn seed_allocation(
         "INSERT INTO contract_allocations (id, contract_id, contract_product_id, unit_id, \
          product_id, fiscal_year, contracted_quantity, created_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 100, ?7)",
-        params![id, contract_id, contract_product_id, unit_id, product_id, fy, NOW],
+        params![
+            id,
+            contract_id,
+            contract_product_id,
+            unit_id,
+            product_id,
+            fy,
+            NOW
+        ],
     )
     .unwrap();
 }
@@ -441,35 +444,137 @@ fn success_purges_all_class_a_and_preserves_class_b() {
 
     // Class-A rows gone
     assert!(!h.exists("SELECT COUNT(*) FROM units"));
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_products"), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contract_allocations WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocation_exceptions"), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM supplier_orders WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM supplier_order_items WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations"), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM unit_suppliers WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM stock_movements WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM inventory_layer_consumptions WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM daily_reports WHERE unit_id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contract_allocations WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocation_exceptions"),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM supplier_orders WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM supplier_order_items WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations"),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM unit_suppliers WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM stock_movements WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM inventory_layer_consumptions WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM daily_reports WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meals"), 0);
     assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meal_items"), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM monthly_reports WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM unit_monthly_snapshots WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM identity_store WHERE subject_id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM monthly_reports WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM unit_monthly_snapshots WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM identity_store WHERE subject_id = ?1",
+            &unit_id
+        ),
+        0
+    );
 
     // Class-B preserved verbatim
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM inventory_stocks"), baseline_stocks);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM opening_balance_snapshots"), baseline_opening);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM fiscal_export_snapshots"), baseline_export);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM fiscal_year_status"), baseline_fys);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM domain_events"), baseline_domain);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM inventory_stocks"),
+        baseline_stocks
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM opening_balance_snapshots"),
+        baseline_opening
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fiscal_export_snapshots"),
+        baseline_export
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fiscal_year_status"),
+        baseline_fys
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM domain_events"),
+        baseline_domain
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM products"), baseline_products);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM suppliers"), baseline_suppliers);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM suppliers"),
+        baseline_suppliers
+    );
     // Exactly one audit row added: the DeleteUnit success row.
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM audit_log"), baseline_audit + 1);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM audit_log"),
+        baseline_audit + 1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -491,19 +596,36 @@ fn closed_year_data_purged_without_touching_fiscal_machinery() {
         seed_layer(c, "l1", &unit_id, "p1", 2025);
         seed_movement(c, "mv1", "p1", "OUT", Some(&unit_id), 2025);
     }
-    let export_before = h.scalar("SELECT inventory_total_value FROM fiscal_export_snapshots WHERE export_hash='hash-closed'");
+    let export_before = h.scalar(
+        "SELECT inventory_total_value FROM fiscal_export_snapshots WHERE export_hash='hash-closed'",
+    );
     let fys_count_before = h.scalar("SELECT COUNT(*) FROM fiscal_year_status");
 
     h.delete(&unit_id).expect("closed-year purge allowed");
 
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM fiscal_export_snapshots"), 1);
     assert_eq!(
         h.scalar("SELECT inventory_total_value FROM fiscal_export_snapshots WHERE export_hash='hash-closed'"),
         export_before
     );
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM fiscal_year_status"), fys_count_before);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fiscal_year_status"),
+        fys_count_before
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -530,12 +652,30 @@ fn null_owned_rows_are_preserved() {
 
     h.delete(&unit_id).expect("delete with NULL-owned rows");
 
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-null'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-target'"), 0);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-null'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-target'"), 0);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-target'"), 0);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-null'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-target'"),
+        0
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-null'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-target'"),
+        0
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-target'"),
+        0
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -557,9 +697,18 @@ fn cross_unit_consumption_to_target_layer_blocks() {
     }
     let err = h.delete(&unit_id).expect_err("must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM fifo_stock_layers WHERE id='l-target'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM inventory_layer_consumptions WHERE id='ilm-bad'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fifo_stock_layers WHERE id='l-target'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM inventory_layer_consumptions WHERE id='ilm-bad'"),
+        1
+    );
 }
 
 #[test]
@@ -577,8 +726,14 @@ fn cross_unit_consumption_to_target_movement_blocks() {
     }
     let err = h.delete(&unit_id).expect_err("must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-target'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-target'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -602,11 +757,23 @@ fn q6_target_item_under_null_parent_order_blocks() {
     let reason = delete_forbidden_reason(&err);
     assert!(reason.contains("item=oi-target"), "reason: {reason}");
     assert!(reason.contains("order=o-null"), "reason: {reason}");
-    assert!(reason.contains(&format!("item.unit_id={unit_id}")), "reason: {reason}");
+    assert!(
+        reason.contains(&format!("item.unit_id={unit_id}")),
+        "reason: {reason}"
+    );
     assert!(reason.contains("order.unit_id=NULL"), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-target'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-target'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"),
+        1
+    );
 }
 
 #[test]
@@ -621,15 +788,29 @@ fn q6_target_item_under_foreign_parent_order_blocks() {
         seed_order(c, "o-other", "s1", Some(&other_id), 2025);
         seed_order_item(c, "oi-target", "o-other", "p1", Some(&unit_id), 2025);
     }
-    let err = h.delete(&unit_id).expect_err("Q6 foreign parent must abort");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("Q6 foreign parent must abort");
     assert!(is_delete_forbidden(&err), "got {err:?}");
     let reason = delete_forbidden_reason(&err);
     assert!(reason.contains("item=oi-target"), "reason: {reason}");
     assert!(reason.contains("order=o-other"), "reason: {reason}");
-    assert!(reason.contains(&format!("item.unit_id={unit_id}")), "reason: {reason}");
-    assert!(reason.contains(&format!("order.unit_id={other_id}")), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-target'"), 1);
+    assert!(
+        reason.contains(&format!("item.unit_id={unit_id}")),
+        "reason: {reason}"
+    );
+    assert!(
+        reason.contains(&format!("order.unit_id={other_id}")),
+        "reason: {reason}"
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-target'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -647,7 +828,9 @@ fn d4_target_order_with_null_child_blocks() {
         seed_order(c, "o-target", "s1", Some(&unit_id), 2025);
         seed_order_item(c, "oi-null", "o-target", "p1", None, 2025);
     }
-    let err = h.delete(&unit_id).expect_err("D4 NULL child must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("D4 NULL child must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
     // §4.7 diagnostic: report the conflicting child item, its order, and both ownership
     // values (the child's NULL unit rendered explicitly).
@@ -655,9 +838,18 @@ fn d4_target_order_with_null_child_blocks() {
     assert!(reason.contains("item=oi-null"), "reason: {reason}");
     assert!(reason.contains("order=o-target"), "reason: {reason}");
     assert!(reason.contains("item.unit_id=NULL"), "reason: {reason}");
-    assert!(reason.contains(&format!("order.unit_id={unit_id}")), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-null'"), 1);
+    assert!(
+        reason.contains(&format!("order.unit_id={unit_id}")),
+        "reason: {reason}"
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-null'"),
+        1
+    );
 }
 
 #[test]
@@ -672,14 +864,25 @@ fn d4_target_order_with_foreign_child_blocks() {
         seed_order(c, "o-target", "s1", Some(&unit_id), 2025);
         seed_order_item(c, "oi-other", "o-target", "p1", Some(&other_id), 2025);
     }
-    let err = h.delete(&unit_id).expect_err("D4 foreign child must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("D4 foreign child must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
     let reason = delete_forbidden_reason(&err);
     assert!(reason.contains("item=oi-other"), "reason: {reason}");
     assert!(reason.contains("order=o-target"), "reason: {reason}");
-    assert!(reason.contains(&format!("item.unit_id={other_id}")), "reason: {reason}");
-    assert!(reason.contains(&format!("order.unit_id={unit_id}")), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
+    assert!(
+        reason.contains(&format!("item.unit_id={other_id}")),
+        "reason: {reason}"
+    );
+    assert!(
+        reason.contains(&format!("order.unit_id={unit_id}")),
+        "reason: {reason}"
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -702,8 +905,14 @@ fn d5_contract_allocation_unit_mismatch_blocks() {
     }
     let err = h.delete(&unit_id).expect_err("D5 must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -729,8 +938,14 @@ fn d6_two_sided_ownership_mismatch_blocks() {
     }
     let err = h.delete(&unit_id).expect_err("D6 must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia-bad'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia-bad'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -757,12 +972,33 @@ fn d14_operator_audit_history_blocks_and_preserves_everything() {
     let err = h.delete(&unit_id).expect_err("D14 must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
 
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM supplier_orders WHERE unit_id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM supplier_orders WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM audit_log"), audit_before);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders"), orders_before);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_orders"),
+        orders_before
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -776,9 +1012,14 @@ fn canonical_operator_missing_blocks() {
     h.conn()
         .execute("DELETE FROM users WHERE id = ?1", [&operator_id])
         .unwrap();
-    let err = h.delete(&unit_id).expect_err("missing operator must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("missing operator must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
 }
 
 #[test]
@@ -788,9 +1029,14 @@ fn canonical_operator_user_id_null_blocks() {
     h.conn()
         .execute("UPDATE units SET user_id = NULL WHERE id = ?1", [&unit_id])
         .unwrap();
-    let err = h.delete(&unit_id).expect_err("NULL units.user_id must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("NULL units.user_id must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
 }
 
 #[test]
@@ -806,11 +1052,19 @@ fn canonical_operator_user_id_mismatch_blocks() {
         )
         .unwrap();
     h.conn()
-        .execute("UPDATE units SET user_id = ?1 WHERE id = ?2", params![other_id, unit_id])
+        .execute(
+            "UPDATE units SET user_id = ?1 WHERE id = ?2",
+            params![other_id, unit_id],
+        )
         .unwrap();
-    let err = h.delete(&unit_id).expect_err("units.user_id mismatch must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("units.user_id mismatch must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -832,10 +1086,22 @@ fn surviving_report_item_referencing_target_layer_blocks() {
     }
     let err = h.delete(&unit_id).expect_err("§4.9 must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM fifo_stock_layers WHERE id='l-target'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-surviving'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meal_items WHERE id='mi-surviving'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fifo_stock_layers WHERE id='l-target'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-surviving'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM daily_report_meal_items WHERE id='mi-surviving'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -871,22 +1137,79 @@ fn mid_purge_failure_rolls_back_entire_operation() {
         .unwrap();
 
     let err = h.delete(&unit_id).expect_err("injected failure must abort");
-    assert!(matches!(err, AppError::Sqlite(_)) || is_delete_forbidden(&err), "got {err:?}");
+    assert!(
+        matches!(err, AppError::Sqlite(_)) || is_delete_forbidden(&err),
+        "got {err:?}"
+    );
 
     // Full rollback: every row the purge touched is still present.
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_products"), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contract_allocations WHERE unit_id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM supplier_orders WHERE unit_id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM supplier_order_items WHERE unit_id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM stock_movements WHERE unit_id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM daily_reports WHERE unit_id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contract_allocations WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM supplier_orders WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM supplier_order_items WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM fifo_stock_layers WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM stock_movements WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM daily_reports WHERE unit_id = ?1",
+            &unit_id
+        ),
+        1
+    );
     assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meals"), 1);
     assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meal_items"), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM identity_store WHERE subject_id = ?1", &unit_id), 1);
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM identity_store WHERE subject_id = ?1",
+            &unit_id
+        ),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -916,7 +1239,10 @@ fn success_writes_exactly_one_audit_row_failure_writes_none() {
         .unwrap();
     h.delete(&unit_id).expect("success after repair");
     assert_eq!(h.scalar("SELECT COUNT(*) FROM audit_log"), before + 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        0
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -928,7 +1254,10 @@ fn repeated_deletion_fails_closed() {
     let mut h = Harness::new("del_repeat");
     let (unit_id, _op) = h.create_unit("T124", "Unit 124");
     h.delete(&unit_id).expect("first deletion succeeds");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        0
+    );
 
     let err = h.delete(&unit_id).expect_err("second deletion must fail");
     // Target row is gone → ResourceNotFound (a BusinessLogic error).
@@ -958,9 +1287,18 @@ fn cross_unit_allocation_to_target_contract_product_blocks() {
     }
     let err = h.delete(&unit_id).expect_err("§4.10 must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_products WHERE id='cp-target'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_products WHERE id='cp-target'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1000,17 +1338,45 @@ fn legitimate_ownership_shapes_are_not_blocked() {
         seed_meal_item(c, "mi1", "m1", "p1", Some("l1"));
     }
 
-    h.delete(&unit_id).expect("consistent data must be deletable");
+    h.delete(&unit_id)
+        .expect("consistent data must be deletable");
 
     // Target subtree gone.
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia1'"), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &unit_id), 0);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia1'"),
+        0
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &unit_id
+        ),
+        0
+    );
     // The other UNIT's fully-consistent subtree is untouched.
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &other_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al2'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia2'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o2'"), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &other_id), 1);
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &other_id
+        ),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al2'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia2'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o2'"),
+        1
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &other_id),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1027,14 +1393,26 @@ fn soft_deleted_canonical_operator_is_resolved_and_purged() {
     h.conn()
         .execute("UPDATE users SET deleted = 1 WHERE id = ?1", [&operator_id])
         .unwrap();
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id), 1);
-    assert_eq!(h.scalar1("SELECT deleted FROM users WHERE id = ?1", &operator_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id),
+        1
+    );
+    assert_eq!(
+        h.scalar1("SELECT deleted FROM users WHERE id = ?1", &operator_id),
+        1
+    );
 
     h.delete(&unit_id)
         .expect("soft-deleted canonical operator must not block deletion");
 
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 0);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id), 0);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        0
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM users WHERE id = ?1", &operator_id),
+        0
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1052,7 +1430,15 @@ fn d6_target_allocation_with_null_item_blocks() {
         // Target-owned allocation.
         seed_contract(c, "ct-target", &unit_id, "s1", 2025);
         seed_contract_product(c, "cp-target", "ct-target", "p1");
-        seed_allocation(c, "al-target", "ct-target", "cp-target", &unit_id, "p1", 2025);
+        seed_allocation(
+            c,
+            "al-target",
+            "ct-target",
+            "cp-target",
+            &unit_id,
+            "p1",
+            2025,
+        );
         // Surviving NULL-owned order + item (own unit_id NULL), joined to the target
         // allocation. D6's second disjunct (`ca.unit_id = target AND soi.unit_id IS NULL`)
         // must reject before any DELETE; Q6/D4 do not fire because neither side is target.
@@ -1060,16 +1446,36 @@ fn d6_target_allocation_with_null_item_blocks() {
         seed_order_item(c, "oi-null", "o-null", "p1", None, 2025);
         seed_soia(c, "soia-bad", "oi-null", "al-target");
     }
-    let err = h.delete(&unit_id).expect_err("D6 second direction must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("D6 second direction must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
     let reason = delete_forbidden_reason(&err);
-    assert!(reason.contains("cannot prove two-sided target ownership"), "reason: {reason}");
+    assert!(
+        reason.contains("cannot prove two-sided target ownership"),
+        "reason: {reason}"
+    );
     assert!(reason.contains("soia-bad"), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia-bad'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-target'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-null'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_item_allocations WHERE id='soia-bad'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-target'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-null'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1090,14 +1496,31 @@ fn d5_target_allocation_with_foreign_parent_contract_blocks() {
         seed_contract_product(c, "cp-other", "ct-other", "p1");
         seed_allocation(c, "al-bad", "ct-other", "cp-other", &unit_id, "p1", 2025);
     }
-    let err = h.delete(&unit_id).expect_err("D5 reverse direction must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("D5 reverse direction must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
     let reason = delete_forbidden_reason(&err);
-    assert!(reason.contains("disagree with their parent contract unit"), "reason: {reason}");
+    assert!(
+        reason.contains("disagree with their parent contract unit"),
+        "reason: {reason}"
+    );
     assert!(reason.contains("al-bad"), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &other_id), 1);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &other_id
+        ),
+        1
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1124,16 +1547,36 @@ fn target_owned_allocation_structural_mismatch_blocks() {
         seed_contract(c, "ct-b", &unit_id, "s1", 2026);
         seed_allocation(c, "al-bad", "ct-b", "cp-a", &unit_id, "p1", 2026);
     }
-    let err = h.delete(&unit_id).expect_err("§4.10 structural mismatch must fail closed");
+    let err = h
+        .delete(&unit_id)
+        .expect_err("§4.10 structural mismatch must fail closed");
     assert!(is_delete_forbidden(&err), "got {err:?}");
     // Pin the §4.10 check specifically (not the D5 check) via its message.
     let reason = delete_forbidden_reason(&err);
-    assert!(reason.contains("reference target contract products unsafely"), "reason: {reason}");
+    assert!(
+        reason.contains("reference target contract products unsafely"),
+        "reason: {reason}"
+    );
     assert!(reason.contains("al-bad"), "reason: {reason}");
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM contract_products WHERE id='cp-a'"), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM contracts WHERE unit_id = ?1", &unit_id), 2);
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id='al-bad'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_products WHERE id='cp-a'"),
+        1
+    );
+    assert_eq!(
+        h.scalar1(
+            "SELECT COUNT(*) FROM contracts WHERE unit_id = ?1",
+            &unit_id
+        ),
+        2
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1157,9 +1600,24 @@ fn deletion_preserves_non_unit_and_other_unit_identity_records() {
 
     // A17 predicate is `subject_type = 'UNIT' AND subject_id = <target>`: only the
     // target UNIT identity row is removed; WILAYA, ADMIN, and the other UNIT survive.
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-target'"), 0);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-other-unit'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-wilaya'"), 1);
-    assert_eq!(h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-admin'"), 1);
-    assert_eq!(h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &other_id), 1);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-target'"),
+        0
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-other-unit'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-wilaya'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM identity_store WHERE identity_id='id-admin'"),
+        1
+    );
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &other_id),
+        1
+    );
 }

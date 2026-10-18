@@ -284,8 +284,10 @@ fn a3_operator_credential_fields_are_rejected() {
         "user password hash must be structurally rejected"
     );
     assert!(
-        serde_json::from_str::<AdminAccessPayload>(r#"{"admin_password_hash":"h","username":"usera"}"#)
-            .is_err(),
+        serde_json::from_str::<AdminAccessPayload>(
+            r#"{"admin_password_hash":"h","username":"usera"}"#
+        )
+        .is_err(),
         "operator username must be structurally rejected"
     );
 }
@@ -322,9 +324,8 @@ fn a5_serialized_payload_has_no_admin_enabled() {
 #[test]
 fn a6_pre_change_admin_enabled_artifact_is_rejected() {
     let json = r#"{"admin_password_hash":"argon2-hash","admin_enabled":true}"#;
-    serde_json::from_str::<AdminAccessPayload>(json).expect_err(
-        "a pre-change payload carrying admin_enabled must fail closed",
-    );
+    serde_json::from_str::<AdminAccessPayload>(json)
+        .expect_err("a pre-change payload carrying admin_enabled must fail closed");
 }
 
 // ── Section B: export command boundary ───────────────────────────────────
@@ -993,22 +994,18 @@ fn d6_reimport_never_touches_disabled_admin_lifecycle_state() {
              FROM users WHERE username='admin' AND node_id='UNIT-9'"
         );
         db.get_connection()
-            .query_row(
-                &query,
-                [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                        row.get(6)?,
-                        row.get(7)?,
-                    ))
-                },
-            )
+            .query_row(&query, [], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                ))
+            })
             .expect("admin row")
     };
 
@@ -1065,8 +1062,7 @@ fn d6_reimport_never_touches_disabled_admin_lifecycle_state() {
     // Password material updated as intended.
     let port = Argon2PasswordHashProvider;
     assert!(
-        port
-            .verify_admin(FLEET_PASSWORD_ROTATED, &admin_after.1)
+        port.verify_admin(FLEET_PASSWORD_ROTATED, &admin_after.1)
             .expect("verify rotated"),
         "password material must be updated to the rotated fleet credential"
     );

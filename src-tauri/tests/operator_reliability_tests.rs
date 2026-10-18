@@ -24,6 +24,10 @@ fn open_test_db() -> grpc_lib::db::Database {
 
 #[test]
 fn deployment_readiness_passes_on_fresh_test_db() {
+    let xdg_temp = tempfile::tempdir().unwrap();
+    let old_xdg = std::env::var_os("XDG_DATA_HOME");
+    std::env::set_var("XDG_DATA_HOME", xdg_temp.path());
+
     let db = open_test_db();
     let path = db.get_connection_path().unwrap();
 
@@ -40,6 +44,12 @@ fn deployment_readiness_passes_on_fresh_test_db() {
         DeploymentReadinessService::new(db.executor(), path.clone(), &db, &test_node_key_store())
             .verify()
             .unwrap();
+
+    match old_xdg {
+        Some(val) => std::env::set_var("XDG_DATA_HOME", val),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+
     assert_eq!(
         report.status,
         DeploymentReadinessStatus::Ready,
