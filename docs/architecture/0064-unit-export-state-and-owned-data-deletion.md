@@ -45,10 +45,36 @@ Accepted (2026-10-05)
 > governance/owner questions that Revision 2 recorded in §9.3.3 are **owner-resolved**:
 > **Q1** — Option A, amend `ARCHITECTURE_FREEZE.md` §2.4 (performed through the separate
 > RFC-to-ADR process); **Q2** (`fifo_layer_id` FK) and **Q3** (`NOT NULL` hardening) — Option B,
-> deferred to a separate schema review; **Q4** (WILAYA import enforcement) and **Q5** (cross-UNIT
-> repair path) — Option A, approved policy that is **not yet implemented**. With the previously
-> ratified **Q6** (Option A) this closes the §9.3.3 register; none reopens an owner-ratified
-> decision (D11–D22). See §9.3.3.
+> deferred to a separate schema review; **Q4** (UNIT contract-catalog import enforcement) and
+> **Q5** (cross-UNIT repair path) — Option A, approved policy that is **not yet implemented**.
+> With the previously ratified **Q6** (Option A) this closes the §9.3.3 register; none reopens an
+> owner-ratified decision (D11–D22). See §9.3.3.
+>
+> **Owner decisions — D11 bootstrap scope and Q4 import scope (2026-10-19).**
+> **D11 (identity bootstrap re-export).** The existence of **ANY** historical `identity_store`
+> row for a UNIT — `ACTIVE`, `REVOKED`, `SUPERSEDED`, or `EXPIRED` — prevents **bootstrap
+> re-export** (`.unit` issuance) for that UNIT, status-agnostically. This decision
+> **supersedes and replaces the ACTIVE-only bootstrap guard described as `SEC-004-03`**, which
+> exists only in code comments and tests (`identity_provisioning_service.rs`,
+> `identity_unit_signing_guard_tests.rs`) and is **not defined in any formal document**. The
+> policy aligns the implementation with the re-export rejection already documented in
+> `0044-unit-trust-first-v2-bootstrap.md` §7 (S4 amendment note) and §8.3's table row *"إعادة
+> التصدير"* (line 298), and in the runbooks that state *"إعادة التصدير = رفض"*
+> (`docs/runbooks/key-loss-and-reprovisioning.md:80`,
+> `docs/runbooks/security-production-keys.md:140`), whose ACTIVE-only mechanism wording the
+> status-agnostic rule now generalizes. The decision **does not alter the identity-rotation
+> path** (ADR-0044 §8.3 — the CSR/recovery/rotation path stays *"دون تغيير"*). The remaining
+> D11/D19 implementation requirements — refusing **Edit** after export, enforcing the
+> **status-agnostic** Export refusal, and exposing **`UnitView.is_exported`** to the frontend —
+> are **ratified but NOT implemented**; no statement in this ADR (or the ADR index) claims them
+> complete.
+> **Q4 (contract-catalog import).** The scope wording of **Q4**, **G26**, and **V5** is corrected
+> to describe the actual import path: contract catalogs are **exported from WILAYA** for import
+> by a **target UNIT**; **WILAYA rejects** importing a catalog distributed to a UNIT; the **UNIT
+> importer checks the local `target_node_id`**; and the approved requirement is that the **UNIT**
+> catalog import **explicitly rejects** an allocation whose contract/unit relationship conflicts
+> with the contract or with the local UNIT scope — with an **explicit validation error**, never a
+> silent skip. This correction authorizes **no unrelated WILAYA change**.
 >
 > **Label disambiguation.** The `(Dn/§x.y)` markers introduced by this revision — e.g. "D1/§5.5",
 > "D2/§4.6", "D11/§8" — are **Revision-2 forensic-review item numbers** identifying this
@@ -81,7 +107,7 @@ Architecture / Security / Data Governance
 
 | # | Ratified decision | Encoded at |
 |---|-------------------|-----------|
-| D11 | A WILAYA UNIT is **EXPORTED** if the WILAYA-side `identity_store` contains ANY historical identity row for that UNIT. Status does not matter (`ACTIVE`, `REVOKED`, `SUPERSEDED`, `EXPIRED`). Once EXPORTED: Edit hidden/disabled, Export hidden/disabled, Delete remains. Enforced in the backend as well as the UI. | §1, §3 |
+| D11 | A WILAYA UNIT is **EXPORTED** if the WILAYA-side `identity_store` contains ANY historical identity row for that UNIT. Status does not matter (`ACTIVE`, `REVOKED`, `SUPERSEDED`, `EXPIRED`). Once EXPORTED: Edit hidden/disabled, Export hidden/disabled, Delete remains. Enforced in the backend as well as the UI. **Scope clarification (owner decision, 2026-10-19):** the status-agnostic rule also gates **bootstrap re-export** — `.unit` issuance is rejected whenever ANY identity history exists for the UNIT — **superseding the `SEC-004-03` ACTIVE-only bootstrap guard** (recorded only in code comments and tests, not in a formal document); the identity-rotation path is unchanged; the Edit-after-export refusal and `UnitView.is_exported` (D19) remain **not implemented**. | §1, §3 |
 | D12 | WILAYA-side `identity_store` rows with `subject_type = 'UNIT'` are UNIT-owned. Successful UNIT deletion removes them atomically. A later recreation of the same UNIT code starts a clean identity lifecycle; deleted UNIT identity rows are NOT preserved merely to block code reuse. | §2 |
 | D13 | UNIT deletion is an explicit destructive lifecycle operation. It deletes all legitimately UNIT-owned data, preserves global/shared data, and is atomic and fail-closed, against an explicit ownership matrix that includes indirect ownership where a child table has no `unit_id`. | §4 |
 | D14 | `audit_log` is globally retained and `audit_log.user_id` is nullable with `ON DELETE SET NULL`. FK nullification MUST NOT be relied on silently. The canonical local UNIT operator may be hard-deleted only when zero `audit_log` rows reference that user; if any reference exists, UNIT deletion fails closed and rolls back atomically. No tombstone model is invented. The audit-reference check is inside the same deletion transaction. | §5 |
@@ -306,8 +332,11 @@ exists** for either table (backup restore is a whole-file atomic swap,
 **G26 — Contract/allocation ownership divergence.** `contracts.unit_id` and
 `contract_allocations.unit_id` are both `NOT NULL` (G24). The ordinary authoring INSERT
 (`repositories/contracts.rs:472`, caller `application/services/contract_service.rs:151`) binds
-`unit_id = &contract.unit_id`, so equality holds **by construction**. The WILAYA-side catalog
-import INSERT (`repositories/contracts.rs:1106`, caller
+`unit_id = &contract.unit_id`, so equality holds **by construction**. The contract-catalog
+import INSERT (a catalog **exported from WILAYA for import by a target UNIT** — WILAYA nodes
+themselves reject importing a catalog distributed to a UNIT,
+`application/usecases/sync/import_contract_catalog_package.rs:117-123`;
+`repositories/contracts.rs:1106`, caller
 `application/services/sync_import_execution_service.rs:342,350`) binds the **payload**
 allocation's `unit_id` and applies only a per-row `in_scope` filter; it performs **no**
 `allocation.unit_id == contract.unit_id` check, and the import validator
@@ -428,6 +457,15 @@ Normative properties of this predicate:
 * Once the UNIT is deleted (§4), its `identity_store` rows are deleted with it (§2), so a
   recreated UNIT with the same code starts non-EXPORTED — the clean-lifecycle property D12
   requires.
+* **Bootstrap re-export is refused whenever any identity history exists** (owner decision,
+  2026-10-19): the predicate above is also the write-time gate on `.unit` re-export — refusal
+  applies to `ACTIVE`, `REVOKED`, `SUPERSEDED`, and `EXPIRED` histories alike. This
+  **supersedes the ACTIVE-only bootstrap guard described as `SEC-004-03`** (recorded only in
+  code comments and tests, never in a formal document) and generalizes the *"إعادة التصدير =
+  رفض"* rule already documented in `0044-unit-trust-first-v2-bootstrap.md` §7 (S4 amendment
+  note) and §8.3 (line 298). The **identity-rotation path is unchanged** by this decision.
+  Status: **policy ratified; implementation pending** — the wired guard is still ACTIVE-only as
+  of baseline `00a9d0c445a671034f69d5b1bffb9aa75913d343`.
 
 ### 1.1 The `UnitView` projection shape (D19 — U-2 closed)
 
@@ -542,6 +580,17 @@ identity_store row with subject_type = 'ADMIN'  →  global-preserve
   field (D19), which carries the same authoritative semantics as §1. The UI hides or disables the
   two actions accordingly; the backend refusal above remains the control that actually enforces
   them.
+
+**Implementation status (recorded 2026-10-19 — the table above is ratified policy, not current
+code).** As of baseline `00a9d0c445a671034f69d5b1bffb9aa75913d343`: the **Edit-after-export
+refusal does not exist** (`unit_service::update_unit` performs no EXPORTED check); the
+**Export `.unit` refusal exists only in its ACTIVE-only form** (the `SEC-004-03` guard in
+`identity_provisioning_service.rs`) and does not yet reject `REVOKED`/`SUPERSEDED`/`EXPIRED`
+histories; **`UnitView`/`is_exported` (D19) is not implemented** — `list_units` still returns
+`Vec<Unit>`; and the Units surface does not hide/disable Edit or Export. Only the **Delete
+remains** column is in effect today (§4's preflight gates Delete, never EXPORTED). These
+requirements remain open, separately authorized implementation work; nothing in this ADR claims
+them complete.
 
 ## 4. (D13) UNIT deletion ownership matrix
 
@@ -882,9 +931,11 @@ every `supplier_order_items` row whose own `unit_id = <target>` **or** whose par
 <target>` **or** whose parent `contracts.unit_id = <target>`, the allocation's `unit_id` MUST
 equal the parent contract's `unit_id`. If they disagree, deletion **fails closed** — it does
 not assume either side proves safe ownership. The ordinary authoring path guarantees equality by
-construction (G26); the residual risk is the WILAYA-side catalog import
-(`sync_import_execution_service.rs:342,350`), which binds the payload allocation's unit with no
-cross-check (G26). Write-time enforcement on this importer is **owner-approved policy (Q4,
+construction (G26); the residual risk is the contract-catalog import (a catalog exported from
+WILAYA for import by a target UNIT;
+`sync_import_execution_service.rs:342,350`), which binds the payload allocation's unit with no
+cross-check (G26). Write-time enforcement on the **UNIT** importer — an **explicit rejection**,
+never a silent skip — is **owner-approved policy (Q4,
 §9.3.3)** but is **not yet implemented**; until it is, this D5 preflight is the only control.
 
 **D6 (A1) — `supplier_order_item_allocations` two-sided ownership.** Ownership must be proven on
@@ -895,8 +946,9 @@ or either relationship cannot establish safe ownership, the deletion **fails clo
 than deleting on the strength of one parent alone.
 
 **Write-path validation (not implemented here).** The preflight is the authoritative control.
-Two write-path controls are in view: (a) the contract-catalog importer asserting
-`allocation.unit_id == contract.unit_id` on every accepted row (G26) is **owner-approved policy
+Two write-path controls are in view: (a) the **UNIT** contract-catalog importer **explicitly
+rejecting** (never silently skipping) any accepted row whose `allocation.unit_id` conflicts with
+`contract.unit_id` or with the local UNIT scope (G26) is **owner-approved policy
 (Q4, §9.3.3)** and is **required**; (b) `OrderService::update_supplier_order` not being able to
 produce a `NULL`-header/target-item mismatch (G25) remains a **recommendation**. This ADR
 **requires** the preflight; it implements neither write-path control.
@@ -1557,7 +1609,7 @@ resolved (§9.3.3).
 | V2 | `identity_store.deleted` is never set to `1` in production. | G3 |
 | V3 | No FK targets `identity_store`; a UNIT subject's own `identity_id` is not stored as a live reference elsewhere, but `applied_sync_packages.issuer_identity_id` may retain a **non-resolving** UNIT issuer id after the purge. | G5, G6, G6b |
 | V4 | `supplier_orders`/`supplier_order_items` `unit_id` are independently nullable with a divergence path only via `OrderService::update_supplier_order`. | G25 |
-| V5 | `contracts`/`contract_allocations` unit equality holds by construction except the WILAYA-side catalog import. | G26 |
+| V5 | `contracts`/`contract_allocations` unit equality holds by construction except the contract-catalog import (a WILAYA-exported catalog imported by a target UNIT), where no allocation/contract unit cross-check exists at write time. | G26 |
 | V6 | `daily_report_meal_items.fifo_layer_id` has no FK; a surviving report could dangle after purge. | G27 |
 | V7 | Production keeps consumption/movement/layer `unit_id` aligned by construction. | G28 |
 | V8 | `daily_reports.unit_id` can legitimately be `NULL` (sync import); `monthly_reports.unit_id` is `NOT NULL`. | G29 |
@@ -1594,7 +1646,7 @@ default for every deletion sub-case remains safe rejection.
 | Q1 | Does the `ARCHITECTURE_FREEZE.md` §2.4 re-scoping require a formal freeze-document amendment (RFC-to-ADR Step 3.4), or is this ADR's qualification sufficient? | **Option A — amend.** The "Immutable closed years" bullet's **first sentence** was amended in `ARCHITECTURE_FREEZE.md` §2.4 through the separate RFC-to-ADR process (`docs/architecture/rfcs/2026-10-16-freeze-2-4-unit-owned-destructive-purge-exception.md`) to record a narrow, **permanent business-policy** sanctioned exception for the §6.1 UNIT-owned purge. This ADR remains the qualification record and performs no freeze-document edit itself. |
 | Q2 | Should `daily_report_meal_items.fifo_layer_id` gain a foreign key to `fifo_stock_layers` (and/or a unit column)? | **Option B — defer.** No foreign key or unit column is added by this ADR; the question is deferred to a separate, dedicated schema review. The §4.9 preflight remains the operative protection. |
 | Q3 | Should `supplier_orders.unit_id` / `supplier_order_items.unit_id` (and `daily_reports.unit_id`) be tightened to `NOT NULL` (or constrained) in the baseline? | **Option B — defer.** The columns stay nullable in the baseline for now; `NOT NULL` hardening is deferred to a separate schema review (coordinated with Q2). The §4.7/§4.8 preflight remains the guard, and `NULL` is never treated as proof of ownership. |
-| Q4 | Should the WILAYA-side contract-catalog import enforce `allocation.unit_id == contract.unit_id` at write time? | **Option A — enforce (policy, not yet implemented).** The importer MUST reject a contract-catalog import when an allocation's `unit_id` differs from its parent contract's `unit_id`, return an explicit validation error, and fail closed with transaction atomicity (no partial commit, no automatic repair/reassignment/inference). **Verified at HEAD `0513ae5`: this enforcement does NOT exist.** It remains a separate, independently authorized implementation change. Until it lands, the §4.7 D5 preflight is the only control. |
+| Q4 | Should the WILAYA-side contract-catalog import enforce `allocation.unit_id == contract.unit_id` at write time? *(Scope corrected 2026-10-19: "WILAYA-side" named the catalog's author, not the importing node — catalogs are **exported from WILAYA** for import by a **target UNIT**; WILAYA rejects importing a catalog distributed to a UNIT, and the UNIT importer checks the local `target_node_id`. The requirement below applies to the **UNIT** catalog import.)* | **Option A — enforce (policy, not yet implemented).** The **UNIT** catalog import MUST reject a contract-catalog import when an allocation's `unit_id` differs from its parent contract's `unit_id` or conflicts with the local UNIT scope, return an explicit validation error, and fail closed with transaction atomicity (no partial commit, no automatic repair/reassignment/inference). A conflicting allocation MUST NOT be silently skipped — the current per-row `in_scope` skip does not satisfy this requirement *(clarified 2026-10-19)*. **Verified at HEAD `0513ae5` and re-verified at baseline `00a9d0c`: this enforcement does NOT exist.** It remains a separate, independently authorized implementation change and authorizes **no unrelated WILAYA change**. Until it lands, the §4.7 D5 preflight is the only control. |
 | Q5 | Is there an owner-approved repair path for a cross-UNIT reference that the preflight rejects? | **Option A — controlled external operational repair (policy only).** The deletion remains rejected, no automatic/speculative repair occurs during preflight or purge; an authorized operator uses a documented, controlled repair procedure **outside** the deletion operation, using trusted evidence (never inferred from the target UNIT or one side alone), with auditability/integrity checks and preflight re-run. **Verified at HEAD `0513ae5`: no repair tool/service/UI exists.** |
 | Q6 | Should a `supplier_order_items` row owned by the target under a `NULL`/other-unit parent order abort the deletion? | **Option A — fail-closed rejection** (ratified 2026-10-15). Abort before any `DELETE`; no partial deletion, no automatic repair/reassignment. The UNIT remains undeletable until the inconsistency is repaired and preflight passes. Full rule below and §4.7 D4. |
 
@@ -1666,10 +1718,12 @@ it is limited to that bullet's first sentence, and §2.4's second sentence, §2.
   records defense-in-depth triggers, and the `fifo_layer_id` FK (Q2) and `NOT NULL` hardening (Q3)
   are now owner-approved **deferrals** to a separate, dedicated schema review; none is added here.
 * **Creating any migration** or otherwise changing how `001_initial.sql` is applied (§8.1, D18).
-* **Enforcing `allocation.unit_id == contract.unit_id` on the WILAYA-side catalog import write
-  path** *in this documentation-only ADR* (§4.7, §9.3.3 Q4). The owner has approved this
+* **Enforcing the allocation/contract unit relationship on the UNIT contract-catalog import
+  write path** (a WILAYA-exported catalog imported by a target UNIT; explicit rejection, never a
+  silent skip) *in this documentation-only ADR* (§4.7, §9.3.3 Q4). The owner has approved this
   enforcement as **required policy (Option A)**; it is **not yet implemented** and is a separate,
-  independently authorized change. This ADR requires only the runtime preflight today.
+  independently authorized change authorizing **no unrelated WILAYA change**. This ADR requires
+  only the runtime preflight today.
 * **Amending `ARCHITECTURE_FREEZE.md` §2.4** *through this ADR*. The owner resolved Q1 as
   **Option A** (the amendment is required) and it has been performed through the separate
   RFC-to-ADR process; this ADR performs no freeze-document edit under any reading. See §1 and
