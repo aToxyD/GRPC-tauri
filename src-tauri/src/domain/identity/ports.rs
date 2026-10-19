@@ -31,6 +31,19 @@ pub trait IdentityStorePort {
         subject_type: SubjectType,
     ) -> AppResult<Option<IdentityCertificate>>;
 
+    /// True when the subject holds ANY persisted certificate, regardless of
+    /// status (`ACTIVE` / `REVOKED` / `SUPERSEDED` / `EXPIRED`).
+    ///
+    /// Status-agnostic historical existence check owned by the bootstrap
+    /// re-export gate (ADR-0064 D11: any identity history blocks re-export).
+    /// Distinct from the ACTIVE-only lookups above — consumers that need the
+    /// live certificate MUST keep using `get_active_by_subject`.
+    fn exists_any_by_subject(
+        &self,
+        subject_type: SubjectType,
+        subject_id: &uuid::Uuid,
+    ) -> AppResult<bool>;
+
     /// Read the ACTIVE certificate currently bound to a credential identifier.
     fn get_active_by_credential_id(
         &self,

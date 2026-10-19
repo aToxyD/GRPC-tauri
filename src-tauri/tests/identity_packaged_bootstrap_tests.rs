@@ -7,8 +7,9 @@
 //! never-overwrite) and the certificate installed through the executor-compatible
 //! finalize core inside the import audit transaction.
 //!
-//! RE-EXPORT RULE: `sign_unit_bootstrap_request`'s duplicate-ACTIVE guard
-//! rejects a second export once an ACTIVE UNIT identity exists.
+//! RE-EXPORT RULE (ADR-0064 D11): `sign_unit_bootstrap_request`'s
+//! status-agnostic historical-identity guard rejects a second export as soon as
+//! ANY UNIT identity history exists — ACTIVE, REVOKED, SUPERSEDED, or EXPIRED.
 //!
 //! The test authority Root uses the RFC 8032 §7.1 TEST 1 keypair — exactly the
 //! `#[cfg(debug_assertions)]` development Root fallback in `root_public_key.rs`.
@@ -328,8 +329,9 @@ fn re_export_is_rejected_once_active_unit_identity_exists() {
         .sign_unit_bootstrap_request(&request, &wilaya.node_key_store, FIXED_NOW)
         .expect("first export signs");
 
-    // RE-EXPORT RULE: the duplicate-ACTIVE guard rejects the second issuance
-    // with zero mutation (WILAYA-side ACTIVE UNIT identity already registered).
+    // RE-EXPORT RULE (ADR-0064 D11): the status-agnostic historical-identity
+    // guard rejects the second issuance with zero mutation (a WILAYA-side UNIT
+    // identity already exists).
     let (_, request2) = provisioning
         .generate_unit_identity_request_for_package(unit_uuid())
         .expect("second keygen is allowed (pure in-memory)");
@@ -338,9 +340,65 @@ fn re_export_is_rejected_once_active_unit_identity_exists() {
         .expect_err("second export must be rejected (RE-EXPORT = REJECT)");
     assert!(
         err.to_string()
-            .contains("ACTIVE UNIT identity already exists"),
+            .contains("duplicate bootstrap issuance is denied"),
         "got {err:?}"
     );
+}
+
+#[test]
+fn re_export_is_rejected_when_identity_history_is_not_active() {
+    let mut wilaya = fresh_node();
+    bootstrap_wilaya(&mut wilaya);
+    wilaya
+        .db
+        .executor()
+        .units()
+        .upsert_raw_unit(UNIT_ID, UNIT_CODE, UNIT_NAME, UNIT_WILAYA, FIXED_NOW)
+        .expect("unit mirrored");
+
+    let provisioning = IdentityProvisioningService::new(&mut wilaya.db);
+    let (_, request) = provisioning
+        .generate_unit_identity_request_for_package(unit_uuid())
+        .expect("first keygen");
+    let first = provisioning
+        .sign_unit_bootstrap_request(&request, &wilaya.node_key_store, FIXED_NOW)
+        .expect("first export signs");
+
+    // The UNIT identity is later revoked: no ACTIVE credential remains, yet the
+    // historical row still blocks a fresh export (ADR-0064 D11).
+    let mut revoked = first.clone();
+    revoked.status = CredentialStatus::Revoked;
+    {
+        let store = wilaya.db.executor().identity_store();
+        store.upsert(&revoked, FIXED_NOW).expect("mark revoked");
+        assert!(store
+            .get_active_by_subject(SubjectType::Unit, &unit_uuid())
+            .expect("query")
+            .is_none());
+    }
+
+    let provisioning = IdentityProvisioningService::new(&mut wilaya.db);
+    let (_, request2) = provisioning
+        .generate_unit_identity_request_for_package(unit_uuid())
+        .expect("second keygen is allowed (pure in-memory)");
+    let err = provisioning
+        .sign_unit_bootstrap_request(&request2, &wilaya.node_key_store, FIXED_NOW)
+        .expect_err("historical identity must reject the export (RE-EXPORT = REJECT)");
+    assert!(
+        err.to_string()
+            .contains("duplicate bootstrap issuance is denied"),
+        "got {err:?}"
+    );
+    // The historical row is preserved untouched by the rejected attempt.
+    let after = wilaya
+        .db
+        .executor()
+        .identity_store()
+        .get_by_identity_id(&first.identity_id)
+        .expect("query")
+        .expect("historical row retained");
+    assert_eq!(after.status, CredentialStatus::Revoked);
+    assert_eq!(after.credential_id, first.credential_id);
 }
 
 // ---------------------------------------------------------------------------

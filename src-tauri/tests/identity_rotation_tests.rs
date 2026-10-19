@@ -26,8 +26,8 @@ use grpc_lib::application::services::{
 };
 use grpc_lib::db::{ConnectionFactory, Database};
 use grpc_lib::domain::identity::{
-    Ed25519CertificateSignature, IdentityCertificate, IdentitySigner, IdentityStorePort,
-    SubjectType,
+    CredentialStatus, Ed25519CertificateSignature, IdentityCertificate, IdentitySigner,
+    IdentityStorePort, SubjectType,
 };
 use grpc_lib::infrastructure::identity::NodeKeyStore;
 use grpc_lib::infrastructure::security::file_encryption::AgeFileEncryptionProvider;
@@ -614,4 +614,37 @@ fn unit_begin_without_active_identity_fails() {
         .read_pending()
         .expect("pending read")
         .is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap-only guard independence (ADR-0064 D11)
+// ---------------------------------------------------------------------------
+
+/// The D11 historical-identity guard is bootstrap-only: `sign_unit_rotation`
+/// signs through the shared `sign_unit_identity_request` path and therefore
+/// keeps working with an existing ACTIVE UNIT identity, which the bootstrap
+/// entry point would reject. As the sibling full-flow test documents, the
+/// WILAYA-side operation classification is `ReIssue` (the WILAYA store holds the
+/// credential id of the provisioned UNIT cert), which is irrelevant here.
+#[test]
+fn rotation_signing_is_unaffected_by_the_bootstrap_history_guard() {
+    let mut provisioned = provisioned_unit();
+    let unit_before = active_unit(&provisioned.unit);
+    assert_eq!(unit_before.status, CredentialStatus::Active);
+
+    let plan = IdentityRotationCoordinator::new(
+        &mut provisioned.unit.db,
+        &provisioned.unit.node_key_store,
+    )
+    .begin(SubjectType::Unit, RotationOperation::Rotate)
+    .expect("unit begin rotation");
+
+    let signed_unit = IdentityRotationCoordinator::new(
+        &mut provisioned.wilaya.db,
+        &provisioned.wilaya.node_key_store,
+    )
+    .sign_unit_rotation(&plan.certificate)
+    .expect("rotation signing must not be blocked by the bootstrap-only guard");
+    assert!(signed_unit.certificate.signature.is_some());
+    assert_eq!(signed_unit.certificate.subject_id, unit_uuid());
 }

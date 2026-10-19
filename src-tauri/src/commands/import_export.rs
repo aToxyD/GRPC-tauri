@@ -1089,9 +1089,13 @@ pub fn export_unit_node_package(
     // ADR-0044 packaged-identity bootstrap: the WILAYA generates the UNIT
     // Ed25519 keypair IN MEMORY (never written to the WILAYA NodeKeyStore),
     // signs the UNIT certificate with the ACTIVE local WILAYA identity, and
-    // registers the WILAYA-side Issuer Local State. RE-EXPORT RULE: the
-    // duplicate-ACTIVE guard inside `sign_unit_bootstrap_request` rejects a
-    // second export once an ACTIVE UNIT identity exists (RE-EXPORT = REJECT).
+    // registers the WILAYA-side Issuer Local State. RE-EXPORT RULE (ADR-0064
+    // D11): the status-agnostic historical-identity guard inside
+    // `sign_unit_bootstrap_request` rejects a second export as soon as ANY UNIT
+    // identity history exists (ACTIVE/REVOKED/SUPERSEDED/EXPIRED) — the keygen
+    // above is pure in-memory and persists nothing, so no state is created by a
+    // rejected attempt (RE-EXPORT = REJECT). The guard is the single business
+    // owner of this rule; the command performs no duplicate check of its own.
     let unit_subject_id = Uuid::parse_str(&unit_id).map_err(|e| {
         into_command_error(AppError::Internal(format!(
             "units.id '{unit_id}' is not a valid UUID: {e}"

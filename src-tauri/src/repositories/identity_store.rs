@@ -160,6 +160,25 @@ impl<'a> IdentityStorePort for IdentityStoreRepository<'a> {
         Ok(result)
     }
 
+    fn exists_any_by_subject(
+        &self,
+        subject_type: SubjectType,
+        subject_id: &Uuid,
+    ) -> AppResult<bool> {
+        // Status-agnostic (ADR-0064 D11): every credential status counts as an
+        // identity history for the subject. Deliberately has no `status` and no
+        // `deleted` predicate — the ADR's existence rule is status- and
+        // `deleted`-agnostic, and `identity_store.deleted` is never set to 1 in
+        // production, so this matches the other reads in effect.
+        let found: Option<i64> = self.executor.query_row_optional(
+            "SELECT 1 FROM identity_store \
+             WHERE subject_type = ?1 AND subject_id = ?2 LIMIT 1",
+            params![subject_type.as_str(), subject_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(found.is_some())
+    }
+
     fn get_active_by_credential_id(
         &self,
         credential_id: &Uuid,
@@ -395,6 +414,48 @@ mod tests {
 
         let unknown = Uuid::new_v4();
         assert_eq!(repo.max_generation_for_credential(&unknown).unwrap(), None);
+    }
+
+    #[test]
+    fn exists_any_by_subject_ignores_status_and_is_subject_scoped() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let repo = IdentityStoreRepository::new(make_executor(&db));
+
+        let cert = sample_certificate(Uuid::new_v4());
+        repo.upsert(&cert, "2026-08-04T00:00:00Z").unwrap();
+
+        let mut revoked = cert.clone();
+        revoked.status = CredentialStatus::Revoked;
+        revoked.generation = 2;
+        repo.upsert(&revoked, "2026-08-04T01:00:00Z").unwrap();
+
+        // No status filter: a REVOKED-only history still reports existence,
+        // while the ACTIVE-only lookup cannot see it.
+        assert!(repo
+            .exists_any_by_subject(cert.subject_type, &cert.subject_id)
+            .unwrap());
+        assert!(repo
+            .get_active_by_subject(cert.subject_type, &cert.subject_id)
+            .unwrap()
+            .is_none());
+
+        // Unknown subject and unrelated subject type are not conflated.
+        assert!(!repo
+            .exists_any_by_subject(cert.subject_type, &Uuid::new_v4())
+            .unwrap());
+        assert!(!repo
+            .exists_any_by_subject(SubjectType::Admin, &cert.subject_id)
+            .unwrap());
+    }
+
+    #[test]
+    fn exists_any_by_subject_is_false_for_an_empty_store() {
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let repo = IdentityStoreRepository::new(make_executor(&db));
+
+        assert!(!repo
+            .exists_any_by_subject(SubjectType::Unit, &Uuid::new_v4())
+            .unwrap());
     }
 
     #[test]
