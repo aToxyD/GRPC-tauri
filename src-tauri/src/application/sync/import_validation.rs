@@ -183,6 +183,78 @@ pub fn validate_daily_report_package_for_import(
     Ok(())
 }
 
+/// Q4 (ADR-0064 §4.7 D5, §9.3.3): allocation/contract unit consistency for a
+/// Contract Catalog import.
+///
+/// The single owner of the allocation-ownership rule. Two invariants:
+///
+/// 1. **Contract-scoped (always).** An allocation's own `unit_id` MUST equal
+///    the `unit_id` of its parent contract. The exporter's SQL boundary
+///    (`list_sync_allocations_for_contract_unit`) already guarantees this for
+///    every artifact it emits (proved by the cross-unit exclusion probe
+///    `alloc-a1-b`), so a divergence in a received package is a structural
+///    inconsistency the schema alone cannot prevent (G26).
+/// 2. **Local-scope (UNIT importer only).** On a UNIT importer
+///    (`local_unit_id = Some`) an allocation's `unit_id` MUST equal the local
+///    `units.id`. A UNIT-scoped `UnitDistribution` artifact carries only the
+///    target unit's rows, so any other unit is an explicit conflict. On the
+///    WILAYA restore path (`local_unit_id = None`) the catalog legitimately
+///    carries many units and only invariant 1 applies.
+///
+/// Fails closed with an explicit validation error — it is **never** a silent
+/// skip (Q4). Callers run it BEFORE any catalog row is applied, so a rejected
+/// package performs no partial write inside its transaction.
+pub fn validate_contract_catalog_allocation_unit_consistency(
+    allocation: &crate::models::ContractAllocation,
+    contract_unit_id: &str,
+    local_unit_id: Option<&str>,
+) -> AppResult<()> {
+    if allocation.unit_id != contract_unit_id {
+        return Err(AppError::Validation(ValidationError::InvalidFormat {
+            field: "contracts[].allocations[].unit_id".into(),
+            message: format!(
+                "التخصيص «{}» لا ينتمي إلى عقد «{}» — وحدة التخصيص «{}» تخالف وحدة العقد «{}»",
+                allocation.id, allocation.contract_id, allocation.unit_id, contract_unit_id
+            ),
+        }));
+    }
+    if let Some(local) = local_unit_id {
+        if allocation.unit_id != local {
+            return Err(AppError::Validation(ValidationError::InvalidFormat {
+                field: "contracts[].allocations[].unit_id".into(),
+                message: format!(
+                    "التخصيص «{}» لا يخص الوحدة المحلية — وحدة التخصيص «{}» تخالف نطاق الوحدة «{}»",
+                    allocation.id, allocation.unit_id, local
+                ),
+            }));
+        }
+    }
+    Ok(())
+}
+
+/// Dataset-level application of
+/// [`validate_contract_catalog_allocation_unit_consistency`] over every
+/// allocation row of a Contract Catalog package.
+///
+/// Runs on the UNIT import path after the importer's own unit is resolved and
+/// before any row is applied (ADR-0064 Q4). The WILAYA restore path passes
+/// `local_unit_id = None` so only the contract-scoped invariant is enforced.
+pub fn validate_contract_catalog_allocation_units_for_import(
+    package: &SyncPackage<ContractCatalogExportDataset>,
+    local_unit_id: Option<&str>,
+) -> AppResult<()> {
+    for row in &package.payload.contracts {
+        for alloc_row in &row.allocations {
+            validate_contract_catalog_allocation_unit_consistency(
+                &alloc_row.allocation,
+                &row.contract.unit_id,
+                local_unit_id,
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Wire + semantic checks for a ContractCatalog package (ADR-0055 /
 /// SEC-087-F). The catalog is a WILAYA-authoritative projection; a package
 /// without contracts carries no projection and is rejected fail-closed
