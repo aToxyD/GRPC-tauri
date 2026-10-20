@@ -3271,6 +3271,32 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "UnitView",
+      "kind": "interface",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "wilaya_code",
+          "type": "string"
+        },
+        {
+          "name": "user_id",
+          "type": "string | null"
+        },
+        {
+          "name": "is_exported",
+          "type": "boolean"
+        }
+      ]
     }
   ]
 }

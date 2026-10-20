@@ -93,6 +93,16 @@ export interface Unit {
   created_at: string;
 }
 
+export interface UnitView {
+  id: string;
+  code: string;
+  name: string;
+  wilaya_code: string;
+  user_id: string | null;
+  created_at: string;
+  is_exported: boolean;
+}
+
 /**
  * ADR-0063 D1: carries `code` and `name` only.
  *

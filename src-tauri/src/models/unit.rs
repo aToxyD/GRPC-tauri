@@ -31,6 +31,21 @@ impl Unit {
     }
 }
 
+/// Unit view projected for listing. `is_exported` is derived from WILAYA-side
+/// `identity_store` history (ADR-0064 D19): true iff at least one identity row
+/// exists for `subject_type = UNIT` and `subject_id = units.id`, regardless of
+/// status or `deleted`. Backend/domain-derived only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnitView {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub wilaya_code: String,
+    pub user_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub is_exported: bool,
+}
+
 /// Request to create a new unit.
 ///
 /// ADR-0052: the operator username is NOT caller-supplied — the backend

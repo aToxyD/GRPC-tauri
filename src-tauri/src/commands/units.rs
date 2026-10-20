@@ -12,7 +12,7 @@ use crate::commands::guards::authorize_command;
 use crate::commands::types::AppState;
 use crate::domain::audit::AuditAction;
 use crate::errors::{into_command_error, AppError, ValidationError};
-use crate::models::{CreateUnitRequest, Unit};
+use crate::models::{CreateUnitRequest, Unit, UnitView};
 use tauri::State;
 
 /// Create unit - Wilaya Admin Only
@@ -112,7 +112,7 @@ pub fn get_unit(state: State<AppState>, unit_id: String) -> Result<Option<Unit>,
 
 /// List units in wilaya
 #[tauri::command]
-pub fn list_units(state: State<AppState>) -> Result<Vec<Unit>, String> {
+pub fn list_units(state: State<AppState>) -> Result<Vec<UnitView>, String> {
     let (_session, settings) =
         authorize_command(&state, Action::ReadUnits, None).map_err(into_command_error)?;
     state.touch_session();
@@ -128,6 +128,6 @@ pub fn list_units(state: State<AppState>) -> Result<Vec<Unit>, String> {
 
     let password_port = state.password_port.as_ref();
     UnitService::new(db.executor(), password_port)
-        .list_units(&wilaya_code)
+        .list_units(Some(&wilaya_code))
         .map_err(into_command_error)
 }

@@ -7,7 +7,7 @@ import { telemetry } from './telemetry';
 import type {
   LoginRequest, LoginResponse, Settings, NodeConfiguration,
   User, Product, CreateProductRequest, UpdateProductRequest,
-  Unit, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem, CreateOrderRequest, UpdateOrderRequest,
+  Unit, UnitView, CreateUnitRequest, InventoryStock, SupplierOrder, SupplierOrderItem, CreateOrderRequest, UpdateOrderRequest,
   MealConsumption, MealConsumptionInput, MealConsumptionItem,
   DailyReportResult, DailyReportInput, DailyConsumptionView, DailyFifoConsumptionPreview,
   StockCheckResult, MonthlySummary, DailyReport,
@@ -113,7 +113,7 @@ export async function getUnit(unitId: string): Promise<Unit | null> {
   return await safeInvoke('get_unit', { unitId });
 }
 
-export async function listUnits(wilayaCode: string): Promise<Unit[]> {
+export async function listUnits(wilayaCode: string): Promise<UnitView[]> {
   return await safeInvoke('list_units', { wilayaCode });
 }
 
