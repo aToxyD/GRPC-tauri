@@ -4,7 +4,7 @@
   import { saveFile } from "../lib/tauri";
   import { exportUnitNodePackage } from "../lib/contracts";
   import { listUnits, createUnit, getSettings, updateUnit, deleteUnit } from "../lib/contracts";
-  import type { Unit, Settings, CreateUnitRequest } from "../lib/types";
+  import type { Unit, UnitView, Settings, CreateUnitRequest } from "../lib/types";
   import Layout from "../components/Layout.svelte";
   import { createOperation } from "../lib/operationGuard";
   import { createRuntimeScope, createTransientMessage } from "../lib/runtimeCleanup";
@@ -24,7 +24,9 @@
   const error = unitsOp.error;
 
   // @category ProjectionState
-  let units: Unit[] = [];
+  // ADR-0064 D19: the list consumes the backend-derived `UnitView` projection
+  // (`is_exported` is owned by the backend and must not be recomputed here).
+  let units: UnitView[] = [];
   // @category ProjectionState
   let settings: Settings | null = null;
   // @category UiState
@@ -44,6 +46,18 @@
 
   const setSuccessWithTimeout = createTransientMessage(scope, (m) => (success = m));
   onDestroy(() => scope.dispose());
+
+  // ADR-0064 D11 / D19.7 (owner decision 2026-10-20): on an EXPORTED unit the
+  // Edit and Export actions stay visible but are disabled, each with an
+  // accessible explanation. The backend refusal (update_unit /
+  // export_unit_node_package) remains the authoritative guard; this is a
+  // usability layer only, not a replacement for backend validation.
+  const EXPORTED_EDIT_UNAVAILABLE =
+    "تعديل غير متاح: تم تصدير هوية الوحدة مسبقاً ولا يمكن تعديلها بعد التصدير";
+  const EXPORTED_EXPORT_UNAVAILABLE =
+    "تصدير غير متاح: تم تصدير هوية الوحدة مسبقاً ولا يمكن إعادة تصديرها";
+  const EXPORTED_ROW_NOTE =
+    "تعديل وتصدير غير متاحين: تم تصدير هوية الوحدة مسبقاً. يبقى الحذف متاحاً.";
 
   // Form fields
   // @category TransientState
@@ -71,7 +85,11 @@
     unitsOp.error.set(null);
   }
 
-  function openEditModal(unit: Unit) {
+  function openEditModal(unit: UnitView) {
+    // Defense in depth: the button is disabled for EXPORTED units (ADR-0064
+    // D11/D19.7), and this guard keeps the disabled action untriggerable even
+    // if the disabled state is bypassed. The backend refusal is authoritative.
+    if (unit.is_exported) return;
     editingUnit = unit;
     unitCode = unit.code;
     unitName = unit.name;
@@ -177,7 +195,9 @@
     }
   }
 
-  async function handleExportPackage(unit: Unit) {
+  async function handleExportPackage(unit: UnitView) {
+    // Same defense-in-depth guard as `openEditModal` (ADR-0064 D11/D19.7).
+    if (unit.is_exported) return;
     const filePath = await saveFile({
       filters: [
         {
@@ -272,75 +292,89 @@
             <td class="table-cell"
               >{new Date(unit.created_at).toLocaleDateString("ar-EG")}</td
             >
-            <td class="table-cell text-left space-x-2 space-x-reverse">
-              <AppButton
-                variant="ghost"
-                size="sm"
-                class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                on:click={() => openEditModal(unit)}
-                ariaLabel="تعديل"
-              >
-                <svg
-                  class="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            <td class="table-cell text-left">
+              <div class="space-x-2 space-x-reverse">
+                <AppButton
+                  variant="ghost"
+                  size="sm"
+                  class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  disabled={unit.is_exported}
+                  ariaLabel={unit.is_exported ? EXPORTED_EDIT_UNAVAILABLE : "تعديل"}
+                  title={unit.is_exported ? EXPORTED_EDIT_UNAVAILABLE : undefined}
+                  on:click={() => openEditModal(unit)}
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                  />
-                </svg>
-                <span class="text-sm mr-1">تعديل</span>
-              </AppButton>
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
+                  </svg>
+                  <span class="text-sm mr-1">تعديل</span>
+                </AppButton>
 
-              <AppButton
-                variant="ghost"
-                size="sm"
-                class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                on:click={() => openDeleteModal(unit)}
-                ariaLabel="حذف"
-              >
-                <svg
-                  class="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                <AppButton
+                  variant="ghost"
+                  size="sm"
+                  class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                  on:click={() => openDeleteModal(unit)}
+                  ariaLabel="حذف"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-                <span class="text-sm mr-1">حذف</span>
-              </AppButton>
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                  <span class="text-sm mr-1">حذف</span>
+                </AppButton>
 
-              <AppButton
-                variant="ghost"
-                size="sm"
-                class="text-civil-blue hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                on:click={() => handleExportPackage(unit)}
-                ariaLabel="تصدير حزمة التكوين (.unit)"
-              >
-                <svg
-                  class="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                <AppButton
+                  variant="ghost"
+                  size="sm"
+                  class="text-civil-blue hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  disabled={unit.is_exported}
+                  ariaLabel={unit.is_exported ? EXPORTED_EXPORT_UNAVAILABLE : "تصدير حزمة التكوين (.unit)"}
+                  title={unit.is_exported ? EXPORTED_EXPORT_UNAVAILABLE : undefined}
+                  on:click={() => handleExportPackage(unit)}
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  />
-                </svg>
-                <span class="text-sm mr-1">تصدير</span>
-              </AppButton>
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                    />
+                  </svg>
+                  <span class="text-sm mr-1">تصدير</span>
+                </AppButton>
+              </div>
+
+              {#if unit.is_exported}
+                <!-- ADR-0064 D19.7: visible, accessible explanation of why
+                     Edit and Export are unavailable on this row. -->
+                <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  {EXPORTED_ROW_NOTE}
+                </p>
+              {/if}
             </td>
           </tr>
         {/each}
