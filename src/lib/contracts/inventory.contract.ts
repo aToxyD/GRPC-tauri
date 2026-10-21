@@ -1,7 +1,7 @@
 import { safeInvoke } from '../tauri';
 import type {
   Product, CreateProductRequest, UpdateProductRequest,
-  Unit, CreateUnitRequest, InventoryStock,
+  Unit, UnitView, CreateUnitRequest, InventoryStock,
   StockCheckResult, ConsumptionItemInput,
   StockMovementFilters, StockMovementResponse, StockSummary, StockMovement,
   ComputeSnapshotResult, UnitInventoryView, InventoryStockPageView,
@@ -36,7 +36,7 @@ export async function getUnit(unitId: string): Promise<Unit | null> {
   return await safeInvoke('get_unit', { unitId });
 }
 
-export async function listUnits(wilayaCode: string): Promise<Unit[]> {
+export async function listUnits(wilayaCode: string): Promise<UnitView[]> {
   return await safeInvoke('list_units', { wilayaCode });
 }
 

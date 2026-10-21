@@ -436,14 +436,15 @@ impl<'a> IdentityProvisioningService<'a> {
     /// This is the BOOTSTRAP-ONLY entry point. It MUST NOT be used by the
     /// rotation flow: `IdentityRotationCoordinator::sign_unit_rotation` reuses
     /// the shared `sign_unit_identity_request` signing path, where an existing
-    /// ACTIVE credential is legitimately superseded during RE-ISSUE. Fail-closed:
+    /// credential is legitimately superseded during RE-ISSUE. Fail-closed:
     /// - all shared CSR checks of `sign_unit_identity_request` (subject, issuer,
     ///   R5, unsigned, generation >= 1, ACTIVE);
-    /// - duplicate ACTIVE guard: if an ACTIVE UNIT identity already exists for
-    ///   `subject_id`, bootstrap issuance is DENIED with zero mutation;
-    /// - REVOKED/SUPERSEDED/EXPIRED credential histories do NOT block bootstrap
-    ///   re-issuance — the guard is ACTIVE-status only, matching the repository
-    ///   `get_active_by_subject` semantics (SEC-004-03);
+    /// - historical-identity guard (ADR-0064 D11, owner decision 2026-10-19):
+    ///   if ANY `identity_store` row exists for `subject_id` — ACTIVE, REVOKED,
+    ///   SUPERSEDED, or EXPIRED — bootstrap issuance is DENIED with zero
+    ///   mutation (re-export = reject). Status is never filtered, so the guard
+    ///   is status-agnostic and supersedes the former ACTIVE-only `SEC-004-03`
+    ///   check;
     /// - after signing, the issued certificate is registered in the WILAYA
     ///   Identity Store (Issuer Local State) through the CredentialGuard gate:
     ///   Accept → install, Replay → idempotent no-op, Rollback/RejectZero →
@@ -456,14 +457,12 @@ impl<'a> IdentityProvisioningService<'a> {
         now: &str,
     ) -> AppResult<IdentityCertificate> {
         let store = self.db.executor().identity_store();
-        if let Some(existing) =
-            store.get_active_by_subject(SubjectType::Unit, &request.subject_id)?
-        {
+        if store.exists_any_by_subject(SubjectType::Unit, &request.subject_id)? {
             return Err(AppError::BusinessLogic(
                 BusinessLogicError::OperationNotPermitted {
                     message: format!(
-                        "An ACTIVE UNIT identity already exists for this unit (credential {}); duplicate bootstrap issuance is denied — use the rotation flow",
-                        existing.credential_id
+                        "A historical UNIT identity already exists for this unit (status-agnostic: ACTIVE, REVOKED, SUPERSEDED, or EXPIRED); duplicate bootstrap issuance is denied — re-export is rejected, use the rotation flow (subject {})",
+                        request.subject_id
                     ),
                 },
             ));

@@ -4,8 +4,9 @@
 use crate::application::services::SettingsService;
 use crate::application::services::SyncImportExecutionService;
 use crate::application::sync::{
-    products_source_allowed_for_unit, validate_contract_catalog_package_for_import,
-    ImportedPackageRegistry, PackageExportMode, SyncPackage, SyncPackageMetadata,
+    products_source_allowed_for_unit, validate_contract_catalog_allocation_units_for_import,
+    validate_contract_catalog_package_for_import, ImportedPackageRegistry, PackageExportMode,
+    SyncPackage, SyncPackageMetadata,
 };
 use crate::application::usecases::exports::types::ContractCatalogExportDataset;
 use crate::errors::{AppError, AppResult, BusinessLogicError, ValidationError};
@@ -172,6 +173,19 @@ pub fn execute(
     // application, or any business mutation. Rejected packages consume no
     // replay slot and write no catalog rows.
     validate_contract_catalog_target_for_import(&input.package.metadata, &importer_unit)?;
+
+    // Q4 (ADR-0064 §4.7 D5, §9.3.3): an allocation whose own `unit_id`
+    // conflicts with its parent contract's unit, or (on a UNIT importer) with
+    // the local unit, is an explicit rejection — never a silent skip. Runs
+    // BEFORE replay marking and BEFORE any catalog row is applied, so a
+    // rejected package leaves the database untouched and consumes no replay
+    // slot. The WILAYA restore path (`importer_unit = None`) is unreachable
+    // through this boundary (rejected above) but is still covered by the
+    // contract-scoped invariant.
+    validate_contract_catalog_allocation_units_for_import(
+        &input.package,
+        importer_unit.as_ref().map(|u| u.id.as_str()),
+    )?;
 
     let package_id = input.package.metadata.package_id.clone();
     if registry.has_imported(&package_id)? {

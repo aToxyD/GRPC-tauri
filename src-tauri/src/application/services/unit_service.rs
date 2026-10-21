@@ -164,6 +164,30 @@ impl<'a> UnitService<'a> {
 
         crate::domain::validation::validate_unit_code_immutable(&existing.code, &req.code)?;
 
+        // Edit-after-export protection (ADR-0064 §3 D11): refuse edits if any
+        // historical identity record exists for this UNIT (status-agnostic).
+        use crate::domain::identity::{ports::IdentityStorePort, SubjectType};
+        let subject_id = unit_id.parse::<uuid::Uuid>().map_err(|e| {
+            crate::errors::AppError::Validation(crate::errors::ValidationError::InvalidFormat {
+                field: "unit.id".into(),
+                message: format!("invalid UUID: {e}"),
+            })
+        })?;
+        if self
+            .executor
+            .identity_store()
+            .exists_any_by_subject(SubjectType::Unit, &subject_id)?
+        {
+            return Err(AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::OperationNotPermitted {
+                    message: format!(
+                        "This unit has an existing identity history (status-agnostic); edits are refused after export (subject {})",
+                        unit_id
+                    ),
+                },
+            ));
+        }
+
         let now = Utc::now().to_rfc3339();
         unit_repo.update_unit_name(unit_id, &req.name, &now)?;
 
@@ -350,8 +374,39 @@ impl<'a> UnitService<'a> {
         self.executor.units().get_unit(id)
     }
 
-    pub fn list_units(&self, wilaya_code: &str) -> Result<Vec<Unit>, AppError> {
-        self.executor.units().list_units(wilaya_code)
+    pub fn list_units(
+        &self,
+        wilaya_code: Option<&str>,
+    ) -> Result<Vec<crate::models::unit::UnitView>, AppError> {
+        use crate::domain::identity::{ports::IdentityStorePort, SubjectType};
+
+        let units = match wilaya_code {
+            Some(wc) => self.executor.units().list_units(wc)?,
+            None => self.executor.units().list_all_units()?,
+        };
+        let mut views = Vec::with_capacity(units.len());
+        for unit in units {
+            let subject_id = unit.id.parse::<uuid::Uuid>().map_err(|e| {
+                crate::errors::AppError::Validation(crate::errors::ValidationError::InvalidFormat {
+                    field: "unit.id".into(),
+                    message: format!("invalid UUID: {e}"),
+                })
+            })?;
+            let is_exported = self
+                .executor
+                .identity_store()
+                .exists_any_by_subject(SubjectType::Unit, &subject_id)?;
+            views.push(crate::models::unit::UnitView {
+                id: unit.id,
+                code: unit.code,
+                name: unit.name,
+                wilaya_code: unit.wilaya_code,
+                user_id: unit.user_id,
+                created_at: unit.created_at,
+                is_exported,
+            });
+        }
+        Ok(views)
     }
 }
 
@@ -491,5 +546,192 @@ mod tests {
         let reloaded = service.get_unit(&unit.id).unwrap().expect("unit present");
         assert_eq!(reloaded.code, CODE);
         assert_eq!(reloaded.name, "Renamed Unit");
+    }
+
+    /// ADR-0064 D19: list_units projects is_exported from identity_store history
+    #[test]
+    fn list_units_projects_is_exported_from_identity_history() {
+        use crate::domain::identity::{
+            ports::IdentityStorePort, CredentialStatus, IdentityCertificate, SubjectType,
+        };
+        use uuid::Uuid;
+
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let (unit, _) = create(&db, CODE);
+        let service = UnitService::new(make_executor(&db), &Argon2PasswordHashProvider);
+
+        // No identity history -> not exported
+        let views = service.list_units(Some("WILAYA-1")).unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].id, unit.id);
+        assert!(!views[0].is_exported);
+
+        // Insert ACTIVE identity history for this UNIT -> exported
+        let store = db.executor().identity_store();
+        let cert = IdentityCertificate {
+            identity_id: Uuid::new_v4(),
+            subject_type: SubjectType::Unit,
+            subject_id: Uuid::parse_str(&unit.id).unwrap(),
+            issuer_identity_id: Some(Uuid::new_v4()),
+            credential_id: Uuid::new_v4(),
+            generation: 1,
+            status: CredentialStatus::Active,
+            public_key: vec![1u8; 32],
+            algorithm_version: 2,
+            not_after: None,
+            package_sequence: Some(1),
+            signature: Some(crate::domain::identity::test_signature([2u8; 64])),
+        };
+        store.upsert(&cert, "2026-08-04T00:00:00Z").unwrap();
+
+        let views = service.list_units(Some("WILAYA-1")).unwrap();
+        assert_eq!(views.len(), 1);
+        assert!(views[0].is_exported);
+
+        // REVOKED also counts
+        let mut revoked = cert.clone();
+        revoked.identity_id = Uuid::new_v4();
+        revoked.status = CredentialStatus::Revoked;
+        store.upsert(&revoked, "2026-08-04T00:00:00Z").unwrap();
+        let views = service.list_units(Some("WILAYA-1")).unwrap();
+        assert!(views[0].is_exported);
+
+        // SUPERSEDED also counts
+        let mut superseded = cert.clone();
+        superseded.identity_id = Uuid::new_v4();
+        superseded.status = CredentialStatus::Superseded;
+        store.upsert(&superseded, "2026-08-04T00:00:00Z").unwrap();
+        let views = service.list_units(Some("WILAYA-1")).unwrap();
+        assert!(views[0].is_exported);
+
+        // EXPIRED also counts
+        let mut expired = cert.clone();
+        expired.identity_id = Uuid::new_v4();
+        expired.status = CredentialStatus::Expired;
+        store.upsert(&expired, "2026-08-04T00:00:00Z").unwrap();
+        let views = service.list_units(Some("WILAYA-1")).unwrap();
+        assert!(views[0].is_exported);
+
+        // Subject scoping - different unit should not be exported
+        let (unit2, _) = create(&db, "UNIT78");
+        let views = service.list_units(Some("WILAYA-1")).unwrap();
+        assert_eq!(views.len(), 2);
+        let v2 = views.iter().find(|v| v.id == unit2.id).unwrap();
+        assert!(!v2.is_exported);
+    }
+
+    /// ADR-0064 §3 D11: updates refused after any identity history exists
+    #[test]
+    fn update_unit_refused_when_exported_with_any_history() {
+        use crate::domain::identity::{
+            ports::IdentityStorePort, CredentialStatus, IdentityCertificate, SubjectType,
+        };
+        use uuid::Uuid;
+
+        let db = ConnectionFactory::new_for_test().unwrap();
+        let (unit, _) = create(&db, CODE);
+        let service = UnitService::new(make_executor(&db), &Argon2PasswordHashProvider);
+
+        // No history -> name update allowed
+        let renamed = service
+            .update_unit(
+                &unit.id,
+                &CreateUnitRequest {
+                    code: CODE.to_string(),
+                    name: "Renamed".to_string(),
+                },
+            )
+            .unwrap();
+        assert_eq!(renamed.name, "Renamed");
+
+        let store = db.executor().identity_store();
+        let cert = IdentityCertificate {
+            identity_id: Uuid::new_v4(),
+            subject_type: SubjectType::Unit,
+            subject_id: Uuid::parse_str(&unit.id).unwrap(),
+            issuer_identity_id: Some(Uuid::new_v4()),
+            credential_id: Uuid::new_v4(),
+            generation: 1,
+            status: CredentialStatus::Active,
+            public_key: vec![1u8; 32],
+            algorithm_version: 2,
+            not_after: None,
+            package_sequence: Some(1),
+            signature: Some(crate::domain::identity::test_signature([3u8; 64])),
+        };
+
+        // ACTIVE -> refused
+        let mut active = cert.clone();
+        active.identity_id = Uuid::new_v4();
+        active.status = CredentialStatus::Active;
+        store.upsert(&active, "2026-08-04T00:00:00Z").unwrap();
+        let err = service
+            .update_unit(
+                &unit.id,
+                &CreateUnitRequest {
+                    code: CODE.to_string(),
+                    name: "ShouldNotChange".to_string(),
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::errors::AppError::BusinessLogic(
+                crate::errors::BusinessLogicError::OperationNotPermitted { .. }
+            )
+        ));
+        let reloaded = service.get_unit(&unit.id).unwrap().unwrap();
+        assert_eq!(reloaded.name, "Renamed");
+
+        // REVOKED -> refused
+        let mut revoked = cert.clone();
+        revoked.identity_id = Uuid::new_v4();
+        revoked.status = CredentialStatus::Revoked;
+        store.upsert(&revoked, "2026-08-04T00:00:00Z").unwrap();
+        service
+            .update_unit(
+                &unit.id,
+                &CreateUnitRequest {
+                    code: CODE.to_string(),
+                    name: "StillNo".to_string(),
+                },
+            )
+            .unwrap_err();
+        let reloaded = service.get_unit(&unit.id).unwrap().unwrap();
+        assert_eq!(reloaded.name, "Renamed");
+
+        // SUPERSEDED -> refused
+        let mut superseded = cert.clone();
+        superseded.identity_id = Uuid::new_v4();
+        superseded.status = CredentialStatus::Superseded;
+        store.upsert(&superseded, "2026-08-04T00:00:00Z").unwrap();
+        service
+            .update_unit(
+                &unit.id,
+                &CreateUnitRequest {
+                    code: CODE.to_string(),
+                    name: "StillNo2".to_string(),
+                },
+            )
+            .unwrap_err();
+        let reloaded = service.get_unit(&unit.id).unwrap().unwrap();
+        assert_eq!(reloaded.name, "Renamed");
+
+        // EXPIRED -> refused
+        let mut expired = cert.clone();
+        expired.identity_id = Uuid::new_v4();
+        expired.status = CredentialStatus::Expired;
+        store.upsert(&expired, "2026-08-04T00:00:00Z").unwrap();
+        service
+            .update_unit(
+                &unit.id,
+                &CreateUnitRequest {
+                    code: CODE.to_string(),
+                    name: "StillNo3".to_string(),
+                },
+            )
+            .unwrap_err();
+        let reloaded = service.get_unit(&unit.id).unwrap().unwrap();
+        assert_eq!(reloaded.name, "Renamed");
     }
 }

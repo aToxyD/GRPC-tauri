@@ -203,6 +203,12 @@ fn full_catalog() -> ContractCatalogExportDataset {
 }
 
 /// Catalog containing the UNIT's own unit plus another unit (scoping check).
+///
+/// NOTE (ADR-0064 Q4): the multi-unit form is the retired `FleetRestore` shape
+/// and is NEVER emitted by the `UnitDistribution` exporter (which ships only the
+/// target unit's rows). Since Q4 the UNIT importer **rejects** any allocation
+/// whose unit conflicts with the local unit scope, so this fixture is only used
+/// by tests that prove rejection — never by a success path.
 fn mixed_catalog() -> ContractCatalogExportDataset {
     ContractCatalogExportDataset {
         suppliers: vec![
@@ -249,6 +255,40 @@ fn mixed_catalog() -> ContractCatalogExportDataset {
                 exceptions: vec![],
             },
         ],
+        tax_policies: vec![FiscalYearTaxPolicy {
+            fiscal_year: 2026,
+            tva_rate: 19.0,
+            frozen: false,
+            set_by: "wilaya-admin".into(),
+            created_at: stamped(),
+        }],
+    }
+}
+
+/// Canonical single-unit catalog for the importer's OWN unit (`unit-local`) —
+/// the exact shape a `UnitDistribution` artifact has (ADR-0059/ADR-0060), with
+/// every allocation riding a locally-owned contract. Used by success paths.
+fn local_unit_catalog() -> ContractCatalogExportDataset {
+    ContractCatalogExportDataset {
+        suppliers: vec![supplier("sup-local", "Fournisseur Local")],
+        unit_supplier_links: vec![ContractCatalogUnitSupplierLink {
+            unit_id: "unit-local".into(),
+            supplier_id: "sup-local".into(),
+        }],
+        contracts: vec![ContractCatalogContractRow {
+            contract: contract("ctr-local", "REF-LOCAL", "unit-local", "sup-local"),
+            product_lines: vec![line("ctr-prod-local", "ctr-local", "prod-1")],
+            allocations: vec![allocation(
+                "alloc-local",
+                "ctr-local",
+                "ctr-prod-local",
+                "unit-local",
+                "prod-1",
+                100.0,
+                0.0,
+            )],
+            exceptions: vec![],
+        }],
         tax_policies: vec![FiscalYearTaxPolicy {
             fiscal_year: 2026,
             tva_rate: 19.0,
@@ -437,7 +477,7 @@ fn replay_same_package_id_is_rejected() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_unit(&mut db);
 
-    let pkg = unit_package("pkg-cc-replay", mixed_catalog(), WILAYA, "L01");
+    let pkg = unit_package("pkg-cc-replay", local_unit_catalog(), WILAYA, "L01");
     apply_package(&mut db, &pkg).expect("first import ok");
 
     let err = apply_package(&mut db, &pkg).expect_err("replay must fail");
@@ -448,13 +488,17 @@ fn replay_same_package_id_is_rejected() {
 }
 
 #[test]
-fn unit_import_is_scoped_to_local_unit() {
+fn unit_import_applies_its_own_unit_catalog() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_unit(&mut db);
 
-    let pkg = unit_package("pkg-cc-scope", mixed_catalog(), WILAYA, "L01");
-    let outcome = apply_package(&mut db, &pkg).expect("apply scoped catalog");
-    assert!(outcome.skipped > 0, "out-of-scope rows must be skipped");
+    let pkg = unit_package("pkg-cc-scope", local_unit_catalog(), WILAYA, "L01");
+    let outcome = apply_package(&mut db, &pkg).expect("apply local unit catalog");
+    assert_eq!(
+        outcome.imported, 6,
+        "supplier + link + contract + line + allocation + tax policy"
+    );
+    assert_eq!(outcome.skipped, 0, "a canonical unit catalog skips nothing");
 
     let contracts = ContractRepository::new(db.executor());
     assert!(contracts.get_contract("ctr-local").expect("read").is_some());
@@ -462,22 +506,12 @@ fn unit_import_is_scoped_to_local_unit() {
         .get_allocation("alloc-local")
         .expect("read")
         .is_some());
-
-    let other = contracts.get_contract("ctr-other").expect("read");
-    assert!(
-        other.is_none(),
-        "contracts for other units must NOT be applied on a UNIT node"
-    );
-    assert!(contracts
-        .get_allocation("alloc-other")
-        .expect("read")
-        .is_none());
     assert!(
         SupplierRepository::new(db.executor())
-            .get_supplier("sup-other")
+            .get_supplier("sup-local")
             .expect("read")
-            .is_none(),
-        "out-of-scope supplier must not be inserted"
+            .is_some(),
+        "the local unit's supplier is applied"
     );
 }
 
@@ -486,7 +520,7 @@ fn unit_reimport_refreshes_wilaya_owned_and_preserves_local_runtime() {
     let mut db = ConnectionFactory::new_for_test().expect("db");
     seed_unit(&mut db);
 
-    let v1 = unit_package("pkg-cc-v1", mixed_catalog(), WILAYA, "L01");
+    let v1 = unit_package("pkg-cc-v1", local_unit_catalog(), WILAYA, "L01");
     apply_package(&mut db, &v1).expect("apply v1");
 
     // Local UNIT runtime state (deliveries consumed from the entitlement).
@@ -498,7 +532,7 @@ fn unit_reimport_refreshes_wilaya_owned_and_preserves_local_runtime() {
         .expect("mark local fulfillment");
 
     // Next-day catalog: contracted raised to 150 for the same allocation.
-    let mut next_catalog = mixed_catalog();
+    let mut next_catalog = local_unit_catalog();
     next_catalog.contracts[0].allocations[0]
         .allocation
         .contracted_quantity = 150.0;
@@ -576,7 +610,7 @@ fn unit_rejects_distribution_bound_to_another_unit() {
     seed_unit(&mut db);
 
     // Target "O02" is a real, existing unit — a *different* one.
-    let wrong_target = unit_package("pkg-cc-wrong", mixed_catalog(), WILAYA, "O02");
+    let wrong_target = unit_package("pkg-cc-wrong", local_unit_catalog(), WILAYA, "O02");
     let err =
         apply_package(&mut db, &wrong_target).expect_err("wrong target unit must be rejected");
     assert!(
@@ -594,7 +628,7 @@ fn unit_rejects_distribution_bound_to_another_unit() {
 
     // No replay slot consumed: the SAME package_id with the correct target
     // imports successfully on retry.
-    let corrected = unit_package("pkg-cc-wrong", mixed_catalog(), WILAYA, "L01");
+    let corrected = unit_package("pkg-cc-wrong", local_unit_catalog(), WILAYA, "L01");
     let outcome = apply_package(&mut db, &corrected).expect("same-id corrected retry succeeds");
     assert!(outcome.imported > 0, "corrected retry imports rows");
 }
@@ -690,4 +724,109 @@ fn unit_distribution_with_empty_contracts_is_accepted_for_the_target() {
     let outcome = apply_package(&mut db, &pkg)
         .expect("empty unit-distribution catalog accepted for the target unit");
     assert_eq!(outcome.imported, 0, "no rows to import");
+}
+
+// ─── Q4 (ADR-0064 §4.7 D5, §9.3.3): allocation unit consistency ──────────────
+
+/// A `unit_id` that disagrees with its parent contract is an EXPLICIT rejection
+/// (never a silent skip) and leaves no partial catalog state.
+#[test]
+fn allocation_unit_mismatching_its_contract_is_rejected() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    // alloc-local rides ctr-local (both unit-local), then its own unit is
+    // flipped to unit-other — a contract/allocation divergence the schema
+    // permits (G26).
+    let mut catalog = local_unit_catalog();
+    catalog.contracts[0].allocations[0].allocation.unit_id = "unit-other".into();
+    let pkg = unit_package("pkg-cc-divergent", catalog, WILAYA, "L01");
+
+    let err = apply_package(&mut db, &pkg)
+        .expect_err("a contract/allocation unit divergence must be rejected");
+    assert!(
+        matches!(
+            &err,
+            AppError::Validation(ValidationError::InvalidFormat { ref field, .. })
+                if field == "contracts[].allocations[].unit_id"
+        ),
+        "rejection must name the allocation unit field: {err:?}"
+    );
+
+    // No partial write: neither the contract nor the allocation row exists.
+    let contracts = ContractRepository::new(db.executor());
+    assert!(
+        contracts.get_contract("ctr-local").expect("read").is_none(),
+        "rejected package must write no contract"
+    );
+    assert!(
+        contracts
+            .get_allocation("alloc-local")
+            .expect("read")
+            .is_none(),
+        "rejected package must write no allocation"
+    );
+}
+
+/// A UNIT importer rejects any allocation whose unit conflicts with the local
+/// unit scope — the exact multi-unit `FleetRestore` shape the exporter never
+/// emits (ADR-0060). Explicit rejection, never a silent skip.
+#[test]
+fn allocation_outside_local_unit_scope_is_rejected() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    // mixed_catalog carries unit-other's internally-consistent allocation,
+    // which is foreign to the local unit-local importer.
+    let pkg = unit_package("pkg-cc-foreign", mixed_catalog(), WILAYA, "L01");
+    let err = apply_package(&mut db, &pkg)
+        .expect_err("a foreign-unit allocation must be rejected, not skipped");
+    assert!(
+        matches!(
+            &err,
+            AppError::Validation(ValidationError::InvalidFormat { ref field, .. })
+                if field == "contracts[].allocations[].unit_id"
+        ),
+        "rejection must name the allocation unit field: {err:?}"
+    );
+
+    // No partial write: even the LOCAL unit's rows are absent (the whole
+    // package fails closed with transaction atomicity).
+    let contracts = ContractRepository::new(db.executor());
+    assert!(
+        contracts.get_contract("ctr-local").expect("read").is_none(),
+        "the local unit's contract must not be applied when the package is rejected"
+    );
+    assert!(
+        contracts.get_contract("ctr-other").expect("read").is_none(),
+        "the foreign unit's contract must not be applied"
+    );
+    assert!(
+        SupplierRepository::new(db.executor())
+            .get_supplier("sup-local")
+            .expect("read")
+            .is_none(),
+        "rejected package must write no supplier"
+    );
+}
+
+/// A rejected (Q4) package consumes no replay slot: the corrected package with
+/// the SAME `package_id` imports successfully, and a canonical catalog is
+/// accepted for the local unit.
+#[test]
+fn rejected_allocation_consumes_no_replay_slot() {
+    let mut db = ConnectionFactory::new_for_test().expect("db");
+    seed_unit(&mut db);
+
+    let mut divergent = local_unit_catalog();
+    divergent.contracts[0].allocations[0].allocation.unit_id = "unit-other".into();
+    let bad = unit_package("pkg-cc-q4-retry", divergent, WILAYA, "L01");
+    apply_package(&mut db, &bad).expect_err("divergent allocation rejected");
+
+    let good = unit_package("pkg-cc-q4-retry", local_unit_catalog(), WILAYA, "L01");
+    let outcome = apply_package(&mut db, &good).expect("same-id corrected retry succeeds");
+    assert_eq!(
+        outcome.imported, 6,
+        "corrected retry imports the local rows"
+    );
 }

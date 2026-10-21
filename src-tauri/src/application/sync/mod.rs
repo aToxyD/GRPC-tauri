@@ -26,6 +26,8 @@ pub use import_provenance::{
     source_id_allowed_for_unit,
 };
 pub use import_validation::{
+    validate_contract_catalog_allocation_unit_consistency,
+    validate_contract_catalog_allocation_units_for_import,
     validate_contract_catalog_package_for_import, validate_contract_fulfillment_package_for_import,
     validate_daily_report_package_for_import, validate_monthly_summary_package_for_import,
     validate_products_package_for_import, validate_products_package_unit_config_immutable,

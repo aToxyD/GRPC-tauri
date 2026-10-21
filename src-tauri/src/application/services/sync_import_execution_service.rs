@@ -4,6 +4,7 @@ use super::sync_import_models::{
     SyncImportRequest, SyncImportResult,
 };
 use super::sync_import_validation_service::SyncImportValidationService;
+use crate::application::sync::validate_contract_catalog_allocation_unit_consistency;
 use crate::application::sync_integrity::replay::{
     AppliedPackages, AppliedTransitions, ReplayDetector, SeenTransactions,
 };
@@ -24,6 +25,11 @@ pub struct SyncImportExecutionService<'a> {
 /// Row-level apply summary for a ContractCatalog import (ADR-0055 /
 /// SEC-087-F). `*_imported` = rows newly inserted; `*_updated` = rows
 /// refreshed; `*_skipped` = rows out of the importer's unit scope.
+///
+/// `allocations_skipped` is structurally always `0`: since ADR-0064 Q4 an
+/// out-of-scope or contract-inconsistent allocation is an explicit rejection
+/// (the whole import fails closed), never a silent per-row skip. The field is
+/// retained for the aggregate outcome shape.
 #[derive(Debug, Clone, Default)]
 pub struct ContractCatalogImportSummary {
     pub suppliers_imported: usize,
@@ -339,10 +345,18 @@ impl<'a> SyncImportExecutionService<'a> {
 
             let mut scoped_allocation_ids = BTreeSet::new();
             for alloc_row in &row.allocations {
-                if !in_scope(&alloc_row.allocation.unit_id) {
-                    summary.allocations_skipped += 1;
-                    continue;
-                }
+                // Q4 (ADR-0064 §4.7 D5, §9.3.3): an allocation whose own
+                // `unit_id` conflicts with its parent contract's unit, or with
+                // the local UNIT scope, is REJECTED — never silently skipped.
+                // The rule is owned by the shared validator (called before any
+                // row is applied); this is the same fail-closed invariant at the
+                // apply boundary, so the silent-skip behaviour can never
+                // re-appear even for a direct caller of this service.
+                validate_contract_catalog_allocation_unit_consistency(
+                    &alloc_row.allocation,
+                    &row.contract.unit_id,
+                    importer_unit_id,
+                )?;
                 scoped_allocation_ids.insert(alloc_row.allocation.id.clone());
                 let a = &alloc_row;
                 let existing = contract_repo.get_allocation(&a.allocation.id)?;

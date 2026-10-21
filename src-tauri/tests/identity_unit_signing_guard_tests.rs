@@ -4,8 +4,10 @@
 //! bootstrap *signing* authority (new node join), NOT the rotation path.
 //!
 //! Covered:
-//! - duplicate-issuance guard: no ACTIVE → succeeds; ACTIVE exists → denied;
-//!   only-REVOKED / only-SUPERSEDED histories allow re-issuance;
+//! - historical-identity guard (ADR-0064 D11, owner decision 2026-10-19): no
+//!   identity history → succeeds; ANY history (ACTIVE, REVOKED, SUPERSEDED,
+//!   EXPIRED) → denied with zero mutation (status-agnostic, so re-export is
+//!   refused even when no ACTIVE credential remains);
 //! - issuer binding: `issuer_identity_id` is always the ACTIVE WILAYA and
 //!   caller-supplied claims are ignored (R5);
 //! - WILAYA-side registration: a successful sign records the UNIT identity in
@@ -175,11 +177,11 @@ fn is_operation_not_permitted(err: AppError, needle: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Duplicate-issuance guard: no ACTIVE UNIT identity → signed + registered
+// Historical-identity guard: no history → signed + registered
 // ---------------------------------------------------------------------------
 
 #[test]
-fn bootstrap_sign_succeeds_without_active_unit_identity() {
+fn bootstrap_sign_succeeds_without_any_unit_identity_history() {
     let mut wilaya = fresh_wilaya_with_unit();
     let wilaya_cert = active_wilaya_cert(&wilaya);
     let csr = unit_csr(
@@ -206,7 +208,7 @@ fn bootstrap_sign_succeeds_without_active_unit_identity() {
 }
 
 // ---------------------------------------------------------------------------
-// Duplicate-issuance guard: ACTIVE exists → denied, nothing mutated
+// Historical-identity guard: ACTIVE exists → denied, nothing mutated
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -246,29 +248,37 @@ fn bootstrap_sign_denied_when_active_unit_identity_exists() {
 }
 
 // ---------------------------------------------------------------------------
-// Duplicate-issuance guard: lifecycle transitions allow re-issuance
+// Historical-identity guard: status-agnostic (ADR-0064 D11) — ANY history denies
 // ---------------------------------------------------------------------------
 
-#[test]
-fn bootstrap_sign_allowed_when_only_revoked_identity_exists() {
-    let mut wilaya = fresh_wilaya_with_unit();
-    let csr1 = unit_csr(
+/// Sign a first bootstrap, then flip the stored credential to `status`.
+/// Returns the certificate that was persisted under `status`.
+fn stored_unit_with_status(wilaya: &mut Node, status: CredentialStatus) -> IdentityCertificate {
+    let csr = unit_csr(
         unit_uuid(),
         [1; 32],
         uuid::Uuid::new_v4(),
         uuid::Uuid::new_v4(),
     );
-    sign_bootstrap(&mut wilaya, &csr1);
+    sign_bootstrap(wilaya, &csr);
 
-    // Revoke the stored ACTIVE cert (rotation-style lifecycle transition).
-    let mut revoked = stored_active_unit(&wilaya);
-    revoked.status = CredentialStatus::Revoked;
+    let mut transitioned = stored_active_unit(wilaya);
+    transitioned.status = status;
     wilaya
         .db
         .executor()
         .identity_store()
-        .upsert(&revoked, FIXED_NOW)
-        .expect("mark revoked");
+        .upsert(&transitioned, FIXED_NOW)
+        .expect("status transition");
+    transitioned
+}
+
+/// Assert that bootstrap re-export is refused for `status` with zero mutation
+/// of the persisted identity state and no new identity record.
+fn assert_re_export_rejected_for_status(status: CredentialStatus) {
+    let mut wilaya = fresh_wilaya_with_unit();
+    let historical = stored_unit_with_status(&mut wilaya, status);
+    assert_eq!(historical.status, status);
 
     let csr2 = unit_csr(
         unit_uuid(),
@@ -276,48 +286,103 @@ fn bootstrap_sign_allowed_when_only_revoked_identity_exists() {
         uuid::Uuid::new_v4(),
         uuid::Uuid::new_v4(),
     );
-    let second = sign_bootstrap(&mut wilaya, &csr2);
+    let err = IdentityProvisioningService::new(&mut wilaya.db)
+        .sign_unit_bootstrap_request(&csr2, &wilaya.node_key_store, FIXED_NOW)
+        .expect_err("any identity history denies bootstrap re-export");
+    is_operation_not_permitted(err, "duplicate bootstrap issuance is denied");
 
-    assert_eq!(second.credential_id, csr2.credential_id);
-    assert_eq!(
-        stored_active_unit(&wilaya).credential_id,
-        csr2.credential_id
+    // No mutation: the historical row is untouched (status preserved) and the
+    // attempted credential was never registered.
+    let store = wilaya.db.executor().identity_store();
+    let after = store
+        .get_by_identity_id(&historical.identity_id)
+        .expect("query")
+        .expect("historical identity retained");
+    assert_eq!(after.status, status, "existing identity state preserved");
+    assert_eq!(after.credential_id, historical.credential_id);
+    assert_eq!(after.generation, historical.generation);
+    assert!(
+        store
+            .max_generation_for_credential(&csr2.credential_id)
+            .expect("query")
+            .is_none(),
+        "no new identity record created for the rejected CSR"
     );
 }
 
 #[test]
-fn bootstrap_sign_allowed_when_only_superseded_identity_exists() {
+fn bootstrap_sign_denied_when_only_revoked_identity_exists() {
+    assert_re_export_rejected_for_status(CredentialStatus::Revoked);
+}
+
+#[test]
+fn bootstrap_sign_denied_when_only_superseded_identity_exists() {
+    assert_re_export_rejected_for_status(CredentialStatus::Superseded);
+}
+
+#[test]
+fn bootstrap_sign_denied_when_only_expired_identity_exists() {
+    assert_re_export_rejected_for_status(CredentialStatus::Expired);
+}
+
+// ---------------------------------------------------------------------------
+// Port contract: the guard's query is status-agnostic
+// ---------------------------------------------------------------------------
+
+#[test]
+fn exists_any_by_subject_is_status_agnostic_and_subject_scoped() {
     let mut wilaya = fresh_wilaya_with_unit();
-    let csr1 = unit_csr(
-        unit_uuid(),
-        [1; 32],
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
-    );
-    sign_bootstrap(&mut wilaya, &csr1);
+    {
+        let store = wilaya.db.executor().identity_store();
+        assert!(
+            !store
+                .exists_any_by_subject(SubjectType::Unit, &unit_uuid())
+                .expect("query"),
+            "no history ⇒ false"
+        );
+    }
 
-    let mut superseded = stored_active_unit(&wilaya);
-    superseded.status = CredentialStatus::Superseded;
-    wilaya
-        .db
-        .executor()
-        .identity_store()
-        .upsert(&superseded, FIXED_NOW)
-        .expect("mark superseded");
+    let mut historical = stored_unit_with_status(&mut wilaya, CredentialStatus::Revoked);
+    let store = wilaya.db.executor().identity_store();
 
-    let csr2 = unit_csr(
-        unit_uuid(),
-        [2; 32],
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4(),
+    // REVOKED history still counts — the ACTIVE-only lookups cannot see it.
+    assert!(
+        store
+            .exists_any_by_subject(SubjectType::Unit, &unit_uuid())
+            .expect("query"),
+        "REVOKED history ⇒ true"
     );
-    let second = sign_bootstrap(&mut wilaya, &csr2);
+    assert!(
+        store
+            .get_active_by_subject(SubjectType::Unit, &unit_uuid())
+            .expect("query")
+            .is_none(),
+        "the ACTIVE-only lookup must not see the REVOKED row"
+    );
 
-    assert_eq!(second.credential_id, csr2.credential_id);
-    assert_eq!(
-        stored_active_unit(&wilaya).credential_id,
-        csr2.credential_id
-    );
+    // Subject scoping: another UNIT, another subject type, and the WILAYA
+    // subject of this node (a different `subject_id`) stay unaffected.
+    assert!(!store
+        .exists_any_by_subject(SubjectType::Unit, &uuid::Uuid::new_v4())
+        .expect("query"));
+    assert!(!store
+        .exists_any_by_subject(SubjectType::Admin, &unit_uuid())
+        .expect("query"));
+    assert!(!store
+        .exists_any_by_subject(
+            SubjectType::Unit,
+            &historical.issuer_identity_id.expect("issuer bound")
+        )
+        .expect("query"));
+
+    // EXPIRED counts too.
+    historical.status = CredentialStatus::Expired;
+    store
+        .upsert(&historical, FIXED_NOW)
+        .expect("status transition");
+    assert!(store
+        .exists_any_by_subject(SubjectType::Unit, &unit_uuid())
+        .expect("query"));
 }
 
 // ---------------------------------------------------------------------------
