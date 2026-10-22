@@ -257,7 +257,7 @@ cd src-tauri && rg "Connection::open" --type rust | grep -v target/ | grep -v te
 ## 11. ADRs Reviewed and Accepted
 
 - [x] All ADRs in `docs/architecture/` (0001-0020) are in **Accepted** status
-- [x] No ADR is in Draft or Proposed without a tracking issue
+- [ ] No ADR is in Draft or Proposed without a tracking issue — ❌ `docs/architecture/0065-q2-q3-database-integrity.md` (ADR-0065) is `Proposed` and has **no** tracking-issue identifier; **no identifier was invented** to satisfy this condition, and none may be. Two lawful resolutions: (a) ADR-0065 stays `Proposed` until it is ratified — which removes the condition by itself; or (b) the owner opens a real tracking issue under a real identifier. This does **not** by itself mean the release is production-ready: see §12 (governance review) and the remaining unchecked items.
 - [x] ADR-0001 (Read Layer Extraction Policy) — reviewed
 - [x] ADR-0002 (Sync Package Boundary) — reviewed
 - [x] ADR-0003 (Sync Protocol Versioning) — reviewed
@@ -350,7 +350,7 @@ cd src-tauri && rg "Connection::open" --type rust | grep -v target/ | grep -v te
 | 8. No Async Runtime | ✅ PASS | Only 2 async `fn` in backup commands (Tauri IPC contract) |
 | 9. No Background Threads | ✅ PASS | No `thread::spawn` in production code; no polling loops |
 | 10. Single-Writer SQLite | ✅ PASS | Formalized in `docs/architecture/sqlite_connection_policy.md` and ADR-0029 |
-| 11. ADRs Reviewed | ✅ PASS | 27 ADRs unified in `ADR_INDEX.md`; 26 arch:allow tags registered with ADR references |
+| 11. ADRs Reviewed | ☐ PENDING | `0001`–`0020` all `Accepted`; 27 ADRs unified in `ADR_INDEX.md`; 26 arch:allow tags registered with ADR references. **Open:** ADR-0065 is `Proposed` with no tracking-issue identifier — the "no Draft/Proposed ADR without a tracking issue" rule is unmet until owner ratification or a real tracking issue (§11) |
 | 12. Governance Review | ☐ PENDING | Requires human stakeholder sign-off |
 
 **Overall: ☐ PRODUCTION READY (pending Section 12 human sign-off)**

@@ -50,6 +50,16 @@ Accepted (2026-10-05)
 > With the previously ratified **Q6** (Option A) this closes the §9.3.3 register; none reopens an
 > owner-ratified decision (D11–D22). See §9.3.3.
 >
+> **Q2/Q3 deferral superseded by ADR-0065 (Proposed, 2026-10-21).** The separate schema review
+> that the Q2/Q3 deferrals named is **`docs/architecture/0065-q2-q3-database-integrity.md`**. It
+> proposes `NOT NULL` + `units(id)` `ON DELETE RESTRICT` FKs for `daily_reports.unit_id`,
+> `supplier_orders.unit_id`, and `supplier_order_items.unit_id`; a `fifo_layer_id →
+> fifo_stock_layers(id)` `ON DELETE RESTRICT` FK (column stays nullable); preservation of D20
+> (`stock_movements.unit_id` stays nullable); a deferred `monthly_reports.unit_id` FK; and a
+> `PRAGMA foreign_key_check`-after-restore requirement. ADR-0065 is **Proposed**, not accepted, and
+> no schema/code/test change accompanies it. This ADR-0064 remains the authoritative record of the
+> deletion preflight, and its D11–D22 set is unchanged.
+>
 > **Owner decisions — D11 bootstrap scope and Q4 import scope (2026-10-19).**
 > **D11 (identity bootstrap re-export).** The existence of **ANY** historical `identity_store`
 > row for a UNIT — `ACTIVE`, `REVOKED`, `SUPERSEDED`, or `EXPIRED` — prevents **bootstrap
@@ -104,6 +114,7 @@ Architecture / Security / Data Governance
 | `docs/architecture/0044-unit-trust-first-v2-bootstrap.md` | §8.3 Packaged-Identity Contract (line 285) | **Referenced, unchanged.** Its verification rule (3) — *"`subject_id` == unit package's unit"* — is the load-bearing fact that makes §2's ownership join key exact. |
 | `docs/architecture/0051-admin-access-package.md` | §5 Account Ownership Invariant (line 77) | **Referenced, unchanged.** §5's operator-preservation invariant holds for `admin_access`; this ADR governs the separate, owner-approved explicit deletion event. |
 | `docs/architecture/0052-canonical-unit-operator.md` | §D1 (line 46), §D2 (line 48) | **Referenced, unchanged.** §D2's `UNIQUE(username, node_id)` is what makes node-scoped ownership of operator rows exact. §D1's `CreateUnitRequest` clause is superseded by `0063` §3, not by this ADR. |
+| `docs/architecture/0065-q2-q3-database-integrity.md` | Whole document (Proposed, 2026-10-21) | **Qualified by, in the forward direction.** ADR-0065 is the separate schema review that this ADR's §4.8/§4.9/§9.3.3 named when it deferred Q2/Q3. Upon ratification and implementation it would supersede the Q2/Q3 **deferrals** and the nullable-ownership statements they rested on; while ADR-0065 remains **Proposed**, this ADR's §4.6–§4.10 preflight remains the operative protection. This ADR's D11–D22 set, the §4.6–§4.10 preflight, and the D18 posture are preserved. This ADR remains the authoritative record of the deletion preflight. |
 
 # Owner-ratified decision set (normative, 2026-10-05)
 
@@ -317,6 +328,13 @@ direct too, via a composite primary key with `unit_id → units(id) ON DELETE RE
 **G25 — Independently nullable supplier-order ownership.** `supplier_orders.unit_id TEXT`
 (schema line 332) and `supplier_order_items.unit_id TEXT` (line 345) are **each nullable**
 and **each independently foreign-keyed** to `units(id) ON DELETE RESTRICT` (lines 335, 360).
+**Superseded prospectively by ADR-0065 (Q3-B).** On a **fresh** database both columns become
+`NOT NULL` (ADR-0065 Q3-B-1 and Q3-B-2), so the `NULL`-ownership state this entry describes is
+unreachable there. The `ON DELETE RESTRICT` foreign keys, the `CASCADE` on `order_id`, and the
+divergence analysis below are **unchanged**, and this entry remains the operative schema fact for
+**already-initialized** databases, where both columns are still nullable. The qualification
+describes the **schema premise only**: no rule of this ADR (including D4, Q6, and the fail-closed
+preflight of §4.6–§4.10) is reopened, narrowed, or weakened by it.
 `supplier_order_items.order_id → supplier_orders(id) ON DELETE CASCADE` (line 358). At the
 **schema level** a header can be target-owned while an item is `NULL`- or other-owned, and
 vice versa. The ordinary production create path threads **one** settings-derived `unit_id`
@@ -632,13 +650,13 @@ Verified against `src-tauri/src/db/migrations/001_initial.sql`.
 | A5 | `contract_products` | **Indirect.** No `unit_id`. `contract_id → contracts(id)` CASCADE (line 448). **Ownership path:** derive through the contract. **Predicate:** delete `WHERE contract_id IN (SELECT id FROM contracts WHERE unit_id = <target>)`. Must run after A4 (A4.contract_product_id RESTRICT) and before A7. |
 | A6 | `supplier_order_items` | **Direct.** `unit_id TEXT` FK `REFERENCES units(id) ON DELETE RESTRICT` (lines 345, 360); `order_id → supplier_orders(id)` CASCADE (line 358); `product_id → products(id)` `NO ACTION` (line 359). **Predicate:** delete `WHERE unit_id = <target>`, after the §4.7 D4 aggregate-integrity check (a target order may not have a `NULL`/other-unit item; a target item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion — Q6 resolved, §4.7 D4/§9.3.3). Must run after A1 and before A8. |
 | A7 | `contracts` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 403, 418); `supplier_id → suppliers(id)` RESTRICT (line 419). **Predicate:** delete `WHERE unit_id = <target>`, after A4 and A5. |
-| A8 | `supplier_orders` | **Direct.** `unit_id TEXT` FK `REFERENCES units(id) ON DELETE RESTRICT` (lines 332, 335); `supplier_id → suppliers(id)` RESTRICT (line 334). **Predicate:** delete `WHERE unit_id = <target>`, after A6. `NULL`-unit orders are **preserved** (§4.8). |
+| A8 | `supplier_orders` | **Direct.** `unit_id TEXT` FK `REFERENCES units(id) ON DELETE RESTRICT` (lines 332, 335); `supplier_id → suppliers(id)` RESTRICT (line 334). **Predicate:** delete `WHERE unit_id = <target>`, after A6. `NULL`-unit orders are **preserved** (§4.8) — **superseded prospectively by ADR-0065 (Q3-B)**: the column becomes `NOT NULL` on a fresh database, so this `NULL` case is unreachable there; for an already-initialized database the preserve rule remains the operative behaviour. |
 | A9 | `unit_suppliers` | **Direct.** `PRIMARY KEY (unit_id, supplier_id)`; `unit_id → units(id)` RESTRICT (line 396); `supplier_id → suppliers(id)` RESTRICT (line 397). **Predicate:** delete `WHERE unit_id = <target>`. |
 | A10 | `fifo_stock_layers` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT` (lines 229-230); `product_id → products(id)` RESTRICT (line 232). Carries `origin_fiscal_year` (G19, line 240). **Predicate:** delete `WHERE unit_id = <target>`, after A3 and after the §4.9 surviving-report-FIFO preflight. |
 | A11 | `stock_movements` | **Direct, partial — see D20.** `unit_id TEXT` (line 218) with **no** foreign key to `units`; `product_id → products(id)` RESTRICT (line 223); carries `fiscal_year` (line 221). `CHECK (movement_type != 'IN' OR unit_id IS NOT NULL)` (line 224). **Predicate:** delete `WHERE unit_id = <target>`; `unit_id IS NULL` rows are **preserved** (§4.8). Must run after A3 (`NO ACTION`). |
-| A12 | `daily_report_meal_items` | **Indirect.** No `unit_id`. `meal_id → daily_report_meals(id)` CASCADE (line 316); `product_id → products(id)` `NO ACTION` (line 317); `fifo_layer_id` **no FK** (line 312, §4.9). **Ownership path:** meal → report. **Predicate:** delete `WHERE meal_id IN (SELECT m.id FROM daily_report_meals m JOIN daily_reports r ON m.daily_report_id = r.id WHERE r.unit_id = <target>)`. Must run before A13. |
+| A12 | `daily_report_meal_items` | **Indirect.** No `unit_id`. `meal_id → daily_report_meals(id)` CASCADE (line 316); `product_id → products(id)` `NO ACTION` (line 317); `fifo_layer_id` **no FK** (line 312, §4.9) — **qualified prospectively by ADR-0065 (Q2-A)**: a `fifo_layer_id → fifo_stock_layers(id)` `ON DELETE RESTRICT` foreign key (column stays nullable) is proposed for a fresh database; until that ADR is ratified and implemented the "no FK" statement remains the operative schema fact. **Ownership path:** meal → report. **Predicate:** delete `WHERE meal_id IN (SELECT m.id FROM daily_report_meals m JOIN daily_reports r ON m.daily_report_id = r.id WHERE r.unit_id = <target>)`. Must run before A13. |
 | A13 | `daily_report_meals` | **Indirect.** No `unit_id`. `daily_report_id → daily_reports(id)` CASCADE (line 301). **Ownership path:** report. **Predicate:** delete `WHERE daily_report_id IN (SELECT id FROM daily_reports WHERE unit_id = <target>)`. Must run after A12 and before A14. |
-| A14 | `daily_reports` | **Direct.** `unit_id TEXT` nullable (line 275) with **no** foreign key; `fiscal_year` (line 283). **Predicate:** delete `WHERE unit_id = <target>`. `NULL`-unit reports are **preserved** (§4.8); this is a real production possibility via sync import (G29). |
+| A14 | `daily_reports` | **Direct.** `unit_id TEXT` nullable (line 275) with **no** foreign key; `fiscal_year` (line 283). **Predicate:** delete `WHERE unit_id = <target>`. `NULL`-unit reports are **preserved** (§4.8) — **superseded prospectively by ADR-0065 (Q3-A)**: the column becomes `NOT NULL` on a fresh database, so this `NULL` case is unreachable there; for an already-initialized database the preserve rule remains the operative behaviour, and the sync-import possibility remains a real production possibility via sync import (G29). |
 | A15 | `monthly_reports` | **Direct.** `unit_id TEXT NOT NULL` (line 533) with **no** foreign key at all; `UNIQUE(unit_id, report_year, report_month)` (line 546); no `deleted` column. **Predicate:** delete `WHERE unit_id = <target>`. |
 | A16 | `unit_monthly_snapshots` | **Direct.** `unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE` (line 526); `product_id → products(id) ON DELETE CASCADE` (line 527). **Predicate:** delete `WHERE unit_id = <target>` **explicitly**, even though the FK would cascade — so the purge is deterministic and auditable rather than dependent on SQLite cascade behaviour (`ARCHITECTURE_FREEZE.md` §2.5). |
 | A17 | `identity_store` rows with `subject_type = 'UNIT'` | **Direct**, keyed `subject_id = units.id` (G2). **Predicate:** delete `WHERE subject_type = 'UNIT' AND subject_id = <target>`. No inbound FK exists (G6). See §2. |
@@ -811,13 +829,13 @@ Phase 1 — deletion (child-first), only after Phase 0 passes:
   5. contract_products                 WHERE contract_id ∈ target contracts                                  (A5)
   6. supplier_order_items              WHERE unit_id = <id>                                                  (A6)
   7. contracts                         WHERE unit_id = <id>                                                  (A7)
-  8. supplier_orders                   WHERE unit_id = <id>  (NULL-unit orders PRESERVED, §4.8)              (A8)
+  8. supplier_orders                   WHERE unit_id = <id>  (NULL-unit orders PRESERVED, §4.8 — qualified prospectively by ADR-0065 Q3-B)   (A8)
   9. unit_suppliers                    WHERE unit_id = <id>                                                  (A9)
  10. fifo_stock_layers                 WHERE unit_id = <id>                                                  (A10)
  11. stock_movements                   WHERE unit_id = <id>  (NULL-unit rows PRESERVED per D20)              (A11)
  12. daily_report_meal_items           WHERE meal_id ∈ target reports' meals                                 (A12)
  13. daily_report_meals                WHERE daily_report_id ∈ target reports                                (A13)
- 14. daily_reports                     WHERE unit_id = <id>  (NULL-unit reports PRESERVED, §4.8)            (A14)
+ 14. daily_reports                     WHERE unit_id = <id>  (NULL-unit reports PRESERVED, §4.8 — qualified prospectively by ADR-0065 Q3-A)  (A14)
  15. monthly_reports                   WHERE unit_id = <id>                                                  (A15)
  16. unit_monthly_snapshots            WHERE unit_id = <id>  (explicit; FK would cascade)                    (A16)
  17. identity_store                    WHERE subject_type = 'UNIT' AND subject_id = <id>                    (A17)
@@ -840,6 +858,23 @@ Phase 2 — success audit: execute_with_audit writes the DeleteUnit row, then CO
 * A12 → A13 → A14 follow the report hierarchy (`CASCADE` downward), but are performed
   explicitly so the purge is deterministic.
 * A16 is explicit even though `units → unit_monthly_snapshots` is `CASCADE`.
+* The `(NULL-unit … PRESERVED, §4.8)` annotations on steps 8 and 14 state the preserve rule that
+  §4.8's per-column nullable-ownership table records. Under ADR-0065 Q3-B (step 8) and Q3-A
+  (step 14) a **fresh** database cannot contain a `NULL`-unit supplier order or daily report, so
+  the annotated state is unreachable there and the annotation has no effect. **The annotations are
+  not deleted and the predicates are not changed** — `WHERE unit_id = <id>` is unchanged — because
+  for an **already-initialized** database, where the columns are still nullable, §4.8's per-column
+  policy remains the operative preserve rule, exactly as before. ADR-0065 changes neither the
+  `ON DELETE RESTRICT` / `CASCADE` edges, nor the ownership rules, nor the Phase-0 preflight, nor
+  the atomicity of this transaction.
+* **Step order under ADR-0065 (prospective).** The sequence above is the order this ADR implements.
+  ADR-0065 (Q2-A/Q2-B) adds a `daily_report_meal_items.fifo_layer_id → fifo_stock_layers(id)`
+  `ON DELETE RESTRICT` edge, under which the target's report rows must be removed **before** the
+  target's FIFO layers; ADR-0065 therefore records the revised sequence — steps 12/13/14 before
+  step 10 — as the order to be implemented under that ADR. **Until ADR-0065 is ratified and
+  implemented, the sequence above remains the operative order**, and the §4.9 surviving-report FIFO
+  preflight remains the control that protects FIFO layers referenced by surviving reports of other
+  UNITs.
 
 **Cascade-safety rule (D3).** Because A6→A8 and A5→A7 and A12→A13→A14 are `CASCADE` edges, the
 preflight (P4) MUST prove that deleting each target parent cannot cascade-delete a child whose
@@ -909,7 +944,12 @@ deletion to remove another UNIT's data, or remove a row whose ownership cannot b
 aggregates are governed:
 
 **D4 — `supplier_orders` ↔ `supplier_order_items`.** Ownership is independently nullable on both
-tables (G25), and `supplier_order_items.order_id → supplier_orders(id)` is `CASCADE`. An item's
+tables (G25), and `supplier_order_items.order_id → supplier_orders(id)` is `CASCADE`. *(Prospective
+qualification — ADR-0065 Q3-B: on a **fresh** database `supplier_orders.unit_id` and
+`supplier_order_items.unit_id` are `NOT NULL`, so the `NULL` cases in the outcome table below and
+in Q6 are **unreachable there**. The **rule** itself, the ownership rules, and the fail-closed
+behaviour are **unchanged**, and this section remains the control for **already-initialized**
+databases, where the columns are still nullable.)* An item's
 ownership is established **directly** by its own `unit_id`; an order's ownership is established by
 the order's `unit_id`. The Phase-0 preflight MUST apply exactly one of the following outcomes to
 every `supplier_order_items` row whose own `unit_id = <target>` **or** whose parent order's
@@ -921,9 +961,16 @@ every `supplier_order_items` row whose own `unit_id = <target>` **or** whose par
 | `NULL`, or another UNIT | `<target>` | **Fail closed.** The order's `CASCADE` edge would remove a child that is not proven target-owned (D3.3). This is the case-independent invariant: for every item whose parent order's `unit_id = <target>`, the item's `unit_id` MUST equal `<target>`. |
 | `<target>` | `NULL` or another UNIT | **Fail closed — Q6 resolved (Option A).** The aggregate is inconsistent: a target-owned item hangs off a `NULL`/foreign order. The Phase-0 preflight **aborts** before any `DELETE`; nothing is deleted and the UNIT remains undeletable until the record is repaired (below). |
 
+*(Outcome-table qualification — ADR-0065 Q3-B: the two `NULL` rows above are unreachable on a
+**fresh** database, where both columns are `NOT NULL`; the rows are retained unchanged because
+they remain the operative outcome for **already-initialized** databases, and because the
+fail-closed rule they state is unchanged in both cases.)*
+
 * An item owned by neither the target nor a target order — e.g. a `NULL` item under a preserved
   `NULL`/other-unit order — is **not involved** and is untouched (D3.1, D3.2). A `NULL`-unit
-  **order** is preserved (§4.8).
+  **order** is preserved (§4.8). *(Prospective qualification — ADR-0065 Q3-B: the `NULL` cases
+  named here are unreachable on a **fresh** database, where both columns are `NOT NULL`; the rule
+  is unchanged and remains the operative control for **already-initialized** databases.)*
 * **Q6 — target-owned item under a `NULL`/other-unit order (resolved: Option A, fail-closed).**
   A row whose own `unit_id = <target>` but whose parent order is `NULL`-owned or owned by another
   UNIT is the Q6 anomaly. Per the owner-ratified decision (§9.3.3), the Phase-0 preflight **MUST
@@ -936,7 +983,10 @@ every `supplier_order_items` row whose own `unit_id = <target>` **or** whose par
   can investigate it; the target UNIT remains undeletable until the record is repaired through an
   authorized operational procedure (Q5). This is the cross-UNIT/unprovable relationship of D3.4
   and is treated as a data-integrity anomaly, not as permission to repair or partially delete the
-  aggregate.
+  aggregate. *(Prospective qualification — ADR-0065 Q3-B: the `NULL`-parent sub-case is
+  unreachable on a **fresh** database, where `supplier_orders.unit_id` is `NOT NULL`; the Q6 rule,
+  its abort-before-any-`DELETE` requirement, and its reporting duty are **unchanged** and remain
+  the operative control for **already-initialized** databases, where the column is still nullable.)*
 * All of these checks run in **Phase 0, before any `DELETE`**, so the `CASCADE` edge can never
   remove a row the policy requires preserving. This is the exact cascade-safety rule of §4.4.
 
@@ -961,7 +1011,7 @@ delete-time control.
 or either relationship cannot establish safe ownership, the deletion **fails closed** rather
 than deleting on the strength of one parent alone.
 
-**Write-path validation.** The preflight is the authoritative control. Two write-path controls are in view: (a) the **UNIT** contract-catalog importer **explicitly rejecting** (never silently skipping) any accepted row whose `allocation.unit_id` conflicts with `contract.unit_id` or with the local UNIT scope (G26) is **owner-approved policy (Q4, §9.3.3)** and is now **IMPLEMENTED** (2026-10-20) on branch `fix/d11-q4-unit-catalog-enforcement`; (b) `OrderService::update_supplier_order` not being able to produce a `NULL`-header/target-item mismatch (G25) remains a **recommendation**, explicitly out of scope for the D19.7 task. This ADR **requires** the preflight and itself implements no write-path control.
+**Write-path validation.** The preflight is the authoritative control. Two write-path controls are in view: (a) the **UNIT** contract-catalog importer **explicitly rejecting** (never silently skipping) any accepted row whose `allocation.unit_id` conflicts with `contract.unit_id` or with the local UNIT scope (G26) is **owner-approved policy (Q4, §9.3.3)** and is now **IMPLEMENTED** (2026-10-20) on branch `fix/d11-q4-unit-catalog-enforcement`; (b) `OrderService::update_supplier_order` not being able to produce a `NULL`-header/target-item mismatch (G25) remains a **recommendation**, explicitly out of scope for the D19.7 task. **Qualified prospectively by ADR-0065 (Q3-B):** on a **fresh** database both supplier-order `unit_id` columns are `NOT NULL`, so the `NULL`-header mismatch is unconstructible there and item/parent-UNIT equality becomes a **requirement** (ADR-0065 Q3-B-3) rather than a recommendation; for **already-initialized** databases, where the columns are still nullable, the recommendation remains the operative operational condition. This ADR **requires** the preflight and itself implements no write-path control.
 
 **Import and restore paths (assessed, not just ordinary construction).** There is **no
 row-level sync/import or restore path** for `supplier_orders`/`supplier_order_items`; backup
@@ -996,10 +1046,10 @@ whole operation preserves `NULL`-owned rows.
 
 | Column | Nullability | Policy |
 |--------|-------------|--------|
-| `stock_movements.unit_id` | nullable, no FK (line 218) | Delete only `unit_id = <id>`. `NULL` rows **preserved** (D20; §4.1 A11). |
-| `daily_reports.unit_id` | nullable, no FK (line 275) | Delete only `unit_id = <id>`. `NULL` rows **preserved**. Real production possibility via sync import (G29). |
-| `supplier_orders.unit_id` | nullable, FK RESTRICT (lines 332, 335) | Delete only `unit_id = <id>`. `NULL` orders **preserved**. |
-| `supplier_order_items.unit_id` | nullable, FK RESTRICT (lines 345, 360) | Delete only `unit_id = <id>`. `NULL` items under a preserved (`NULL`/other) order are **preserved**; a `NULL`/other-unit item under a target order fails closed; a target item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion (§4.7 D4; Q6 resolved §9.3.3). |
+| `stock_movements.unit_id` | nullable, no FK (line 218) | Delete only `unit_id = <id>`. `NULL` rows **preserved** (D20; §4.1 A11). **Unchanged by ADR-0065** (D20 preserved; the column is not globally tightened). |
+| `daily_reports.unit_id` | nullable, no FK (line 275) | Delete only `unit_id = <id>`. `NULL` rows **preserved**. Real production possibility via sync import (G29). **Superseded prospectively by ADR-0065 (Q3-A):** `unit_id` becomes `NOT NULL` with an `units(id)` `ON DELETE RESTRICT` FK on a fresh database, so a `NULL`-unit report is no longer an accepted production state. Until ADR-0065 is implemented, this row's preserve rule remains the operative behavior. |
+| `supplier_orders.unit_id` | nullable, FK RESTRICT (lines 332, 335) | Delete only `unit_id = <id>`. `NULL` orders **preserved**. **Superseded prospectively by ADR-0065 (Q3-B):** becomes `NOT NULL` on a fresh database. |
+| `supplier_order_items.unit_id` | nullable, FK RESTRICT (lines 345, 360) | Delete only `unit_id = <id>`. `NULL` items under a preserved (`NULL`/other) order are **preserved**; a `NULL`/other-unit item under a target order fails closed; a target item under a `NULL`/other-unit order is the Q6 anomaly and **aborts** the deletion (§4.7 D4; Q6 resolved §9.3.3). **Superseded prospectively by ADR-0065 (Q3-B):** becomes `NOT NULL` on a fresh database, which removes the `NULL`-item case; the Q6 anomaly rule is unchanged for legacy/already-initialized databases. |
 
 Rules:
 
@@ -1028,7 +1078,9 @@ SQLite will not stop a surviving report row from pointing at a FIFO layer that t
 
 * **Surviving report rows.** After the purge, the report rows that survive are exactly those
   `daily_report_meals`/`daily_report_meal_items` whose report `daily_reports.unit_id` is `NULL`
-  or another UNIT (A14 preserves them, §4.8).
+  or another UNIT (A14 preserves them, §4.8). *(Prospective note — ADR-0065 Q3-A makes
+  `daily_reports.unit_id` `NOT NULL` on a fresh database, so the `NULL`-unit case disappears
+  there; the another-UNIT case and this preflight remain.)*
 * **Fail-closed policy.** The Phase-0 preflight MUST detect any **surviving**
   `daily_report_meal_items` row (`meal_id` not in the target reports) whose `fifo_layer_id`
   equals an `id` in the target-owned `fifo_stock_layers` set. If any such row exists, the
@@ -1039,9 +1091,14 @@ SQLite will not stop a surviving report row from pointing at a FIFO layer that t
   writes `NULL` (G27), so a same-unit pairing is the expected production shape. The dead
   `import_monthly_report`/`insert_raw_meal_item` path could in principle have written a
   cross-unit id, and legacy data cannot be disproven, so the check is mandatory.
-* **No schema change here.** Adding a foreign key or a unit column is a schema decision that
-  touches the frozen initial baseline; the owner has **deferred** it to a separate schema review
-  (Q2, §9.3.3). This revision does not add it.
+* **Schema change deferred here, planned by ADR-0065.** Adding a foreign key or a unit column is a
+  schema decision that touches the frozen initial baseline; the owner **deferred** it to a
+  separate schema review (Q2, §9.3.3). **That separate review is `docs/architecture/0065-q2-q3-database-integrity.md`**,
+  which proposes to add a `daily_report_meal_items.fifo_layer_id → fifo_stock_layers(id)`
+  foreign key with `ON DELETE RESTRICT` (the column stays **nullable**; no unit column and no
+  composite key), plus a reordered deletion sequence in §4.4 so the `RESTRICT` edge is satisfied
+  deterministically. **This ADR still adds nothing here**; the edit happens only in ADR-0065's
+  separate implementation phase.
 * If the domain's historical-report semantics ever justify retaining such a reference rather
   than failing closed, that is an owner decision, not an implementation choice; it is currently
   **not ratified**, so the default is fail-closed.
@@ -1651,13 +1708,16 @@ outcome is recorded below and the normative ADR text has been reconciled to it. 
 set remains open, and none of the resolutions reopens an owner-ratified decision (D11–D22). The
 default for every deletion sub-case remains safe rejection. **Implementation note (2026-10-20):**
 the Q4 write-path enforcement is now implemented (see the Q4 row); Q2/Q3 remain approved
-deferrals and Q5 remains an operational procedure.
+deferrals and Q5 remains an operational procedure. **Deferral note (2026-10-21):** the Q2/Q3
+deferrals are superseded by the separate schema review **`docs/architecture/0065-q2-q3-database-integrity.md`**
+(Proposed); until it is implemented and accepted, the deferral behavior and this ADR's preflight
+remain operative.
 
 | Ref | Question (as originally recorded) | Owner-approved outcome |
 |-----|-----------------------------------|------------------------|
 | Q1 | Does the `ARCHITECTURE_FREEZE.md` §2.4 re-scoping require a formal freeze-document amendment (RFC-to-ADR Step 3.4), or is this ADR's qualification sufficient? | **Option A — amend.** The "Immutable closed years" bullet's **first sentence** was amended in `ARCHITECTURE_FREEZE.md` §2.4 through the separate RFC-to-ADR process (`docs/architecture/rfcs/2026-10-16-freeze-2-4-unit-owned-destructive-purge-exception.md`) to record a narrow, **permanent business-policy** sanctioned exception for the §6.1 UNIT-owned purge. This ADR remains the qualification record and performs no freeze-document edit itself. |
-| Q2 | Should `daily_report_meal_items.fifo_layer_id` gain a foreign key to `fifo_stock_layers` (and/or a unit column)? | **Option B — defer.** No foreign key or unit column is added by this ADR; the question is deferred to a separate, dedicated schema review. The §4.9 preflight remains the operative protection. |
-| Q3 | Should `supplier_orders.unit_id` / `supplier_order_items.unit_id` (and `daily_reports.unit_id`) be tightened to `NOT NULL` (or constrained) in the baseline? | **Option B — defer.** The columns stay nullable in the baseline for now; `NOT NULL` hardening is deferred to a separate schema review (coordinated with Q2). The §4.7/§4.8 preflight remains the guard, and `NULL` is never treated as proof of ownership. |
+| Q2 | Should `daily_report_meal_items.fifo_layer_id` gain a foreign key to `fifo_stock_layers` (and/or a unit column)? | **Option B — defer** *(superseded by ADR-0065)*. No foreign key or unit column is added by this ADR. The separate schema review this deferral pointed to is **`docs/architecture/0065-q2-q3-database-integrity.md` (Proposed, 2026-10-21)**, which proposes a `fifo_layer_id → fifo_stock_layers(id)` FK with `ON DELETE RESTRICT` (column stays nullable, no unit column, no composite key) plus service-layer ownership/product validation. Until ADR-0065 is implemented and accepted, the §4.9 preflight remains the operative protection. |
+| Q3 | Should `supplier_orders.unit_id` / `supplier_order_items.unit_id` (and `daily_reports.unit_id`) be tightened to `NOT NULL` (or constrained) in the baseline? | **Option B — defer** *(superseded by ADR-0065)*. The columns stay nullable in the baseline **as of this ADR**. The separate schema review is **`docs/architecture/0065-q2-q3-database-integrity.md` (Proposed, 2026-10-21)**, which proposes `NOT NULL` + a `units(id)` `ON DELETE RESTRICT` FK for `daily_reports.unit_id`, `supplier_orders.unit_id`, and `supplier_order_items.unit_id` (**not** for `stock_movements.unit_id`, which stays nullable so D20 is preserved), with application-layer item/parent-order UNIT equality. Until ADR-0065 is implemented and accepted, the §4.7/§4.8 preflight remains the guard, and `NULL` is never treated as proof of ownership. |
 | Q4 | Should the WILAYA-side contract-catalog import enforce `allocation.unit_id == contract.unit_id` at write time? *(Scope corrected 2026-10-19: "WILAYA-side" named the catalog's author, not the importing node — catalogs are **exported from WILAYA** for import by a **target UNIT**; WILAYA rejects importing a catalog distributed to a UNIT, and the UNIT importer checks the local `target_node_id`. The requirement below applies to the **UNIT** catalog import.)* | **Option A — enforce. IMPLEMENTED (2026-10-20).** The **UNIT** catalog import rejects a contract-catalog import when an allocation's `unit_id` differs from its parent contract's `unit_id` or conflicts with the local UNIT scope, returns an explicit validation error, and fails closed with transaction atomicity (no partial commit, no automatic repair/reassignment/inference). A conflicting allocation is **never silently skipped** — the former per-row `in_scope` skip is removed. Implemented on branch `fix/d11-q4-unit-catalog-enforcement` via the shared validator `validate_contract_catalog_allocation_unit_consistency` (called before any row is applied and re-asserted at the apply boundary) plus regression tests in `contract_catalog_package_import_tests.rs`. *(Historical note: as verified at HEAD `0513ae5` and baseline `00a9d0c` the enforcement did **not** exist; the §4.7 D5 preflight was then the only control.)* |
 | Q5 | Is there an owner-approved repair path for a cross-UNIT reference that the preflight rejects? | **Option A — controlled external operational repair (policy only).** The deletion remains rejected, no automatic/speculative repair occurs during preflight or purge; an authorized operator uses a documented, controlled repair procedure **outside** the deletion operation, using trusted evidence (never inferred from the target UNIT or one side alone), with auditability/integrity checks and preflight re-run. **Verified at HEAD `0513ae5`: no repair tool/service/UI exists.** |
 | Q6 | Should a `supplier_order_items` row owned by the target under a `NULL`/other-unit parent order abort the deletion? | **Option A — fail-closed rejection** (ratified 2026-10-15). Abort before any `DELETE`; no partial deletion, no automatic repair/reassignment. The UNIT remains undeletable until the inconsistency is repaired and preflight passes. Full rule below and §4.7 D4. |
@@ -1728,7 +1788,9 @@ it is limited to that bullet's first sentence, and §2.4's second sentence, §2.
 * Any frontend-side re-derivation of `is_exported` (D19.7).
 * **Adding database triggers, constraints, or new foreign keys** as part of this ADR. §4.7
   records defense-in-depth triggers, and the `fifo_layer_id` FK (Q2) and `NOT NULL` hardening (Q3)
-  are now owner-approved **deferrals** to a separate, dedicated schema review; none is added here.
+  are **deferrals to a separate, dedicated schema review** — now identified as
+  **`docs/architecture/0065-q2-q3-database-integrity.md` (Proposed, 2026-10-21)**; none is added by
+  this ADR.
 * **Creating any migration** or otherwise changing how `001_initial.sql` is applied (§8.1, D18).
 * **Enforcing the allocation/contract unit relationship on the UNIT contract-catalog import
   write path** (a WILAYA-exported catalog imported by a target UNIT; explicit rejection, never a
