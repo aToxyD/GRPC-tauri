@@ -2,12 +2,12 @@
 
 # Status
 
-Proposed (2026-10-21)
+Accepted (2026-10-23)
 
-> **Governance state.** This ADR is **Proposed**. It records the owner-provided Q2/Q3 Database
-> Integrity requirements and the decisions the owner communicated for them. It has **not** been
-> ratified as `Accepted`: no approval entry, signature, or governance event is asserted here,
-> and this document does not claim that the repository's formal approval process has completed.
+> **Governance state.** This ADR is **Accepted** (owner acceptance on **2026-10-23** by the
+> **Project Owner `1Bxm`**; acceptance record: `docs/architecture/governance_review.md` §7.5). It
+> records the owner-provided Q2/Q3 Database Integrity requirements and the decisions the owner
+> communicated for them.
 > Status changes follow the repository convention (`docs/architecture/ADR_INDEX.md`, Policy §3:
 > Draft → Proposed → Accepted → Deprecated → Superseded) and must be recorded through the
 > ordinary governance process, not by this document alone.
@@ -22,8 +22,8 @@ Proposed (2026-10-21)
 > **Decision record — a single primary location.** The **primary** record of the decision for this
 > ADR is **this document** (ADR-0065), cross-linked from `docs/architecture/ADR_INDEX.md` (row
 > `0065`) and from the accompanying RFC
-> (`docs/architecture/rfcs/2026-10-21-q2-q3-database-integrity.md`, which remains an **unapproved
-> draft** and is not a parallel decision record). When an actual review exists, the review record
+> (`docs/architecture/rfcs/2026-10-21-q2-q3-database-integrity.md`, which was **approved by the Project Owner (`1Bxm`) on 2026-10-22** (recorded in
+> `docs/architecture/governance_review.md` §7.1) and is not a parallel decision record). When an actual review exists, the review record
 > is `docs/architecture/governance_review.md`. The registry
 > `docs/governance/frontend/GOVERNANCE_APPROVALS.md` is **frontend-layer scoped** and is **not**
 > the ratification record for this backend ADR; no entry is created there by this document, and the
@@ -56,16 +56,32 @@ Proposed (2026-10-21)
 
 2026-10-21 (proposal/creation date)
 
+> **Amendment log.** 2026-10-22 — **documentation-only** amendment recording the completed
+> read-only **reachability** investigation for the **unreferenced**
+> `SyncImportExecutionService::import_monthly_report` path (N9), the alignment of the
+> *Import-path note* wording with those findings, the owner's decision on removal (G9), the
+> removal-scope narrowing, the supersession conditions and the implementation obligations in
+> §Governance-6(a)–(c), and the owner decisions on the exception-registry retirement
+> (**close-and-retain**, §Governance-6(c)), the architecture-freeze applicability (**narrow
+> interpretation adopted**, §Governance-6(c)), ADR-0064 (**no additional change required in this
+> phase**, removal-boundary item 4), and the project-specific exception to the three mandatory
+> reviewer-role perspectives for the Q2/Q3 RFC (**G10**). The **historical-occurrence** question —
+> whether the path ever wrote a cross-UNIT or `NULL`-unit row — **remains unresolved**, and the §4.9
+> preflight is unaffected. These are governance decisions of record for this ADR, **not** formal review
+> approvals. **No approval, approving authority, signature, or approval date is recorded or implied
+> by this amendment**, and the ADR's status remains `Proposed`. No source, test, schema, migration,
+> restore, registry, or architecture-rule change is made or authorized by it.
+
 # Owner
 
 Architecture / Data Governance
 
 > **Approval convention.** The owner of record for this proposal is the Architecture / Data
-> Governance function. No named individual approver, signature, or approval date is recorded,
-> because none has been provided. When the record is ratified, the approving authority and date
-> are to be recorded through the repository's established process — **not invented here**. The
+> Governance function. On **2026-10-23** the **Project Owner (`1Bxm`)** accepted this ADR; the
+> approving authority and the acceptance date were recorded through the repository's established
+> process — ADR_INDEX row `0065` and `docs/architecture/governance_review.md` §7.5. The
 > **primary** decision record is this ADR, cross-linked from `docs/architecture/ADR_INDEX.md` row
-> `0065`, from the accompanying RFC (which stays an unapproved draft), and from
+> `0065`, from the accompanying RFC (**approved on 2026-10-22** — `governance_review.md` §7.1), and from
 > `docs/architecture/governance_review.md` when an actual review exists. The registry
 > `docs/governance/frontend/GOVERNANCE_APPROVALS.md` is **frontend-layer scoped** and is **not**
 > the ratification record for this backend ADR; no entry is created there by this document.
@@ -135,13 +151,60 @@ same-named methods and corrects that label:
    summary** row only; it does **not** write meal items and does **not** write `fifo_layer_id`.
 
 Consequently, this ADR **does not** characterize both methods, or every similarly named path, as
-dead. The reachability and ownership behavior of the unreferenced method must be investigated **with
-evidence** in the later implementation phase (see §Governance-6 and §Contradictions-2).
+dead. The source-level **reachability** investigation of the unreferenced method has been
+**completed** and found **no in-repository callers** (recorded below). Its source-level behavior and
+ownership **capability** are documented there separately, while **historical execution** and any
+resulting effects on existing data remain **unresolved** — the absence of in-repository callers is
+**not** evidence that the method never ran. The ADR-0064 §4.9 safeguards for existing data
+therefore remain **in force** (see §Governance-6 and §Contradictions-2).
+
+**Unreferenced-path reachability investigation (read-only) — completed.** The read-only
+**reachability** limb of the §Governance-6 investigation has been **completed** (2026-10-22),
+against baseline branch `feat/q2-q3-database-integrity` at commit
+`712d4b332702ee7b3ac3bc715c03a121bed32850` with a clean working tree. Its findings, and the
+**evidential status** of each, are:
+
+1. **Repository-search finding — reachability: no in-repository caller.** A repository-wide search
+   of `src-tauri/src` and `src-tauri/tests` found **no caller** of
+   `SyncImportExecutionService::import_monthly_report`. The only `.import_monthly_report(...)`
+   call site in the tree is `MonthlyReportService::import_monthly_report`
+   (`application/usecases/sync/import_monthly_summary_package.rs:129`) — a **different** method on
+   a **different** type, writing a monthly summary row rather than daily-report rows, meals, or
+   meal items. The `Service` marker trait (`src-tauri/src/architecture.rs:19`) is empty, so it
+   provides no dynamic-dispatch path to this method. **Scope of this finding:** it establishes the
+   absence of an in-repository caller **within the searched tree**; it is **not** a proof of
+   unreachability beyond that scope.
+2. **Repository-search finding — exclusive helper.** `ReportRepository::insert_or_replace_raw_daily_report`
+   (`repositories/reports.rs:547`) has exactly **one** call site in the repository: P3 itself
+   (`application/services/sync_import_execution_service.rs:154`).
+3. **Repository-search finding — preserved helper.** `insert_raw_meal_item` is used by **14**
+   integration-test call sites in `src-tauri/tests/db_integration_tests.rs` and therefore
+   **remains**.
+4. **Source-level finding — behavior and ownership capability.** From the source, P3 persists
+   `report.report.unit_id` verbatim (nullable, with no FK) and `item.fifo_layer_id` verbatim, so it
+   is **capable** of writing a `NULL`-unit report or a cross-UNIT layer reference. This is a
+   statement of **capability** derived from the code; it is **not** a statement about what was
+   actually written (see "Historical occurrence" below).
+5. **Owner-provided fact — external consumers.** The **owner** has confirmed that there are **no
+   external consumers** of these project functions. This is an **owner statement**, not a
+   repository-search finding: the repository search above establishes only the **in-repository**
+   absence of callers. The crate is published as `grpc_lib` with
+   `crate-type = ["staticlib", "cdylib", "rlib"]` (`src-tauri/Cargo.toml`), so the absence of
+   external consumers is **not** independently derivable from repository inspection.
+
+**Historical occurrence — still unresolved.** Whether the unreferenced path ever actually wrote a
+cross-UNIT or `NULL`-unit row is **not established** by the current repository and is **not**
+resolved by the reachability finding. The *Import-path note* above therefore remains accurate as
+written: the path is **not** proven safe to delete. The reachability finding establishes only that
+the path is unreferenced **in the current tree**. It establishes **nothing** about historical data,
+it does **not** retroactively change what P3 was capable of writing, and the §4.9 fail-closed
+preflight and its historical rationale remain **in force** for data that may already exist.
 
 # Owner-provided requirements (design direction)
 
 These are the requirements the owner communicated. They are normative for the eventual
-implementation, but their ADR status remains **Proposed** until ratified.
+implementation, and their ADR status is **Accepted** — owner acceptance on 2026-10-23, recorded in
+`docs/architecture/governance_review.md` §7.5.
 
 ## Q2-A — FIFO layer reference (`daily_report_meal_items.fifo_layer_id`)
 
@@ -304,6 +367,71 @@ continues to govern the `foreign_key_check` requirement. `ARCHITECTURE_FREEZE.md
    are not upgraded (see Governance-3 and §Consequences), and any `COALESCE` index already present
    in them stays as it is.
 
+## Unreferenced import path (N9) — owner decision: removal, not repair
+
+The owner has decided that the **unreferenced** `SyncImportExecutionService::import_monthly_report`
+path (P3) is to be **removed** in a later, separately authorized implementation phase rather than
+repaired. The reachability investigation that this decision rests on is recorded in §Context
+("Unreferenced-path reachability investigation (read-only) — completed").
+
+**Basis of the decision, and its limits.** The decision rests on the reachability findings recorded
+in §Context together with the owner's confirmation that there are no external consumers. It is a
+decision to stop maintaining an obsolete, unreferenced path rather than to repair it. It is **not**
+a finding that no problematic historical data exists: whether the path ever wrote a cross-UNIT or
+`NULL`-unit row remains **unresolved** (§Context, "Historical occurrence — still unresolved"), and
+removal itself resolves **no** historical database-integrity question. The §4.9 fail-closed
+preflight continues to govern data that may already exist.
+
+**Intended removal boundary.**
+
+1. Remove `SyncImportExecutionService::import_monthly_report`.
+2. Remove `ReportRepository::insert_or_replace_raw_daily_report` **only if** its lack of other
+   callers is **reconfirmed** against the implementation-phase baseline.
+3. Remove **only** the live architecture annotations **specifically associated with P3** from the
+   source, and **close** — rather than delete — the corresponding
+   `docs/architecture/adr_exception_registry.md` rows, **retaining** their historical records for
+   auditability in line with the registry's existing convention, subject to verification against
+   the registry conventions in force at implementation time and to an approved implementation scope.
+   Unrelated registry rows, and the pre-existing **global** drift between the registry's recorded
+   row count / line numbers and the current source, are **not** part of this scope and remain a
+   separate governance task.
+4. Update directly relevant historical documentation where necessary, preserving an accurate
+   historical record. **No additional ADR-0064 change is required in this phase (decided):**
+   ADR-0064's existing statements — that the method has **no caller** (G27) and that the path could
+   in principle have written a cross-UNIT layer id while legacy data cannot be disproven (§4.9) —
+   **remain compatible** with the removal, because they are statements about capability and about
+   unresolved historical execution, not about current reachability. **ADR-0064 §4.9's fail-closed
+   preflight safeguards remain in force** and are unaffected by this decision. The recorded ADR-0064
+   amendment loci (§Governance-2, §Q3-A-6, and the "Documents amended or qualified" table row) are
+   **unchanged** by this decision and are **not** extended to cover G27. **This ADR does not
+   authorize edits to ADR-0064.**
+
+**Preservation requirements (unchanged by this decision).**
+
+1. `insert_raw_meal_item` **must remain** — integration tests depend on it. It is **not** part of
+   the removal scope, at any phase.
+2. The live `import_daily_reports` path
+   (`application/services/sync_import_execution_service.rs:74-133`, reached from
+   `application/usecases/sync/import_daily_report_package.rs:150`) **must not** be modified as part
+   of a P3 removal. It is **not** a drop-in replacement for P3 and is **not** to be refactored
+   into one.
+3. `MonthlyReportService::import_monthly_report`
+   (`application/services/monthly_report_service.rs:21`) is a **distinct, live** method. It must
+   **not** be confused with P3 and must **not** be removed.
+4. No unrelated source code, test, schema, migration, restore behavior, architecture rule, or
+   configuration may be changed under this decision. **Q2-A, Q2-B, Q3-A, Q3-B, and D20** remain
+   separate workstreams; this decision does not broaden into any of them.
+
+**Decision boundaries (normative).**
+
+1. The owner has **decided** that P3 should be removed. That decision is **not** a ratification of
+   this ADR and **not** an authorization to implement the removal.
+2. The prohibition in §Governance-6 remains **in force** until this ADR has completed the
+   repository's required formal review and ratification process, **and** until a **separate,
+   explicit owner authorization** for the implementation phase has been granted. The approving
+   authority and date are recorded through the repository's established process — **not** invented
+   here. The operative conditions are stated in §Governance-6(b) and §Governance-6(c).
+
 ## Governance and documentation requirements
 
 1. **Record these decisions through the repository's actual RFC/ADR process.** This document is
@@ -347,6 +475,75 @@ continues to govern the `foreign_key_check` requirement. `ARCHITECTURE_FREEZE.md
    `fifo_layer_id` and `unit_id`). The absence of a direct caller in the current tree is **not**
    by itself evidence that the path is unreachable, unused, or safe, and no such conclusion is
    drawn here. Its signature and behavior are **not** changed, and it is **not** quarantined.
+
+   **(a) Reachability limb completed — result recorded; scope narrowed, not weakened.** The read-only
+   **reachability** limb of the investigation required by this clause has been **completed** and is
+   recorded in §Context ("Unreferenced-path reachability investigation (read-only) — completed"): no
+   in-repository caller was found, `ReportRepository::insert_or_replace_raw_daily_report` was found
+   to have no other caller, and the owner has confirmed that there are no external consumers. The
+   clause above is **narrowed in scope, not weakened**, by the following clarifications:
+
+   * The removal scope covers **`SyncImportExecutionService::import_monthly_report`** and its
+     **exclusive** helper `ReportRepository::insert_or_replace_raw_daily_report` only.
+   * **`insert_raw_meal_item` is explicitly preserved** and is **not** part of the removal scope:
+     integration tests depend on it. The clause's original "`import_monthly_report` /
+     `insert_raw_meal_item` path" wording referred to the *write path* those two together formed,
+     not to a decision to delete the repository helper.
+   * The live `import_daily_reports` path and the live
+     `MonthlyReportService::import_monthly_report` method are **not** part of the removal scope and
+     are **not** modified.
+
+   **(b) The prohibition stands until the governance gates are satisfied.** The **owner has
+   decided** that P3 is to be removed rather than repaired, but that decision **does not** by
+   itself supersede this clause. Until **(i)** this ADR has completed the repository's required
+   formal review and ratification process (`docs/architecture/ARCHITECTURE_FREEZE.md` §4 Steps 2–3,
+   with §4 Step 2 as modified for this ADR by **G10** — for the Q2/Q3 Database Integrity RFC the
+   three mandatory reviewer-role perspectives are not review prerequisites, while the five general
+   review criteria, the RFC review, and the RFC approval gate remain in force, and the general
+   review requirements for other RFCs are unamended; the approving authority and date are recorded
+   through the repository's established process, and are **not** asserted here), **and** **(ii)** a
+   **separate, explicit owner authorization** for the implementation phase has been granted
+   (§Governance-9), the prohibition above **stands unchanged**: P3 is **not** deleted, quarantined,
+   or otherwise altered, and its signature and behavior are **not** changed. This amendment asserts
+   **no** approval, approving authority, signature, or approval date, and ADR-0065 remains
+   **`Proposed`**.
+
+   **(c) Additional obligations that a later implementation phase must satisfy.** Two governance
+   artifacts are touched by the removal. The treatment of each is **decided** below and is recorded
+   here as an owner decision of record for this ADR. **Neither decision is a formal review
+   approval**, no approving authority, signature, or approval date is asserted, and ADR-0065 remains
+   **`Proposed`**.
+
+   * **Exception retirement (ADR-0030) — close-and-retain (decided).** The P3 exception rows are
+     governed by `docs/architecture/0030-adr-exception-governance.md` (registration, ADR reference,
+     rationale, creation date, expiry/review date, owner, the 90-day expiry policy, and the quarterly
+     review cadence). The **adopted treatment** for rows **9** (`[arch:allow-utc-now]`) and **11**
+     (`[arch:allow-mutation-before-replay]`) is **close-and-retain**: when the separately authorized
+     P3-removal implementation is performed, each row is **marked closed** and its **historical record
+     is retained** for auditability, following the convention visible in the registry today
+     (`docs/architecture/adr_exception_registry.md:65-77`, where a closed exception's row is retained
+     with a closed marker rather than deleted). Only the **directly affected** summary counts are
+     updated at that time. **Unrelated registry rows, and the pre-existing global drift between the
+     registry's recorded row count / line numbers and the current source, remain out of scope** and
+     are a separate governance task. This ADR performs **no** registry change and pre-authorizes
+     **no** reconciliation of unrelated rows.
+
+   * **Architecture-freeze applicability — narrow interpretation adopted (decided).** P3's annotation
+     suppresses Rule 88 (`scripts/check_arch.ts:1340-1355`), which enforces the frozen §2.7 contract
+     "Replay detection before mutation" (`docs/architecture/ARCHITECTURE_FREEZE.md:178`). The
+     **adopted interpretation** is that removing the obsolete P3 method and its associated exception
+     suppressions does **not**, by itself, require editing `ARCHITECTURE_FREEZE.md` §2 or §3,
+     because **no frozen text becomes inaccurate**. Repository rationale: the freeze document
+     contains **no** reference to `import_monthly_report`, `SyncImportExecutionService`,
+     `adr_exception_registry`, or ADR-0030, so there is no Section 2 or Section 3 locus describing P3
+     or the exception registry to update; §2.7's frozen bullet cites **Rule 83-84** and five other
+     live Rule-88 suppressions remain in the same file, so the frozen text and the remaining
+     exception surface are unchanged by the removal; and removing a suppression **reduces** deviations
+     from the frozen contract rather than altering it — the freeze document's precedent (§2.4)
+     amends the freeze text to record a *sanctioned exception*, and P3's exception was never
+     recorded there. This is an **interpretation adopted by the Project Owner**, recorded as a
+     governance decision of record for this ADR. It is **not** a formal `ARCHITECTURE_FREEZE.md` §4
+     Step 2 review approval; the freeze document is **not** modified by this ADR.
 
 7. **Specify the ADR-0064 reconciliation in the accompanying RFC, and apply it only with owner
    delegation.** The exact amended wording for ADR-0064 §4.4, §4.7, and G25 — including the
@@ -426,8 +623,9 @@ continues to govern the `foreign_key_check` requirement. `ARCHITECTURE_FREEZE.md
 9. **Separate ratification from implementation.** Ratifying this ADR records the **decision
    only**. It does **not** authorize any SQL, schema, migration, source-code, or test change.
    Every step in §"Proposed implementation boundary" requires a **separate, explicit owner
-   authorization**, granted after the applicable governance gate is satisfied. This ADR records no
-   approval date, no approver, and no signature, and it remains `Proposed`.
+   authorization**, granted after the applicable governance gate is satisfied. The owner accepted
+   this ADR on **2026-10-23** (**Project Owner `1Bxm`**); the acceptance record is
+   `docs/architecture/governance_review.md` §7.5.
 10. **Name the follow-up owner for the deferred `monthly_reports.unit_id` foreign key.** The
     follow-up owner is the **Project Owner**, until a specific implementer is designated. A
     **dedicated follow-up ADR must be created before that change is executed**; no ADR number and
@@ -455,6 +653,8 @@ The corresponding **mechanical choices** are:
 | G6 | Foreign-key enforcement verified on relevant write connections, fail-safe otherwise; `PRAGMA foreign_key_check` after restore reports but never repairs; scope not expanded to ordinary sync imports without justification. | SQLite enforcement |
 | G7 | Replace the `COALESCE(unit_id, '__NULL__')` uniqueness expression with a conventional unique index on `(date, unit_id)` in the fresh-database baseline schema edit, after verifying the existing schema and query behavior as a pre-implementation condition. | Uniqueness |
 | G8 | Baseline-only schema edits for a fresh database; **no compatibility migration** for the development database. | Governance |
+| G9 | The **unreferenced** `SyncImportExecutionService::import_monthly_report` path (P3) is **removed** in a later, separately authorized implementation phase rather than repaired; the removal scope is limited to that method and its **exclusive** helper `ReportRepository::insert_or_replace_raw_daily_report`; `insert_raw_meal_item`, the live `import_daily_reports` path, and the live `MonthlyReportService::import_monthly_report` method are **preserved**. Ratification of this ADR records the decision only — the removal implementation requires a separate, explicit owner authorization (§Governance-6, §Governance-9). | Unreferenced path (N9) |
+| G10 | **Q2/Q3 RFC review-angle exception.** **Decision:** the three mandatory reviewer-role perspectives specified in `ARCHITECTURE_FREEZE.md` §4, Step 2 are **not** mandatory prerequisites for the review of the Q2/Q3 Database Integrity RFC, within the scope of this project-specific exception. **Scope:** the exception applies **only** to that RFC; it does **not** amend the general review requirements for other RFCs, and the **five general review criteria remain in force**. **Review status:** this decision does **not** assert that a formal RFC review has occurred, that the RFC has been approved, or that ADR-0065 has been ratified. **Unchanged requirements:** the RFC approval gate, the ADR-0065 ratification requirements, the applicable governance records, and the separation between ratification and implementation authorization remain in force. | RFC review (Q2/Q3) |
 
 ## Documents amended or qualified by this ADR
 
@@ -462,7 +662,7 @@ The corresponding **mechanical choices** are:
 |----------|-------------|--------------|
 | `docs/architecture/0064-unit-export-state-and-owned-data-deletion.md` | §4.4 (deletion order — steps 12/13/14 moved before step 10 — and the NULL-preservation annotations at steps 8 and 14), §4.7 (the D4 nullability premise, its `NULL` outcome rows, the Q6 `NULL` sub-case, and the *Write-path validation* recommendation), G25 (the "each nullable" clause), §4.8 (nullable-ownership table — `daily_reports.unit_id` / supplier-order rows — and the Class-A rows `A8`/`A12`/`A14`), §4.9 (surviving-report FIFO reference + "No schema change here" deferral), §9.3.3 Q2/Q3 rows, and the *Explicitly Out of Scope* bullets on Q2/Q3 | **Partially superseded / reconciled, not wholesale.** ADR-0064's Q2/Q3 **deferrals** and the NULL-ownership statements they relied on are superseded by this ADR's proposed hardening. That supersession is **prospective**: for a **fresh** database the `NULL` sub-cases become unreachable, while for an **already-initialized** database ADR-0064's §4.6–§4.10 preflight remains the control and its §4.7 rules and G25 remain accurate as written. ADR-0064's ratified decision set D11–D22, its fail-closed deletion preflight (§4.6–§4.10), and its D18 schema posture are **preserved**. ADR-0064 is edited only to point at this ADR, to qualify the §4.7/G25 schema premise, and to stop contradicting it; **no `NULL` outcome row, no Q6 clause, and no G25 statement is deleted**; the full decision record lives here. **Applied under the owner delegation of this round (RFC §3.10 N1 and N6):** the listed loci of ADR-0064 now carry the prospective qualification — §4.4's two annotations and two new ordering-rule bullets, §4.7's D4 premise, outcome-table note, complementary bullet and Q6 bullet, §4.7's *Write-path validation* item (b), G25's "each nullable" clause, and §4.8's Class-A rows `A8`/`A12`/`A14`. The §4.8 per-column nullable-ownership table and §4.9's "surviving report rows" bullet were already qualified beforehand and were **not** re-edited. The locus list in this row is **the same set** as §Q3-A-6 and §Governance-2. |
 | `docs/architecture/ARCHITECTURE_FREEZE.md` | §2.6 SQLite Topology & Runtime ("No auto-repair"), §2.4 fiscal semantics and its sanctioned ADR-0064 purge exception | **Referenced, unchanged.** §2.6's "No auto-repair" governs the `foreign_key_check` requirement (detect/report, never repair). §2.4's closed-year semantics are unaffected: this ADR adds no destructive path and does not alter the ADR-0064 purge exception. **Option B applies** (§"ARCHITECTURE_FREEZE.md §2.4 — scope determination"): the §4.4 re-ordering was verified against the four points recorded there — the §6.2 protected data set, the ownership rules, the transaction atomicity, and the fail-closed controls — and none of them changes, so §2.4 needs no amendment and `ARCHITECTURE_FREEZE.md` is **not** modified by this ADR. This determination does **not** assert that by-reference incorporation immunizes a frozen clause. |
-| `docs/architecture/rfcs/2026-10-21-q2-q3-database-integrity.md` | §3.1–§3.9 (the schema decisions restated), §3.10 (the owner-decision list N1–N7), §4.5–§4.6 (the §2.4 scope determination and the approval-record location), §8.1–§8.5 (the deferred questions and their dispositions), §9.1–§9.7 (the documentation-scope reconciliation and the code-locus analysis), Appendix B (the §4 Step 2 review checklist) | **Referenced, reconciled, not amended by this ADR.** The RFC is the drafting vehicle for these decisions: the §4.4/§4.7/G25 reconciliation wording is specified there and has now been applied to ADR-0064 under the owner delegation of this round (RFC §3.10 N1 and N6). The RFC is an **unapproved draft**; it does not constitute approval of this ADR, and this ADR's ratification does not depend on the RFC's own approval state. The RFC's §8.3 conditions are now **closed inside this ADR** (§Governance-8), so this ADR no longer depends on the RFC to satisfy them. |
+| `docs/architecture/rfcs/2026-10-21-q2-q3-database-integrity.md` | §3.1–§3.9 (the schema decisions restated), §3.10 (the owner-decision list N1–N7), §4.5–§4.6 (the §2.4 scope determination and the approval-record location), §8.1–§8.5 (the deferred questions and their dispositions), §9.1–§9.7 (the documentation-scope reconciliation and the code-locus analysis), Appendix B (the §4 Step 2 review checklist) | **Referenced, reconciled, not amended by this ADR.** The RFC is the drafting vehicle for these decisions: the §4.4/§4.7/G25 reconciliation wording is specified there and has now been applied to ADR-0064 under the owner delegation of this round (RFC §3.10 N1 and N6). The RFC is **approved (2026-10-22; `governance_review.md` §7.1)**; that approval does not constitute ratification of this ADR, and this ADR's ratification does not depend on the RFC's own approval state. The RFC's §8.3 conditions are now **closed inside this ADR** (§Governance-8), so this ADR no longer depends on the RFC to satisfy them. |
 
 # Proposed implementation boundary (later phase; not performed here)
 
@@ -497,7 +697,16 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
 6. **Unreferenced-path investigation** — with evidence, validate the reachability and ownership
    behavior of the **unreferenced** `SyncImportExecutionService::import_monthly_report` /
    `insert_raw_meal_item` path; **do not delete or quarantine it** until that investigation is
-   complete, and do not pre-judge it as safe to delete.
+   complete, and do not pre-judge it as safe to delete. **Reachability investigation status:
+   complete** (read-only, 2026-10-22 — §Context "Unreferenced-path reachability investigation
+   (read-only) — completed"); the **historical-occurrence** question — whether the path ever
+   actually wrote a cross-UNIT or `NULL`-unit row — **remains unresolved**, and the §4.9
+   fail-closed preflight continues to govern data that may already exist. **Owner decision:
+   removal, not repair** (G9). The removal itself is a **later, separately authorized
+   implementation step**, gated by §Governance-6(b) and §Governance-6(c): this ADR's ratification
+   **and** a separate, explicit owner authorization. It is **not performed by this ADR**, which
+   remains `Proposed` and performs no source, test, schema, migration, restore, registry, or
+   architecture-rule change.
 7. **Documentation** — after implementation, update `docs/technical/CLAIM_VERIFICATION_MATRIX.md`
    and any operational-limitations documents to describe the shipped behavior.
 
@@ -560,12 +769,20 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
    mechanism. **The decision must be settled before the restore path is modified**, including when
    the check runs relative to the atomic replacement and what is done on detection
    (§Governance-11).
-2. **Unreferenced import path (open).** The reachability and ownership behavior of the
-   **unreferenced** `SyncImportExecutionService::import_monthly_report` / `insert_raw_meal_item`
-   path (ADR-0064 §4.9) require evidence-based investigation before any change; this ADR neither
-   judges nor acts on it, and does **not** treat the label "dead" as established. The **live**
-   same-named `MonthlyReportService::import_monthly_report` (reached via
-   `import_monthly_summary_package`) writes a monthly summary only and is not implicated.
+2. **Unreferenced import path (reachability closed; governance gate open).** The reachability and
+   ownership behavior of the **unreferenced** `SyncImportExecutionService::import_monthly_report` /
+   `insert_raw_meal_item` path (ADR-0064 §4.9) required evidence-based investigation before any
+   change; this ADR neither judged nor acted on it, and did **not** treat the label "dead" as
+   established. **The reachability investigation is now complete** (§Context "Unreferenced-path
+   reachability investigation (read-only) — completed"; §Governance-6(a)): no in-repository caller
+   was found, `ReportRepository::insert_or_replace_raw_daily_report` has no other caller, and the
+   owner has confirmed that there are no external consumers. **The historical-occurrence question
+   remains unresolved** and continues to be governed by ADR-0064 §4.9. **The owner's decision is
+   removal, not repair** (G9). **What remains open** is the governance gate itself: the prohibition
+   in §Governance-6 stands until this ADR is ratified and a separate implementation authorization is
+   granted (§Governance-6(b)), subject also to §Governance-6(c). The **live** same-named
+   `MonthlyReportService::import_monthly_report` (reached via `import_monthly_summary_package`)
+   writes a monthly summary only, is **not** implicated, and is **not** part of the removal scope.
 3. **Cross-UNIT FIFO reference remediation (inherited).** ADR-0064 Q5's controlled external
    operational-repair policy remains the remediation path for data the preflight rejects; this ADR
    adds no automatic repair.
@@ -580,7 +797,10 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
 * Adding a foreign key to `monthly_reports.unit_id` (deferred, separate scope).
 * Expanding `PRAGMA foreign_key_check` to ordinary sync imports.
 * Deleting or quarantining the unreferenced `SyncImportExecutionService::import_monthly_report` /
-  `insert_raw_meal_item` path.
+  `insert_raw_meal_item` path — **in this phase**. The read-only **reachability** investigation is
+  complete and the owner has decided on removal (G9), but the deletion itself is deferred to a
+  later implementation phase gated by §Governance-6(b) and §Governance-6(c). `insert_raw_meal_item`
+  is **preserved** in every phase.
 * Updating `docs/technical/CLAIM_VERIFICATION_MATRIX.md` to assert unimplemented behavior.
 * Reopening, narrowing, or weakening any owner-ratified decision (D11–D22) of ADR-0064, its
   fail-closed deletion preflight (§4.6–§4.10), or its D18 schema posture. The **prospective**
@@ -588,11 +808,14 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
   **fresh** database and does **not** reopen, narrow, or weaken the preflight rule, the D4/Q6
   rules, the D20 exception, or the D18 posture.
 * Amending `ARCHITECTURE_FREEZE.md` through this ADR.
-* **Recording an approval.** No approval entry, no approver name, no approval date, and no
-  signature is created by this ADR; its status stays `Proposed`. The official reviews — Lead
-  Architect, Security Officer, and the financial/accounting domain expert — are **deferred** for
-  this internal round; they are neither performed nor cancelled, and nothing here records them as
-  performed.
+* **Recording an approval.** No individual signature is created by this ADR. The owner accepted
+  this ADR on **2026-10-23** (approving authority: **Project Owner `1Bxm`**), recorded through the
+  repository's ordinary governance process in `docs/architecture/governance_review.md` §7.5. The
+  previously specified three-role review requirement is **not** a mandatory prerequisite for the
+  Q2/Q3 Database Integrity RFC under the project-specific exception recorded in this ADR (G10).
+  **No formal review is recorded by that exception itself.** RFC approval was separately recorded
+  on 2026-10-22 in `governance_review.md` §7.1; ADR-0065 acceptance is separately recorded on
+  2026-10-23 in `governance_review.md` §7.5.
 * **Creating a tracking issue.** No tracking-issue identifier exists for ADR-0065, and none is
   invented here.
 * **Adding an entry to the frontend governance approvals registry.** That registry is
@@ -603,7 +826,7 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
 | Document | Location |
 |----------|----------|
 | ADR-0064 (UNIT export state & owned-data deletion) | `docs/architecture/0064-unit-export-state-and-owned-data-deletion.md` |
-| Accompanying RFC (draft, unapproved) | `docs/architecture/rfcs/2026-10-21-q2-q3-database-integrity.md` |
+| Accompanying RFC (approved by the Project Owner (`1Bxm`) on 2026-10-22 — record: `docs/architecture/governance_review.md` §7.1; RFC approval only, not ratification of this ADR) | `docs/architecture/rfcs/2026-10-21-q2-q3-database-integrity.md` |
 | ADR index (registration of this ADR, row `0065`) | `docs/architecture/ADR_INDEX.md` |
 | Architecture freeze declaration (**unmodified** by this ADR) | `docs/architecture/ARCHITECTURE_FREEZE.md` |
 | Architectural invariants charter | `docs/architecture/ARCHITECTURAL_INVARIANTS.md` |
