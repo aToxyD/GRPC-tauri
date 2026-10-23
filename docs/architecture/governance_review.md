@@ -572,6 +572,41 @@ are **not** upgraded (G8/RFC §5.1/§7).
   migration, database, or protected-file change; no test re-run; no staging, commit, reset, or
   clean by this record; no claim that any gate was newly executed by the author of this record.
 
+### 7.7 2026-10-23 — ADR-0066 acceptance of record — status `Proposed` → `Accepted` (owner decision; documentation act only)
+
+* **Decision of record (authority: Project Owner (`1Bxm`)).** The owner's in-principle approval of
+  ADR-0066 is recorded as a formal acceptance event:
+  `docs/architecture/0066-development-lifecycle-posture.md` is **accepted on 2026-10-23**; status
+  transition **`Proposed` → `Accepted`**, recorded per `ADR_INDEX.md` Policy §3
+  (`Draft → Proposed → Accepted → Deprecated → Superseded`); no `Ratified` status value is
+  introduced.
+* **Three-file documentation-only scope of this act:** (1)
+  `0066-development-lifecycle-posture.md` — status line, governance-state block,
+  approval-convention block, a dated `Proposed` → `Accepted` status-transition record,
+  §7 current-state boundary text, and the two present-tense registration statements updated to
+  the performed state (the index row's line positions adjusted for the insertion, with the
+  footer provenance note extended accordingly); dated proposal/clarification records and the
+  "(draft)" section headings are preserved verbatim; (2) `ADR_INDEX.md` — new row `0066` after row `0065` (`Accepted`,
+  `2026-10-23`, `Architecture / Data Governance`); (3) this §7.7. No other file and no
+  historical governance entry is modified.
+* **Acceptance is declarative only.** It does not authorize implementation, code or test
+  changes, database changes, migrations, destructive operations, operational activity, or a
+  lifecycle-stage transition; ADR-0066's clause 4 — a separate, explicit Project Owner
+  authorization per named destructive operation — remains fully in force.
+* **No frozen-architecture change and no companion record is required.**
+  `ARCHITECTURE_FREEZE.md` §4 Step 3 item 4 is a no-op for this ADR (it modifies no Section 2/3
+  frozen clause); ADR-0066 has no companion RFC, and no changelog entry is created for this
+  narrowly scoped documentation event.
+* **Separate governance event.** This record does not modify or reopen §7.1–§7.6 or any
+  ADR-0065 workstream (P3, Governance-10, Governance-11 remain as recorded in §7.4–§7.6).
+* **Known unrelated issues remain out of scope, unchanged:** the stale inline anchors in §7.5
+  (`:603-622`, `:623-626`; §Governance-9 now stands at `0065:662-667`), the unreachable commit
+  `6566b87` referenced by §7.6, and the §7.2 numbering gap.
+* **Act boundaries (explicit non-claims):** documentation only — no source, test, schema,
+  migration, database, backup, or protected-file change; no build, test, or database operation
+  performed; no staging or commit by this record — committing the three-file documentation record
+  is a separate, owner-authorized Git step.
+
 ## Review Summary
 
 | Domain | Guaranteed | Enforced By | Violation Indicators |
