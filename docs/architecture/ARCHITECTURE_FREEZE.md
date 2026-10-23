@@ -187,6 +187,7 @@ The following contracts, boundaries, and guarantees are **frozen** and may not b
 - **🔒 No deprecated terminology** — BSS, .bss, .bssync, grpcsync, grpcunit banned (Rule 37). [arch:allow-history]
 - **🔒 Zero-warning policy** — all `check_arch.ts` warnings are treated as errors. CI fails if any warning exists.
 - **🔒 Production Root-key prerequisite (A44-06 — unchanged 2026-08-14)** — قبول ADR-0044 وADR-0045 (2026-08-14) **لا يساوي اعتمادًا إنتاجيًا**: الإنتاج يبقى **محجوبًا** حتى اعتماد مفتاح Root الإنتاجي (مراسم + تثبيت + حيازة + توزيع + تحقق — ADR-0044 §9.4). `root_public_key.rs` يحمل ناقل TEST-2 ولا يُغيَّر في هذه العملية. يُحظر ادعاء الجاهزية الإنتاجية قبل اكتمال هذا العائق.
+- Development lifecycle posture and destructive-operation authorization requirements are governed by [ADR-0066 — Development Lifecycle Posture](0066-development-lifecycle-posture.md).
 
 ---
 
