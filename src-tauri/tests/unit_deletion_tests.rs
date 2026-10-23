@@ -577,6 +577,94 @@ fn success_purges_all_class_a_and_preserves_class_b() {
     );
 }
 
+#[test]
+fn reports_referencing_own_layers_purge_after_meal_items_moved_before_layers() {
+    // Q2/Q3 (ADR-0065, C5): a daily_report meal item carries
+    // fifo_layer_id FOREIGN KEY ... ON DELETE RESTRICT. Deleting the unit's
+    // FIFO layers (A10) BEFORE its report rows (A12/A13/A14) would now abort
+    // on that foreign key. The A12/A13/A14 blocks were therefore moved ahead
+    // of A10. This test pins the new order: a target unit whose report items
+    // reference its own layers must purge completely and keep other units
+    // intact (previously the FK would have blocked the A10 delete).
+    let mut h = Harness::new("del_report_layer_severance");
+    let (unit_id, _op) = h.create_unit("T102C", "Unit 102C");
+    let (other_id, _op2) = h.create_unit("T102D", "Unit 102D");
+    {
+        let c = h.conn();
+        seed_product(c, "p1");
+        seed_supplier(c, "s1");
+        seed_contract(c, "ct1", &unit_id, "s1", 2025);
+        seed_contract_product(c, "cp1", "ct1", "p1");
+        seed_allocation(c, "al1", "ct1", "cp1", &unit_id, "p1", 2025);
+        seed_order(c, "o1", "s1", Some(&unit_id), 2025);
+        seed_order_item(c, "oi1", "o1", "p1", Some(&unit_id), 2025);
+        // Target FIFO layer consumed by the target's own report item.
+        seed_layer(c, "l1", &unit_id, "p1", 2025);
+        seed_movement(c, "mv1", "p1", "OUT", Some(&unit_id), 2025);
+        seed_ilm(c, "ilm1", &unit_id, "mv1", "l1");
+        seed_daily_report(c, "dr1", Some(&unit_id), 2025);
+        seed_meal(c, "m1", "dr1");
+        seed_meal_item(c, "mi1", "m1", "p1", Some("l1"));
+        // Another unit untouched by the purge (all rows kept for contrast).
+        seed_contract(c, "ct2", &other_id, "s1", 2025);
+        seed_contract_product(c, "cp2", "ct2", "p1");
+        seed_allocation(c, "al2", "ct2", "cp2", &other_id, "p1", 2025);
+        seed_order(c, "o2", "s1", Some(&other_id), 2025);
+        seed_order_item(c, "oi2", "o2", "p1", Some(&other_id), 2025);
+        seed_layer(c, "l2", &other_id, "p1", 2025);
+        seed_movement(c, "mv2", "p1", "OUT", Some(&other_id), 2025);
+        seed_daily_report(c, "dr2", Some(&other_id), 2025);
+        seed_meal(c, "m2", "dr2");
+        seed_meal_item(c, "mi2", "m2", "p1", Some("l2"));
+    }
+
+    h.delete(&unit_id)
+        .expect("purge must succeed with report items referencing own layers");
+
+    // Every target-owned Class-A row (incl. report chain + layers) is gone.
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
+        0
+    );
+    assert_eq!(
+        h.scalar(
+            "SELECT COUNT(*) FROM daily_reports WHERE id = 'dr1'"
+        ),
+        0
+    );
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meals WHERE id='m1'"), 0);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM daily_report_meal_items WHERE id='mi1'"),
+        0
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fifo_stock_layers WHERE id = 'l1'"),
+        0
+    );
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv1'"), 0);
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM inventory_layer_consumptions WHERE id='ilm1'"), 0);
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o1'"), 0);
+
+    // Other unit's data preserved end-to-end.
+    assert_eq!(
+        h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &other_id),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id = 'dr2'"),
+        1
+    );
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM daily_report_meal_items WHERE id='mi2'"), 1);
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM fifo_stock_layers WHERE id = 'l2'"),
+        1
+    );
+    assert_eq!(
+        h.scalar("SELECT COUNT(*) FROM contract_allocations WHERE id = 'al2'"),
+        1
+    );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 3 — Closed-year purge leaves fiscal_export_snapshots and fiscal_year_status
 // ─────────────────────────────────────────────────────────────────────────────
@@ -629,28 +717,36 @@ fn closed_year_data_purged_without_touching_fiscal_machinery() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4 — NULL-owned rows are preserved (D20, §4.8)
+// 4 — Non-owned rows are preserved: foreign-owned reports/orders (re-pointed
+//     from NULL arms — ADR-0065) and NULL-unit movements (still legal per D20)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn null_owned_rows_are_preserved() {
     let mut h = Harness::new("del_null_owned");
     let (unit_id, _op) = h.create_unit("T102", "Unit 102");
+    let (other_id, _op2) = h.create_unit("T102B", "Unit 102B");
     {
         let c = h.conn();
         seed_product(c, "p1");
-        // A NULL-unit OUT movement is schema-legal; a NULL-unit report is a real
-        // sync-import possibility; a NULL-unit order is preserved.
+        // A NULL-unit OUT movement is schema-legal (D20, unchanged).
+        // ADR-0065 re-scope: NULL-unit daily reports and NULL-unit supplier
+        // orders are no longer representable on the fresh NOT NULL baseline,
+        // so their "survives a target delete" arms are re-pointed to another
+        // unit's rows — the same ownership boundary, still assertable. The
+        // legacy NULL-preservation guarantee for already-initialized
+        // databases is a runtime compatibility property, out of fresh-DB
+        // test scope (ADR-0065 G2/G8).
         seed_movement(c, "mv-null", "p1", "OUT", None, 2025);
         seed_movement(c, "mv-target", "p1", "OUT", Some(&unit_id), 2025);
-        seed_daily_report(c, "dr-null", None, 2025);
+        seed_daily_report(c, "dr-other", Some(&other_id), 2025);
         seed_daily_report(c, "dr-target", Some(&unit_id), 2025);
         seed_supplier(c, "s1");
-        seed_order(c, "o-null", "s1", None, 2025);
+        seed_order(c, "o-other", "s1", Some(&other_id), 2025);
         seed_order(c, "o-target", "s1", Some(&unit_id), 2025);
     }
 
-    h.delete(&unit_id).expect("delete with NULL-owned rows");
+    h.delete(&unit_id).expect("delete with foreign-owned rows");
 
     assert_eq!(
         h.scalar("SELECT COUNT(*) FROM stock_movements WHERE id='mv-null'"),
@@ -661,7 +757,7 @@ fn null_owned_rows_are_preserved() {
         0
     );
     assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-null'"),
+        h.scalar("SELECT COUNT(*) FROM daily_reports WHERE id='dr-other'"),
         1
     );
     assert_eq!(
@@ -669,7 +765,7 @@ fn null_owned_rows_are_preserved() {
         0
     );
     assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"),
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-other'"),
         1
     );
     assert_eq!(
@@ -737,43 +833,44 @@ fn cross_unit_consumption_to_target_movement_blocks() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6 / 7 — Q6: target item under NULL / foreign parent order aborts
+// 6 / 7 — Q6: NULL parent orders unrepresentable (schema rejects, ADR-0065);
+//         foreign parent order still aborts the purge (expressible arm)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn q6_target_item_under_null_parent_order_blocks() {
+    // ADR-0065 re-scope: pre-2026 this test seeded a NULL-unit parent order
+    // and required Q6 to reject a target item hanging under it. On the fresh
+    // NOT NULL baseline (Q2) that state can no longer exist — so the hazard
+    // it guarded against is now asserted at the only expressible layer: the
+    // schema itself must fail closed when the NULL parent is attempted. The
+    // equivalent expressible arm (item under a *foreign*-unit parent order)
+    // remains covered by q6_target_item_under_foreign_parent_order_blocks.
     let mut h = Harness::new("del_q6_null");
     let (unit_id, _op) = h.create_unit("T107", "Unit 107");
     {
         let c = h.conn();
         seed_product(c, "p1");
         seed_supplier(c, "s1");
-        seed_order(c, "o-null", "s1", None, 2025);
-        seed_order_item(c, "oi-target", "o-null", "p1", Some(&unit_id), 2025);
+        let err = c
+            .execute(
+                "INSERT INTO supplier_orders (id, order_date, supplier_id, supplier_name, \
+                 created_at, unit_id, fiscal_year) \
+                 VALUES ('o-null', '2025-01-01', 's1', 's1', ?1, NULL, 2025)",
+                params![NOW],
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("NOT NULL constraint failed"),
+            "expected NOT NULL violation, got: {err}"
+        );
     }
-    let err = h.delete(&unit_id).expect_err("Q6 NULL parent must abort");
-    assert!(is_delete_forbidden(&err), "got {err:?}");
-    // §4.7 diagnostic: conflicting item, its order, and both ownership values (NULL explicit).
-    let reason = delete_forbidden_reason(&err);
-    assert!(reason.contains("item=oi-target"), "reason: {reason}");
-    assert!(reason.contains("order=o-null"), "reason: {reason}");
-    assert!(
-        reason.contains(&format!("item.unit_id={unit_id}")),
-        "reason: {reason}"
-    );
-    assert!(reason.contains("order.unit_id=NULL"), "reason: {reason}");
+    // The target unit and its intact data survive; nothing was written.
     assert_eq!(
         h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
         1
     );
-    assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-target'"),
-        1
-    );
-    assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"),
-        1
-    );
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_orders"), 0);
 }
 
 #[test]
@@ -814,11 +911,18 @@ fn q6_target_item_under_foreign_parent_order_blocks() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8 / 9 — D4: target order with NULL / foreign child item blocks
+// 8 / 9 — D4: NULL child items unrepresentable (schema rejects, ADR-0065);
+//         target order with foreign child item still blocks (expressible arm)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn d4_target_order_with_null_child_blocks() {
+    // ADR-0065 re-scope: the NULL-unit child item this test used is no longer
+    // expressible on the fresh NOT NULL baseline (Q2). The guarded state is
+    // asserted at the schema layer instead — seeding a target order item
+    // without a unit must fail closed. The equivalent expressible arm
+    // (target order with a *foreign*-unit child) remains covered by
+    // d4_target_order_with_foreign_child_blocks.
     let mut h = Harness::new("del_d4_null");
     let (unit_id, _op) = h.create_unit("T110", "Unit 110");
     {
@@ -826,30 +930,24 @@ fn d4_target_order_with_null_child_blocks() {
         seed_product(c, "p1");
         seed_supplier(c, "s1");
         seed_order(c, "o-target", "s1", Some(&unit_id), 2025);
-        seed_order_item(c, "oi-null", "o-target", "p1", None, 2025);
+        let err = c
+            .execute(
+                "INSERT INTO supplier_order_items (id, order_id, product_id, quantity, \
+                 unit_price, total_cost, unit_id, fiscal_year) \
+                 VALUES ('oi-null', 'o-target', 'p1', 1, 10, 10, NULL, 2025)",
+                [],
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("NOT NULL constraint failed"),
+            "expected NOT NULL violation, got: {err}"
+        );
     }
-    let err = h
-        .delete(&unit_id)
-        .expect_err("D4 NULL child must fail closed");
-    assert!(is_delete_forbidden(&err), "got {err:?}");
-    // §4.7 diagnostic: report the conflicting child item, its order, and both ownership
-    // values (the child's NULL unit rendered explicitly).
-    let reason = delete_forbidden_reason(&err);
-    assert!(reason.contains("item=oi-null"), "reason: {reason}");
-    assert!(reason.contains("order=o-target"), "reason: {reason}");
-    assert!(reason.contains("item.unit_id=NULL"), "reason: {reason}");
-    assert!(
-        reason.contains(&format!("order.unit_id={unit_id}")),
-        "reason: {reason}"
-    );
     assert_eq!(
         h.scalar1("SELECT COUNT(*) FROM units WHERE id = ?1", &unit_id),
         1
     );
-    assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-null'"),
-        1
-    );
+    assert_eq!(h.scalar("SELECT COUNT(*) FROM supplier_order_items"), 0);
 }
 
 #[test]
@@ -1075,12 +1173,17 @@ fn canonical_operator_user_id_mismatch_blocks() {
 fn surviving_report_item_referencing_target_layer_blocks() {
     let mut h = Harness::new("del_surviving_fifo");
     let (unit_id, _op) = h.create_unit("T121", "Unit 121");
+    let (other_id, _op2) = h.create_unit("T121B", "Unit 121B");
     {
         let c = h.conn();
         seed_product(c, "p1");
         seed_layer(c, "l-target", &unit_id, "p1", 2025);
-        // A surviving (NULL-unit) report whose item points at the target layer.
-        seed_daily_report(c, "dr-surviving", None, 2025);
+        // A surviving report owned by ANOTHER unit whose item points at the
+        // target layer. ADR-0065 re-scope: the original fixture used a NULL
+        // unit report, which is unrepresentable on the fresh NOT NULL
+        // baseline; the surviving-side arm is now expressed as another
+        // unit's report — the §4.9 predicate covers both (IS NULL OR !=).
+        seed_daily_report(c, "dr-surviving", Some(&other_id), 2025);
         seed_meal(c, "m-surviving", "dr-surviving");
         seed_meal_item(c, "mi-surviving", "m-surviving", "p1", Some("l-target"));
     }
@@ -1416,13 +1519,15 @@ fn soft_deleted_canonical_operator_is_resolved_and_purged() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 21 — D6 second direction: target allocation joined to a NULL-owned item
+// 21 — D6 second direction: target allocation joined to a non-target item
+//      (foreign-unit; NULL items unrepresentable — ADR-0065)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn d6_target_allocation_with_null_item_blocks() {
+fn d6_target_allocation_with_foreign_item_blocks() {
     let mut h = Harness::new("del_d6_reverse");
     let (unit_id, _op) = h.create_unit("T130", "Unit 130");
+    let (other_id, _op2) = h.create_unit("T130B", "Unit 130B");
     {
         let c = h.conn();
         seed_product(c, "p1");
@@ -1439,12 +1544,15 @@ fn d6_target_allocation_with_null_item_blocks() {
             "p1",
             2025,
         );
-        // Surviving NULL-owned order + item (own unit_id NULL), joined to the target
-        // allocation. D6's second disjunct (`ca.unit_id = target AND soi.unit_id IS NULL`)
-        // must reject before any DELETE; Q6/D4 do not fire because neither side is target.
-        seed_order(c, "o-null", "s1", None, 2025);
-        seed_order_item(c, "oi-null", "o-null", "p1", None, 2025);
-        seed_soia(c, "soia-bad", "oi-null", "al-target");
+        // Surviving FOREIGN-unit order + item joined to the target allocation.
+        // ADR-0065 re-scope: the original fixture used a NULL-unit order/item
+        // pair, which is unrepresentable on the fresh NOT NULL baseline; the
+        // D6 second disjunct (`ca.unit_id = target AND soi.unit_id != target`)
+        // still fires for the foreign-unit arm, so the same two-sided
+        // ownership hazard remains expressible and blocked.
+        seed_order(c, "o-other", "s1", Some(&other_id), 2025);
+        seed_order_item(c, "oi-other", "o-other", "p1", Some(&other_id), 2025);
+        seed_soia(c, "soia-bad", "oi-other", "al-target");
     }
     let err = h
         .delete(&unit_id)
@@ -1469,11 +1577,11 @@ fn d6_target_allocation_with_null_item_blocks() {
         1
     );
     assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-null'"),
+        h.scalar("SELECT COUNT(*) FROM supplier_order_items WHERE id='oi-other'"),
         1
     );
     assert_eq!(
-        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-null'"),
+        h.scalar("SELECT COUNT(*) FROM supplier_orders WHERE id='o-other'"),
         1
     );
 }

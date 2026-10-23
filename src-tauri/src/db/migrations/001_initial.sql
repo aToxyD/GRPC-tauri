@@ -272,7 +272,9 @@ CREATE TABLE IF NOT EXISTS inventory_layer_consumptions (
 CREATE TABLE IF NOT EXISTS daily_reports (
     id TEXT PRIMARY KEY,
     date TEXT NOT NULL,
-    unit_id TEXT,
+    -- Q2/Q3 integrity (ADR-0065): a daily report always belongs to a unit.
+    -- FK is existence-only; ownership policy is enforced by Phase-0 preflights.
+    unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE RESTRICT,
     total_daily_cost INTEGER NOT NULL DEFAULT 0 CHECK (total_daily_cost >= 0),
     total_daily_average REAL NOT NULL DEFAULT 0 CHECK (total_daily_average >= 0),
     total_daily_beneficiaries INTEGER NOT NULL DEFAULT 0 CHECK (total_daily_beneficiaries >= 0),
@@ -309,7 +311,10 @@ CREATE TABLE IF NOT EXISTS daily_report_meal_items (
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
     total_cost INTEGER NOT NULL,
-    fifo_layer_id TEXT,
+    -- Q2/Q3 integrity (ADR-0065): referential integrity for FIFO costing.
+    -- Nullable: items without FIFO costing (e.g. imported raw items) are legal.
+    -- FK is existence-only; cross-unit references are validated by Phase-0.
+    fifo_layer_id TEXT REFERENCES fifo_stock_layers(id) ON DELETE RESTRICT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
@@ -329,7 +334,8 @@ CREATE TABLE IF NOT EXISTS supplier_orders (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     node_id TEXT,
     deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
-    unit_id TEXT,
+    -- Q2/Q3 integrity (ADR-0065): supplier orders always belong to a unit.
+    unit_id TEXT NOT NULL,
     fiscal_year INTEGER,
     FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
     FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT
@@ -342,7 +348,8 @@ CREATE TABLE IF NOT EXISTS supplier_order_items (
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
     total_cost INTEGER NOT NULL,
-    unit_id TEXT,
+    -- Q2/Q3 integrity (ADR-0065): order items always belong to a unit.
+    unit_id TEXT NOT NULL,
     fiscal_year INTEGER,
     -- SEC-087: purchase-unit semantics. `quantity` is the purchase quantity and
     -- `unit_price` is the TTC price per purchase unit. The unit/factor snapshot
@@ -772,7 +779,10 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 -- Daily Reports
 CREATE INDEX IF NOT EXISTS idx_daily_reports_date ON daily_reports(date);
 CREATE INDEX IF NOT EXISTS idx_daily_reports_unit_id ON daily_reports(unit_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_date_unit_unique ON daily_reports(date, COALESCE(unit_id, '__NULL__'));
+-- Q2/Q3 integrity (ADR-0065): plain two-column unique index replacing the
+-- COALESCE expression index, which is no longer needed now that unit_id is
+-- NOT NULL (one report date per unit; null sentinels are unrepresentable).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_date_unit_unique ON daily_reports(date, unit_id);
 CREATE INDEX IF NOT EXISTS idx_daily_report_meals_report_id ON daily_report_meals(daily_report_id);
 CREATE INDEX IF NOT EXISTS idx_daily_report_meal_items_meal_id ON daily_report_meal_items(meal_id);
 CREATE INDEX IF NOT EXISTS idx_daily_reports_fiscal_year ON daily_reports(fiscal_year);

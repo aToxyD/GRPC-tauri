@@ -79,6 +79,16 @@ impl<'a> DailyReportService<'a> {
             })
         })?;
 
+        // Q2/Q3 integrity (ADR-0065): referenced unit must exist before any
+        // write — fail-closed ahead of FIFO consumption (zero rows written).
+        let unit_repo = self.executor.units();
+        unit_repo.get_unit(unit_id_str)?.ok_or_else(|| {
+            AppError::BusinessLogic(crate::errors::BusinessLogicError::ResourceNotFound {
+                resource: "unit".to_string(),
+                id: unit_id_str.to_string(),
+            })
+        })?;
+
         let fiscal_year = input.date.year();
         crate::application::services::FiscalValidationService::new(self.executor)
             .assert_fiscal_year_open(fiscal_year)?;

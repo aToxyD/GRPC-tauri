@@ -189,6 +189,69 @@ impl SqliteBackupAdapter {
         }
     }
 
+    /// Q2/Q3 integrity (ADR-0065): validate referential integrity of a restored
+    /// candidate BEFORE any swap. Runs `PRAGMA foreign_key_check` against the
+    /// decrypted tempfile using a read-only connection (autocommit; no write).
+    ///
+    /// This is FAIL-CLOSED: any violation aborts the restore before the live
+    /// database is touched. Data is never repaired — the restart owner decides.
+    /// Diagnostics list the first 20 violations plus the total count, using the
+    /// SQLite `foreign_key_check` result columns (table, rowid, parent, fkid).
+    fn validate_restored_foreign_keys(&self, path: &Path) -> io::Result<()> {
+        use rusqlite::{Connection, OpenFlags};
+
+        fn fk_err(e: rusqlite::Error) -> io::Error {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Foreign key validation error: {}", e),
+            )
+        }
+
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
+            |e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Cannot open SQLite for foreign key validation: {}", e),
+                )
+            },
+        )?;
+
+        let mut stmt = conn.prepare("PRAGMA foreign_key_check").map_err(fk_err)?;
+
+        let mut rows = stmt.query([]).map_err(fk_err)?;
+
+        const MAX_REPORTED: usize = 20;
+        let mut samples: Vec<String> = Vec::new();
+        let mut total: usize = 0;
+
+        while let Some(row) = rows.next().map_err(fk_err)? {
+            total += 1;
+            if samples.len() < MAX_REPORTED {
+                let table: String = row.get(0).map_err(fk_err)?;
+                let rowid: i64 = row.get(1).map_err(fk_err)?;
+                let parent: String = row.get(2).map_err(fk_err)?;
+                let fkid: i64 = row.get(3).map_err(fk_err)?;
+                samples.push(format!(
+                    "table='{table}' rowid={rowid} parent='{parent}' fkid={fkid}"
+                ));
+            }
+        }
+
+        if total > 0 {
+            let mut message = format!(
+                "Foreign key validation failed: {total} violation(s) in restored database"
+            );
+            message.push_str("; samples: ");
+            message.push_str(&samples.join("; "));
+            if total > MAX_REPORTED {
+                message.push_str(&format!(" (showing {MAX_REPORTED} of {total})"));
+            }
+            return Err(io::Error::new(io::ErrorKind::InvalidData, message));
+        }
+
+        Ok(())
+    }
+
     /// Validate the temporary SQLite snapshot before encryption.
     /// This is a FAIL-CLOSED validation - any failure aborts the backup.
     fn validate_temp_snapshot(
@@ -639,6 +702,8 @@ impl BackupPort for SqliteBackupAdapter {
     ///    (same filesystem → atomic rename is guaranteed).
     /// 3. The age decrypt stream writes directly to the tempfile via BufWriter.
     /// 4. SQLite `quick_check` validates the tempfile **in place**.
+    ///    ADR-0065: `PRAGMA foreign_key_check` then enforces referential
+    ///    integrity — any violation aborts BEFORE the live DB is replaced.
     /// 5. The journal is written atomically before the live DB is replaced.
     /// 6. `persist()` converts the tempfile to a permanent path (no auto-delete).
     /// 7. Atomic rename replaces the live DB.
@@ -667,6 +732,11 @@ impl BackupPort for SqliteBackupAdapter {
 
         // ── Step 2: validate the tempfile via SQLite PRAGMA quick_check ───
         self.validate_sqlite_file(temp_candidate.path())?;
+
+        // ── Step 2b (Q2/Q3, ADR-0065): referential integrity gate ─────────
+        // Runs PRAGMA foreign_key_check on the candidate BEFORE any swap; any
+        // violation aborts the restore with the live database untouched.
+        self.validate_restored_foreign_keys(temp_candidate.path())?;
 
         // ── Step 3: persist the tempfile (stops auto-delete on Drop) ──────
         // This converts the NamedTempFile into a plain PathBuf.

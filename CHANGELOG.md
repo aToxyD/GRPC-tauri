@@ -4,6 +4,15 @@
 
 ---
 
+## [غير مُصدَّر] - 2026-10-23
+
+### ✨ الميزات المضافة (Added)
+* **خط أساس سلامة قاعدة البيانات Q2/Q3 (Q2/Q3 Database Integrity Baseline) (ADR-0065 / G1–G8):** فرض ملكية الوحدة على مستوى المخطط في قاعدة البيانات الجديدة — `daily_reports.unit_id` و`supplier_orders.unit_id` و`supplier_order_items.unit_id` بـ `NOT NULL` مع مفاتيح أجنبية إلى `units(id)` بـ `ON DELETE RESTRICT`، ومفتاح أجنبي `RESTRICT` لـ `daily_report_meal_items.fifo_layer_id`، واستبدال فهرس التعبير `COALESCE(unit_id, '__NULL__')` بفهرس فريد تقليدي على `(date, unit_id)`، مع بوابات خدمة فاشلة-مغلقة قبل أي كتابة وترتيب حذف متسق قبل إزالة طبقات FIFO. الضمانات تنطبق على **قواعد البيانات الجديدة فقط** ولا يوفر هذا الإصدار مسار ترقية أو تهجير لقواعد بيانات مُهيّأة سابقاً. التنفيذ في commit `6566b87b89c8b7367e7d8329a928f462917d0cc1`.
+* **فحص سلامة المفاتيح الأجنبية قبل الاستعادة (Restore Foreign-Key Integrity Gate) (ADR-0065):** تنفيذ `PRAGMA foreign_key_check` على مرشّح الاستعادة المؤقت (اتصال للقراءة فقط) قبيل الاستبدال الذري؛ أي مخالفة تُجهض الاستعادة وتُبقي قاعدة البيانات الحية دون مساس، دون أي إصلاح تلقائي (قرار ما بعد الفشل يعود للمالك)، مع تشخيصات لأول 20 مخالفة إضافة إلى العدد الإجمالي.
+
+### 📚 الوثائق والحوكمة (Documentation & Governance)
+* **الإغلاق التوثيقي لـ ADR-0065 (ADR-0065 Documentation Closure) (ARCHITECTURE_FREEZE §4 Step 5):** سجل تعديل توثيقي في ADR-0065 يسجّل التنفيذ المنفصل المرخّص عائداً إلى commit `6566b87b89c8b7367e7d8329a928f462917d0cc1`، وسجل تنفيذ §7.6 في `governance_review.md`، وصفّان جديدين في مصفوفة `CLAIM_VERIFICATION_MATRIX.md`، وهذا الإدخال. **يظل مفتوحاً ويتطلب ترخيصاً منفصلاً لاحقاً:** إزالة مسار P3 غير المُشار إليه (`SyncImportExecutionService::import_monthly_report` ومساعده الحصري — G9)، والمفتاح الأجنبي لـ `monthly_reports.unit_id` (Governance-10؛ يتطلب ADR متابعة مستقلاً).
+
 ## [1.3.4] - 2026-10-21
 
 ### ✨ الميزات المضافة (Added)

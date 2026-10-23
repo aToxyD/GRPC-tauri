@@ -307,7 +307,7 @@ impl<'a> FiscalTimelineService<'a> {
                 actor: Some(r.generated_by),
                 summary: format!(
                     "تم إنشاء تصدير مالي (الهاش={}…)",
-                    &r.export_hash.chars().take(12).collect::<String>()
+                    r.export_hash.chars().take(12).collect::<String>()
                 ),
                 source: "fiscal_export_snapshots".into(),
             });

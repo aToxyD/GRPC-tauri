@@ -716,6 +716,28 @@ fn unit_monthly_dataset_partial_month_rejected_on_export_cycle() {
     // the calendar month is complete.
     let (state, _anchor_id, unit_id) = build_unit_state();
 
+    // ADR-0065 (C7 fixture refresh): daily_reports.unit_id is now NOT NULL +
+    // FK → units(id). build_unit_state only stamps settings.unit_name and
+    // never creates a units row, so this export fixture must seed the owning
+    // unit row before its report rows (previously unguarded because
+    // daily_reports had no unit foreign key).
+    {
+        let guard = state.get_db().expect("lock");
+        let db = guard.as_ref().expect("db");
+        db.get_connection()
+            .execute(
+                "INSERT INTO units (id, code, name, wilaya_code, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    unit_id.to_string(),
+                    "UEXP",
+                    "Export-cycle unit",
+                    "16",
+                    Utc::now().to_rfc3339()
+                ],
+            )
+            .expect("unit row");
+    }
+
     let input = MonthlySummaryExportInput {
         year: 2026,
         month: 8,

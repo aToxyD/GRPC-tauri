@@ -530,6 +530,48 @@ are **not** upgraded (G8/RFC §5.1/§7).
   `monthly_reports.unit_id` FK follow-up ADR each remain subject to **separate** owner
   authorizations.
 
+### 7.6 2026-10-23 — Q2/Q3 implementation record of record — separately authorized implementation executed in commit `6566b87` (owner decisions; documentation act only)
+
+* **Recorded record (Project Owner `1Bxm`).** After the acceptance recorded in §7.5, the owner
+  granted the **separate, explicit implementation authorization** required by ADR-0065
+  §Governance-9 (`0065:651-654`) and §"Proposed implementation boundary" (`0065:695-699`). This
+  event **supersedes the momentary** "Implementation remains **not authorized**" state of §7.5
+  (`:529-530`) **by a separate owner decision; §7.5 remains an unchanged historical record**
+  (precedent: §7.4's supersession of §7.3's "explicitly not resolved" clause).
+* **Scope executed (single commit; verified inventory):** **`6566b87b89c8b7367e7d8329a928f462917d0cc1`**
+  — branch `feat/q2-q3-database-integrity`, parent `0b93b023ad413517e9e101aad3f9e061c82f9217`,
+  one commit, 13 files, +944/−89: baseline schema G1–G8 (`001_initial.sql:275-277, :314-317,
+  :337-341, :351-352, :782-785`), service fail-closed unit gates (TA2/TA3/TA5 per §7.4),
+  deletion re-ordering A12→A14→A10 (`repositories/units.rs:451, :469, :474`), restore
+  `PRAGMA foreign_key_check` gate (§7.4 mechanism — `sqlite_backup_adapter.rs:200, :739`), and
+  test additions.
+* **No claim beyond this scope:** the P3 path (`SyncImportExecutionService::import_monthly_report`
+  / `repositories/reports.rs:534/:547`) was **not touched** and G9 remains gated by
+  §Governance-6(b)/(c); **no `monthly_reports.unit_id` foreign key was added** (Governance-10; a
+  dedicated follow-up ADR is required before that change); **no existing-database upgrade or
+  migration path exists** (§7.4 Item 3 / ADR-0065 G8).
+* **Implementation-phase gate outputs (recorded in the phase reports; NOT executed or re-run for
+  this record):** full `cargo test` — recorded 109 test suites with 0 failures; `cargo clippy
+  -- -D warnings` — zero warnings; `bun run check:arch` — zero warnings; docs-governance,
+  secrets, and release-integrity checks — passing, as recorded.
+* **Test files in the commit (verifiable from the commit inventory):** five files — four modified
+  and one new (`daily_reports_schema_integrity_tests.rs`).
+* **Test-case counts per committed file (counted from current source; source counts, not test
+  execution totals):** `unit_deletion_tests.rs` 27 — covers ADR-0065 §Verification expectation 6;
+  `daily_reports_schema_integrity_tests.rs` 10 — expectations 1–5;
+  `disaster_recovery_integration_tests.rs` 5 — expectation 7 and the §7.4 restore-failure policy
+  (test `test_restore_aborts_on_foreign_key_violation_before_swap`,
+  `disaster_recovery_integration_tests.rs:113-206`); `sync_unit_to_wilaya_import_tests.rs` 24;
+  `phase4_integer_boundary_tests.rs` 9. Phase-report case-count notes that do not match a file's
+  test-function count are **not** recorded as run numbers here; per-file execution totals are not
+  re-derivable without re-running.
+* **Documentation effect of this record:** the ADR-0065 amendment (2026-10-23), the
+  `CLAIM_VERIFICATION_MATRIX.md` Q2/Q3 rows (per `0065:738-739`), and the `CHANGELOG.md`
+  unreleased entry jointly satisfy `ARCHITECTURE_FREEZE.md` §4 Step 5 (`:279-281`).
+* **Act boundaries (explicit non-claims):** documentation only — no source, test, schema,
+  migration, database, or protected-file change; no test re-run; no staging, commit, reset, or
+  clean by this record; no claim that any gate was newly executed by the author of this record.
+
 ## Review Summary
 
 | Domain | Guaranteed | Enforced By | Violation Indicators |

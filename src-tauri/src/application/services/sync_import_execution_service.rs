@@ -12,7 +12,7 @@ use crate::application::sync_integrity::types::ConflictDetectionOutcome;
 use crate::application::usecases::exports::types::ContractCatalogExportDataset;
 use crate::db::Database;
 use crate::domain::events::{DomainEvent, EventContext};
-use crate::errors::{AppError, ValidationError};
+use crate::errors::{AppError, BusinessLogicError, ValidationError};
 use crate::models::{DailyReportMeal, DailyReportResult, ProductSyncRecord};
 use crate::repositories::{DbExecutor, RepositoryProvider};
 use chrono::{Datelike, Utc};
@@ -89,13 +89,29 @@ impl<'a> SyncImportExecutionService<'a> {
                 &report_result.report.id,
             )?;
 
-            let unit_id = report_result.report.unit_id.as_deref();
+            // Q2/Q3 integrity (ADR-0065, TA2): a daily report must belong to a
+            // unit. validate_fiscal above intentionally takes precedence —
+            // FiscalYearArchived wins when both conditions apply (owner
+            // decision 2026-10-23; test case_b depends on this ordering).
+            let unit_id = report_result.report.unit_id.as_deref().ok_or_else(|| {
+                AppError::BusinessLogic(BusinessLogicError::OperationNotPermitted {
+                    message: "لا يمكن استيراد تقرير يومي بدون وحدة (unit_id مفقود)".to_string(),
+                })
+            })?;
+
+            // Q2/Q3 integrity (ADR-0065): referenced unit must exist before
+            // any write — fail-closed, zero rows inserted.
+            let unit_repo = self.executor.units();
+            unit_repo.get_unit(unit_id)?.ok_or_else(|| {
+                AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                    resource: "unit".to_string(),
+                    id: unit_id.to_string(),
+                })
+            })?;
+
             let date_str = report_result.report.date.to_string();
 
-            let exists = match unit_id {
-                Some(uid) => report_repo.daily_report_exists_for_date_unit(&date_str, uid)?,
-                None => report_repo.daily_report_exists_for_date_global(&date_str)?,
-            };
+            let exists = report_repo.daily_report_exists_for_date_unit(&date_str, unit_id)?;
 
             if !exists {
                 let report_id = uuid::Uuid::new_v4().to_string();

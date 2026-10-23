@@ -435,7 +435,8 @@ impl<'a> UnitRepository<'a> {
         self.executor
             .execute("DELETE FROM contracts WHERE unit_id = ?1", [unit_id])?;
 
-        // A8: supplier_orders (NULL preserved as per §4.8)
+        // A8: supplier_orders (legacy NULL rows unrepresentable under the
+        // NOT NULL baseline — ADR-0065)
         self.executor
             .execute("DELETE FROM supplier_orders WHERE unit_id = ?1", [unit_id])?;
 
@@ -443,16 +444,10 @@ impl<'a> UnitRepository<'a> {
         self.executor
             .execute("DELETE FROM unit_suppliers WHERE unit_id = ?1", [unit_id])?;
 
-        // A10: fifo_stock_layers
-        self.executor.execute(
-            "DELETE FROM fifo_stock_layers WHERE unit_id = ?1",
-            [unit_id],
-        )?;
-
-        // A11: stock_movements (NULL preserved as per D20)
-        self.executor
-            .execute("DELETE FROM stock_movements WHERE unit_id = ?1", [unit_id])?;
-
+        // A12/A13/A14 (ADR-0065): daily-report data is deleted BEFORE the FIFO
+        // layers it may reference — under the new fifo_layer_id foreign key
+        // (ON DELETE RESTRICT), A10 below would otherwise be blocked on any
+        // unit whose report items point at its own layers.
         // A12: daily_report_meal_items
         self.executor.execute(
             r#"DELETE FROM daily_report_meal_items
@@ -471,9 +466,20 @@ impl<'a> UnitRepository<'a> {
             [unit_id],
         )?;
 
-        // A14: daily_reports (NULL preserved as per §4.8)
+        // A14: daily_reports (UNIT-owned rows; legacy NULL rows are
+        // unrepresentable under the NOT NULL baseline — ADR-0065)
         self.executor
             .execute("DELETE FROM daily_reports WHERE unit_id = ?1", [unit_id])?;
+
+        // A10: fifo_stock_layers
+        self.executor.execute(
+            "DELETE FROM fifo_stock_layers WHERE unit_id = ?1",
+            [unit_id],
+        )?;
+
+        // A11: stock_movements (NULL preserved as per D20)
+        self.executor
+            .execute("DELETE FROM stock_movements WHERE unit_id = ?1", [unit_id])?;
 
         // A15: monthly_reports
         self.executor

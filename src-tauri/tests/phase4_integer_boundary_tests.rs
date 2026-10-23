@@ -324,10 +324,21 @@ fn one_cent_daily_report_total_difference_is_a_mismatch() {
     let db = ConnectionFactory::new_for_test().expect("test db init");
     let report_id = Uuid::new_v4().to_string();
     let meal_id = Uuid::new_v4().to_string();
+    // ADR-0065 re-scope: the fixture originally bound unit_id = NULL, which
+    // the fresh NOT NULL baseline (Q2) no longer accepts; the unit column is
+    // irrelevant to this integrity-check math, so it is re-pointed to a seeded
+    // unit row with the test's mapped-total semantics unchanged.
+    db.executor()
+        .execute(
+            "INSERT INTO units (id, code, name, wilaya_code, created_at) \
+             VALUES ('u-4ib', 'U4IB', 'Boundary Unit', '99', '2025-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed unit");
     db.executor()
         .execute(
             "INSERT INTO daily_reports (id, date, unit_id, total_daily_cost, total_daily_average, total_daily_beneficiaries, created_at, updated_at, fiscal_year)
-             VALUES (?1, '2025-01-01', NULL, 150000, 0, 0, ?2, ?2, 2025)",
+             VALUES (?1, '2025-01-01', 'u-4ib', 150000, 0, 0, ?2, ?2, 2025)",
             params![&report_id, now()],
         )
         .expect("insert report");

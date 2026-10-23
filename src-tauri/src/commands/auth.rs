@@ -238,7 +238,7 @@ pub fn login_impl(state: &AppState, request: LoginRequest) -> Result<LoginRespon
         log::error!(
             target: "grpc::audit",
             "AUDIT WRITE FAILED [login_failure] user={} err={:?}",
-            &request.username,
+            request.username,
             e
         );
     }

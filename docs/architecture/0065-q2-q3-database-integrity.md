@@ -71,6 +71,40 @@ Accepted (2026-10-23)
 > approvals. **No approval, approving authority, signature, or approval date is recorded or implied
 > by this amendment**, and the ADR's status remains `Proposed`. No source, test, schema, migration,
 > restore, registry, or architecture-rule change is made or authorized by it.
+>
+> **Amendment log.** 2026-10-23 — **documentation-only closure-of-record amendment** (a
+> documentation act only; it records, it performs nothing). It records that the **implementation
+> phase** of this ADR — **separately and explicitly owner-authorized** after the acceptance
+> recorded in `docs/architecture/governance_review.md` §7.5 — was **executed as one commit**:
+> `6566b87b89c8b7367e7d8329a928f462917d0cc1` (branch `feat/q2-q3-database-integrity`; parent
+> `0b93b023ad413517e9e101aad3f9e061c82f9217`; 13 files, +944/−89). Executed software scope:
+> §"Proposed implementation boundary" **items 1–5** (the fresh-database baseline schema edit,
+> repository adjustments, domain/application fail-closed validation, the reordered deletion
+> sequence, and the restore `PRAGMA foreign_key_check` mechanism). Boundary item 6 is **not newly
+> executed by this amendment**: its reachability investigation limb was completed pre-ratification
+> and is recorded in §Context and §Governance-6(a), while its **removal limb (G9) remains open**
+> and gated by §Governance-6(b)/(c). Boundary item 7 (documentation) is the act performed by this
+> amendment and its accompanying records. **Not executed and still explicitly open:** G9 — the P3
+> removal (`SyncImportExecutionService::import_monthly_report` /
+> `ReportRepository::insert_or_replace_raw_daily_report`, preserved per the "Preservation
+> requirements" there; whether the path ever wrote a cross-UNIT or `NULL`-unit row remains
+> unresolved) — and the deferred `monthly_reports.unit_id` foreign key (Governance-10), which
+> remains `NOT NULL`, FK-less, and requires a dedicated follow-up ADR. Test and governance gates
+> **were passed during the authorized implementation phase** (recorded in `governance_review.md`
+> §7.6); **no test is re-run and no new test evidence is created by this documentation
+> amendment.** The proposal-time statements above are **preserved verbatim** as accurate for
+> their recorded moments.
+>
+> **Anchor-shift note (part of this amendment).** The five insertions of this amendment add lines
+> after former lines 73, 463, 711, 735, and 771 of this file, so every line anchor below each
+> insertion point has shifted: +23 after the amendment log, +28 from the former line 464 onward,
+> +34 from the former line 712 onward, +38 from the former line 736 onward, and +50 from the
+> former line 772 onward. Line-number references into this ADR recorded before this amendment —
+> e.g., in `docs/architecture/governance_review.md` (`0065:79-87`, `0065:348-367`,
+> `0065:602-615`, `0065:623-626`, `0065:629-639`, `0065:652-657`, `0065:664`, `0065:690-694`,
+> `0065:763-769`) — were exact when recorded (`0065:11-27` precedes this amendment log and is
+> unaffected); resolve the shifted ones by their section or row names at their current locations.
+> This note repairs nothing; it only explains the shift.
 
 # Owner
 
@@ -461,6 +495,11 @@ preflight continues to govern data that may already exist.
 5. **Do not modify the claim-verification matrix** to assert that unimplemented behavior is
    already verified (`docs/technical/CLAIM_VERIFICATION_MATRIX.md`). It is updated only after
    implementation, per its own guidance.
+   > [2026-10-23 amendment note: the planned work was subsequently implemented in commit
+   > `6566b87b89c8b7367e7d8329a928f462917d0cc1` (boundary items 1–5); this clause and the
+   > previous one are preserved verbatim as proposal-time statements — see the Amendment log
+   > and `docs/architecture/governance_review.md` §7.6. The matrix now carries the two Q2/Q3
+   > rows describing the shipped behavior.]
 6. **Do not delete or quarantine the unreferenced `SyncImportExecutionService::import_monthly_report`
    / `insert_raw_meal_item` path in this phase.** ADR-0064 §4.9 recorded a *"dead
    `import_monthly_report` / `insert_raw_meal_item` path"* that could in principle have written a
@@ -709,6 +748,12 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
    architecture-rule change.
 7. **Documentation** — after implementation, update `docs/technical/CLAIM_VERIFICATION_MATRIX.md`
    and any operational-limitations documents to describe the shipped behavior.
+   > [2026-10-23 amendment note: performed by the 2026-10-23 closure amendment and its
+   > accompanying records (`governance_review.md` §7.6; `CLAIM_VERIFICATION_MATRIX.md` Q2/Q3 rows;
+   > `CHANGELOG.md` unreleased entry) for the implementation commit
+   > `6566b87b89c8b7367e7d8329a928f462917d0cc1`. `OPERATIONAL_LIMITATIONS.md` required no
+   > correction: its existing restore limitation statements remain accurate; no fresh-database
+   > upgrade path exists.]
 
 # Verification expectations (later phase; not executed here)
 
@@ -733,6 +778,10 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
 8. `bun run check:arch` reports zero warnings; `cargo clippy -D warnings`, `cargo test`, `vitest`,
    `svelte-check`, and the release-integrity and documentation-governance scripts pass — **run in
    the implementation phase, not in this documentation phase.**
+   > [2026-10-23 amendment note: items 1–7 above were implemented and verified in the authorized
+   > implementation phase (commit `6566b87b89c8b7367e7d8329a928f462917d0cc1`; recorded in
+   > `governance_review.md` §7.6), and item 8's gates were passed there. "not executed here"
+   > remains accurate — this ADR itself executed none of them; see the Amendment log.]
 
 # Consequences (proposed)
 
@@ -769,6 +818,18 @@ ADR does not authorize any of it** — each step requires a separate, explicit o
    mechanism. **The decision must be settled before the restore path is modified**, including when
    the check runs relative to the atomic replacement and what is done on detection
    (§Governance-11).
+
+   **Resolution (recorded 2026-10-23 — amendment).** The decision was settled by the owner
+   (`governance_review.md` §7.4 restore-failure policy) and implemented in commit
+   `6566b87b89c8b7367e7d8329a928f462917d0cc1` as a pre-swap fail-closed gate
+   (`validate_restored_foreign_keys` — `sqlite_backup_adapter.rs:200`, invoked as Step 2b at
+   `:739`). The phase's disaster-recovery test `test_restore_aborts_on_foreign_key_violation_before_swap`
+   (`disaster_recovery_integration_tests.rs:113-206`) demonstrates the four record points of
+   §7.4 (`:456-458`): pre-swap validation (restore artifacts never created, `:190-191`), abort
+   on detection (`:177-183`), live-database preservation (length and marker assertions,
+   `:190-205`), and diagnostics carrying table/parent/fkid (`:184-186`); the violating candidate
+   is rejected, never repaired. This closes **only** the open-question status above; the
+   question paragraph is preserved verbatim.
 2. **Unreferenced import path (reachability closed; governance gate open).** The reachability and
    ownership behavior of the **unreferenced** `SyncImportExecutionService::import_monthly_report` /
    `insert_raw_meal_item` path (ADR-0064 §4.9) required evidence-based investigation before any

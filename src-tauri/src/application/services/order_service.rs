@@ -255,6 +255,18 @@ impl<'a> OrderService<'a> {
     ) -> Result<(String, f64), AppError> {
         validate_create_order_request(req)?;
 
+        // Q2/Q3 integrity (ADR-0065): referenced unit must exist before any
+        // write — fail-closed, zero rows inserted. Every order item inherits
+        // this same unit_id (structurally equal — TA4), so no duplicated
+        // per-item unit validation is added (TA6/TA7 owner decisions).
+        let unit_repo = self.executor.units();
+        unit_repo.get_unit(unit_id)?.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                resource: "unit".to_string(),
+                id: unit_id.to_string(),
+            })
+        })?;
+
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         let order_date = chrono::Utc::now().date_naive().to_string();
@@ -305,6 +317,17 @@ impl<'a> OrderService<'a> {
         current_fiscal_year: i32,
     ) -> Result<Vec<(String, f64)>, AppError> {
         validate_create_order_request(req)?;
+
+        // Q2/Q3 integrity (ADR-0065, C4): authoritative IPC order path —
+        // referenced unit must exist before any write (fail-closed). Items
+        // inherit this same unit_id; no per-item duplication (TA4/TA6).
+        let unit_repo = self.executor.units();
+        unit_repo.get_unit(unit_id)?.ok_or_else(|| {
+            AppError::BusinessLogic(BusinessLogicError::ResourceNotFound {
+                resource: "unit".to_string(),
+                id: unit_id.to_string(),
+            })
+        })?;
 
         // Plan COMPLETELY before any write: every product's candidates are
         // fetched first (same transactional snapshot), the whole request is
